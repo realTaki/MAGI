@@ -136,6 +136,7 @@ describe("local MAGI agent", () => {
     expect(await readFile(join(path, "notes/a.txt"), "utf8")).toBe("saved");
     expect(requests).toHaveLength(2);
     expect(requests[0].messages[0].content).toContain("You are Test MAGI.");
+    expect(requests[0].messages[0].content).toContain("Every user-visible reply must be valid Markdown.");
     const memories = new Database(join(path, "memories/magi.db"), { readonly: true });
     const logs = new Database(join(path, "logs/magi.db"), { readonly: true });
     expect((memories.query("SELECT content FROM books_messages ORDER BY id").all() as Array<{ content: string }>).map((row) => row.content)).toEqual(["save a note", "Done."]);

@@ -22,7 +22,7 @@ test("operator bootstrap is stable across restarts", async (t) => {
     const response = await request(app, "GET", "/operator");
     assert.equal(response.status, 200);
     assert.ok(isRecord(response.data));
-    assert.equal(response.data.handle, "user");
+    assert.equal(response.data.handle, "@user");
     assert.equal(typeof response.data.token, "string");
     assert.notEqual(response.data.token, "");
     operator = response.data;
@@ -30,6 +30,37 @@ test("operator bootstrap is stable across restarts", async (t) => {
   await withApp({ databasePath }, async (app) => {
     const response = await request(app, "GET", "/operator");
     assert.deepEqual(response.data, operator);
+  });
+});
+
+test("a previous bare user identity migrates to @user without losing its sessions", async (t) => {
+  const databasePath = path.join(tempRoot(t), "asp.sqlite");
+  let token = "";
+  let sessionId = "";
+  await withApp({ databasePath }, async (app) => {
+    token = app.operatorToken;
+    const created = await request(app, "POST", "/conversations", { token, body: { kind: "group" } });
+    sessionId = String((created.data as { conversation_id?: unknown }).conversation_id);
+    await request(app, "POST", `/sessions/${sessionId}/messages`, { token, body: { content: "hello" } });
+    const connection = app.database.connection!;
+    const agent = connection.prepare("SELECT record_json FROM asp_agents WHERE handle = '@user'").get() as { record_json: string };
+    connection.prepare("UPDATE asp_agents SET handle = 'user', record_json = ? WHERE handle = '@user'")
+      .run(JSON.stringify({ ...JSON.parse(agent.record_json) as Record<string, unknown>, handle: "user" }));
+    connection.prepare("UPDATE asp_participants SET handle = 'user' WHERE handle = '@user'").run();
+    connection.prepare("UPDATE asp_events SET payload_json = replace(payload_json, '\"@user\"', '\"user\"')").run();
+    connection.prepare("UPDATE asp_settings SET value_json = ? WHERE key = 'operator'")
+      .run(JSON.stringify({ handle: "user", token }));
+    connection.prepare("DELETE FROM schema_migrations WHERE version = 4").run();
+  });
+  await withApp({ databasePath }, async (app) => {
+    assert.equal(app.operatorHandle, "@user");
+    assert.equal(app.operatorToken, token);
+    const view = await request(app, "GET", `/conversations/${sessionId}`, { token });
+    const participants = isRecord(view.data) && Array.isArray(view.data.participants) ? view.data.participants : [];
+    assert.equal(participants.some((row) => isRecord(row) && row.handle === "@user"), true);
+    const events = await request(app, "GET", `/sessions/${sessionId}/events`, { token });
+    const messages = isRecord(events.data) && Array.isArray(events.data.events) ? events.data.events : [];
+    assert.equal(messages.some((row) => isRecord(row) && isRecord(row.payload) && row.payload.sender === "@user"), true);
   });
 });
 
@@ -56,7 +87,7 @@ test("the agent roster is operator only and carries the runner credentials", asy
     // The operator itself is not a managed MAGI.
     assert.deepEqual(
       (agents as Array<Record<string, unknown>>).map((agent) => agent.handle),
-      ["user"],
+      ["@user"],
     );
     assert.equal((agents as Array<Record<string, unknown>>)[0]?.managed, false);
   });

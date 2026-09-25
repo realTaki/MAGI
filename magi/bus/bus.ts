@@ -99,12 +99,12 @@ export class Bus {
     this.contactNotes = new ContactNoteBook(this.db);
     this.mcpServers = new McpServerBook(this.db);
     this.prompts = new PromptBook(this.workspace);
-    // The system contact stands for the operator: "user" is the handle ASP gives them,
+    // The system contact stands for the operator: "@user" is the handle ASP gives them,
     // so their messages arrive already known. The MAGI is the other fixed contact, and
     // both record the identity they speak with — anyone else becomes a contact of their
     // own the first time they are heard from.
-    this.db.insert(contacts).values({ id: SYSTEM_CONTACT_ID, name: "system", role: "system", asp_handle: "user" })
-      .onConflictDoUpdate({ target: contacts.id, set: { asp_handle: "user" } })
+    this.db.insert(contacts).values({ id: SYSTEM_CONTACT_ID, name: "system", role: "system", asp_handle: "@user" })
+      .onConflictDoUpdate({ target: contacts.id, set: { asp_handle: "@user" } })
       .run();
     this.db.insert(contacts).values({ id: MAGI_CONTACT_ID, name: handle, role: "magi", asp_handle: handle })
       .onConflictDoUpdate({ target: contacts.id, set: { name: handle, asp_handle: handle } })

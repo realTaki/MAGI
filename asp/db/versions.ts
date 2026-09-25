@@ -80,7 +80,65 @@ function version3(connection: DatabaseSync): void {
   `);
 }
 
-const MIGRATIONS: readonly Migration[] = [version1, version2, version3];
+/** Rename the fixed operator identity without invalidating existing sessions. */
+function version4(connection: DatabaseSync): void {
+  const legacy = "user";
+  const operator = "@user";
+  const setting = connection
+    .prepare("SELECT value_json FROM asp_settings WHERE key = 'operator'")
+    .get() as { value_json?: unknown } | undefined;
+  if (typeof setting?.value_json === "string") {
+    const parsed: unknown = JSON.parse(setting.value_json);
+    if (isRecord(parsed) && (parsed.handle === legacy || parsed.handle === undefined)) {
+      connection.prepare("UPDATE asp_settings SET value_json = ?, updated_at = unixepoch() * 1000 WHERE key = 'operator'")
+        .run(JSON.stringify({ ...parsed, handle: operator }));
+    }
+  }
+
+  const agent = connection
+    .prepare("SELECT record_json FROM asp_agents WHERE handle = ?")
+    .get(legacy) as { record_json?: unknown } | undefined;
+  if (agent !== undefined) {
+    const record = typeof agent.record_json === "string" ? JSON.parse(agent.record_json) : {};
+    const rewritten = isRecord(record) ? { ...record, handle: operator } : { handle: operator };
+    connection.prepare("UPDATE asp_agents SET handle = ?, record_json = ? WHERE handle = ?")
+      .run(operator, JSON.stringify(rewritten), legacy);
+  }
+
+  for (const table of ["asp_participants", "asp_message_recipients", "asp_event_acks"]) {
+    connection.prepare(`UPDATE ${table} SET handle = ? WHERE handle = ?`).run(operator, legacy);
+  }
+  connection.prepare("UPDATE asp_message_keys SET sender = ? WHERE sender = ?").run(operator, legacy);
+  connection.prepare("UPDATE asp_session_keys SET creator = ? WHERE creator = ?").run(operator, legacy);
+
+  const events = connection.prepare("SELECT event_id, payload_json FROM asp_events").all() as Array<{
+    event_id: unknown;
+    payload_json: unknown;
+  }>;
+  for (const event of events) {
+    if (typeof event.event_id !== "string" || typeof event.payload_json !== "string") continue;
+    const payload: unknown = JSON.parse(event.payload_json);
+    if (!isRecord(payload)) continue;
+    let changed = false;
+    const next = { ...payload };
+    for (const key of ["sender", "by", "agent", "invitee", "ended_by", "reopened_by"]) {
+      if (next[key] === legacy) {
+        next[key] = operator;
+        changed = true;
+      }
+    }
+    if (changed) {
+      connection.prepare("UPDATE asp_events SET payload_json = ? WHERE event_id = ?")
+        .run(JSON.stringify(next), event.event_id);
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const MIGRATIONS: readonly Migration[] = [version1, version2, version3, version4];
 
 export function transaction(connection: DatabaseSync, apply: () => void): void {
   connection.exec("BEGIN");

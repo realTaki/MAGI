@@ -41,7 +41,7 @@ test("a replayed event is not taken in twice", async () => {
     for (let i = 0; i < 100 && !socket; i++) await Bun.sleep(10);
     const event = {
       type: "session.message", event_id: "dup-1", session_id: "replay", sequence: 7,
-      payload: { sender: "user", content: "hello" },
+      payload: { sender: "@user", content: "hello" },
     };
     socket!.send(JSON.stringify(event));
     for (let i = 0; i < 100 && completions < 1; i++) await Bun.sleep(10);
@@ -85,7 +85,7 @@ test("each speaker in a session is a contact of their own", async () => {
     const emit = (id: string, sender: string, content: string) => socket!.send(JSON.stringify({
       type: "session.message", event_id: id, session_id: "shared", payload: { sender, content },
     }));
-    emit("m1", "user", "morning");
+    emit("m1", "@user", "morning");
     emit("m2", "@eva-001.magi", "morning yourself");
 
     const senders = () => new Set(magi.bus.messages.list(conversation.id).map((message) => message.contact_id));
@@ -196,7 +196,7 @@ test("mentions decide who answers, and everything said is kept", async () => {
     // Named someone else: recorded, but not this MAGI's turn.
     emit("m2", "@eva-002.magi", "Me too", ["@eva-009.magi"]);
     // Named this MAGI: its turn.
-    emit("m3", "user", "@eva-000.magi can you hear me?", ["@eva-000.magi"]);
+    emit("m3", "@user", "@eva-000.magi can you hear me?", ["@eva-000.magi"]);
     for (let i = 0; i < 200 && (completions < 2 || sent.length < 2); i++) await Bun.sleep(10);
     // Another agent naming someone else again: recorded only.
     emit("m4", "@eva-001.magi", "@eva-002.magi, you there?", ["@eva-002.magi"]);
@@ -220,7 +220,7 @@ test("mentions decide who answers, and everything said is kept", async () => {
       SYSTEM_CONTACT_ID, MAGI_CONTACT_ID, handle("@eva-001.magi")!.id, handle("@eva-002.magi")!.id,
     ]));
     expect(new Set(magi.bus.conversationMembers.list(conversation.id).map((contact) => contact.asp_handle)))
-      .toEqual(new Set(["@eva-001.magi", "@eva-002.magi", "user"]));
+      .toEqual(new Set(["@eva-001.magi", "@eva-002.magi", "@user"]));
   } finally {
     await magi.stop();
     server.stop(true);

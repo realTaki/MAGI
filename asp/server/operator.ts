@@ -5,7 +5,8 @@ import { randomBytes } from "node:crypto";
 import type { LocalDatabase } from "../db/database.ts";
 import { transaction } from "../db/versions.ts";
 
-export const OPERATOR_HANDLE = "user";
+export const OPERATOR_HANDLE = "@user";
+const LEGACY_OPERATOR_HANDLE = "user";
 const OPERATOR_SETTING_KEY = "operator";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -29,7 +30,12 @@ export function loadOrCreateOperator(database: LocalDatabase): [string, string] 
     if (!isRecord(parsed) || typeof parsed.token !== "string") {
       throw new Error("operator setting is missing a token");
     }
-    const handle = typeof parsed.handle === "string" && parsed.handle !== "" ? parsed.handle : OPERATOR_HANDLE;
+    const handle = parsed.handle === LEGACY_OPERATOR_HANDLE || typeof parsed.handle !== "string" || parsed.handle === ""
+      ? OPERATOR_HANDLE
+      : parsed.handle;
+    if (handle !== parsed.handle) {
+      database.setSetting(OPERATOR_SETTING_KEY, { ...parsed, handle });
+    }
     return [handle, parsed.token];
   }
   const token = randomBytes(24).toString("base64url");

@@ -137,8 +137,8 @@ test("a message records who it names", async (t) => {
     await request(app, "POST", `/conversations/${sessionId}/members`, { token, body: { handle: "@second.magi" } });
     assert.equal((await request(app, "POST", `/sessions/${sessionId}/join`, { token: "second-token" })).status, 200);
 
-    // The long handle, the short name, and a message that names nobody.
-    for (const content of ["you there @second.magi?", "@second ping", "anyone around?"]) {
+    // The long handle, the short name, the operator handle, and a message that names nobody.
+    for (const content of ["you there @second.magi?", "@second ping", "@user please review", "anyone around?"]) {
       assert.equal(
         (await request(app, "POST", `/sessions/${sessionId}/messages`, { token, body: { content } })).status,
         201,
@@ -147,7 +147,7 @@ test("a message records who it names", async (t) => {
     const mentions = eventsOf(await request(app, "GET", `/sessions/${sessionId}/events`, { token }))
       .filter((event) => event.type === "session.message")
       .map((event) => record(event.payload).mentions ?? null);
-    assert.deepEqual(mentions, [["@second.magi"], ["@second.magi"], null]);
+    assert.deepEqual(mentions, [["@second.magi"], ["@second.magi"], ["@user"], null]);
   });
 });
 

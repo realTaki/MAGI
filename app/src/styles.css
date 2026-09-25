@@ -780,6 +780,60 @@ body {
   animation: pulse 1.2s ease-in-out infinite;
 }
 
+.conversation-page__markdown > :first-child {
+  margin-top: 0;
+}
+
+.conversation-page__markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.conversation-page__markdown p,
+.conversation-page__markdown ul,
+.conversation-page__markdown ol,
+.conversation-page__markdown pre,
+.conversation-page__markdown blockquote,
+.conversation-page__markdown table {
+  margin: 0.5em 0;
+}
+
+.conversation-page__markdown ul,
+.conversation-page__markdown ol {
+  padding-left: 1.4em;
+}
+
+.conversation-page__markdown pre {
+  overflow-x: auto;
+  border-radius: 8px;
+  padding: 0.65em 0.8em;
+  background: color-mix(in srgb, var(--panel-copy) 9%, transparent);
+}
+
+.conversation-page__markdown code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.conversation-page__markdown :not(pre) > code {
+  border-radius: 4px;
+  padding: 0.1em 0.3em;
+  background: color-mix(in srgb, var(--panel-copy) 9%, transparent);
+}
+
+.conversation-page__markdown table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.conversation-page__markdown th,
+.conversation-page__markdown td {
+  border: 1px solid color-mix(in srgb, var(--panel-copy) 22%, transparent);
+  padding: 0.25em 0.45em;
+  text-align: left;
+}
+
 .conversation-page__card {
   display: flex;
   flex-direction: column;
@@ -810,6 +864,7 @@ body {
 }
 
 .conversation-page__input-shell {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -839,6 +894,46 @@ body {
   background: transparent;
   color: var(--text-primary);
   font-size: 14px;
+}
+
+.conversation-page__mention-menu {
+  position: absolute;
+  z-index: 4;
+  bottom: calc(100% + 8px);
+  left: 0;
+  min-width: min(360px, 100%);
+  max-width: min(460px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 1px solid var(--panel-line-2);
+  border-radius: 14px;
+  background: var(--surface-input);
+  box-shadow: 0 16px 36px rgb(0 0 0 / 28%);
+  padding: 5px;
+}
+
+.conversation-page__mention-menu button {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  width: 100%;
+  gap: 9px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  padding: 8px 9px;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+}
+
+.conversation-page__mention-menu button:hover,
+.conversation-page__mention-menu button.is-selected {
+  background: var(--surface-subtle);
+}
+
+.conversation-page__mention-menu small {
+  color: var(--text-tertiary);
+  font-size: 12px;
 }
 
 .conversation-page__send {

@@ -143,7 +143,7 @@ test("bots lists spawned magi not a static roster", async (t) => {
     );
     assert.deepEqual(new Set(listed.map((row) => record(row).name)), new Set(["eva-000", "eva-001"]));
     assert.equal(listed.every((row) => record(row).online === false), true);
-    assert.equal(listed.some((row) => record(row).handle === "user"), false);
+    assert.equal(listed.some((row) => record(row).handle === "@user"), false);
     assert.equal((await request(app, "GET", "/bots")).status, 401);
   });
 });

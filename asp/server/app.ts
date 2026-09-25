@@ -5,7 +5,7 @@ import type { WebSocket } from "ws";
 
 import { LocalDatabase, defaultDatabasePath } from "../db/database.ts";
 import { bearerHandle, HttpError, listen, optionalInt, optionalString, requireContent, requireObject, Router, type RunningServer } from "./http.ts";
-import { loadOrCreateOperator } from "./operator.ts";
+import { loadOrCreateOperator, OPERATOR_HANDLE } from "./operator.ts";
 import { OperatorService } from "./operator-service.ts";
 import { Conflict, NotAllowed, NotFound, SessionService } from "./service.ts";
 import { type AgentSeed, Store } from "./store.ts";
@@ -36,7 +36,7 @@ export class AspApp {
   readonly operator: OperatorService;
   readonly requestShutdown?: () => void;
   origin = "";
-  operatorHandle = "user";
+  operatorHandle = OPERATOR_HANDLE;
   operatorToken = "";
   #running: RunningServer | null = null;
   #seed: AspSeed;
@@ -130,7 +130,7 @@ function registerRoutes(router: Router, app: AspApp): void {
   const auth = (headers: IncomingMessage["headers"]) => bearerHandle(headers, (token) => app.store.authenticate(token));
   const operatorOnly = (headers: IncomingMessage["headers"]) => {
     const handle = auth(headers);
-    if (handle !== "user") {
+    if (handle !== app.operatorHandle) {
       throw new HttpError(403, "operator only");
     }
     return handle;
@@ -223,7 +223,7 @@ function registerRoutes(router: Router, app: AspApp): void {
     operatorOnly(context.headers);
     const handle = requiredParam(context.params, "handle");
     const agent = app.store.getAgent(handle);
-    if (agent === undefined || handle === "user") {
+    if (agent === undefined || handle === app.operatorHandle) {
       throw new HttpError(404, "MAGI not found");
     }
     const body = requireObject(context.body);
@@ -275,7 +275,7 @@ function registerRoutes(router: Router, app: AspApp): void {
     const failed: { handle: string; detail: string }[] = [];
     const targets = handles ?? [...app.store.agents.keys()];
     for (const handle of [...new Set(targets)]) {
-      if (handle === "user" || app.store.getAgent(handle) === undefined) {
+      if (handle === app.operatorHandle || app.store.getAgent(handle) === undefined) {
         continue;
       }
       try {

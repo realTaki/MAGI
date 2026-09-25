@@ -1,4 +1,5 @@
 import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, type Bus, type LLMMessage } from "../bus/index.js";
+import { REPLY_FORMAT_PROMPT } from "./prompt_defaults.js";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const COMPACT_KEEP_RECENT = 20;
 const COMPACT_CONTEXT_WINDOW = 200_000;
@@ -30,7 +31,7 @@ export class Conversation {
       const members = this.bus.conversationMembers.list(this.conversation_id)
         .map((member) => `- id ${member.id} | ${this.label(member.id)} | ${member.role}`).join("\n");
       const skillsHeader = this.bus.prompts.get("agent/skills_block")?.trim() || "## Available skills";
-      const system = [agentPrompt, identity ? `## Identity\nYour name: ${identity.nickname || identity.name}` : "",
+      const system = [agentPrompt, REPLY_FORMAT_PROMPT, identity ? `## Identity\nYour name: ${identity.nickname || identity.name}` : "",
         skills ? `${skillsHeader}\n${skills}` : "", memories ? `## Long-term memory\n${memories}` : "",
         record.instruction ? `## Conversation instruction\n${record.instruction}` : "",
         record.info ? `## Conversation info\n${record.info}` : "",

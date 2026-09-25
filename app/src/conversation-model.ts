@@ -31,4 +31,4 @@ export type ConversationSummary = {
   thread: ConversationMessage[];
 };
 
-export const OPERATOR = { name: "Operator", initials: "OP", handle: "user" };
+export const OPERATOR = { name: "Operator", initials: "OP", handle: "@user" };

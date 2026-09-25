@@ -1,5 +1,7 @@
 import { Button } from "./Button";
 import { useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   OPERATOR,
   type ConversationSummary,
@@ -232,11 +234,20 @@ function labelForHandle(handle: string, roster: ConversationView[]): { name: str
   };
 }
 
-function membersFromAgents(agents: string[], roster: ConversationView[]): ConversationMember[] {
-  return agents.map((handle) => {
+function membersFromConversation(remote: CreatedConversation, roster: ConversationView[]): ConversationMember[] {
+  const handles = remote.participants
+    ?.filter((participant) => participant.status === "invited" || participant.status === "joined")
+    .map((participant) => participant.handle) ?? [OPERATOR.handle, ...remote.agents];
+  return [...new Set(handles)].map((handle) => {
     const label = labelForHandle(handle, roster);
     return { id: handle, name: label.name, color: label.color };
   });
+}
+
+function mentionAt(value: string, cursor: number): { start: number; query: string } | null {
+  const match = /(?:^|\s)@([A-Za-z0-9_.-]*)$/.exec(value.slice(0, cursor));
+  if (!match) return null;
+  return { start: cursor - (match[1]?.length ?? 0) - 1, query: match[1] ?? "" };
 }
 
 function fromAspConversation(remote: CreatedConversation): ConversationView {
@@ -248,7 +259,7 @@ function fromAspConversation(remote: CreatedConversation): ConversationView {
   bot.magiHandle = remote.agents[0];
   bot.description = remote.description ?? "";
   bot.savedName = name;
-  bot.members = membersFromAgents(remote.agents, []);
+  bot.members = membersFromConversation(remote, []);
   bot.time = remote.created_at ? new Date(remote.created_at).toLocaleDateString() : "";
   return bot;
 }
@@ -457,7 +468,11 @@ function Thread({ messages }: { messages: ConversationMessage[] }) {
             className={`conversation-page__message conversation-page__message--${message.type}`}
           >
             <div className={`conversation-page__bubble conversation-page__bubble--${message.type}`}>
-              {message.text}
+              {message.type === "bot" ? (
+                <div className="conversation-page__markdown">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text}</ReactMarkdown>
+                </div>
+              ) : message.text}
             </div>
           </div>
         );
@@ -558,6 +573,9 @@ export function ConversationPage() {
   const [availableBots, setAvailableBots] = useState<AspBot[]>([]);
   const [loadingBots, setLoadingBots] = useState(false);
   const [addingHandle, setAddingHandle] = useState<string | null>(null);
+  const [mentionCursor, setMentionCursor] = useState(0);
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionIndex, setMentionIndex] = useState(0);
   // Which agents answer right now: offline ones are greyed out like IM contacts.
   const [agentStatus, setAgentStatus] = useState<Record<string, boolean>>({});
   const [agentRuntime, setAgentRuntime] = useState<AgentRuntime | null>(null);
@@ -569,6 +587,7 @@ export function ConversationPage() {
   const plusWrapRef = useRef<HTMLDivElement | null>(null);
   const userWrapRef = useRef<HTMLDivElement | null>(null);
   const botListRef = useRef<HTMLDivElement | null>(null);
+  const composerInputRef = useRef<HTMLInputElement | null>(null);
   const activeIdRef = useRef(activeId);
   const readThroughRef = useRef<Record<string, number>>(storedReadThrough());
   const creatingRef = useRef(false);
@@ -592,6 +611,15 @@ export function ConversationPage() {
   }, [bots, query]);
 
   const onboardingOpen = Boolean(active?.onboarding && active.answers.length < ONBOARD.length);
+  const mention = mentionAt(draft, mentionCursor);
+  const mentionCandidates = useMemo(() => {
+    if (!active || !mention) return [];
+    const needle = mention.query.toLowerCase();
+    return active.members.filter((member) =>
+      member.id.slice(1).toLowerCase().includes(needle) || member.name.toLowerCase().includes(needle),
+    );
+  }, [active, mention?.query]);
+  const mentionVisible = mentionOpen && mention !== null && mentionCandidates.length > 0;
   // Start and stop share one slot: the icon shows what the click will do.
   const agentUp = Boolean(agentRuntime?.online || agentRuntime?.running);
   const runtimeActions: Array<{ method: string; label: string; icon: RuntimeIconName }> = [
@@ -845,6 +873,26 @@ export function ConversationPage() {
     setBots((current) => current.map((bot) => (bot.id === activeId ? { ...bot, ...patch } : bot)));
   }
 
+  function updateDraft(value: string, cursor: number) {
+    setDraft(value);
+    setMentionCursor(cursor);
+    setMentionIndex(0);
+    setMentionOpen(true);
+  }
+
+  function selectMention(member: ConversationMember) {
+    if (!mention) return;
+    const next = `${draft.slice(0, mention.start)}${member.id} ${draft.slice(mentionCursor)}`;
+    const cursor = mention.start + member.id.length + 1;
+    setDraft(next);
+    setMentionCursor(cursor);
+    setMentionOpen(false);
+    requestAnimationFrame(() => {
+      composerInputRef.current?.focus();
+      composerInputRef.current?.setSelectionRange(cursor, cursor);
+    });
+  }
+
   /** Known and offline: the row greys out, like an IM contact who is away. */
   function isAgentOffline(conversation: ConversationView): boolean {
     if (conversation.kind === "group") {
@@ -922,7 +970,9 @@ export function ConversationPage() {
   function applyConversationEvents(conversationId: string, events: AspEvent[]) {
     const messageEvents = events.filter((event) => event.type === "session.message");
     const thread: ConversationMessage[] = messageEvents.map((event) => ({
-      type: event.payload.sender === OPERATOR.handle ? "user" as const : "bot" as const,
+      // Old desktop caches may still contain events written before ASP renamed the
+      // operator handle. Keep presenting those cached entries as user messages.
+      type: event.payload.sender === OPERATOR.handle || event.payload.sender === "user" ? "user" as const : "bot" as const,
       text: typeof event.payload.content === "string"
         ? event.payload.content
         : JSON.stringify(event.payload.content),
@@ -930,7 +980,7 @@ export function ConversationPage() {
     const latest = thread.at(-1);
     const lastSequence = events.reduce((highest, event) => Math.max(highest, event.sequence), -1);
     const latestAgentSequence = messageEvents.reduce(
-      (highest, event) => event.payload.sender === OPERATOR.handle
+      (highest, event) => event.payload.sender === OPERATOR.handle || event.payload.sender === "user"
         ? highest
         : Math.max(highest, event.sequence),
       -1,
@@ -1147,7 +1197,7 @@ export function ConversationPage() {
     if (!updated) {
       return;
     }
-    patchActive({ members: membersFromAgents(updated.agents, bots) });
+    patchActive({ members: membersFromConversation(updated, bots) });
     setAvailableBots((current) =>
       current.map((bot) =>
         bot.handle === handle ? { ...bot, in_conversation: true } : bot,
@@ -1507,18 +1557,65 @@ export function ConversationPage() {
                 +
               </span>
               <input
+                ref={composerInputRef}
                 type="text"
                 value={draft}
-                onChange={(event) => setDraft(event.target.value)}
+                onChange={(event) => updateDraft(
+                  event.target.value,
+                  event.currentTarget.selectionStart ?? event.target.value.length,
+                )}
+                onSelect={(event) => {
+                  const cursor = event.currentTarget.selectionStart ?? draft.length;
+                  setMentionCursor(cursor);
+                  if (mentionAt(draft, cursor)) setMentionOpen(true);
+                }}
                 onKeyDown={(event) => {
+                  if (mentionVisible && event.key === "ArrowDown") {
+                    event.preventDefault();
+                    setMentionIndex((current) => (current + 1) % mentionCandidates.length);
+                    return;
+                  }
+                  if (mentionVisible && event.key === "ArrowUp") {
+                    event.preventDefault();
+                    setMentionIndex((current) => (current - 1 + mentionCandidates.length) % mentionCandidates.length);
+                    return;
+                  }
+                  if (mentionVisible && event.key === "Escape") {
+                    event.preventDefault();
+                    setMentionOpen(false);
+                    return;
+                  }
                   if (event.key === "Enter") {
                     event.preventDefault();
+                    if (mentionVisible) {
+                      selectMention(mentionCandidates[mentionIndex] ?? mentionCandidates[0]!);
+                      return;
+                    }
                     send();
                   }
                 }}
                 placeholder={onboardingOpen ? "Type your own answer" : `Message ${active.name}`}
                 aria-label={onboardingOpen ? "Type your own answer" : `Message ${active.name}`}
               />
+              {mentionVisible ? (
+                <div className="conversation-page__mention-menu" role="listbox" aria-label="Mention a conversation member">
+                  {mentionCandidates.map((member, index) => (
+                    <button
+                      key={member.id}
+                      type="button"
+                      role="option"
+                      aria-selected={index === mentionIndex}
+                      className={index === mentionIndex ? "is-selected" : ""}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => selectMention(member)}
+                    >
+                      <Avatar color={member.color} size={22} />
+                      <span>{member.name}</span>
+                      <small>{member.id}</small>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               <button type="button" className="conversation-page__send" onClick={send} aria-label="Send">
                 ↑
               </button>
