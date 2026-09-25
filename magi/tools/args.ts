@@ -17,12 +17,6 @@ export function integerArg(args: Record<string, unknown>, key: string): number {
   return value;
 }
 
-export function nonNegativeIntegerArg(args: Record<string, unknown>, key: string): number {
-  const value = args[key];
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) throw new Error(`${key} must be a non-negative integer`);
-  return value;
-}
-
 export function boundedInteger(value: unknown, key: string, min: number, max: number): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) throw new Error(`${key} must be an integer from ${min} to ${max}`);
   return value;

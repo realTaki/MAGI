@@ -4,7 +4,7 @@
  */
 
 import type { Bus, ExecutableTool } from "../bus/index.js";
-import { integerArg, nonNegativeIntegerArg, optionalBoundedInteger, stringArg } from "./args.js";
+import { integerArg, optionalBoundedInteger, stringArg } from "./args.js";
 
 export function messageTools(bus: Bus): ExecutableTool[] {
   return [
@@ -26,7 +26,7 @@ export function messageTools(bus: Bus): ExecutableTool[] {
         contact_id: { type: "integer", minimum: 1 }, query: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 20 },
       }, required: ["contact_id", "query"] },
       async run(args) {
-        const contactId = nonNegativeIntegerArg(args, "contact_id");
+        const contactId = integerArg(args, "contact_id");
         const query = stringArg(args, "query");
         const limit = optionalBoundedInteger(args.limit, 20, "limit", 1, 20);
         return JSON.stringify({ query, contact_id: contactId, messages: bus.messages.searchContact(contactId, query, limit) });

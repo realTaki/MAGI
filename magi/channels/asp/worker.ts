@@ -57,7 +57,7 @@ export class AspWorker extends BaseWorker {
       const updated = typeof event.nickname === "string" && !!event.nickname.trim();
       if (updated) {
         this.nickname = event.nickname!.trim();
-        this.bus.contacts.update(1, { nickname: this.nickname });
+        this.bus.contacts.update(MAGI_CONTACT_ID, { nickname: this.nickname });
       }
       return { type: "agent.nickname.updated", request_id: event.request_id, ok: updated };
     }

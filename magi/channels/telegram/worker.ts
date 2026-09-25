@@ -1,47 +1,72 @@
+import { Chat, type Message, type Thread } from "chat";
+import { createTelegramAdapter } from "@chat-adapter/telegram";
+import { createMemoryState } from "@chat-adapter/state-memory";
 import { BaseWorker, type Bus } from "../../bus/index.js";
 
-type Update = { update_id: number; message?: { text?: string; chat?: { id?: number } } };
-
 /** What a Telegram bot needs; a MAGI may not have one until someone sets it. */
-type Credentials = { token: string; apiBase: string };
+type Credentials = { token: string; apiBase?: string };
 
+/**
+ * The Telegram channel, on the Chat SDK's Telegram adapter.
+ *
+ * The SDK owns the protocol — long polling (this runs on someone's machine, so there is
+ * no webhook to receive), offsets, retries, and markdown rendering. This worker only
+ * translates: an incoming message becomes a `ChatNotify`, a `DeliveryNotify` becomes a
+ * post in that chat.
+ */
 export class TelegramWorker extends BaseWorker {
   readonly worker_name = "tg";
-  private offset: number;
-  private listening = false;
-  private listenTask: Promise<void> | null = null;
-  private abort = new AbortController();
-  private apiBase = "";
+  private bot: Chat | null = null;
   private lastError: string | null = null;
 
   /** `override` is for running a MAGI by hand; normally the settings have the token. */
   constructor(bus: Bus, private readonly override?: { token: string; apiBase?: string }) {
     super(bus);
-    this.offset = Number(bus.settings.get("telegram.offset") ?? 0) || 0;
   }
 
-  /** No token, nothing to do — the manager asks this before starting the worker. */
+  /** No token, nothing to do — the supervisor asks this before starting the worker. */
   configured(): boolean { return this.credentials() !== null; }
 
-  /** The listener is what can go wrong quietly, so the manager asks it regularly. */
+  /** The adapter can fail quietly, so the supervisor asks this between polls. */
   health(): string | null { return this.lastError; }
 
-  start(): void {
+  async start(): Promise<void> {
     const credentials = this.credentials();
-    if (credentials === null || this.listening) return;
-    this.apiBase = credentials.apiBase;
-    this.listening = true;
-    this.abort = new AbortController();
-    this.listenTask = this.listen();
+    if (credentials === null || this.bot) return;
+    const bot = new Chat({
+      userName: this.bus.handle,
+      adapters: {
+        telegram: createTelegramAdapter({
+          botToken: credentials.token,
+          apiUrl: credentials.apiBase,
+          mode: "polling",
+          // Telegram deletes any webhook before polling, so a MAGI never needs a public URL.
+          longPolling: { deleteWebhook: true },
+        }),
+      },
+      state: createMemoryState(),
+      // The BUS serialises turns per conversation; the adapter must not drop messages.
+      concurrency: "concurrent",
+      // The SDK's own console logging is off: trouble goes to `health()` for the
+      // supervisor to report, not to a log nobody reads.
+      logger: {
+        debug: () => {}, info: () => {},
+        warn: (message: string) => { this.lastError = message; },
+        error: (message: string) => { this.lastError = message; },
+      },
+    });
+    this.bot = bot;
+    // Every DM is the operator: where the workspace can reach them with notices.
+    bot.onDirectMessage((thread, message) => this.ingest(thread, message, true));
+    bot.onNewMention(async (thread, message) => { await thread.subscribe(); this.ingest(thread, message, false); });
+    bot.onSubscribedMessage((thread, message) => this.ingest(thread, message, false));
+    await bot.initialize();
   }
 
   async stop(): Promise<void> {
-    this.listening = false;
-    // Long polling means the listener sits inside a request for seconds at a time;
-    // aborting it is what makes stopping (or a new token) take effect at once.
-    this.abort.abort();
-    await this.listenTask;
-    this.listenTask = null;
+    const bot = this.bot;
+    this.bot = null;
+    await bot?.shutdown();
   }
 
   async poll(): Promise<boolean> {
@@ -49,9 +74,10 @@ export class TelegramWorker extends BaseWorker {
     const job = board.claim(this.worker_name, (input) => input.channel === "tg");
     if (!job) return false;
     try {
-      const address = Number(job.input.address);
-      if (!Number.isInteger(address) || !address) throw new Error("delivery has no Telegram chat");
-      await this.post("sendMessage", { chat_id: address, text: job.input.text });
+      const bot = this.bot;
+      if (!bot) throw new Error("Telegram is not running");
+      if (!job.input.address) throw new Error("delivery has no Telegram chat");
+      await bot.channel(`telegram:${job.input.address}`).post(job.input.text);
       board.submit(this.worker_name, job.id, { output: {} });
     } catch (error) {
       board.submit(this.worker_name, job.id, { error: error instanceof Error ? error.message : String(error) });
@@ -59,45 +85,25 @@ export class TelegramWorker extends BaseWorker {
     return true;
   }
 
+  private ingest(thread: Thread, message: Message, direct: boolean): void {
+    const text = message.text?.trim();
+    if (!text) return;
+    this.lastError = null;
+    const chat = chatId(thread.channelId);
+    if (direct) this.bus.setHomeConversation(this.bus.conversations.forChannel("tg", chat).id);
+    this.bus.publishChat({ text, channel: "tg", delivery_address: chat }, this.worker_name);
+  }
+
   /** Read at every start, so a token that arrives later is picked up by a restart. */
   private credentials(): Credentials | null {
     const token = this.override?.token ?? this.bus.settings.get("telegram.bot_token")?.trim();
     if (!token) return null;
     const apiBase = this.override?.apiBase ?? this.bus.settings.get("telegram.api_base")?.trim();
-    return { token, apiBase: apiBase || `https://api.telegram.org/bot${token}` };
+    return { token, apiBase: apiBase || undefined };
   }
+}
 
-  private async listen(): Promise<void> {
-    while (this.listening) {
-      try {
-        const body = await this.post("getUpdates", { offset: this.offset, timeout: 10 });
-        this.lastError = null;
-        const updates = Array.isArray(body.result) ? body.result as Update[] : [];
-        for (const update of updates) {
-          this.offset = Math.max(this.offset, update.update_id + 1);
-          this.bus.settings.set("telegram.offset", String(this.offset));
-          const chatId = update.message?.chat?.id;
-          const text = update.message?.text?.trim();
-          if (chatId !== undefined && text) this.bus.publishChat({ text, channel: "tg", delivery_address: String(chatId) }, this.worker_name);
-        }
-      } catch (error) {
-        if (this.listening) {
-          this.lastError = error instanceof Error ? error.message : String(error);
-          console.error("Telegram listener:", error);
-          await Bun.sleep(1_000);
-        }
-      }
-    }
-  }
-
-  private async post(method: string, payload: Record<string, unknown>): Promise<{ ok?: boolean; result?: unknown }> {
-    const response = await fetch(`${this.apiBase}/${method}`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
-      signal: AbortSignal.any([AbortSignal.timeout(15_000), this.abort.signal]),
-    });
-    if (!response.ok) throw new Error(`Telegram HTTP ${response.status}`);
-    const body = await response.json() as { ok?: boolean; result?: unknown };
-    if (!body.ok) throw new Error(`Telegram ${method} failed`);
-    return body;
-  }
+/** ``telegram:42`` is the SDK's channel id; a conversation is addressed by the chat itself. */
+function chatId(channelId: string): string {
+  return channelId.replace(/^telegram:(?:biz:[^:]*:)?/, "");
 }
