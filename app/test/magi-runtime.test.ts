@@ -113,7 +113,10 @@ test("every MAGI gets its own branch checked out inside its workspace", async (t
   // Dependencies belong to that checkout, and the process runs from it.
   assert.deepEqual(recorded.bun, [{ args: ["install", "--frozen-lockfile"], cwd: path.join(source, "magi") }]);
   assert.equal(recorded.spawns.length, 1);
-  assert.deepEqual(recorded.spawns[0].args, ["run", "start", "--", agent.handle, "http://127.0.0.1:42069", "tok"]);
+  assert.deepEqual(recorded.spawns[0].args, [
+    "run", "start", "--", agent.handle, "http://127.0.0.1:42069", "tok",
+    "--workspace", path.join(home, ".magi", "eva-000"),
+  ]);
   assert.equal(recorded.spawns[0].options.cwd, path.join(source, "magi"));
 
   // Starting a MAGI that already runs changes nothing, and nothing restarts it

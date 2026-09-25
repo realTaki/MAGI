@@ -268,10 +268,23 @@ function message(error: unknown): string {
 
 async function main(): Promise<void> {
   const handle = process.argv[2];
-  if (!handle) throw new Error("usage: bun run start -- @handle.magi [asp-base asp-token]");
-  const [base, token] = process.argv.slice(3);
+  if (!handle) throw new Error("usage: bun run start -- @handle.magi [asp-base asp-token] [--workspace path]");
+  const positional: string[] = [];
+  let workspace: string | undefined;
+  for (let index = 3; index < process.argv.length; index += 1) {
+    const argument = process.argv[index];
+    if (argument !== "--workspace") {
+      positional.push(argument);
+      continue;
+    }
+    workspace = process.argv[index + 1];
+    if (!workspace) throw new Error("--workspace needs a path");
+    index += 1;
+  }
+  if (positional.length > 2) throw new Error("usage: bun run start -- @handle.magi [asp-base asp-token] [--workspace path]");
+  const [base, token] = positional;
   if ((base && !token) || (!base && token)) throw new Error("ASP base and token must be supplied together");
-  const magi = new Magi(handle, { asp: base && token ? { base, token } : undefined });
+  const magi = new Magi(handle, { workspace, asp: base && token ? { base, token } : undefined });
   await magi.start();
   // With ASP the process is a service: it stays up until it is asked to stop.
   // Without one it is a prompt, which is how a MAGI is tried out by hand.

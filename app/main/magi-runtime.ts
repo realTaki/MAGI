@@ -42,8 +42,8 @@ export function agentBranch(handle) {
   return `${AGENT_BRANCH_PREFIX}${agentName(handle)}`;
 }
 
-export function magiCli(bun, handle, base, token) {
-  return [bun, "run", "start", "--", handle, base, token];
+export function magiCli(bun, handle, base, token, workspace) {
+  return [bun, "run", "start", "--", handle, base, token, "--workspace", workspace];
 }
 
 function describe(error) {
@@ -163,7 +163,9 @@ export function createMagiRuntime({
   }
 
   function launch(handle, token, root) {
-    const command = magiCli(bunBinary(), handle, base, token);
+    // The desktop runtime already owns the profile location. Pass it to MAGI
+    // directly instead of relying on the child's interpretation of HOME.
+    const command = magiCli(bunBinary(), handle, base, token, agentWorkspace(home, handle));
     const child = spawnProcess(command[0], command.slice(1), {
       cwd: path.join(root, "magi"),
       env: tools.env,
