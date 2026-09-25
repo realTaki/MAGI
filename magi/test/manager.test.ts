@@ -71,9 +71,13 @@ test("a channel whose credentials arrive later comes up without a restart", asyn
   }
 });
 
-test("a channel that fails reaches the conversation the operator used", async () => {
+test("a channel that fails while it runs reaches the conversation the operator used", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-manager-health-"));
-  const telegram = telegramServer(() => ({ ok: false, description: "Unauthorized" }));
+  // Starting is fine — the token is accepted — and then polling breaks, which is the
+  // failure the worker cannot see for itself: the Chat SDK adapter reports it.
+  const telegram = telegramServer((method) => method === "getUpdates"
+    ? { ok: false, description: "Unauthorized" }
+    : { ok: true, result: {} });
   const delivered: string[] = [];
   const magi = new Magi("@health.magi", {
     workspace,
@@ -92,7 +96,39 @@ test("a channel that fails reaches the conversation the operator used", async ()
     for (let i = 0; i < 500 && delivered.length === 0; i++) await Bun.sleep(10);
     expect(delivered).toHaveLength(1);
     expect(delivered[0]).toContain('"tg"');
-    expect(delivered[0]).toContain("getUpdates failed");
+    expect(delivered[0]).toContain("Telegram polling request failed");
+    expect(magi.bus.messages.list(conversation.id).at(-1)?.content).toBe(delivered[0]);
+  } finally {
+    await magi.stop();
+    telegram.server.stop(true);
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("a channel that cannot log in is reported instead of starting", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "magi-manager-login-"));
+  // Every call fails, so the adapter cannot even resolve who the bot is.
+  const telegram = telegramServer(() => ({ ok: false, description: "Unauthorized" }));
+  const delivered: string[] = [];
+  const magi = new Magi("@login.magi", {
+    workspace,
+    deliver: (text) => delivered.push(text),
+    client: idleClient(),
+  });
+  try {
+    await magi.start();
+    const conversation = magi.bus.conversations.forChannel("cli", "terminal");
+    magi.bus.setHomeConversation(conversation.id);
+    magi.bus.settings.set("telegram.bot_token", "bad-token");
+    magi.bus.settings.set("telegram.api_base", telegram.base);
+
+    const started = await manage(magi, "tg", "start");
+    expect(started.status).toBe("completed");
+    expect(started.output?.running).not.toContain("tg");
+    // The notice travels as a delivery job, so it lands a moment later.
+    for (let i = 0; i < 200 && delivered.length === 0; i++) await Bun.sleep(10);
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]).toContain('worker "tg" could not start');
     expect(magi.bus.messages.list(conversation.id).at(-1)?.content).toBe(delivered[0]);
   } finally {
     await magi.stop();

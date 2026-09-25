@@ -2,8 +2,12 @@ import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, type Bus, type LLMMessage } from ".
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const COMPACT_KEEP_RECENT = 20;
 const COMPACT_CONTEXT_WINDOW = 200_000;
+/** Told to the model, not enforced: a long task should stop and ask, not be cut off. */
+const SUGGESTED_STEPS = 20;
 
 export class Conversation {
+  private readonly labels = new Map<number, string>();
+
   constructor(
     private readonly bus: Bus,
     readonly conversation_id: number,
@@ -28,21 +32,22 @@ export class Conversation {
         .filter(Boolean).join("\n\n");
       const history = this.bus.messages.list(this.conversation_id, COMPACT_KEEP_RECENT).map((message): LLMMessage => ({
         role: message.contact_id === MAGI_CONTACT_ID ? "assistant" : "user",
-        content: `[contact id ${message.contact_id} | ${message.created_at}]\n${message.content}`,
+        content: `[contact id ${message.contact_id} | ${this.label(message.contact_id)} | ${message.created_at}]\n${message.content}`,
       }));
-      const messages: LLMMessage[] = [{ role: "system", content: `${system}\n\n## Session\nconversation_id: ${this.conversation_id}\nchannel: ${record.channel}\ndelivery_address: ${record.delivery_address}\ntopic: ${record.topic}\nMAGI_CONTACT_ID: ${MAGI_CONTACT_ID}\nSYSTEM_CONTACT_ID: ${SYSTEM_CONTACT_ID}` }, ...history];
-      for (let step = 0; step < 20; step++) {
+      const session = `## Session\nconversation_id: ${this.conversation_id}\nchannel: ${record.channel}\ndelivery_address: ${record.delivery_address}\ntopic: ${record.topic}\nMAGI_CONTACT_ID: ${MAGI_CONTACT_ID}\nSYSTEM_CONTACT_ID: ${SYSTEM_CONTACT_ID}`;
+      const messages: LLMMessage[] = [{ role: "system", content: `${system}\n\n${session}` }, ...history];
+      // No step limit is enforced: the model is told which step it is on and that it
+      // should stop and ask the user before going much past the suggested number.
+      for (let step = 1; ; step++) {
+        messages[0] = { role: "system", content: `${system}\n\n${session}\n\n## Turn\nstep: ${step}\nsuggested maximum: ${SUGGESTED_STEPS}\nStop and ask the user whether to continue once you reach the suggested maximum without finishing.` };
         const llmId = this.bus.board("CallLLMJob").publish({ messages, tools: this.bus.tools.catalog() }, "agent");
         const llm = await this.waitFor("CallLLMJob", llmId, 300_000);
         if (llm.status === "failed" || !llm.output?.message) throw new Error(llm.error ?? "LLM failed");
         const response = llm.output.message;
         if (!response.tool_calls?.length) {
-          const deliveryId = this.bus.publishDelivery({ conversation_id: this.conversation_id, text: response.content || "处理完毕。" });
-          const delivery = await this.waitFor("DeliveryNotify", deliveryId, 30_000);
-          if (delivery.status === "failed") {
-            chat.submit("agent", jobId, { error: delivery.error ?? "delivery failed" });
-            return;
-          }
+          // A Notify is published and not awaited: a channel that cannot deliver reports
+          // its own trouble, and there is nothing the agent could do about it here.
+          this.bus.publishDelivery({ conversation_id: this.conversation_id, text: response.content || "处理完毕。" });
           chat.submit("agent", jobId, { output: {} });
           return;
         }
@@ -65,11 +70,11 @@ export class Conversation {
           });
         }
       }
-      throw new Error("agent exceeded 20 model steps");
     } catch (error) {
+      // What went wrong is said in the conversation itself: the Job result is for
+      // whoever published the turn, not for whoever is waiting for an answer.
       const message = error instanceof Error ? error.message : String(error);
-      const deliveryId = this.bus.publishDelivery({ conversation_id: this.conversation_id, text: message });
-      try { await this.waitFor("DeliveryNotify", deliveryId, 30_000); } catch { /* keep original failure */ }
+      this.bus.publishDelivery({ conversation_id: this.conversation_id, text: message });
       chat.submit("agent", jobId, { error: message });
     }
   }
@@ -82,7 +87,7 @@ export class Conversation {
     if (estimatedTokens <= Math.floor(contextWindow / 2)) return previousSummary;
     const old = active.slice(0, -COMPACT_KEEP_RECENT);
     if (!old.length) return previousSummary;
-    const content = old.map((message) => `[contact ${message.contact_id} | ${message.created_at}]\n${message.content}`).join("\n\n");
+    const content = old.map((message) => `[contact id ${message.contact_id} | ${this.label(message.contact_id)} | ${message.created_at}]\n${message.content}`).join("\n\n");
     const id = this.bus.board("CallLLMJob").publish({
       messages: [
         { role: "system", content: this.bus.prompts.get("agent/compaction") ?? "Summarize the conversation." },
@@ -98,7 +103,18 @@ export class Conversation {
     return summary;
   }
 
-  private async waitFor<K extends "CallLLMJob" | "RunToolJob" | "DeliveryNotify">(type: K, id: number, timeoutMs: number) {
+  /** Who said it, in the transcript the model reads: id, then name and nickname. */
+  private label(contactId: number): string {
+    let label = this.labels.get(contactId);
+    if (label === undefined) {
+      const contact = this.bus.contacts.get(contactId);
+      label = [contact?.name, contact?.nickname].filter(Boolean).join(" / ") || `contact ${contactId}`;
+      this.labels.set(contactId, label);
+    }
+    return label;
+  }
+
+  private async waitFor<K extends "CallLLMJob" | "RunToolJob">(type: K, id: number, timeoutMs: number) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       const result = this.bus.board(type).result(id);

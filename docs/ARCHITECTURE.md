@@ -81,6 +81,12 @@ call each other. They publish Jobs and claim Jobs.
 | Tasks | due tasks | `RunTaskNotify` |
 | MCP | `ChangeMcpServerNotify` | tools from configured servers |
 
+Channels stop at translating. The Telegram one is the Chat SDK's Telegram
+adapter in polling mode (`magi/channels/telegram/worker.ts`): the SDK owns long
+polling, offsets, retries, and rendering, the worker only publishes a
+`ChatNotify` or posts a `DeliveryNotify`, and adapter trouble is reported
+through `health()` so the supervisor can tell the operator.
+
 Books in `magi/bus/books/` hold conversations, messages, memory,
 skills, tasks, contacts, contact notes, prompts, MCP servers, and the tool
 catalog. SQLite files are `memories/magi.db` and `logs/magi.db` inside the

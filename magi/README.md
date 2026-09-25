@@ -35,7 +35,10 @@ MiniMax, DeepSeek, and a custom OpenAI-compatible HTTPS endpoint (HTTP is
 allowed for localhost) — for a custom endpoint, choose `custom` and supply base
 URL, model ID and API key there. The Python LiteLLM dependency is not used.
 `/exit` stops terminal chat; Ctrl-C stops ASP mode. Telegram runs when the
-workspace has a `telegram.bot_token` setting.
+workspace has a `telegram.bot_token` setting; the channel is the Chat SDK's
+Telegram adapter (`chat`, `@chat-adapter/telegram`) in long-polling mode, so
+the protocol is not ours — the worker only turns an update into a `ChatNotify`
+and a delivery into a post.
 Edit `<workspace>/prompts/agent/AGENT.md`, `compaction.md`, or
 `skills_block.md` to override the managed agent prompts.
 

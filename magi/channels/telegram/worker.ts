@@ -1,4 +1,4 @@
-import { Chat, type Message, type Thread } from "chat";
+import { Chat, type Logger, type Message, type Thread } from "chat";
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { createMemoryState } from "@chat-adapter/state-memory";
 import { BaseWorker, type Bus } from "../../bus/index.js";
@@ -33,6 +33,9 @@ export class TelegramWorker extends BaseWorker {
   async start(): Promise<void> {
     const credentials = this.credentials();
     if (credentials === null || this.bot) return;
+    // Trouble goes to `health()` for the supervisor to report, not to a console nobody
+    // reads: the Chat container and the adapter each keep their own logger, so both get it.
+    const logger = this.logger();
     const bot = new Chat({
       userName: this.bus.handle,
       adapters: {
@@ -42,18 +45,13 @@ export class TelegramWorker extends BaseWorker {
           mode: "polling",
           // Telegram deletes any webhook before polling, so a MAGI never needs a public URL.
           longPolling: { deleteWebhook: true },
+          logger,
         }),
       },
       state: createMemoryState(),
       // The BUS serialises turns per conversation; the adapter must not drop messages.
       concurrency: "concurrent",
-      // The SDK's own console logging is off: trouble goes to `health()` for the
-      // supervisor to report, not to a log nobody reads.
-      logger: {
-        debug: () => {}, info: () => {},
-        warn: (message: string) => { this.lastError = message; },
-        error: (message: string) => { this.lastError = message; },
-      },
+      logger,
     });
     this.bot = bot;
     // Every DM is the operator: where the workspace can reach them with notices.
@@ -92,6 +90,15 @@ export class TelegramWorker extends BaseWorker {
     const chat = chatId(thread.channelId);
     if (direct) this.bus.setHomeConversation(this.bus.conversations.forChannel("tg", chat).id);
     this.bus.publishChat({ text, channel: "tg", delivery_address: chat }, this.worker_name);
+  }
+
+  /**
+   * The SDK's logger shape, with every warning remembered for `health()`. It asks for
+   * `child()` too, so sub-loggers get the same treatment instead of a console line.
+   */
+  private logger(): Logger {
+    const remember = (message: string) => { this.lastError = message; };
+    return { child: () => this.logger(), debug: () => {}, info: () => {}, warn: remember, error: remember };
   }
 
   /** Read at every start, so a token that arrives later is picked up by a restart. */
