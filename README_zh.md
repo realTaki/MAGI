@@ -106,7 +106,7 @@ MAGI，本地后端会先把前三个建出来：**MELCHIOR**、**BALTHASAR**、
 （ASP 分配 `eva-000/001/002`）。以后启动会保留这份 Git 工作树，不自动覆盖本地修改
 或拉取远端更新。
 
-**一个 MAGI：** 在仓库根运行 `npm start --workspace @magi/runtime -- <handle> <base> <token>`。
+**一个 MAGI：** 在仓库根运行 `npm start --workspace eva -- <handle> <base> <token>`。
 
 
 ## 第一次打开

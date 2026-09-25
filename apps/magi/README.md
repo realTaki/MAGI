@@ -1,4 +1,4 @@
-# @magi/runtime
+# eva
 
 TypeScript MAGI uses `magi.ts` as its composition root. Every Worker depends
 on BUS for shared state, Job exchange, and the tool catalog — and on nothing
@@ -17,9 +17,9 @@ common is `@magi/bus`.
 npm install          # at the repository root: the checkout is one workspace
 npm run build
 npm test
-npm start --workspace @magi/runtime -- @alice.magi
+npm start --workspace eva -- @alice.magi
 # or attach to asp:
-npm start --workspace @magi/runtime -- @alice.magi http://127.0.0.1:42069 TOKEN
+npm start --workspace eva -- @alice.magi http://127.0.0.1:42069 TOKEN
 ```
 
 Without ASP arguments, the command opens a terminal chat. With ASP arguments,
@@ -75,4 +75,4 @@ configured stdio/SSE/Streamable-HTTP MCP tools. Provider routing supports the
 OpenAI-compatible providers in the desktop picker plus Anthropic's native
 Messages API.
 
-The desktop packages Node 24 and npm; the app starts one runtime per agent from that agent's own checkout (`npm start --workspace @magi/runtime`).
+The desktop packages Node 24 and npm; the app starts one runtime per agent from that agent's own checkout (`npm start --workspace eva`).

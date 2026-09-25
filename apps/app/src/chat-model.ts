@@ -32,4 +32,11 @@ export type ChatSummary = {
   thread: ChatMessage[];
 };
 
-export const OPERATOR = { name: "Operator", initials: "OP", handle: "@user" };
+export const OPERATOR = { name: "Operator", initials: "OP", handle: "@user.magi" };
+
+/** The operator's own identity, plus the two spellings earlier releases used. */
+const OPERATOR_SENDERS = [OPERATOR.handle, "@user", "user"];
+
+export function isOperatorSender(sender: unknown): boolean {
+  return typeof sender === "string" && OPERATOR_SENDERS.includes(sender);
+}

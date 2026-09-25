@@ -1,5 +1,5 @@
 /**
- * One-shot repair for databases from before the operator handle became `@user`.
+ * One-shot repair for databases from before the operator handle became `@user.magi`.
  *
  * This is not a migration framework — the schema belongs to `db/tables/` and the
  * migrations to `drizzle/`. It exists because a database that predates the rename still names
@@ -19,8 +19,9 @@ import { aspMessageKeys } from "./tables/messageKeys.ts";
 import { aspMessageRecipients } from "./tables/messageRecipients.ts";
 import { aspParticipants } from "./tables/participants.ts";
 
-const LEGACY_HANDLE = "user";
-const OPERATOR_HANDLE = "@user";
+/** What the operator was called before this one: `user`, then `@user`. */
+const LEGACY_HANDLES = ["user", "@user"];
+const OPERATOR_HANDLE = "@user.magi";
 
 /** Payload keys that carried the sender's handle. */
 const HANDLE_KEYS = ["sender", "by", "agent", "invitee", "ended_by", "reopened_by"];
@@ -30,37 +31,41 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function repairLegacyOperatorHandle(db: AspDb): void {
+  for (const legacy of LEGACY_HANDLES) repairOperatorHandle(db, legacy);
+}
+
+function repairOperatorHandle(db: AspDb, legacy: string): void {
   const stale = db.select({ handle: aspAgents.handle }).from(aspAgents)
-    .where(eq(aspAgents.handle, LEGACY_HANDLE)).get();
+    .where(eq(aspAgents.handle, legacy)).get();
   if (stale === undefined) {
     return;
   }
   db.transaction((tx) => {
     const record = tx.select({ record: aspAgents.record_json }).from(aspAgents)
-      .where(eq(aspAgents.handle, LEGACY_HANDLE)).get()?.record;
+      .where(eq(aspAgents.handle, legacy)).get()?.record;
     tx.update(aspAgents)
       .set({
         handle: OPERATOR_HANDLE,
         record_json: isRecord(record) ? { ...record, handle: OPERATOR_HANDLE } : record,
       })
-      .where(eq(aspAgents.handle, LEGACY_HANDLE))
+      .where(eq(aspAgents.handle, legacy))
       .run();
     tx.update(aspParticipants).set({ handle: OPERATOR_HANDLE })
-      .where(eq(aspParticipants.handle, LEGACY_HANDLE)).run();
+      .where(eq(aspParticipants.handle, legacy)).run();
     tx.update(aspMessageRecipients).set({ handle: OPERATOR_HANDLE })
-      .where(eq(aspMessageRecipients.handle, LEGACY_HANDLE)).run();
+      .where(eq(aspMessageRecipients.handle, legacy)).run();
     tx.update(aspEventAcks).set({ handle: OPERATOR_HANDLE })
-      .where(eq(aspEventAcks.handle, LEGACY_HANDLE)).run();
+      .where(eq(aspEventAcks.handle, legacy)).run();
     tx.update(aspMessageKeys).set({ sender: OPERATOR_HANDLE })
-      .where(eq(aspMessageKeys.sender, LEGACY_HANDLE)).run();
+      .where(eq(aspMessageKeys.sender, legacy)).run();
     tx.update(aspChatKeys).set({ creator: OPERATOR_HANDLE })
-      .where(eq(aspChatKeys.creator, LEGACY_HANDLE)).run();
+      .where(eq(aspChatKeys.creator, legacy)).run();
     // Payloads mention who spoke, and the rename happened while events were stored.
     for (const event of tx.select({ id: aspEvents.event_id, payload: aspEvents.payload_json }).from(aspEvents).all()) {
       const payload = { ...event.payload };
       let changed = false;
       for (const key of HANDLE_KEYS) {
-        if (payload[key] === LEGACY_HANDLE) {
+        if (payload[key] === legacy) {
           payload[key] = OPERATOR_HANDLE;
           changed = true;
         }

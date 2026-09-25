@@ -40,7 +40,7 @@ test("reserved system and MAGI contacts are seeded", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-contact-seed-"));
   const magi = new Magi("@seed.magi", { workspace, client: { async complete() { return { role: "assistant", content: "unused" }; } } });
   try {
-    expect(magi.bus.contacts.get(1)).toMatchObject({ name: "system", role: "system", asp_handle: "@user" });
+    expect(magi.bus.contacts.get(1)).toMatchObject({ name: "system", role: "system", asp_handle: "@user.magi" });
     expect(magi.bus.contacts.get(2)).toMatchObject({ name: "@seed.magi", role: "magi", asp_handle: "@seed.magi" });
   } finally {
     await magi.stop();

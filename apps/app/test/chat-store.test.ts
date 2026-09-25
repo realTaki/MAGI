@@ -20,7 +20,7 @@ test("desktop chat history and pending receipts survive a restart", {
   const chat = { chat_id: "sess_1", kind: "group", agents: [] };
   const event = {
     event_id: "evt_1", sequence: 3, type: "chat.message",
-    payload: { sender: "@user", content: "hello" },
+    payload: { sender: "@user.magi", content: "hello" },
   };
   const first = await openChatStore(file);
   first.saveChats([chat]);

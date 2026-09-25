@@ -147,7 +147,7 @@ export class AspWorker extends BaseWorker {
   private remember(chatId: string, sender: unknown): Contact | null {
     const handle = typeof sender === "string" ? sender.trim() : "";
     if (!handle) return null;
-    const contact = handle === "@user" ? this.bus.contacts.get(SYSTEM_CONTACT_ID) : this.bus.contacts.forAspHandle(handle);
+    const contact = handle === "@user.magi" ? this.bus.contacts.get(SYSTEM_CONTACT_ID) : this.bus.contacts.forAspHandle(handle);
     if (!contact) return null;
     this.bus.chatMembers.add(this.bus.chats.forChannel("asp", chatId).id, contact.id);
     return contact;

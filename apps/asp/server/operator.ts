@@ -4,8 +4,9 @@ import { randomBytes } from "node:crypto";
 
 import type { LocalDatabase } from "../db/database.ts";
 
-export const OPERATOR_HANDLE = "@user";
-const LEGACY_OPERATOR_HANDLE = "user";
+export const OPERATOR_HANDLE = "@user.magi";
+/** What this identity was called before: `user`, then `@user`. */
+const LEGACY_OPERATOR_HANDLES = ["user", "@user"];
 const OPERATOR_SETTING_KEY = "operator";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -18,9 +19,9 @@ export function loadOrCreateOperator(database: LocalDatabase): [string, string] 
     if (!isRecord(stored) || typeof stored.token !== "string") {
       throw new Error("operator setting is missing a token");
     }
-    // A database from before the rename says `user`; the caller gets the current
-    // handle, and the stored copy is brought along.
-    const handle = stored.handle === LEGACY_OPERATOR_HANDLE || typeof stored.handle !== "string" || stored.handle === ""
+    // A database from before the rename says `user` or `@user`; the caller gets the
+    // current handle, and the stored copy is brought along.
+    const handle = typeof stored.handle !== "string" || stored.handle === "" || LEGACY_OPERATOR_HANDLES.includes(stored.handle)
       ? OPERATOR_HANDLE
       : stored.handle;
     if (handle !== stored.handle) {

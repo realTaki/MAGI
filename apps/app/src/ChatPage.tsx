@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   OPERATOR,
+  isOperatorSender,
   type ChatSummary,
   type ChatMessage,
   type Routine,
@@ -997,7 +998,7 @@ export function ChatPage() {
     const thread: ChatMessage[] = messageEvents.map((event) => ({
       // Old desktop caches may still contain events written before ASP renamed the
       // operator handle. Keep presenting those cached entries as user messages.
-      type: event.payload.sender === OPERATOR.handle || event.payload.sender === "user" ? "user" as const : "bot" as const,
+      type: isOperatorSender(event.payload.sender) ? "user" as const : "bot" as const,
       text: typeof event.payload.content === "string"
         ? event.payload.content
         : JSON.stringify(event.payload.content),
@@ -1005,7 +1006,7 @@ export function ChatPage() {
     const latest = thread.at(-1);
     const lastSequence = events.reduce((highest, event) => Math.max(highest, event.sequence), -1);
     const latestAgentSequence = messageEvents.reduce(
-      (highest, event) => event.payload.sender === OPERATOR.handle || event.payload.sender === "user"
+      (highest, event) => isOperatorSender(event.payload.sender)
         ? highest
         : Math.max(highest, event.sequence),
       -1,
