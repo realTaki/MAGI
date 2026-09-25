@@ -3,8 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Magi } from "../eva.js";
-import { builtinTools } from "@magi/tools/registry.js";
-import { ShellManager } from "@magi/tools/shellManager.js";
+import { builtinTools } from "@magi/built-in-tools/worker.js";
+import { ShellManager } from "@magi/built-in-tools/shellManager.js";
 
 test("background bash exposes incremental output and can be killed", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-shell-"));

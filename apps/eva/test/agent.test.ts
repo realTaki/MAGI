@@ -167,6 +167,27 @@ describe("local MAGI agent", () => {
     memories.close(); logs.close();
   });
 
+  test("the model's own past replies go back without a transcript prefix", async () => {
+    const path = await workspace();
+    const requests: CallLLMJob[] = [];
+    const magi = new Magi("@alice.magi", {
+      workspace: path,
+      deliver: () => {},
+      client: { async complete(job) { requests.push(job); return { role: "assistant", content: "noted" }; } },
+    });
+    await magi.start();
+    await magi.chat("first");
+    await magi.chat("second");
+    const history = requests[1].messages;
+    // A reply comes back as it was written. Only what someone else said carries the
+    // `[contact id …]` prefix, so the model never learns to write one itself.
+    expect(history.find((message) => message.role === "assistant")).toMatchObject({ content: "noted" });
+    const asked = history.find((message) => message.role === "user");
+    expect(asked?.content).toStartWith(`[contact id ${SYSTEM_CONTACT_ID} | `);
+    expect(asked?.content).toContain("\nfirst");
+    await magi.stop();
+  });
+
   test("provider errors settle both jobs and produce a reply", async () => {
     const path = await workspace();
     const delivered: string[] = [];
@@ -303,6 +324,23 @@ describe("local MAGI agent", () => {
     await magi.stop();
   });
 
+  test("prompt blocks keep the order of the workers that registered them", async () => {
+    const path = await workspace();
+    const magi = new Magi("@alice.magi", {
+      workspace: path,
+      client: { async complete() { return { role: "assistant", content: "ok" }; } },
+    });
+    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    magi.bus.chatMembers.add(chat.id, SYSTEM_CONTACT_ID);
+    magi.bus.memoryBook.save({ topic: "goal", detail: "ship it", kind: "long_term" });
+    await magi.start();
+    // Identity leads: the order comes from `eva.ts`'s worker order, which is the one
+    // place that knows every module. The agent has no opinion about it.
+    expect(magi.bus.prompts.sections(chat.id).map((section) => section.title))
+      .toEqual(["Identity", "Members", "Available skills", "Long-term memory"]);
+    await magi.stop();
+  });
+
   test("a stopped worker's block leaves the system context", async () => {
     const path = await workspace();
     const requests: CallLLMJob[] = [];
@@ -310,18 +348,24 @@ describe("local MAGI agent", () => {
       workspace: path,
       client: { async complete(job) { requests.push(job); return { role: "assistant", content: "ok" }; } },
     });
+    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    magi.bus.chatMembers.add(chat.id, SYSTEM_CONTACT_ID);
+    magi.bus.memoryBook.save({ topic: "goal", detail: "ship it", kind: "long_term" });
     await magi.start();
     await magi.chat("what can you do?");
-    expect(requests[0].messages[0].content).toContain("## Available skills");
+    const titles = ["Available skills", "Identity", "Members", "Long-term memory"];
+    for (const title of titles) expect(requests[0].messages[0].content).toContain(`## ${title}`);
 
-    const board = magi.bus.board("ManageWorkerNotify");
-    const id = board.publish({ worker: "skills", action: "stop" }, "test");
-    for (let attempt = 0; attempt < 500 && !board.result(id); attempt++) await sleep(10);
-    expect(magi.bus.skills.list()).toEqual([]);
-    expect(magi.bus.prompts.sections(magi.bus.chats.forChannel("cli", "terminal").id)).toEqual([]);
+    // Every block belongs to the worker that answers for it: stop one, it is gone.
+    for (const worker of ["skills", "contacts", "memory"]) {
+      const board = magi.bus.board("ManageWorkerNotify");
+      const id = board.publish({ worker, action: "stop" }, "test");
+      for (let attempt = 0; attempt < 500 && !board.result(id); attempt++) await sleep(10);
+    }
+    expect(magi.bus.prompts.sections(chat.id)).toEqual([]);
 
     await magi.chat("again");
-    expect(requests[1].messages[0].content).not.toContain("## Available skills");
+    for (const title of titles) expect(requests[1].messages[0].content).not.toContain(`## ${title}`);
     await magi.stop();
   });
 });

@@ -1,8 +1,9 @@
 /**
  * One long-lived MAGI: its BUS, and the supervision of the workers on it.
  *
- * This file is the only one allowed to know every module, so it owns the two things no
- * worker can own for itself: which workers exist, and when each of them runs. That is
+ * This file is the only one allowed to know every module, so it owns the three things no
+ * worker can own for itself: which workers exist, when each of them runs, and, by
+ * construction order, the order their blocks appear in the system context. That is
  * why the entry *is* the supervisor rather than starting a fixed list at boot — a
  * channel whose credentials arrive later comes up when they do, and the entry answers
  * `ManageWorkerNotify` like any other worker would.
@@ -15,10 +16,8 @@ import { Bus, type ManageWorkerNotify } from "@magi/bus";
 import { AgentWorker } from "@magi/agent/worker.js";
 import { ProvidersWorker } from "@magi/providers/worker.js";
 import type { LLMClient } from "@magi/providers/client.js";
-import { ToolsWorker } from "@magi/tools/worker.js";
-import type { Tool } from "@magi/tools/registry.js";
+import { ToolsWorker, type Tool } from "@magi/built-in-tools/worker.js";
 import { ContactsWorker } from "@magi/contacts/worker.js";
-import { FilesWorker } from "@magi/files/worker.js";
 import { MemoryWorker } from "@magi/memory/worker.js";
 import { CliWorker } from "@magi/channel-cli/worker.js";
 import { AspWorker } from "@magi/channel-asp/worker.js";
@@ -75,12 +74,12 @@ export class Magi {
   constructor(handle: string, options: MagiOptions = {}) {
     this.bus = new Bus(handle, options.workspace);
     this.workers = [
-      // First: the agent builds its system prompt from what this one found.
+      // Contacts first: Identity leads the system context. A worker registers the
+      // blocks it answers for as it is built, so this order is also prompt order.
+      new ContactsWorker(this.bus),
       new SkillWorker(this.bus),
       new AgentWorker(this.bus),
       new ToolsWorker(this.bus, options.tools),
-      new ContactsWorker(this.bus),
-      new FilesWorker(this.bus),
       new MemoryWorker(this.bus),
       new ProvidersWorker(this.bus, options.client),
       new CliWorker(this.bus, options.deliver),

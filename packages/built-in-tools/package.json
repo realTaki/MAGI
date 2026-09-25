@@ -1,13 +1,13 @@
 {
-  "name": "@magi/tools",
+  "name": "@magi/built-in-tools",
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "MAGI runtime package: tools.",
+  "description": "MAGI runtime package: the built-in tools and the worker that runs them.",
   "exports": {
     ".": {
-      "types": "./dist/registry.d.ts",
-      "default": "./dist/registry.js"
+      "types": "./dist/worker.d.ts",
+      "default": "./dist/worker.js"
     },
     "./*": {
       "types": "./dist/*",

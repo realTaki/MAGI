@@ -23,13 +23,10 @@
       "path": "../../packages/providers"
     },
     {
-      "path": "../../packages/tools"
+      "path": "../../packages/built-in-tools"
     },
     {
       "path": "../../packages/contacts"
-    },
-    {
-      "path": "../../packages/files"
     },
     {
       "path": "../../packages/memory"

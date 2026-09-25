@@ -13,7 +13,7 @@ apps/shell/            Electron. Clones the repo, opens the window.
 apps/user/              Operator UI and the local backend that starts ASP.
 apps/asp/              Node 24. HTTP and WebSocket on 127.0.0.1:42069.
 apps/eva/             Node 24. One process per MAGI: its entry and supervisor.
-packages/              The runtime's packages: bus, agent, providers, tools, mcp, channel-*.
+packages/              The runtime's packages: bus, agent, providers, built-in-tools, mcp, channel-*.
 ```
 
 The installed package contains the shell plus Node.js 24 and npm. It

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Magi } from "../eva.js";
 import { Bus, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "@magi/bus";
 import type { ExecutableTool, LLMMessage } from "@magi/bus";
-import { builtinTools } from "@magi/tools/registry.js";
+import { builtinTools } from "@magi/built-in-tools/worker.js";
 
 test("message search includes archived history and send_message uses delivery jobs", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-tools-"));
