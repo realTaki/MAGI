@@ -234,12 +234,14 @@ test("a real MAGI boots from its own checkout", { timeout: 120_000 }, async (t) 
   const checkout = path.join(root, "checkout");
   await git(root, ["clone", "--quiet", "--local", repository, checkout]);
   const home = path.join(root, "home");
-  // The MAGI resolves its workspace from HOME: keep it inside the temp root.
-  const previousHome = process.env.HOME;
-  process.env.HOME = home;
+  // `homedir()` follows HOME on POSIX and USERPROFILE on Windows. Keep the
+  // MAGI workspace inside the temp root on either GitHub Actions runner.
+  const homeVariable = process.platform === "win32" ? "USERPROFILE" : "HOME";
+  const previousHome = process.env[homeVariable];
+  process.env[homeVariable] = home;
   t.after(() => {
-    if (previousHome === undefined) delete process.env.HOME;
-    else process.env.HOME = previousHome;
+    if (previousHome === undefined) delete process.env[homeVariable];
+    else process.env[homeVariable] = previousHome;
   });
   const runtime = createMagiRuntime({
     checkout,
