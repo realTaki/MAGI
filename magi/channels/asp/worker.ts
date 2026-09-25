@@ -1,4 +1,4 @@
-import { BaseWorker, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, type Bus } from "../../bus/index.js";
+import { BaseWorker, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, type Bus, type Contact } from "../../bus/index.js";
 import { AspClient, type AspEvent } from "./client.js";
 
 export class AspWorker extends BaseWorker {
@@ -79,6 +79,8 @@ export class AspWorker extends BaseWorker {
     const payload = event.payload ?? {};
     if (event.type === "session.invited" && payload.invitee === this.bus.handle) {
       await this.client.join(id);
+      // This MAGI is in the conversation too, so it belongs to its members.
+      this.bus.conversationMembers.add(this.bus.conversations.forChannel("asp", id).id, MAGI_CONTACT_ID);
       const initial = payload.initial_message;
       if (typeof initial === "object" && initial !== null) {
         const message = initial as Record<string, unknown>;
@@ -86,8 +88,23 @@ export class AspWorker extends BaseWorker {
       }
     } else if (event.type === "session.message" && payload.sender !== this.bus.handle) {
       if (await this.shouldIngest(id, payload)) this.ingest(id, payload);
+      // Another agent's message never starts a turn here, but the room still has them in it.
+      else this.remember(id, payload.sender);
     }
     if (event.event_id) return { type: "session.ack", session_id: id, event_id: event.event_id };
+  }
+
+  /**
+   * Who spoke: a contact of their own, and a member of this conversation from now on.
+   * The address is the conversation, the people on it are its members.
+   */
+  private remember(sessionId: string, sender: unknown): Contact | null {
+    const handle = typeof sender === "string" ? sender.trim() : "";
+    if (!handle) return null;
+    const contact = handle === "user" ? this.bus.contacts.get(SYSTEM_CONTACT_ID) : this.bus.contacts.forAspHandle(handle);
+    if (!contact) return null;
+    this.bus.conversationMembers.add(this.bus.conversations.forChannel("asp", sessionId).id, contact.id);
+    return contact;
   }
 
   private async shouldIngest(sessionId: string, payload: Record<string, unknown>): Promise<boolean> {
@@ -114,16 +131,16 @@ export class AspWorker extends BaseWorker {
       return "";
     }).join("") : "";
     if (text.trim()) {
-      // Who spoke is a contact, not the address: one ASP session can hold several people
-      // (a group), and each of them is known by the handle they spoke with.
-      const sender = typeof payload.sender === "string" ? payload.sender.trim() : "";
-      const operator = sender === "" || sender === "user";
-      const contactId = operator ? SYSTEM_CONTACT_ID : this.bus.contacts.forAspHandle(sender).id;
+      const contact = this.remember(sessionId, payload.sender);
       const conversation = this.bus.conversations.forChannel("asp", sessionId);
       // Where the operator spoke last is the only address this workspace has for
       // reaching them, so a notice that has no conversation of its own goes there.
-      if (operator) this.bus.setHomeConversation(conversation.id);
-      this.bus.publishChat({ conversation_id: conversation.id, contact_id: contactId, text: text.trim() }, this.worker_name);
+      if (contact === null || contact.id === SYSTEM_CONTACT_ID) this.bus.setHomeConversation(conversation.id);
+      this.bus.publishChat({
+        conversation_id: conversation.id,
+        contact_id: contact?.id ?? SYSTEM_CONTACT_ID,
+        text: text.trim(),
+      }, this.worker_name);
     }
   }
 }

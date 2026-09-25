@@ -23,11 +23,16 @@ export class Conversation {
       const memories = this.bus.memoryBook.list().map((memory) => `- [${memory.id} | ${memory.kind}] ${memory.topic}: ${memory.detail}`).join("\n");
       const skills = this.bus.skills.list().map((skill) => `- ${skill.name}: ${skill.description}`).join("\n");
       const identity = this.bus.contacts.get(MAGI_CONTACT_ID);
+      // Who is in this conversation: the operator, other MAGIs in a group, guests. The
+      // channels record them there as they are heard from.
+      const members = this.bus.conversationMembers.list(this.conversation_id)
+        .map((member) => `- id ${member.id} | ${this.label(member.id)} | ${member.role}`).join("\n");
       const skillsHeader = this.bus.prompts.get("agent/skills_block")?.trim() || "## Available skills";
       const system = [agentPrompt, identity ? `## Identity\nYour name: ${identity.nickname || identity.name}` : "",
         skills ? `${skillsHeader}\n${skills}` : "", memories ? `## Long-term memory\n${memories}` : "",
         record.instruction ? `## Conversation instruction\n${record.instruction}` : "",
         record.info ? `## Conversation info\n${record.info}` : "",
+        members ? `## Members\n${members}` : "",
         summary ? `[Prior conversation summary]\n${summary}` : ""]
         .filter(Boolean).join("\n\n");
       const history = this.bus.messages.list(this.conversation_id, COMPACT_KEEP_RECENT).map((message): LLMMessage => ({

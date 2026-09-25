@@ -11,6 +11,7 @@ import { MemoryBook } from "./books/memoryBook.js";
 import { SkillsBook } from "./books/skillsBook.js";
 import { TaskBook } from "./books/taskBook.js";
 import { ContactBook } from "./books/contactBook.js";
+import { ConversationMemberBook } from "./books/conversationMemberBook.js";
 import { ContactNoteBook } from "./books/contactNoteBook.js";
 import { McpServerBook } from "./books/mcpServerBook.js";
 import { SettingsBook } from "./books/settingsBook.js";
@@ -34,6 +35,7 @@ export class Bus {
   readonly skills: SkillsBook;
   readonly tasks: TaskBook;
   readonly contacts: ContactBook;
+  readonly conversationMembers: ConversationMemberBook;
   readonly contactNotes: ContactNoteBook;
   readonly mcpServers: McpServerBook;
   readonly prompts: PromptBook;
@@ -82,6 +84,7 @@ export class Bus {
     this.skills = new SkillsBook(this.workspace);
     this.tasks = new TaskBook(this.db);
     this.contacts = new ContactBook(this.db);
+    this.conversationMembers = new ConversationMemberBook(this.db);
     this.contactNotes = new ContactNoteBook(this.db);
     this.mcpServers = new McpServerBook(this.db);
     this.prompts = new PromptBook(this.workspace);
