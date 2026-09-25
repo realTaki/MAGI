@@ -3,10 +3,11 @@
  *
  * Like `@magi/skills` and `@magi/mcp`, a tool lives with the worker that owns
  * it: the catalog offers these exactly while this worker runs, so a stopped
- * worker cannot leave the model holding a tool nobody answers.
+ * worker cannot leave the model holding a tool nobody answers. The prompt book
+ * asks this worker the same way for the block the system prompt shows.
  */
 
-import { BaseWorker, type Bus, type ExecutableTool } from "@magi/bus";
+import { BaseWorker, type Bus, type ExecutableTool, type Memory } from "@magi/bus";
 import { memoryTools } from "./tools.js";
 
 export class MemoryWorker extends BaseWorker {
@@ -19,6 +20,9 @@ export class MemoryWorker extends BaseWorker {
     super(bus);
     this.own = memoryTools(bus);
     bus.tools.registerSource("memory", () => (this.started ? this.own : []));
+    // Stopping this worker takes the block out with the tools: one answer to
+    // "what does this module offer right now?".
+    bus.prompts.registerSource("memory", "Long-term memory", () => (this.started ? catalog(bus.memoryBook.list()) : ""));
   }
 
   async start(): Promise<void> { this.started = true; }
@@ -46,4 +50,9 @@ export class MemoryWorker extends BaseWorker {
 
   /** Stopping lets the calls this worker already accepted finish. */
   async stop(): Promise<void> { this.started = false; await Promise.all(this.pending); }
+}
+
+/** The block the system prompt shows: what is worth carrying between chats. */
+function catalog(memories: Memory[]): string {
+  return memories.map((memory) => `- [${memory.id} | ${memory.kind}] ${memory.topic}: ${memory.detail}`).join("\n");
 }

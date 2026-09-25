@@ -23,23 +23,14 @@ export class Chat {
       if (!record) throw new Error("chat does not exist");
       const agentPrompt = this.bus.prompts.get("agent/AGENT") ?? "You are a helpful assistant.";
       const summary = await this.compact(record.summary);
-      const memories = this.bus.memoryBook.list().map((memory) => `- [${memory.id} | ${memory.kind}] ${memory.topic}: ${memory.detail}`).join("\n");
       // Blocks the running modules answer for: the agent renders them without knowing
       // which worker is behind one, or whether any worker is behind it at all.
       const contributed: ReadonlyArray<readonly [string, string]> = this.bus.prompts.sections(this.chat_id)
         .map((section): readonly [string, string] => [section.title, section.body]);
-      const identity = this.bus.contacts.get(MAGI_CONTACT_ID);
-      // Who is in this chat: the operator, other MAGIs in a group, guests. The
-      // channels record them there as they are heard from.
-      const members = this.bus.chatMembers.list(this.chat_id)
-        .map((member) => `- id ${member.id} | ${this.label(member.id)} | ${member.role}`).join("\n");
       const chatContext = this.context([
-        ["Identity", identity ? `Your name: ${identity.nickname || identity.name}` : ""],
         ...contributed,
-        ["Long-term memory", memories],
         ["Chat instruction", record.instruction],
         ["Chat info", record.info],
-        ["Members", members],
         ["Prior chat summary", summary],
         ["Chat", `chat_id: ${this.chat_id}\nchannel: ${record.channel}\ndelivery_address: ${record.delivery_address}\ntopic: ${record.topic}\nhome_chat_id: ${this.bus.homeChat() ?? "none"}\nMAGI_CONTACT_ID: ${MAGI_CONTACT_ID}\nSYSTEM_CONTACT_ID: ${SYSTEM_CONTACT_ID}`],
       ]);

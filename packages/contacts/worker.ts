@@ -3,10 +3,11 @@
  *
  * Like `@magi/skills` and `@magi/mcp`, a tool lives with the worker that owns
  * it: the catalog offers these exactly while this worker runs, so a stopped
- * worker cannot leave the model holding a tool nobody answers.
+ * worker cannot leave the model holding a tool nobody answers. The prompt book
+ * asks this worker for the identity and member blocks as well.
  */
 
-import { BaseWorker, type Bus, type ExecutableTool } from "@magi/bus";
+import { BaseWorker, MAGI_CONTACT_ID, type Bus, type Contact, type ExecutableTool } from "@magi/bus";
 import { contactTools } from "./tools.js";
 
 export class ContactsWorker extends BaseWorker {
@@ -19,6 +20,10 @@ export class ContactsWorker extends BaseWorker {
     super(bus);
     this.own = contactTools(bus);
     bus.tools.registerSource("contacts", () => (this.started ? this.own : []));
+    // Who this MAGI is, and who is in the chat being answered: this package owns
+    // both, so nothing else has to know how a contact is rendered.
+    bus.prompts.registerSource("contacts/identity", "Identity", () => (this.started ? identity(bus) : ""));
+    bus.prompts.registerSource("contacts/members", "Members", (chat_id) => (this.started ? members(bus, chat_id) : ""));
   }
 
   async start(): Promise<void> { this.started = true; }
@@ -46,4 +51,23 @@ export class ContactsWorker extends BaseWorker {
 
   /** Stopping lets the calls this worker already accepted finish. */
   async stop(): Promise<void> { this.started = false; await Promise.all(this.pending); }
+}
+
+/** The MAGI's own name, as the system prompt states it. */
+function identity(bus: Bus): string {
+  const self = bus.contacts.get(MAGI_CONTACT_ID);
+  return self ? `Your name: ${self.nickname || self.name}` : "";
+}
+
+/**
+ * Who is in this chat: the operator, other MAGIs in a group, guests. The channels
+ * record them there as they are heard from, and this is where they are read back.
+ */
+function members(bus: Bus, chat_id: number): string {
+  return bus.chatMembers.list(chat_id).map((contact) => `- id ${contact.id} | ${label(contact)} | ${contact.role}`).join("\n");
+}
+
+/** How a contact is named in the prompt: the name, then the handle-like nickname. */
+function label(contact: Contact): string {
+  return [contact.name, contact.nickname].filter(Boolean).join(" / ") || `contact ${contact.id}`;
 }

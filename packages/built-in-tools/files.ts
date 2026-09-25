@@ -9,13 +9,7 @@
 import { mkdir, mkdtemp, readdir, readFile, rename, rmdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import type { ExecutableTool } from "@magi/bus";
-
-/** Local on purpose: this package must not depend on the tools package. */
-function stringArg(args: Record<string, unknown>, key: string): string {
-  const value = args[key];
-  if (typeof value !== "string" || !value) throw new Error(`${key} must be a non-empty string`);
-  return value;
-}
+import { stringArg } from "./args.js";
 
 export function fileTools(workspace: string): ExecutableTool[] {
   return [
