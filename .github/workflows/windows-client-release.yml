@@ -12,6 +12,10 @@ jobs:
   build:
     name: Build Windows x64
     runs-on: windows-latest
+    # A release build normally takes minutes. Keep a leaked child process or
+    # stalled external download from consuming a runner for GitHub's six-hour
+    # default.
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: shell

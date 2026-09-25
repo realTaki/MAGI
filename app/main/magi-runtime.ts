@@ -17,6 +17,7 @@
  * before.
  */
 
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
@@ -220,6 +221,20 @@ export function createMagiRuntime({
         return true;
       } catch {
         // Fall through to the single process when the group is already gone.
+      }
+    }
+    if (process.platform === "win32" && typeof child.pid === "number" && child.pid > 0) {
+      // Windows has no POSIX process groups. `bun run start` may hand off to a
+      // second Bun process, so killing only the launcher leaves MAGI (and the
+      // test runner's stderr pipe) alive. taskkill's /T includes descendants.
+      try {
+        spawn("taskkill.exe", ["/pid", String(child.pid), "/t", "/f"], {
+          stdio: "ignore",
+          windowsHide: true,
+        });
+        return true;
+      } catch {
+        // Fall through if taskkill itself could not be launched.
       }
     }
     child.kill("SIGTERM");
