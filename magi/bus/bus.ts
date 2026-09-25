@@ -1,7 +1,7 @@
 import { cpSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { Database, type SQLQueryBindings } from "bun:sqlite";
 import { workspaceDatabase, migrateBooks, migrateJobs, type BusDb } from "./firmware/database.js";
 import { contacts } from "./firmware/books/contactBook.js";
@@ -77,7 +77,12 @@ export class Bus {
     this.logs = workspaceDatabase(logs);
     migrateJobs(this.logs);
     // One MAGI owns this workspace. Recover work interrupted by a process exit.
-    this.logs.update(jobs).set({ status: "pending", worker: null }).where(eq(jobs.status, "claimed")).run();
+    this.logs.update(jobs).set({ status: "pending", worker: null })
+      .where(and(eq(jobs.status, "claimed"), ne(jobs.type, "RunToolJob"))).run();
+    // A tool call belongs to the agent turn that published it, and that turn is gone
+    // after a restart: answer its calls as failed instead of running them a second time.
+    this.logs.update(jobs).set({ status: "failed", error: "MAGI restarted before this tool call finished" })
+      .where(and(eq(jobs.type, "RunToolJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
     // The migration below reads and marks settings, so this one is built first.
     this.settings = new SettingsBook(this.db);
     if (pythonWorkspace) this.migratePythonWorkspace(pythonWorkspace);

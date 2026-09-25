@@ -9,7 +9,7 @@ export type { Contact, ContactRole } from "./firmware/books/contactBook.js";
 export type { ContactNote, NoteKind } from "./firmware/books/contactNoteBook.js";
 export type { McpConnectionType, McpServerConfig } from "./firmware/books/mcpServerBook.js";
 export type { Setting } from "./firmware/books/settingsBook.js";
-export type { ExecutableTool } from "./firmware/books/toolBook.js";
+export type { ExecutableTool, ToolSource } from "./firmware/books/toolBook.js";
 // One file per job; `types.js` is only the board contract that binds them.
 export type { LLMToolCall, LLMMessage, LLMTool } from "./firmware/jobs/llm.js";
 export type { ChatNotify } from "./firmware/jobs/chatNotify.js";

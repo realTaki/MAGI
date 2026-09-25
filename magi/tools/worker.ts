@@ -14,7 +14,7 @@ export class ToolsWorker extends BaseWorker {
     super(bus);
     const builtin = tools ?? builtinTools(bus, this.shells);
     for (const tool of builtin) this.own.set(tool.name, tool);
-    bus.tools.replaceSource("builtin", builtin);
+    bus.tools.registerSource("builtin", () => [...this.own.values()]);
   }
 
   async poll(): Promise<boolean> {

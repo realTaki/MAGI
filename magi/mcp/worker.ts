@@ -1,6 +1,6 @@
 import { Client, SSEClientTransport, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
-import { BaseWorker, type Bus, type ExecutableTool, type McpServerConfig } from "../bus/index.js";
+import { BaseWorker, type Bus, type ExecutableTool, type McpServerConfig, type ToolSource } from "../bus/index.js";
 
 export type McpConnection = { tools: ExecutableTool[]; close(): Promise<void> };
 export type McpConnector = (config: McpServerConfig, workspace: string) => Promise<McpConnection>;
@@ -8,12 +8,15 @@ export type McpConnector = (config: McpServerConfig, workspace: string) => Promi
 export class McpWorker extends BaseWorker {
   readonly worker_name = "mcp";
   private readonly connections = new Map<string, McpConnection>();
-  /** The MCP tools this worker runs: their connections live here, so their calls do too. */
-  private readonly own = new Map<string, ExecutableTool>();
   private readonly pending = new Set<Promise<void>>();
   private started = false;
+  /** The catalog asks this every time, so a connection that comes or goes shows up at once. */
+  private readonly provider: ToolSource = () => this.tools();
 
-  constructor(bus: Bus, private readonly connector: McpConnector = connectMcpServer) { super(bus); }
+  constructor(bus: Bus, private readonly connector: McpConnector = connectMcpServer) {
+    super(bus);
+    bus.tools.registerSource("mcp", this.provider);
+  }
 
   async start(): Promise<void> {
     if (this.started) return;
@@ -22,7 +25,7 @@ export class McpWorker extends BaseWorker {
       try { this.connections.set(server.name, await this.connector(server, this.bus.workspace)); }
       catch (error) { console.error(`MCP ${server.name}:`, error); }
     }));
-    this.inject();
+    this.revalidate();
   }
 
   async poll(): Promise<boolean> {
@@ -35,7 +38,7 @@ export class McpWorker extends BaseWorker {
     const job = board.claim(this.worker_name);
     if (!job) return false;
     try {
-      const before = [...this.own.keys()];
+      const before = this.tools().map((tool) => tool.name);
       const old = this.connections.get(job.input.name);
       if (job.input.action === "delete") {
         if (old) await old.close();
@@ -49,7 +52,7 @@ export class McpWorker extends BaseWorker {
         if (connected) this.connections.set(server.name, connected); else this.connections.delete(server.name);
         this.bus.mcpServers.save(server);
       }
-      this.inject();
+      this.revalidate();
       this.drainDropped(before);
       board.submit(this.worker_name, job.id, { output: {} });
     } catch (error) {
@@ -60,7 +63,8 @@ export class McpWorker extends BaseWorker {
 
   private async pollToolCall(): Promise<boolean> {
     const board = this.bus.board("RunToolJob");
-    const job = board.claim(this.worker_name, (input) => this.own.has(input.call.name));
+    const names = new Set(this.tools().map((tool) => tool.name));
+    const job = board.claim(this.worker_name, (input) => names.has(input.call.name));
     if (!job) return false;
     const task = this.callTool(job.id, job.input.call.name, job.input.call.arguments);
     this.pending.add(task);
@@ -71,7 +75,7 @@ export class McpWorker extends BaseWorker {
   private async callTool(id: number, name: string, args: Record<string, unknown>): Promise<void> {
     const board = this.bus.board("RunToolJob");
     try {
-      const tool = this.own.get(name);
+      const tool = this.tools().find((candidate) => candidate.name === name);
       if (!tool) throw new Error(`unknown tool ${name}`);
       board.submit(this.worker_name, id, { output: { content: await tool.run(args) } });
     } catch (error) {
@@ -82,8 +86,9 @@ export class McpWorker extends BaseWorker {
   /** Calls for tools this worker just dropped are answered instead of waiting for a timeout. */
   private drainDropped(before: string[]): void {
     const board = this.bus.board("RunToolJob");
+    const live = new Set(this.tools().map((tool) => tool.name));
     for (const name of before) {
-      if (this.own.has(name)) continue;
+      if (live.has(name)) continue;
       while (true) {
         const job = board.claim(this.worker_name, (input) => input.call.name === name);
         if (!job) break;
@@ -95,18 +100,19 @@ export class McpWorker extends BaseWorker {
   async stop(): Promise<void> {
     await Promise.all(this.pending);
     await Promise.all([...this.connections.values()].map((connection) => connection.close().catch(() => {})));
-    const before = [...this.own.keys()];
+    const before = this.tools().map((tool) => tool.name);
     this.connections.clear();
-    this.inject();
+    this.revalidate();
     this.drainDropped(before);
   }
 
-  private inject(): void {
-    const tools = [...this.connections.values()].flatMap((connection) => connection.tools);
-    // A name clash throws here, leaving the previous map and catalog untouched.
-    this.bus.tools.replaceSource("mcp", tools);
-    this.own.clear();
-    for (const tool of tools) this.own.set(tool.name, tool);
+  private tools(): ExecutableTool[] {
+    return [...this.connections.values()].flatMap((connection) => connection.tools);
+  }
+
+  /** Re-register so a name clash fails here, at the change, instead of in the middle of a turn. */
+  private revalidate(): void {
+    this.bus.tools.registerSource("mcp", this.provider);
   }
 }
 
