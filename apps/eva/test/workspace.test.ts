@@ -27,7 +27,7 @@ test("a fresh workspace gets every Book table from the migrations", async () => 
     ]));
     // The channel reading position is a field on the chat now, not a table of its own.
     expect(tables(path, "memories")).not.toContain("books_channel_cursors");
-    expect(tables(path, "logs")).toContain("jobs");
+    expect(tables(path, "jobs")).toContain("jobs");
   } finally { bus.close(); }
 });
 
@@ -64,7 +64,7 @@ test("adopts a workspace an earlier release created, keeping its data", async ()
 
   // What an earlier release left behind: the tables, but no migration bookkeeping.
   const dropped: string[] = [];
-  for (const database of ["memories", "logs"]) {
+  for (const database of ["memories", "jobs"]) {
     const db = new Database(join(path, database, "magi.db"));
     for (const row of db.prepare("SELECT name FROM sqlite_master WHERE name LIKE '__drizzle%'").all() as Array<{ name: string }>) {
       db.exec(`DROP TABLE "${row.name}"`);
@@ -114,7 +114,7 @@ test("a workspace numbered from 0 gets its contacts renumbered from 1", async ()
 });
 
 function dropBookkeeping(path: string): void {
-  for (const database of ["memories", "logs"]) {
+  for (const database of ["memories", "jobs"]) {
     const db = new Database(join(path, database, "magi.db"));
     for (const row of db.prepare("SELECT name FROM sqlite_master WHERE name LIKE '__drizzle%'").all() as Array<{ name: string }>) {
       db.exec(`DROP TABLE "${row.name}"`);

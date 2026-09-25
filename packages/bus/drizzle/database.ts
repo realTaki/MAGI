@@ -19,7 +19,7 @@ export function migrateBooks(db: BusDb): void {
 }
 
 export function migrateJobs(db: BusDb): void {
-  migrate(db, { migrationsFolder: migrationsFolder("logs") });
+  migrate(db, { migrationsFolder: migrationsFolder("jobs") });
 }
 
 // ``bus/drizzle/`` holds this file next to the migrations; the second shape covers

@@ -154,9 +154,9 @@ describe("local MAGI agent", () => {
     expect(requests[0].messages[0].content).toContain("You are Test MAGI.");
     expect(requests[0].messages[0].content).toContain("Every user-visible reply must be valid Markdown.");
     const memories = new Database(join(path, "memories/magi.db"), { readonly: true });
-    const logs = new Database(join(path, "logs/magi.db"), { readonly: true });
+    const jobs = new Database(join(path, "jobs/magi.db"), { readonly: true });
     expect((memories.prepare("SELECT content FROM books_messages ORDER BY id").all() as Array<{ content: string }>).map((row) => row.content)).toEqual(["save a note", "Done."]);
-    expect((logs.prepare("SELECT type, status FROM jobs ORDER BY id").all() as Array<{ type: string; status: string }>)).toEqual([
+    expect((jobs.prepare("SELECT type, status FROM jobs ORDER BY id").all() as Array<{ type: string; status: string }>)).toEqual([
       { type: "ChatNotify", status: "completed" },
       { type: "CallLLMJob", status: "completed" },
       { type: "RunToolJob", status: "completed" },
@@ -164,7 +164,7 @@ describe("local MAGI agent", () => {
       { type: "DeliveryNotify", status: "completed" },
     ]);
     expect(delivered).toEqual(["Done."]);
-    memories.close(); logs.close();
+    memories.close(); jobs.close();
   });
 
   test("the model's own past replies go back without a transcript prefix", async () => {

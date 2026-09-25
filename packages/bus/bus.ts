@@ -49,7 +49,7 @@ export class Bus {
   readonly settings: SettingsBook;
   readonly tools = new ToolBook();
   private readonly db: BusDb;
-  private readonly logs: BusDb;
+  private readonly jobs: BusDb;
   private readonly boards = new Map<JobType, JobBoard<JobType>>();
 
   constructor(readonly handle: string, workspace?: string) {
@@ -65,24 +65,24 @@ export class Bus {
       workspace ?? (existsSync(current) || !existsSync(previous) ? current : previous),
     );
     mkdirSync(join(this.workspace, "memories"), { recursive: true });
-    mkdirSync(join(this.workspace, "logs"), { recursive: true });
+    mkdirSync(join(this.workspace, "jobs"), { recursive: true });
     const memories = new Database(join(this.workspace, "memories", "magi.db"));
-    const logs = new Database(join(this.workspace, "logs", "magi.db"));
-    for (const client of [memories, logs]) {
+    const jobDb = new Database(join(this.workspace, "jobs", "magi.db"));
+    for (const client of [memories, jobDb]) {
       client.exec("PRAGMA journal_mode = WAL");
       client.exec("PRAGMA busy_timeout = 5000");
     }
     // Schema history lives in ``bus/drizzle/``, one folder per database.
     this.db = workspaceDatabase(memories);
     migrateBooks(this.db);
-    this.logs = workspaceDatabase(logs);
-    migrateJobs(this.logs);
+    this.jobs = workspaceDatabase(jobDb);
+    migrateJobs(this.jobs);
     // One MAGI owns this workspace. Recover work interrupted by a process exit.
-    this.logs.update(jobs).set({ status: "pending", worker: null })
+    this.jobs.update(jobs).set({ status: "pending", worker: null })
       .where(and(eq(jobs.status, "claimed"), ne(jobs.type, "RunToolJob"))).run();
     // A tool call belongs to the agent turn that published it, and that turn is gone
     // after a restart: answer its calls as failed instead of running them a second time.
-    this.logs.update(jobs).set({ status: "failed", error: "MAGI restarted before this tool call finished" })
+    this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before this tool call finished" })
       .where(and(eq(jobs.type, "RunToolJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
     this.settings = new SettingsBook(this.db);
     this.chats = new ChatBook(this.db);
@@ -110,7 +110,7 @@ export class Bus {
   board<K extends JobType>(type: K): JobBoard<K> {
     let board = this.boards.get(type);
     if (!board) {
-      board = new JobBoard(this.logs, type);
+      board = new JobBoard(this.jobs, type);
       this.boards.set(type, board);
     }
     return board as JobBoard<K>;
@@ -164,7 +164,7 @@ export class Bus {
   }
 
   close(): void {
-    this.logs.$client.close();
+    this.jobs.$client.close();
     this.db.$client.close();
   }
 
