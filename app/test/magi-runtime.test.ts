@@ -26,10 +26,13 @@ function projectBun() {
   const executable = process.platform === "win32" ? "bun.exe" : "bun";
   return (
     [
+      // An installed MAGI.app is an explicit, project-owned runtime source for
+      // developers whose source checkout has not prepared shell/runtime yet.
+      process.env.MAGI_TEST_BUN ?? "",
       path.join(shell, "runtime", "bin", executable),
       path.join(shell, "node_modules", "bun", "bin", "bun.exe"),
       path.join(shell, "node_modules", "@oven", `bun-${platform}-${architecture}`, "bin", executable),
-    ].find(existsSync) ?? ""
+    ].find((candidate) => candidate !== "" && existsSync(candidate)) ?? ""
   );
 }
 
