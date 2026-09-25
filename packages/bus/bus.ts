@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import Database from "better-sqlite3";
 import { workspaceDatabase, migrateBooks, migrateJobs, type BusDb } from "./drizzle/database.js";
-import { contacts } from "./books/contactBook.js";
+import { contacts, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "./books/contactBook.js";
 import { ChatBook } from "./books/chatBook.js";
 import { MessageBook } from "./books/messageBook.js";
 import { MemoryBook } from "./books/memoryBook.js";
@@ -18,21 +18,16 @@ import { SettingsBook } from "./books/settingsBook.js";
 import { PromptBook } from "./books/promptBook.js";
 import { ToolBook } from "./books/toolBook.js";
 import { JobBoard, jobs, type JobInput, type JobType } from "./jobs/jobBoard.js";
-import type { ChatNotify } from "./jobs/chatNotify.js";
-import type { DeliveryNotify } from "./jobs/deliveryNotify.js";
-
-// Contacts are numbered like everything else in the workspace: from 1. The system
-// contact is the first one, the MAGI itself the second.
-export const SYSTEM_CONTACT_ID = 1;
-export const MAGI_CONTACT_ID = 2;
+import { deliveryNotify } from "./jobs/deliveryNotify.js";
 
 /**
  * One MAGI's shared bus: Books for durable state, Jobs for coordination.
  *
  * Workers never call each other. A component publishes a Job and whoever owns that
- * work claims it, so these two methods — `publishChat` for a turn, `publishDelivery`
- * for text that goes back out — are the only paths between them. Trouble is
- * delivered, not logged: `publishNotice` is where it goes.
+ * work claims it; what a message job means for the workspace — which row it records,
+ * where its text is read from — lives with the job itself in ``jobs/``, so nothing
+ * here has to know the message jobs one by one. Trouble is delivered, not logged:
+ * `publishNotice` is where it goes.
  */
 export class Bus {
   readonly workspace: string;
@@ -116,27 +111,6 @@ export class Bus {
     return board as JobBoard<K>;
   }
 
-  publishChat(input: ChatNotify, publisher = "channel"): number {
-    let chatId = input.chat_id;
-    if (!chatId) {
-      if (!input.channel?.trim() || !input.delivery_address?.trim()) throw new Error("ChatNotify needs chat_id or channel and delivery_address");
-      chatId = this.chats.forChannel(input.channel.trim(), input.delivery_address.trim()).id;
-    }
-    if (chatId === undefined) throw new Error("chat_id is missing");
-    if (!this.chats.get(chatId)) throw new Error(`chat ${chatId} does not exist`);
-    const jobId = this.board("ChatNotify").publish({ ...input, chat_id: chatId }, publisher);
-    this.messages.add(chatId, input.contact_id ?? SYSTEM_CONTACT_ID, input.text);
-    return jobId;
-  }
-
-  publishDelivery(input: DeliveryNotify, publisher = "agent"): number {
-    const chat = this.chats.get(input.chat_id);
-    if (!chat) throw new Error(`chat ${input.chat_id} does not exist`);
-    const jobId = this.board("DeliveryNotify").publish({ ...input, channel: chat.channel, address: chat.delivery_address }, publisher);
-    this.messages.add(input.chat_id, MAGI_CONTACT_ID, input.text);
-    return jobId;
-  }
-
   /**
    * The chat the operator last spoke in: the only address a workspace has for
    * reaching them. Channels write it when they hear the operator, ``publishNotice`` reads it.
@@ -160,7 +134,7 @@ export class Bus {
   publishNotice(text: string, chatId?: number): number | null {
     const target = chatId ?? this.homeChat();
     if (target === null) return null;
-    return this.publishDelivery({ chat_id: target, text });
+    return deliveryNotify.send(this, { chat_id: target, text });
   }
 
   close(): void {

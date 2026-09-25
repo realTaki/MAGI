@@ -8,7 +8,7 @@
  * here instead of being announced to the BUS for someone to pick up.
  */
 
-import { BaseWorker, type Bus, type ExecutableTool, type Task } from "@magi/bus";
+import { BaseWorker, chatNotify, type Bus, type ExecutableTool, type Task } from "@magi/bus";
 import { taskTools } from "./tools.js";
 
 /** Scanning the book costs more than claiming a job; a second is plenty for minute precision. */
@@ -66,7 +66,7 @@ export class TaskWorker extends BaseWorker {
   }
 
   private fire(task: Task): void {
-    this.bus.publishChat({
+    chatNotify.receive(this.bus, {
       chat_id: task.chat_id,
       text: `[task context]\nYou are EXECUTING a scheduled task that just fired.\nname: ${task.name}\nschedule: ${task.cron}\n\n[task prompt]\n${task.prompt}`,
     }, this.worker_name);

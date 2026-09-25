@@ -1,4 +1,4 @@
-import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, type Bus, type LLMMessage } from "@magi/bus";
+import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, deliveryNotify, type Bus, type LLMMessage } from "@magi/bus";
 import { SYSTEM_PROMPT } from "./prompt_defaults.js";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const COMPACT_KEEP_RECENT = 20;
@@ -60,12 +60,12 @@ export class Chat {
           if (reply.toUpperCase() !== NO_REPLY) {
             // A Notify is published and not awaited: a channel that cannot deliver reports
             // its own trouble, and there is nothing the agent could do about it here.
-            this.bus.publishDelivery({ chat_id: this.chat_id, text: reply || "处理完毕。" });
+            deliveryNotify.send(this.bus, { chat_id: this.chat_id, text: reply || "处理完毕。" });
           }
           chatBoard.submit("agent", jobId, { output: {} });
           return;
         }
-        if (response.content) this.bus.publishDelivery({ chat_id: this.chat_id, text: response.content });
+        if (response.content) deliveryNotify.send(this.bus, { chat_id: this.chat_id, text: response.content });
         messages.push(response);
         // A name the catalog does not have is answered here: no worker would claim its job.
         const calls = response.tool_calls.map((call) => this.bus.tools.get(call.name)
@@ -88,7 +88,7 @@ export class Chat {
       // What went wrong is said in the chat itself: the Job result is for
       // whoever published the turn, not for whoever is waiting for an answer.
       const message = error instanceof Error ? error.message : String(error);
-      this.bus.publishDelivery({ chat_id: this.chat_id, text: message });
+      deliveryNotify.send(this.bus, { chat_id: this.chat_id, text: message });
       chatBoard.submit("agent", jobId, { error: message });
     }
   }

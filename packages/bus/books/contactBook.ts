@@ -2,6 +2,11 @@ import { eq, sql } from "drizzle-orm";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import type { BusDb } from "../drizzle/database.js";
 
+// Contacts are numbered like everything else in the workspace: from 1. The system
+// contact is the first one, the MAGI itself the second.
+export const SYSTEM_CONTACT_ID = 1;
+export const MAGI_CONTACT_ID = 2;
+
 export const contacts = sqliteTable("books_contacts", {
   id: integer("id").primaryKey(),
   name: text("name").notNull().unique(),

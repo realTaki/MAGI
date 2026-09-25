@@ -1,4 +1,4 @@
-import { BaseWorker, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, type Bus, type Contact } from "@magi/bus";
+import { BaseWorker, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, chatNotify, type Bus, type Contact } from "@magi/bus";
 import { setTimeout as sleep } from "node:timers/promises";
 import { AspClient, type AspEvent } from "./client.js";
 
@@ -164,11 +164,7 @@ export class AspWorker extends BaseWorker {
     if (contact?.id === SYSTEM_CONTACT_ID && this.bus.homeChat() === null) {
       this.bus.setHomeChat(chat.id);
     }
-    this.bus.publishChat({
-      chat_id: chat.id,
-      contact_id: contact?.id ?? SYSTEM_CONTACT_ID,
-      text,
-    }, this.worker_name);
+    chatNotify.receive(this.bus, { chat_id: chat.id, contact_id: contact?.id, text }, this.worker_name);
   }
 
   /** Only record it: it was addressed to someone else, but the history keeps it. */
@@ -176,7 +172,7 @@ export class AspWorker extends BaseWorker {
     const text = this.content(payload);
     if (!text) return;
     const contact = this.remember(chatId, payload.sender);
-    this.bus.messages.add(this.bus.chats.forChannel("asp", chatId).id, contact?.id ?? SYSTEM_CONTACT_ID, text);
+    chatNotify.record(this.bus, this.bus.chats.forChannel("asp", chatId).id, text, contact?.id);
   }
 }
 

@@ -1,7 +1,7 @@
 import { Chat, type Logger, type Message, type Thread } from "chat";
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { createMemoryState } from "@chat-adapter/state-memory";
-import { BaseWorker, MAGI_CONTACT_ID, type Bus } from "@magi/bus";
+import { BaseWorker, MAGI_CONTACT_ID, chatNotify, type Bus } from "@magi/bus";
 
 /** What a Telegram bot needs; a MAGI may not have one until someone sets it. */
 type Credentials = { token: string; apiBase?: string };
@@ -101,7 +101,7 @@ export class TelegramWorker extends BaseWorker {
     // but only while nothing has established that yet: home is set once, and it moves by
     // the tool the operator asks for, not by whoever spoke last.
     if (direct && this.bus.homeChat() === null) this.bus.setHomeChat(chat.id);
-    this.bus.publishChat({ chat_id: chat.id, contact_id: contact.id, text }, this.worker_name);
+    chatNotify.receive(this.bus, { chat_id: chat.id, contact_id: contact.id, text }, this.worker_name);
   }
 
   /**

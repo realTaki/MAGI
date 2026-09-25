@@ -1,4 +1,5 @@
-export { Bus, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "./bus.js";
+export { Bus } from "./bus.js";
+export { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "./books/contactBook.js";
 export { BaseWorker } from "./baseWorker.js";
 export type { Chat } from "./books/chatBook.js";
 export type { Message } from "./books/messageBook.js";
@@ -20,3 +21,6 @@ export type { ChangeProviderNotify } from "./jobs/changeProvider.js";
 export type { ChangeMcpServerNotify } from "./jobs/changeMcpServer.js";
 export type { ManageWorkerNotify } from "./jobs/manageWorker.js";
 export type { Job, JobResult } from "./jobs/jobBoard.js";
+// The message jobs also export how their text is recorded and read back.
+export { chatNotify } from "./jobs/chatNotify.js";
+export { deliveryNotify } from "./jobs/deliveryNotify.js";

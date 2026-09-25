@@ -3,7 +3,7 @@
  * into a chat the MAGI already knows about.
  */
 
-import type { Bus, ExecutableTool } from "@magi/bus";
+import { deliveryNotify, type Bus, type ExecutableTool } from "@magi/bus";
 import { integerArg, optionalBoundedInteger, stringArg } from "./args.js";
 
 export function messageTools(bus: Bus): ExecutableTool[] {
@@ -52,7 +52,7 @@ export function messageTools(bus: Bus): ExecutableTool[] {
       async run(args) {
         const chatId = integerArg(args, "chat_id");
         if (!bus.chats.get(chatId)) throw new Error(`unknown chat ${chatId}`);
-        bus.publishDelivery({ chat_id: chatId, text: stringArg(args, "text") }, "tools");
+        deliveryNotify.send(bus, { chat_id: chatId, text: stringArg(args, "text") }, "tools");
         return `queued to chat ${chatId}`;
       },
     },
