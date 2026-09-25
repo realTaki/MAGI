@@ -1,9 +1,3 @@
----
-title: 关键业务流程
-description: 桌面端、ASP 和单个 MAGI 进程之间必须保持的行为。
-lang: zh-CN
-permalink: /business-flows/
----
 
 # MAGI 关键业务流程
 

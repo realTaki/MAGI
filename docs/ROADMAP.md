@@ -1,13 +1,7 @@
----
-title: Roadmap
-description: What the current tree does not do yet.
-permalink: /roadmap/
----
-
 # MAGI — Roadmap
 
-Shipped behavior is [Architecture]({{ '/architecture/' | relative_url }}) and
-[business flows]({{ '/business-flows/' | relative_url }}). This page is only
+Shipped behavior is [Architecture](ARCHITECTURE.md) and
+[business flows](business-flows.md). This page is only
 what is not in the tree yet.
 
 | Item | Status | Notes |

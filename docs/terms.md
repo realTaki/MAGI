@@ -1,8 +1,3 @@
----
-title: Terms
-description: Shared vocabulary for the current MAGI desktop, ASP, and runtime.
-permalink: /terms/
----
 
 # MAGI Terms
 

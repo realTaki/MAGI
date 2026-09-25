@@ -1,9 +1,3 @@
----
-title: Architecture
-description: How the desktop, ASP, and one MAGI process fit together.
-permalink: /architecture/
----
-
 # MAGI Architecture
 
 The running system has three parts. The desktop is the operator's machine: it
