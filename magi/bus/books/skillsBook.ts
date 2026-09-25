@@ -31,13 +31,22 @@ export class SkillsBook {
   private seedDefaults(): void {
     const target = join(this.workspace, "skills");
     mkdirSync(target, { recursive: true });
-    const here = dirname(fileURLToPath(import.meta.url));
-    const source = [join(here, "../../../skills"), join(here, "../../../../skills")].find(existsSync);
+    const source = defaultSkillsRoot();
     if (!source) return;
     for (const name of readdirSync(source)) {
       const from = join(source, name);
       const to = join(target, name);
       if (!existsSync(to) && existsSync(join(from, "SKILL.md"))) cpSync(from, to, { recursive: true });
     }
+  }
+}
+
+// The checkout's ``skills/``, found by walking up from this module: the same walk
+// covers a compiled copy under ``dist/`` and survives this file moving inside bus/.
+function defaultSkillsRoot(): string | null {
+  for (let dir = dirname(fileURLToPath(import.meta.url)); ; dir = dirname(dir)) {
+    const candidate = join(dir, "skills");
+    if (existsSync(candidate)) return candidate;
+    if (dirname(dir) === dir) return null;
   }
 }
