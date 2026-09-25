@@ -236,11 +236,10 @@ See [shell details](shell/README.md).
 
 For the implementation-level view, see:
 
-- [Architecture](docs/ARCHITECTURE.md)
-- [Business flows](docs/business-flows.md)
-- [Terms and canonical ID names](docs/terms.md)
+- [Architecture](ARCHITECTURE.md)
+- [Business flows](BUSINESS_FLOWS.md)
+- [Terms and canonical ID names](TERMS.md)
 - [ASP](asp/README.md)
-- [Roadmap](docs/ROADMAP.md)
 
 ## Project status
 
@@ -250,6 +249,18 @@ desktop, ASP, and one Bun runtime per MAGI.
 The broader vision is for MAGI to improve their own software and organization,
 evaluate those changes, and repeat the process. That RSI loop remains a research
 goal, distinct from the runtime capabilities described above.
+
+What the tree does not do yet:
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| MAGI-to-MAGI collaboration | **Later** | ASP relays operator sessions. It does not carry a shared job board between MAGI. |
+| Activate a code revision from the checkout | **Later** | The desktop already runs from a local Git checkout. Changing `magi/` or `asp/` still needs the affected process to restart. The app does not validate or roll back a revision. |
+| Take upstream into a locally edited checkout | **Later** | The checkout can diverge. Merging that divergence is manual. |
+| Channels beyond the desktop, terminal, and Telegram | **Later** | Email and calendar are not implemented. |
+
+Earlier roadmap rows named Python modules under `magi/channels/api/` and
+`magi/bus/firmwares/`. Those files are gone.
 
 ## Contributing
 

@@ -167,11 +167,10 @@ Electron App 启动本地 ASP，并运行本机的每条 MAGI 进程。ASP 负�
 
 深入实现请阅读：
 
-- [架构](docs/ARCHITECTURE.md)
-- [关键业务流程](docs/business-flows.md)
-- [术语与 ID 命名规范](docs/terms.md)
+- [架构](ARCHITECTURE.md)
+- [关键业务流程](BUSINESS_FLOWS.md)
+- [术语与 ID 命名规范](TERMS.md)
 - [ASP](asp/README.md)
-- [路线图](docs/ROADMAP.md)
 
 ## 项目状态
 
@@ -179,6 +178,17 @@ MAGI 仍处于实验阶段并在持续构建。现在交付的是本地桌面端
 
 更长远的方向是让 MAGI 改进自己的软件与组织方式、验证效果，并重复这一过程。
 这一 RSI 闭环仍是研究目标，与上面列出的现有能力有所区分。
+
+代码里还没有的部分：
+
+| 事项 | 状态 | 说明 |
+| --- | --- | --- |
+| MAGI 之间的协作 | **Later** | ASP 只中继操作者的会话，不提供 MAGI 之间共享的任务板。 |
+| 从 checkout 激活某个代码修订 | **Later** | 桌面端本来就跑在本地 Git checkout 上；改 `magi/` 或 `asp/` 仍需重启对应进程。App 不校验、也不回滚修订。 |
+| 把上游合并进本地已改动的 checkout | **Later** | checkout 会与上游分叉，合并目前是手工操作。 |
+| 桌面端、终端、Telegram 之外的渠道 | **Later** | 邮件与日历尚未实现。 |
+
+更早的路线图条目引用过 `magi/channels/api/` 与 `magi/bus/firmwares/` 下的 Python 模块，那些文件已经删除。
 
 ## 参与贡献
 

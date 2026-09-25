@@ -29,7 +29,7 @@ desktop app on this machine owns each MAGI's branch, checkout and process.
 
 `POST /conversations` `{ "kind": "bot" | "group" }` does not take a MAGI name, model, or settings. For `bot`, ASP assigns `name` `eva-000`, then `eva-001`, …, registers it as a managed agent, and returns `name`, the handle and the agent token on the create response — that is what the caller runs the agent with (the app checks out branch `magi/<name>` at `~/.magi/<name>/MAGI`). `GET /agents` lists the same credentials for every registered agent, so a restarted app can pick the society back up. `group` opens a conversation with the operator only.
 
-Group profile **邀请** uses:
+Group profile **invite** uses:
 
 - `GET /bots` — MAGI this operator can add
 - `POST /conversations/{conversation_id}/members` `{ "handle" }` — invite that MAGI; it joins on receipt
