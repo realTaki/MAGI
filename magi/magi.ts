@@ -70,8 +70,7 @@ export class Magi {
 
   async chat(text: string, address = "terminal"): Promise<number> {
     if (!this.running) throw new Error("MAGI is not running");
-    const conversation = this.bus.conversations.forOperator("cli", address);
-    const id = this.bus.publishChat({ conversation_id: conversation.id, text });
+    const id = this.bus.publishChat({ text, channel: "cli", delivery_address: address });
     while (this.running) {
       if (this.bus.board("ChatNotify").result(id)) return id;
       await sleep(20);

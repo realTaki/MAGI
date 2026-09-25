@@ -2,6 +2,9 @@
 
 const ASP_BASE = "http://127.0.0.1:42069";
 
+/** The first thing said in a new conversation, in the operator's name. */
+const GREETING = "Hi";
+
 export type Operator = {
   handle: string;
   token: string;
@@ -198,6 +201,9 @@ export async function createAspConversation(
     }
     const conversation = (await response.json()) as CreatedConversation;
     await saveConversations([conversation]);
+    // Say hello in the operator's name: it is how they see the agent answer, and how
+    // the MAGI gets the conversation it keeps to report trouble to.
+    await sendAspMessage(conversation.conversation_id, GREETING).catch(() => {});
     return conversation;
   } catch {
     return null;

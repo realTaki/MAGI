@@ -7,7 +7,7 @@
  * each one whether it is configured, starts what is, and reacts to `ManageWorkerNotify`.
  */
 
-import { BaseWorker, HOME_CONVERSATION_ID, type Bus, type ManageWorkerNotify } from "../bus/index.js";
+import { BaseWorker, type Bus, type ManageWorkerNotify } from "../bus/index.js";
 
 /** A worker the manager can run: `poll()` is the contract, the rest is optional. */
 export type StartableWorker = BaseWorker & {
@@ -166,17 +166,12 @@ export class ManagerWorker extends BaseWorker {
   }
 
   /**
-   * Tell the operator, in their own conversation — number 0, the thread their first
-   * message created. Before they have ever spoken there is nowhere to put it, so it
-   * stays in the log.
+   * Tell the operator. `publishNotice` owns where that is, and answers null when they
+   * have never spoken: then, and only then, a log line is the best there is.
    */
   private report(text: string): void {
-    const home = this.bus.conversations.get(HOME_CONVERSATION_ID);
-    if (home === null) {
-      console.error(`[manager] ${text}`);
-      return;
-    }
-    this.bus.publishDelivery({ conversation_id: home.id, text: `[manager] ${text}` });
+    const notice = `[manager] ${text}`;
+    if (this.bus.publishNotice(notice) === null) console.error(notice);
   }
 }
 
