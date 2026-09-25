@@ -316,5 +316,72 @@ test("syncing merges the source branch into every module worktree", async (t) =>
   assert.deepEqual(conflicted.failed.map((row) => row.module), ["app"]);
   assert.match(conflicted.failed[0].detail, /merge was aborted/);
   assert.equal(git(appCheckout, ["status", "--porcelain"]).trim(), "");
+
+  // A checkout with no remote says so instead of guessing what to fetch.
+  await assert.rejects(api["source.update"](), /no origin remote/);
+  api.dispose();
+});
+
+test("updating the source checkout brings the remote into it", async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-runtime-pull-"));
+  const checkout = path.join(root, "MAGI");
+  mkdirSync(path.join(checkout, "asp"), { recursive: true });
+  writeFileSync(path.join(checkout, "asp", "main.ts"), "// old");
+  const commit = (cwd, message) =>
+    git(cwd, ["-c", "user.email=test@example.invalid", "-c", "user.name=MAGI test", "commit", "--quiet", "-m", message]);
+  git(checkout, ["init", "--quiet", "-b", "main"]);
+  git(checkout, ["add", "."]);
+  commit(checkout, "initial");
+
+  // Somebody else's commit lands on the remote this checkout was cloned from.
+  const origin = path.join(root, "origin.git");
+  git(root, ["init", "--quiet", "--bare", origin]);
+  git(origin, ["symbolic-ref", "HEAD", "refs/heads/main"]);
+  git(checkout, ["remote", "add", "origin", origin]);
+  git(checkout, ["push", "--quiet", "-u", "origin", "main"]);
+  const elsewhere = path.join(root, "elsewhere");
+  git(root, ["clone", "--quiet", origin, elsewhere]);
+  writeFileSync(path.join(elsewhere, "asp", "main.ts"), "// newer");
+  git(elsewhere, ["add", "."]);
+  commit(elsewhere, "remote work");
+  git(elsewhere, ["push", "--quiet", "origin", "main"]);
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const endpoint = new URL(url).pathname;
+    if (endpoint === "/health") return Response.json({ status: "ok", runtime: "typescript" });
+    if (endpoint === "/operator") return Response.json({ token: "operator-token" });
+    if (endpoint === "/bots") return Response.json({ bots: [] });
+    if (endpoint === "/agents") return Response.json({ agents: [] });
+    throw new Error(`unexpected request: ${endpoint}`);
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  const api = createLocalApi({
+    paths: { home: root, userData: path.join(root, "userData"), checkout },
+    repository: "https://github.com/AgenticSocietyLab/MAGI.git",
+    tools: { git: "git", env: process.env },
+    emit: () => {}, openExternal: async () => {}, copy: () => {},
+    managed: true,
+    spawn() { throw new Error("updating the source must not start anything"); },
+  });
+
+  assert.deepEqual(await api["source.update"](), {
+    branch: "main",
+    behind: 1,
+    synced: [{ module: "source", merged: true }],
+    failed: [],
+  });
+  assert.equal(readFileSync(path.join(checkout, "asp", "main.ts"), "utf8"), "// newer");
+  // Nothing new the second time; the worktrees are only told about it by a sync.
+  assert.deepEqual(await api["source.update"](), {
+    branch: "main",
+    behind: 0,
+    synced: [{ module: "source", merged: false }],
+    failed: [],
+  });
   api.dispose();
 });

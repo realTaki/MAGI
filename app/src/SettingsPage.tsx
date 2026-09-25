@@ -127,8 +127,8 @@ export function SettingsPage() {
     }
   }
 
-  /** Sync and sync-and-rebuild answer per module, so a tree that failed stays visible. */
-  async function runSync(method: "runtime.syncAll" | "runtime.syncRebuildAll") {
+  /** Sync, update, and sync-and-rebuild all answer per module, so a failed tree stays visible. */
+  async function runSync(method: "runtime.syncAll" | "runtime.syncRebuildAll" | "source.update") {
     const invoke = window.magiDesktop?.invokeLocal;
     if (!invoke || runtimeBusy) return;
     setRuntimeBusy(true);
@@ -138,17 +138,23 @@ export function SettingsPage() {
         synced?: { module: string; merged: boolean }[];
         rebuilt?: string[];
         failed?: { module: string; detail: string }[];
+        branch?: string;
+        behind?: number;
       } | undefined;
       const synced = result?.synced ?? [];
-      const merged = synced.filter((row) => row.merged).length;
       const failed = result?.failed ?? [];
+      const headline =
+        result?.branch === undefined
+          ? t("appSettings.syncDone")
+              .replace("{count}", String(synced.length + (result?.rebuilt?.length ?? 0)))
+              .replace("{merged}", String(synced.filter((row) => row.merged).length))
+          : (result.behind ?? 0) > 0
+            ? t("appSettings.sourceUpdated")
+                .replace("{branch}", result.branch)
+                .replace("{count}", String(result.behind))
+            : t("appSettings.sourceCurrent").replace("{branch}", result.branch);
       setRuntimeMessage(
-        [
-          t("appSettings.syncDone")
-            .replace("{count}", String(synced.length + (result?.rebuilt?.length ?? 0)))
-            .replace("{merged}", String(merged)),
-          ...failed.map((row) => `${row.module}: ${row.detail}`),
-        ].join(" · "),
+        [headline, ...failed.map((row) => `${row.module}: ${row.detail}`)].join(" · "),
       );
       const state = await invoke("runtime.status") as { asp?: string; canInstallShellUpdate?: boolean };
       setRuntimeStatus(state.asp ?? "");
@@ -597,6 +603,14 @@ export function SettingsPage() {
                   <div className="settings-card__label">{t("appSettings.syncGroup")}</div>
                   <p className="settings-overlay__lede">{t("appSettings.syncHint")}</p>
                   <div className="settings-card__actions settings-card__actions--wrap">
+                    <button
+                      type="button"
+                      className="settings-card__pill"
+                      disabled={runtimeBusy}
+                      onClick={() => void runSync("source.update")}
+                    >
+                      {t("appSettings.sourceUpdate")}
+                    </button>
                     <button
                       type="button"
                       className="settings-card__pill"

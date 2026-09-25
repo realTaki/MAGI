@@ -22,6 +22,8 @@
  *   provider.settings/save   — keep the key in app data and sync through ASP.
  *   source.status            — branch, commit, and how this checkout sits
  *                              against the AgenticSociety remote.
+ *   source.update            — fetch the remote and merge it into this checkout,
+ *                              which is where every worktree syncs from.
  *
  * ``progress`` is ``(message, percent)`` with an absolute 0..1 percentage.
  */
@@ -1338,14 +1340,13 @@ export function createLocalApi(context) {
     return branch;
   }
 
-  /** Merge the source branch into one worktree; a conflict is aborted, never left half-merged. */
-  async function syncWorktree(root, branch) {
-    const from = await sourceBranch();
+  /** Merge one ref into a checkout; a conflict is aborted, never left half-merged. */
+  async function mergeInto(root, branch, from) {
     try {
       const output = await command(git.binary, ["merge", "--no-edit", from], {
         cwd: root, env: tools.env, description: `Could not merge ${from} into ${branch}`,
       });
-      return { branch, from, merged: !/already up to date/i.test(output) };
+      return !/already up to date/i.test(output);
     } catch {
       try {
         await command(git.binary, ["merge", "--abort"], {
@@ -1356,6 +1357,41 @@ export function createLocalApi(context) {
       }
       throw new Error(`${branch} could not merge ${from}; the merge was aborted.`);
     }
+  }
+
+  /** Merge the source branch into one module's worktree. */
+  async function syncWorktree(root, branch) {
+    const from = await sourceBranch();
+    return { branch, from, merged: await mergeInto(root, branch, from) };
+  }
+
+  /**
+   * Update the source checkout itself from its remote. Every worktree syncs from
+   * this checkout, so this is the outermost step of the chain the build page
+   * offers: origin → source checkout → each module's worktree → rebuild.
+   */
+  async function updateSource() {
+    const branch = await sourceBranch();
+    if ((await gitConfigValue("remote.origin.url")) === "") {
+      throw new Error("The source checkout has no origin remote to update from.");
+    }
+    // Never let a missing credential turn into a prompt nobody can answer.
+    await gitText(["fetch", "--prune", "origin"], "Could not fetch from origin", {
+      ...tools.env, GIT_TERMINAL_PROMPT: "0",
+    });
+    let behind = 0;
+    try {
+      behind = Number(
+        await gitText(
+          ["rev-list", "--count", `HEAD..origin/${branch}`],
+          `Could not compare with origin/${branch}`,
+        ),
+      ) || 0;
+    } catch {
+      throw new Error(`origin has no ${branch} branch to update from.`);
+    }
+    const merged = behind > 0 ? await mergeInto(paths.checkout, branch, `origin/${branch}`) : false;
+    return { branch, behind, synced: [{ module: "source", merged }], failed: [] };
   }
 
   /**
@@ -1689,6 +1725,7 @@ export function createLocalApi(context) {
     "provider.usage": providerUsage,
     "provider.save": saveProvider,
     "source.status": sourceStatus,
+    "source.update": () => runtimeAction(updateSource),
     "chat.listChats": async () => (await chatStore()).listChats(),
     "chat.saveChats": async (rows) => (await chatStore()).saveChats(rows),
     "chat.listEvents": async (id) => (await chatStore()).listEvents(id),
