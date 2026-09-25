@@ -369,8 +369,11 @@ export function createLocalApi(context) {
   async function providerCatalog() {
     const entry = path.join(appCheckout, "magi", "node_modules", "@earendil-works", "pi-ai", "dist", "providers", "all.js");
     const { getBuiltinModels } = await import(pathToFileURL(entry).href);
-    return Object.fromEntries(["openai", "anthropic", "minimax", "deepseek"].map((provider) => [
-      provider, getBuiltinModels(provider).map((model) => ({ id: model.id, name: model.name })),
+    return Object.fromEntries([
+      "openai", "anthropic", "minimax-cn",
+    ].map((provider) => [provider, getBuiltinModels(provider).map((model) => ({ id: model.id, name: model.name }))]).concat([
+      ["minimax-global", getBuiltinModels("minimax").map((model) => ({ id: model.id, name: model.name }))],
+      ["deepseek", getBuiltinModels("deepseek").map((model) => ({ id: model.id, name: model.name }))],
     ]));
   }
 

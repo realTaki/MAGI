@@ -13,6 +13,7 @@ export type ProviderSettings = { provider?: string; api_key?: string; model?: st
 
 function providerId(value: string): string {
   if (value === "claude") return "anthropic";
+  // pi-ai calls MiniMax Global `minimax`; MAGI exposes the region explicitly.
   if (value === "minimax-global") return "minimax";
   return value;
 }

@@ -25,7 +25,7 @@ type ClientRelease = {
   reason: "" | "no-release" | "no-asset" | "unavailable";
 };
 
-const PROVIDERS = ["openai", "anthropic", "minimax", "deepseek", "custom"] as const;
+const PROVIDERS = ["openai", "anthropic", "minimax-cn", "minimax-global", "deepseek", "custom"] as const;
 
 export function SettingsPage() {
   const t = useT();
@@ -120,7 +120,7 @@ export function SettingsPage() {
       if (cancelled || settings === null) {
         return;
       }
-      setProvider(settings.provider === "claude" ? "anthropic" : settings.provider === "minimax-global" ? "minimax" : settings.provider ?? "");
+      setProvider(settings.provider === "claude" ? "anthropic" : settings.provider ?? "");
       setModel(settings.model ?? "");
       setApiKey(settings.api_key ?? "");
       setBaseUrl(settings.base_url ?? "");
@@ -411,7 +411,7 @@ export function SettingsPage() {
                       <option value="">{t("appSettings.providerChoose")}</option>
                       {PROVIDERS.map((name) => (
                         <option key={name} value={name}>
-                          {name === "custom" ? t("appSettings.providerCustom") : name === "anthropic" ? "Anthropic" : name === "minimax" ? "MiniMax" : name === "deepseek" ? "DeepSeek" : "OpenAI"}
+                          {name === "custom" ? t("appSettings.providerCustom") : name === "anthropic" ? "Anthropic" : name === "minimax-cn" ? "MiniMax CN" : name === "minimax-global" ? "MiniMax Global" : name === "deepseek" ? "DeepSeek" : "OpenAI"}
                         </option>
                       ))}
                       {provider !== "" && !PROVIDERS.some((name) => name === provider) ? (
