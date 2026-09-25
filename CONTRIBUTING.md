@@ -77,7 +77,7 @@ docs: Update README with new architecture
 |-----------|---------|
 | `shell/` | Electron shell: window, bundled Node, npm, and Bun |
 | `app/` | Operator interface and local backend |
-| `asp/` | ASP session server (`main.ts` + `server/` + `db/`, Node 24) |
+| `asp/` | ASP chat server (`main.ts` + `server/` + `db/`, Node 24) |
 | `magi/` | BUS, agent, providers, tools, channels, and tests |
 | `docs/` | Design docs + roadmap |
 

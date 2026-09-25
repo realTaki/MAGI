@@ -10,9 +10,10 @@ agents; `service.ts` owns chat state and event delivery.
 `store.ts` / `transport.ts` persist relay state and manage live connections;
 `db/` owns the SQLite file.
 
-Desktop-only HTTP `/chats`, `/bots`, and `/settings/provider` require
-the operator Bearer token. Shared HTTP `/chats` accepts participant Bearer
-tokens from desktop or MAGI; WebSocket `/connect` is MAGI's live channel.
+Desktop-only HTTP `/chats`, `/bots`, and `/settings/provider` require the
+operator Bearer token. Participant HTTP uses `/chats/open` and
+`/chats/{chat_id}/...` with a participant Bearer token; WebSocket `/connect`
+is MAGI's live channel.
 SQLite is `~/.magi/asp/asp.sqlite`.
 
 ASP persists chats, participants and relay events in SQLite. Recipients

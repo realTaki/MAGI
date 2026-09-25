@@ -3,7 +3,7 @@
 The running system has three parts. The desktop is the operator's machine: it
 starts ASP and runs every MAGI from that MAGI's own branch (`magi/eva-000`,
 checked out at `~/.magi/eva-000/MAGI`). ASP serves as the central channel for
-their shared sessions: it tracks participants and relays events between them,
+their shared chats: it tracks participants and relays events between them,
 and never starts a process. Each MAGI is its own Bun process with its own BUS. Within that process, Books and Jobs provide a
 single boundary for persistent state and coordination, so components depend
 on the BUS rather than directly on one another.
@@ -19,6 +19,40 @@ The installed package contains the shell plus Node.js 24, npm, and Bun. It
 does not contain a Python runtime. On first launch the shell clones this
 repository to `~/.magi/MAGI`. Later launches keep that checkout.
 
+## Canonical terminology and names
+
+This section is the repository's sole terminology authority. Code, persisted
+data, HTTP payloads, events, tools, and documentation must use these names.
+
+| Concept | Canonical name | Rule |
+| --- | --- | --- |
+| A stream of participants and messages | **chat** | Use `chat` in code, file names, APIs, tables, and prose. It is the same resource in App, ASP, and MAGI. |
+| Chat identifier | `chat_id` / `chatId` | Use snake case in wire payloads and SQLite; camel case for TypeScript locals and parameters. |
+| One item sent in a chat | **message** | Use `message` for the payload and durable record. `msg` is only acceptable for a short local variable. |
+| A relay notification about a chat | **chat event** | Event types are `chat.message`, `chat.invited`, `chat.joined`, and so on; identifiers are `event_id`. |
+| App presentation mode | `kind: "bot" | "group"` | This is App-only UI metadata for a private chat or group chat. ASP and MAGI operate on chats without a second conversation type. |
+| MAGI address | `handle` | A MAGI address such as `@eva-000.magi`; it is not a chat ID. |
+
+`conversation`, `conversation_id`, `session`, and `session_id` are not names
+for a chat anywhere in this repository. The only exception is a genuine
+short-lived authentication or browser session, which must not identify a chat.
+
+The canonical ASP surface is `/chats`: the App creates and lists chats at
+`POST`/`GET /chats`; the lower-level open operation is `POST /chats/open`; and
+participant operations use `/chats/:chat_id/...`.
+
+| Platform term | Meaning |
+| --- | --- |
+| **MAGI** | Modular Agentic Genesis Intelligences, the project name. One MAGI is one governable agent and its Bun runtime in `magi/`; the plural refers to independent agents working together. |
+| **ASP** | The local chat server in `asp/`. It registers agents and relays events; it never starts a process and does not reason. |
+| **Desktop** | The Electron shell and operator UI. It owns the checkout, transcript, and provider key. |
+| **BUS** | The durable boundary inside one MAGI process: Books and Jobs in `magi/bus/`. |
+| **Book** | Durable workspace records such as chats, messages, memory, skills, contacts, and prompts. |
+| **Job** | A durable `publish -> claim -> result` item. Chat, model calls, tool calls, and delivery are Jobs. |
+| **EVA** | The handle naming pattern. ASP assigns `eva-000`, then `eva-001`; its address is `@eva-000.magi`. |
+| **Workspace** | One MAGI's directory, normally `~/.magi/<name>`, containing that MAGI's `MAGI/` source checkout. |
+| **Agent branch** | `magi/<name>` — the branch a MAGI runs from. The Desktop creates its Git worktree and merges changes into it on demand. |
+
 ## Who owns which files
 
 | Path | Owner | What it is |
@@ -26,7 +60,7 @@ repository to `~/.magi/MAGI`. Later launches keep that checkout.
 | `~/.magi/MAGI` | desktop | Git checkout of this repository. |
 | `~/.magi/app/chat.sqlite` | desktop | The operator's transcript. |
 | `~/.magi/app/provider.json` | desktop | Provider, model, and API key. |
-| `~/.magi/asp/asp.sqlite` | ASP | Sessions, participants, and relay events. |
+| `~/.magi/asp/asp.sqlite` | ASP | Chats, participants, and relay events. |
 | `~/.magi/<name>` | that MAGI | Workspace. Books and Job history. |
 
 An older workspace at `~/.magi/ts-magi/<name>` is still opened when
@@ -61,9 +95,9 @@ assertion. The other flows live with the tests that hold them, named below.
 
 `asp/main.ts` is the process entry. Node 24 runs the TypeScript directly.
 
-The operator API (`/conversations`, `/bots`, `/settings/provider`) requires
-the desktop's Bearer token. The participant API (`/sessions`, WebSocket
-`/connect`) accepts a MAGI's Bearer token.
+The operator API (`/chats`, `/bots`, `/settings/provider`) requires the
+desktop's Bearer token. The participant API (`/chats/open`,
+`/chats/:chat_id/...`, WebSocket `/connect`) accepts a MAGI's Bearer token.
 
 Creating a bot does not take a name or a model. ASP assigns `eva-000`, then
 `eva-001`, and starts:
@@ -72,8 +106,8 @@ Creating a bot does not take a name or a model. ASP assigns `eva-000`, then
 bun run start -- @eva-000.magi http://127.0.0.1:42069 <token>
 ```
 
-The working directory is the checkout's `magi/`. A group conversation starts
-with only the operator. Inviting a MAGI sends `session.invited`. That MAGI
+The working directory is the checkout's `magi/`. A group chat starts
+with only the operator. Inviting a MAGI sends `chat.invited`. That MAGI
 joins on receipt.
 
 ASP deletes a message event only after every intended recipient has
@@ -84,7 +118,7 @@ history.
 `PUT /settings/provider` forwards a complete provider update to connected
 MAGI and reports which ones synced. ASP does not save a new copy of the key.
 
-Asserted in `asp/test/`: creating a conversation, relaying with exact recipient
+Asserted in `asp/test/`: creating a chat, relaying with exact recipient
 acks, and the update being transient.
 
 ## A MAGI process
@@ -98,7 +132,7 @@ call each other. They publish Jobs and claim Jobs — asserted in
 | Agent | `ChatNotify` | `CallLLMJob`, `RunToolJob` |
 | Providers | `CallLLMJob` | the model result |
 | Tools | `RunToolJob` | the tool result |
-| ASP channel | session events | `ChatNotify`, `DeliveryNotify` replies |
+| ASP channel | chat events | `ChatNotify`, `DeliveryNotify` replies |
 | CLI | terminal lines | `ChatNotify` |
 | Telegram | bot updates | `ChatNotify` |
 | Tasks | due tasks | `RunTaskNotify` |
@@ -111,19 +145,19 @@ polling, offsets, retries, and rendering, the worker only publishes a
 through `health()` so the supervisor can tell the operator. A group is only
 heard when the MAGI is addressed — an @ mention, or a reply to one of its
 messages; a DM is the operator's own chat. What does arrive is recorded like
-ASP's: the conversation, the message, the sender as a contact, and both of them
+ASP's: the chat, the message, the sender as a contact, and both of them
 as members.
 
-Books in `magi/bus/books/` hold conversations, messages, memory,
+Books in `magi/bus/books/` hold chats, messages, memory,
 skills, tasks, contacts, contact notes, prompts, MCP servers, and the tool
 catalog. SQLite files are `memories/magi.db` and `logs/magi.db` inside the
 workspace. Bun owns that SQLite. Each Book declares the table it owns next to
 its queries (`magi/bus/books/`; job queue:
 `magi/bus/jobs/jobBoard.ts`); `bun run db:generate` writes the SQL
 migrations under `magi/bus/drizzle/`, which the runtime applies on boot.
-Errors are delivered, not logged: into the conversation the failure belongs to, into
+Errors are delivered, not logged: into the chat the failure belongs to, into
 the job result the agent will surface, or — for a component that only sees trouble of
-its own — into the operator's home conversation (`home.conversation_id`, via
+its own — into the operator's home chat (`home.chat_id`, via
 `bus.publishNotice`).
 
 Without ASP arguments, `bun run start -- @alice.magi` is a terminal chat.

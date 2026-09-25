@@ -10,7 +10,7 @@
 >
 > Each MAGI has its own runtime, workspace, memory, tools, and provider
 > credentials. The desktop app runs that process from its own branch and relays
-> its sessions through ASP. The operator
+> its chats through ASP. The operator
 > can inspect the workspace and the boundary around it. Together, MAGI can
 > work on the software that runs them: propose changes, evaluate the results,
 > and build on improvements over successive cycles.
@@ -36,7 +36,7 @@ workspace, memory, and skills remain after the task.
 | Agents are steps in a workflow | A MAGI persists across tasks |
 | Collaboration ends with a task | Context, memory, skills, and contacts persist |
 | One process commonly hosts many agents | Every MAGI has its own runtime and workspace |
-| A controller defines the execution path | The MAGI decides inside its own process. The app starts it; ASP relays sessions |
+| A controller defines the execution path | The MAGI decides inside its own process. The app starts it; ASP relays chats |
 | Scale means adding concurrent calls | Scale means adding MAGI |
 
 A workflow engine can still sit beside MAGI. MAGI is the runtime a long-lived
@@ -76,7 +76,7 @@ improvement **within explicit, inspectable constraints**.
 ```text
 shell/       Electron shell: window, checkout, and bundled Node, npm, and Bun
 app/         Operator UI and the local backend that starts ASP
-asp/         ASP server (TypeScript, node main.ts): /sessions, WS /connect, ~/.magi/asp.sqlite
+asp/         ASP server (TypeScript, node main.ts): /chats, WS /connect, ~/.magi/asp.sqlite
 magi/        MAGI runtime: BUS, workers, tools, and channels
 ```
 
@@ -87,12 +87,12 @@ observe work, propose a change, evaluate it, and retain what proves useful:
 
 - A MAGI learns from the outcomes, failures, and observations of its work.
 - Useful procedures become reusable Skills rather than disappearing into one
-  conversation.
+  chat.
 - MAGI can work toward changing their own code and runtime, then evaluate
   whether those changes improve future behavior.
 - The operator can inspect its memory, its tools, its resource boundaries, and
   the authority used to change it.
-- Several MAGI can join one operator conversation. Each keeps its own workspace.
+- Several MAGI can join one operator chat. Each keeps its own workspace.
 
 > **Implementation status:** a local desktop, one ASP process, and one Bun
 > process per MAGI are what runs today. Each MAGI keeps its own workspace
@@ -109,7 +109,7 @@ observe work, propose a change, evaluate it, and retain what proves useful:
 | **EVA** | A naming pattern for handles. ASP assigns `eva-000`, `eva-001`, and so on. The address is `@eva-000.magi`. |
 
 The desktop app is the local lifecycle boundary: it owns each MAGI's branch,
-checkout and process. ASP relays their sessions; it does not decide what a MAGI
+checkout and process. ASP relays their chats; it does not decide what a MAGI
 should say, and it never starts a process.
 
 ## What exists today
@@ -118,13 +118,13 @@ should say, and it never starts a process.
   installs `asp/` and `magi/`, builds the operator UI, and starts ASP. The
   package carries Node.js 24, npm, and Bun. It does not carry a Python runtime.
 - **ASP** — Node 24, `asp/main.ts`, bound to `127.0.0.1:42069`. It stores
-  sessions and relay events in `~/.magi/asp/asp.sqlite`. Creating a bot spawns
-  that MAGI; creating a group opens a conversation the operator can invite
+  chats and relay events in `~/.magi/asp/asp.sqlite`. Creating a bot spawns
+  that MAGI; creating a group opens a chat the operator can invite
   MAGI into.
 - **One process per MAGI** — Bun runs `magi/magi.ts`. The default workspace is
   `~/.magi/<name>`. An older `~/.magi/ts-magi/<name>` directory is still
   opened when the new path does not exist.
-- **BUS inside each MAGI** — Books for conversations, messages, memory, skills,
+- **BUS inside each MAGI** — Books for chats, messages, memory, skills,
   tasks, contacts, prompts, and tools; Jobs for chat, model calls, tool calls,
   delivery, provider changes, tasks, and MCP server changes.
 - **Operator data stays on the desktop** — chat history is
@@ -151,7 +151,7 @@ backend seeds the first three, **MELCHIOR**, **BALTHASAR**, and **CASPER**.
 The app is also the
 machine-local layer: connecting the checkout to the operator's GitHub account
 (fork plus `origin`) happens in the WebUI after startup, not while booting.
-Creating a bot is `POST /conversations { "kind": "bot" }` — ASP assigns
+Creating a bot is `POST /chats { "kind": "bot" }` — ASP assigns
 `eva-000`; the app then checks out branch `magi/eva-000` at
 `~/.magi/eva-000/MAGI` and runs that MAGI from there.
 
@@ -171,8 +171,8 @@ Creating a bot is `POST /conversations { "kind": "bot" }` — ASP assigns
    too.
 4. **Set a provider.** Settings writes `~/.magi/app/provider.json`. ASP hands
    the same values to each connected MAGI, which stores them in its own BUS.
-5. **Invite.** A group conversation can add a MAGI the app already started.
-   That MAGI joins when it receives `session.invited`.
+5. **Invite.** A group chat can add a MAGI the app already started.
+   That MAGI joins when it receives `chat.invited`.
 
 ## Architecture
 
@@ -185,7 +185,7 @@ shell/            Electron window
 app/              operator UI and local backend
    │  starts Node 24
    ▼
-asp/              127.0.0.1:42069   sessions and relay, never a process
+asp/              127.0.0.1:42069   chats and relay, never a process
    ▲
 app/              also runs Bun: one process per MAGI, each on its own branch
    ├── magi  eva-000   branch magi/eva-000   ~/.magi/eva-000/MAGI
@@ -193,12 +193,12 @@ app/              also runs Bun: one process per MAGI, each on its own branch
    └── magi  eva-002   branch magi/eva-002   ~/.magi/eva-002/MAGI
 ```
 
-The app starts every process; ASP relays session events and is not the place a
+The app starts every process; ASP relays chat events and is not the place a
 MAGI reasons. Each MAGI keeps its own SQLite workspace next to its checkout, so
 a `main` someone broke cannot take a running MAGI down. The desktop keeps the
 operator's transcript and provider key.
 
-For collaboration between MAGI, **ASP is the central session channel**: it
+For collaboration between MAGI, **ASP is the central chat channel**: it
 tracks participants and relays events to the intended agents. **Inside one
 MAGI, the BUS is the shared persistence and coordination boundary.** Its
 Books and Jobs give Workers and other components one dependency for local
@@ -237,7 +237,7 @@ See [shell details](shell/README.md).
 For the implementation-level view, see:
 
 - [Architecture](ARCHITECTURE.md) — process boundaries and every business flow
-- [Terms and canonical ID names](TERMS.md)
+- [Canonical terminology and IDs](ARCHITECTURE.md#canonical-terminology-and-names)
 - [ASP](asp/README.md)
 
 ## Project status
@@ -253,7 +253,7 @@ What the tree does not do yet:
 
 | Item | Status | Notes |
 | --- | --- | --- |
-| MAGI-to-MAGI collaboration | **Later** | ASP relays operator sessions. It does not carry a shared job board between MAGI. |
+| MAGI-to-MAGI collaboration | **Later** | ASP relays operator chats. It does not carry a shared job board between MAGI. |
 | Activate a code revision from the checkout | **Later** | The desktop already runs from a local Git checkout. Changing `magi/` or `asp/` still needs the affected process to restart. The app does not validate or roll back a revision. |
 | Take upstream into a locally edited checkout | **Later** | The checkout can diverge. Merging that divergence is manual. |
 | Channels beyond the desktop, terminal, and Telegram | **Later** | Email and calendar are not implemented. |

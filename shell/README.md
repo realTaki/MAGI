@@ -29,21 +29,21 @@ owns the ASP worktree:
 The app keeps the operator's GitHub credentials in `~/.magi/app/`.
 ASP owns its server state, while each MAGI keeps its own store, so both may run
 on a remote server while this machine still works and keeps its own data.
-The app stores its conversation history in `~/.magi/app/chat.sqlite`. It writes
+The app stores its chat history in `~/.magi/app/chat.sqlite`. It writes
 events before acknowledging them to ASP, and reloads that history from SQLite
 after a restart. ASP keeps relay events in its own SQLite until each intended
 recipient acknowledges the exact event. Each MAGI keeps only its own incoming
-ChatNotify jobs and conversation state in its workspace; outbound messages go
+ChatNotify jobs and chat state in its workspace; outbound messages go
 through DeliveryNotify jobs.
 An old running ASP kept events only in memory. Before stopping it for this
 upgrade, run the bundled Node.js with `app/scripts/import-asp-history.ts` from the MAGI
-checkout. This copies its available conversations and events into the desktop
+checkout. This copies its available chats and events into the desktop
 SQLite without acknowledging or deleting them. The running shell loads the new
 app backend only on its next launch, so it cannot perform this first import
 automatically. Events from an already stopped in-memory ASP cannot be recovered.
-The import preserves the desktop transcript; the old ASP's in-memory session
-routing is unavailable after that ASP stops, so those older threads cannot send
-new messages until a new conversation is created.
+The import preserves the desktop transcript; the old ASP's in-memory chat
+routing is unavailable after that ASP stops, so those older chats cannot send
+new messages until a new chat is created.
 The app stores provider credentials in `~/.magi/app/provider.json` (owner-only
 permissions). ASP forwards a provider update to MAGI without storing the key;
 the app retries delivery as MAGI come online.
