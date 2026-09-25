@@ -25,7 +25,10 @@ export class McpWorker extends BaseWorker {
       try { this.connections.set(server.name, await this.connector(server, this.bus.workspace)); }
       catch (error) { console.error(`MCP ${server.name}:`, error); }
     }));
-    this.revalidate();
+    // A name clash here would make the whole catalog unreadable, and a boot is no
+    // place to fail a MAGI over it: log it, keep the connections, stay running.
+    try { this.revalidate(); }
+    catch (error) { console.error("MCP catalog:", error); }
   }
 
   async poll(): Promise<boolean> {
@@ -120,7 +123,7 @@ export async function connectMcpServer(config: McpServerConfig, workspace: strin
   const client = new Client({ name: "magi", version: "0.2.0" });
   const headers = config.headers ?? {};
   const transport = config.connection_type === "stdio"
-    ? new StdioClientTransport({ command: config.command ?? "", args: config.args ?? [], cwd: workspace, env: { ...cleanEnvironment(), ...(config.env ?? {}) } })
+    ? new StdioClientTransport({ command: config.command ?? "", args: config.args ?? [], cwd: workspace, env: { ...inheritedEnvironment(), ...(config.env ?? {}) } })
     : config.connection_type === "sse"
       ? new SSEClientTransport(new URL(config.url ?? ""), { requestInit: { headers } })
       : new StreamableHTTPClientTransport(new URL(config.url ?? ""), { requestInit: { headers } });
@@ -145,9 +148,11 @@ export async function connectMcpServer(config: McpServerConfig, workspace: strin
   }
 }
 
-// An MCP server runs as its own process: it gets this environment plus the
-// server's configured one. MAGI's own configuration never comes from here.
-function cleanEnvironment(): Record<string, string> {
+// An MCP server runs as its own process: it inherits this process's environment
+// plus the server's configured one. This is not a boundary and must not read like
+// one — the child runs as the same user and can read the same files — and it is
+// the environment those servers need to start at all (PATH, HOME, proxies, CAs).
+function inheritedEnvironment(): Record<string, string> {
   return Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
 }
 

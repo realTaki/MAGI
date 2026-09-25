@@ -13,55 +13,6 @@ afterEach(async () => { for (const path of workspaces.splice(0)) await rm(path, 
 async function workspace() { const path = await mkdtemp(join(tmpdir(), "magi-test-")); workspaces.push(path); return path; }
 
 describe("local MAGI agent", () => {
-  test("does not open a Python workspace with incompatible Book tables", async () => {
-    const path = await workspace();
-    await mkdir(join(path, "memories"));
-    const db = new Database(join(path, "memories/magi.db"), { create: true });
-    db.exec("CREATE TABLE books_settings (id INTEGER PRIMARY KEY, key TEXT NOT NULL, value TEXT NOT NULL)");
-    db.close();
-    expect(() => new Magi("@alice.magi", { workspace: path })).toThrow("py-magi's SQLite schema");
-    const check = new Database(join(path, "memories/magi.db"), { readonly: true });
-    expect((check.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'books_conversations'").all())).toEqual([]);
-    check.close();
-  });
-
-  test("migrates Python Books into a separate TypeScript workspace once", async () => {
-    const root = await workspace();
-    const source = join(root, "python");
-    const target = join(root, "typescript");
-    await mkdir(join(source, "memories"), { recursive: true });
-    const db = new Database(join(source, "memories", "magi.db"), { create: true });
-    db.exec(`
-      CREATE TABLE books_settings (id INTEGER PRIMARY KEY, key TEXT UNIQUE, value TEXT, created_at TEXT, updated_at TEXT);
-      CREATE TABLE books_contacts (id INTEGER PRIMARY KEY, name TEXT, nickname TEXT, role TEXT, last_seen_at TEXT, created_at TEXT, updated_at TEXT);
-      CREATE TABLE books_contact_notes (id INTEGER PRIMARY KEY, contact_id INTEGER, note TEXT, kind TEXT, created_at TEXT, updated_at TEXT);
-      CREATE TABLE books_conversations (id INTEGER PRIMARY KEY, channel TEXT, delivery_address TEXT, instruction TEXT, topic TEXT, info TEXT, summary TEXT, created_at TEXT, updated_at TEXT);
-      CREATE TABLE books_messages (id INTEGER PRIMARY KEY, conversation_id INTEGER, contact_id INTEGER, content TEXT, timestamp TEXT, archived INTEGER, created_at TEXT, updated_at TEXT);
-      CREATE TABLE books_memories (id INTEGER PRIMARY KEY, topic TEXT, detail TEXT, kind TEXT, archived INTEGER, created_at TEXT, updated_at TEXT);
-      CREATE TABLE books_tasks (id INTEGER PRIMARY KEY, name TEXT, prompt TEXT, source TEXT, enabled INTEGER, cron TEXT, conversation_id INTEGER, created_at TEXT, updated_at TEXT);
-      INSERT INTO books_settings VALUES (1, 'provider.name', 'openai', '', '');
-      INSERT INTO books_contacts VALUES (0, 'system', NULL, 'system', '2026-01-01', '', '');
-      INSERT INTO books_contacts VALUES (1, '@migrate.magi', 'Migrated', 'magi', '2026-01-01', '', '');
-      INSERT INTO books_contact_notes VALUES (1, 1, 'kept note', 'permanent', '2026-01-01', '');
-      INSERT INTO books_conversations VALUES (1, 'asp', 'session-old', 'instruction', 'topic', 'info', 'summary', '', '');
-      INSERT INTO books_messages VALUES (1, 1, 0, 'historic message', '2026-01-01', 0, '', '');
-      INSERT INTO books_memories VALUES (1, 'historic memory', 'detail', 'long_term', 0, '2026-01-01', '');
-      INSERT INTO books_tasks VALUES (1, 'historic task', 'do work', 'user', 1, '0 9 * * *', 1, '', '');
-    `);
-    db.close();
-    const magi = new Magi("@migrate.magi", { workspace: target, migrationSource: source, client: { async complete() { return { role: "assistant", content: "unused" }; } } });
-    try {
-      expect(magi.bus.settings.get("provider.name")).toBe("openai");
-      expect(magi.bus.settings.get("migration.py_magi")).toBeTruthy();
-      expect(magi.bus.contacts.get(1)?.nickname).toBe("Migrated");
-      expect(magi.bus.contactNotes.get(1)?.note).toBe("kept note");
-      expect(magi.bus.conversations.get(1)).toMatchObject({ topic: "topic", info: "info", summary: "summary" });
-      expect(magi.bus.messages.list(1)[0]?.content).toBe("historic message");
-      expect(magi.bus.memoryBook.get(1)?.topic).toBe("historic memory");
-      expect(magi.bus.tasks.get(1)?.name).toBe("historic task");
-    } finally { await magi.stop(); }
-  });
-
   test("pi-ai handles a custom OpenAI-compatible endpoint and native tool calls", async () => {
     const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
     const client = new PiAiClient({

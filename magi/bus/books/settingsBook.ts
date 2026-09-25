@@ -22,7 +22,4 @@ export class SettingsBook {
       .onConflictDoUpdate({ target: settings.key, set: { value } })
       .run();
   }
-  all(): Setting[] {
-    return this.db.select().from(settings).orderBy(settings.key).all();
-  }
 }

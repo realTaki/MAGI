@@ -7,7 +7,7 @@ import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 /** Either workspace database. Each Book declares the table it owns. */
 export type BusDb = BunSQLiteDatabase & { $client: Database };
 
-/** Wrap an already open connection: the caller owns PRAGMAs and the py-magi guard. */
+/** Wrap an already open connection: the caller owns opening it and its PRAGMAs. */
 export function workspaceDatabase(client: Database): BusDb {
   return drizzle(client);
 }

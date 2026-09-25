@@ -23,8 +23,7 @@ function mcpServerFromArgs(name: string, args: Record<string, unknown>, current:
     headers: args.headers === undefined ? current?.headers ?? {} : stringRecord(args.headers, "headers"),
     enabled: typeof args.enabled === "boolean" ? args.enabled : current?.enabled ?? true,
     connect_timeout: optionalPositiveNumber(args.connect_timeout, current?.connect_timeout ?? undefined) ?? null,
-    execute_timeout: optionalPositiveNumber(args.execute_timeout, current?.execute_timeout ?? undefined) ?? null,
-    sse_read_timeout: optionalPositiveNumber(args.sse_read_timeout, current?.sse_read_timeout ?? undefined) ?? null };
+    execute_timeout: optionalPositiveNumber(args.execute_timeout, current?.execute_timeout ?? undefined) ?? null };
 }
 
 function stringArray(value: unknown, key: string): string[] {
@@ -70,14 +69,16 @@ export function mcpTools(bus: Bus): ExecutableTool[] {
         connection_type: { type: "string", enum: ["stdio", "sse", "streamable_http"] }, command: { type: "string" },
         args: { type: "array", items: { type: "string" } }, url: { type: "string" }, enabled: { type: "boolean" },
         env: { type: "object" }, headers: { type: "object" }, connect_timeout: { type: "number" },
-        execute_timeout: { type: "number" }, sse_read_timeout: { type: "number" },
+        execute_timeout: { type: "number" },
       }, required: ["action"] },
       async run(args) {
         const action = stringArg(args, "action");
         if (action === "list") return JSON.stringify({ servers: bus.mcpServers.list().map(publicMcpServer) });
         if (action !== "add" && action !== "update" && action !== "delete") throw new Error("action must be list, add, update, or delete");
         const name = stringArg(args, "name");
-        if (!/^[a-zA-Z0-9_.-]{1,64}$/.test(name)) throw new Error("MCP server name must be ASCII without spaces and at most 64 characters");
+        // No double underscore: it is what joins a server name to its tool names, so
+        // keeping it out of server names makes every MCP tool name unambiguous.
+        if (!/^(?!.*__)[a-zA-Z0-9_.-]{1,64}$/.test(name)) throw new Error("MCP server name must be ASCII without spaces, at most 64 characters, and without a double underscore");
         const current = bus.mcpServers.get(name);
         if (action === "delete") {
           if (!current) return JSON.stringify({ status: "not_found", name });

@@ -28,8 +28,8 @@ export class Magi {
   private running = false;
   private loops: Promise<void>[] = [];
 
-  constructor(handle: string, options: { workspace?: string; migrationSource?: string | null; client?: LLMClient; tools?: Tool[]; deliver?: (text: string) => void; asp?: { base: string; token: string }; telegram?: { token: string; apiBase?: string }; mcpConnector?: McpConnector } = {}) {
-    this.bus = new Bus(handle, options.workspace, options.migrationSource);
+  constructor(handle: string, options: { workspace?: string; client?: LLMClient; tools?: Tool[]; deliver?: (text: string) => void; asp?: { base: string; token: string }; telegram?: { token: string; apiBase?: string }; mcpConnector?: McpConnector } = {}) {
+    this.bus = new Bus(handle, options.workspace);
     this.tools = new ToolsWorker(this.bus, options.tools);
     this.agent = new AgentWorker(this.bus);
     this.providers = new ProvidersWorker(this.bus, options.client);
@@ -45,7 +45,7 @@ export class Magi {
     if (this.running) return;
     this.running = true;
     this.telegram?.start();
-    void this.mcp.start();
+    void this.mcp.start().catch((error) => console.error("mcp:", error));
     this.loops = [this.agent, this.tools, this.providers, this.cli, this.asp, this.telegram, this.tasks, this.mcp]
       .filter((worker) => worker !== null)
       .map((worker) => this.runWorkerLoop(worker));

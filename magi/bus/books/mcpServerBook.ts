@@ -13,7 +13,6 @@ export const mcpServers = sqliteTable("books_mcp_servers", {
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
   connect_timeout: real("connect_timeout"),
   execute_timeout: real("execute_timeout"),
-  sse_read_timeout: real("sse_read_timeout"),
 });
 
 export type McpServerConfig = typeof mcpServers.$inferSelect;

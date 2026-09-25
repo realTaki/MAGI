@@ -58,7 +58,6 @@ memory and contact tools, Skills, context compaction, recurring or manually
 triggered tasks, foreground/background shell processes, and dynamically
 configured stdio/SSE/Streamable-HTTP MCP tools. Provider routing supports the
 OpenAI-compatible providers in the desktop picker plus Anthropic's native
-Messages API. On first use it copies compatible Books and workspace assets from
-an existing Python workspace into its separate TypeScript workspace.
+Messages API.
 
 The desktop packages Bun; the app starts one `magi` per agent, from that agent's own checkout.
