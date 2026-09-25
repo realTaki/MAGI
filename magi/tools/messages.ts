@@ -23,7 +23,7 @@ export function messageTools(bus: Bus): ExecutableTool[] {
     {
       name: "search_contact_messages", description: "Search one contact's messages across all conversations.",
       input_schema: { type: "object", properties: {
-        contact_id: { type: "integer", minimum: 0 }, query: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 20 },
+        contact_id: { type: "integer", minimum: 1 }, query: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 20 },
       }, required: ["contact_id", "query"] },
       async run(args) {
         const contactId = nonNegativeIntegerArg(args, "contact_id");

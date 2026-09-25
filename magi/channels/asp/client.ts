@@ -9,27 +9,33 @@ export class AspClient {
   private listener: Promise<void> | null = null;
   constructor(readonly handle: string, readonly base: string, private readonly token: string) {}
 
-  async connect(onEvent: (event: AspEvent) => Promise<Record<string, unknown> | void>): Promise<void> {
+  /** True while a socket is open; the listener reconnects on its own when it drops. */
+  get connected(): boolean {
+    return this.socket !== null && this.socket.readyState === WebSocket.OPEN;
+  }
+
+  async connect(onEvent: (event: AspEvent) => Promise<Record<string, unknown> | void>, onError: (error: unknown) => void = () => {}): Promise<void> {
     if (this.listener) return;
     this.stopped = false;
     let markReady: (() => void) | null = null;
     const ready = new Promise<void>((resolve) => { markReady = resolve; });
-    this.listener = this.listen(onEvent, () => markReady?.());
+    this.listener = this.listen(onEvent, () => markReady?.(), onError);
     await ready;
   }
 
-  private async listen(onEvent: (event: AspEvent) => Promise<Record<string, unknown> | void>, ready: () => void): Promise<void> {
+  private async listen(onEvent: (event: AspEvent) => Promise<Record<string, unknown> | void>, ready: () => void, onError: (error: unknown) => void): Promise<void> {
     while (!this.stopped) {
       try {
-        await this.listenOnce(onEvent, ready);
-      } catch (error) {
-        if (!this.stopped) console.error("ASP connection:", error);
+        await this.listenOnce(onEvent, ready, onError);
+      } catch {
+        // The connection state is what matters, and ``health()`` reports it; one log
+        // line per reconnect attempt would only be noise.
       }
       if (!this.stopped) await Bun.sleep(1_000);
     }
   }
 
-  private async listenOnce(onEvent: (event: AspEvent) => Promise<Record<string, unknown> | void>, ready: () => void): Promise<void> {
+  private async listenOnce(onEvent: (event: AspEvent) => Promise<Record<string, unknown> | void>, ready: () => void, onError: (error: unknown) => void): Promise<void> {
     const url = new URL("/connect", this.base);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     const Socket = WebSocket as unknown as { new (url: string, options: Bun.WebSocketOptions): WebSocket };
@@ -40,7 +46,7 @@ export class AspClient {
         const event = JSON.parse(String(message.data)) as AspEvent;
         const reply = await onEvent(event);
         if (reply && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(reply));
-      })().catch((error) => console.error("ASP event:", error));
+      })().catch(onError);
     });
     await new Promise<void>((resolve, reject) => {
       let opened = false;

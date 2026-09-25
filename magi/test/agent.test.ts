@@ -82,7 +82,7 @@ describe("local MAGI agent", () => {
       tools: [{ name: "echo", description: "echo", input_schema: { type: "object" }, async run(args) { return JSON.stringify(args); } }],
       client: { async complete() { entered(); return providerDone; } },
     });
-    magi.start();
+    await magi.start();
     const chat = magi.chat("wait for the model");
     try {
       await providerEntered;
@@ -122,7 +122,7 @@ describe("local MAGI agent", () => {
         },
       },
     });
-    magi.start();
+    await magi.start();
     const id = await magi.chat("save a note");
     await magi.stop();
     expect(id).toBeGreaterThan(0);
@@ -151,7 +151,7 @@ describe("local MAGI agent", () => {
       deliver: (text) => { delivered.push(text); },
       client: { async complete() { throw new Error("bad credentials"); } },
     });
-    magi.start();
+    await magi.start();
     const id = await magi.chat("hello");
     expect(magi.bus.board("ChatNotify").result(id)).toMatchObject({ status: "failed", error: "bad credentials" });
     await magi.stop();
@@ -171,7 +171,7 @@ describe("local MAGI agent", () => {
         configure(settings) { configured.push(settings); },
       },
     });
-    magi.start();
+    await magi.start();
     const board = magi.bus.board("ChangeProviderNotify");
     const badId = board.publish({ provider: "openai", model: "gpt-test", api_key: "bad-secret" }, "test");
     let failed = null;
@@ -208,7 +208,7 @@ describe("local MAGI agent", () => {
     magi.bus.settings.set("provider.context_window", "100");
     const conversation = magi.bus.conversations.forChannel("cli", "terminal");
     for (let i = 0; i < 41; i++) magi.bus.messages.add(conversation.id, 0, `old message ${i}`);
-    magi.start();
+    await magi.start();
     await magi.chat("continue");
 
     expect(requests).toHaveLength(2);

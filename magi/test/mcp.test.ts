@@ -20,7 +20,7 @@ test("MCP worker owns configuration, connections, and dynamic tools", async () =
   });
   const manage = builtinTools(magi.bus).find((tool) => tool.name === "mcp_server")!;
   try {
-    magi.start();
+    await magi.start();
     const created = JSON.parse(await manage.run({
       action: "add", name: "demo", connection_type: "stdio", command: "demo-server",
       env: { SECRET: "hidden" },
@@ -49,6 +49,30 @@ test("MCP worker owns configuration, connections, and dynamic tools", async () =
   }
 });
 
+test("an MCP server that cannot connect at boot reaches the operator", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "magi-mcp-notice-"));
+  const delivered: string[] = [];
+  const magi = new Magi("@mcp-notice.magi", {
+    workspace, mcpConnector: async () => { throw new Error("connect refused"); },
+    deliver: (text) => delivered.push(text),
+    client: { async complete() { return { role: "assistant", content: "unused" }; } },
+  });
+  try {
+    magi.bus.setHomeConversation(magi.bus.conversations.forChannel("cli", "terminal").id);
+    magi.bus.mcpServers.save({
+      name: "dead", connection_type: "stdio", command: "missing", args: [], url: null,
+      env: {}, headers: {}, enabled: true, connect_timeout: null, execute_timeout: null,
+    });
+    await magi.start();
+    for (let i = 0; i < 200 && delivered.length === 0; i++) await Bun.sleep(10);
+    expect(delivered[0]).toContain("[mcp] dead");
+    expect(delivered[0]).toContain("connect refused");
+  } finally {
+    await magi.stop();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("failed MCP connection does not persist an unusable server", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-mcp-fail-"));
   const magi = new Magi("@mcp-fail.magi", {
@@ -57,7 +81,7 @@ test("failed MCP connection does not persist an unusable server", async () => {
   });
   const manage = builtinTools(magi.bus).find((tool) => tool.name === "mcp_server")!;
   try {
-    magi.start();
+    await magi.start();
     await expect(manage.run({ action: "add", name: "bad", connection_type: "stdio", command: "missing" })).rejects.toThrow("connect refused");
     expect(magi.bus.mcpServers.get("bad")).toBeNull();
   } finally {

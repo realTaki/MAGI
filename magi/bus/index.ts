@@ -19,4 +19,5 @@ export type { DeliveryNotify } from "./jobs/deliveryNotify.js";
 export type { ChangeProviderNotify } from "./jobs/changeProvider.js";
 export type { RunTaskNotify } from "./jobs/runTask.js";
 export type { ChangeMcpServerNotify } from "./jobs/changeMcpServer.js";
+export type { ManageWorkerNotify } from "./jobs/manageWorker.js";
 export type { Job, JobResult } from "./jobs/types.js";

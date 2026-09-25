@@ -1037,21 +1037,40 @@ export function createLocalApi(context) {
         body: { kind: "bot" },
       });
       const handle = conversation?.agents?.[0];
-      if (typeof handle === "string" && handle !== "") {
-        created.push({ handle, nickname });
+      const conversationId = conversation?.conversation_id;
+      if (typeof handle === "string" && handle !== "" && typeof conversationId === "string") {
+        created.push({ handle, nickname, conversationId });
       }
     }
     // This backend runs them, not ASP: start the new ones right away.
     await startManagedMagi();
     await Promise.all(
-      created.map(({ handle, nickname }) =>
-        nameWhenOnline(handle, nickname, token).catch((error) => {
+      created.map(async ({ handle, nickname, conversationId }) => {
+        try {
+          await nameWhenOnline(handle, nickname, token);
+          await greet(conversationId, token);
+        } catch (error) {
           console.error(
             `[asp] ${error instanceof Error ? error.message : String(error)}`,
           );
-        }),
-      ),
+        }
+      }),
     );
+  }
+
+  /**
+   * The first thing said in a conversation, in the operator's name.
+   *
+   * It answers two questions at once: whether the new MAGI answers at all, and where
+   * the operator is, which is what the MAGI keeps as its own thread to report trouble
+   * to. A MAGI without a provider still answers — with that complaint.
+   */
+  async function greet(conversationId, token) {
+    await aspJson(`/sessions/${encodeURIComponent(conversationId)}/messages`, {
+      token,
+      method: "POST",
+      body: { content: "Hi" },
+    });
   }
 
   async function activateProviderSync() {

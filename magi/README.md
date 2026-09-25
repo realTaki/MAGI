@@ -53,6 +53,14 @@ active, ASP reconnects and acknowledges durable session events, long histories
 are compacted, and active memories and workspace Skills are injected into the
 agent context.
 
+Errors reach the operator, never a log file. A component that knows the conversation
+delivers the failure into it; a component that claimed a job writes the error into the
+job result, and the agent that published the job passes it on. A component that only
+sees trouble of its own — an MCP server that cannot connect, a worker that keeps
+throwing — sends it to the conversation the operator last spoke in
+(`home.conversation_id`, through `bus.publishNotice`). Only a process that cannot start
+at all writes to stderr.
+
 This runtime covers the local agent path, ASP sessions, Telegram text messages,
 memory and contact tools, Skills, context compaction, recurring or manually
 triggered tasks, foreground/background shell processes, and dynamically

@@ -15,6 +15,13 @@
       "when": 1790297739646,
       "tag": "0001_drop_sse_read_timeout",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1790299734163,
+      "tag": "0002_rebase_contact_ids",
+      "breakpoints": true
     }
   ]
 }

@@ -23,12 +23,12 @@ export class McpWorker extends BaseWorker {
     this.started = true;
     await Promise.all(this.bus.mcpServers.list().filter((server) => server.enabled !== false).map(async (server) => {
       try { this.connections.set(server.name, await this.connector(server, this.bus.workspace)); }
-      catch (error) { console.error(`MCP ${server.name}:`, error); }
+      catch (error) { this.bus.publishNotice(`[mcp] ${server.name}: ${message(error)}`); }
     }));
     // A name clash here would make the whole catalog unreadable, and a boot is no
-    // place to fail a MAGI over it: log it, keep the connections, stay running.
+    // place to fail a MAGI over it: tell the operator, keep the connections, stay running.
     try { this.revalidate(); }
-    catch (error) { console.error("MCP catalog:", error); }
+    catch (error) { this.bus.publishNotice(`[mcp] catalog: ${message(error)}`); }
   }
 
   async poll(): Promise<boolean> {
@@ -101,6 +101,8 @@ export class McpWorker extends BaseWorker {
   }
 
   async stop(): Promise<void> {
+    // A stopped MCP worker can be started again: the manager owns its lifecycle now.
+    this.started = false;
     await Promise.all(this.pending);
     await Promise.all([...this.connections.values()].map((connection) => connection.close().catch(() => {})));
     const before = this.tools().map((tool) => tool.name);
@@ -154,6 +156,10 @@ export async function connectMcpServer(config: McpServerConfig, workspace: strin
 // the environment those servers need to start at all (PATH, HOME, proxies, CAs).
 function inheritedEnvironment(): Record<string, string> {
   return Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
+}
+
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function deadline<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {

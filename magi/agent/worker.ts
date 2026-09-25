@@ -27,4 +27,7 @@ export class AgentWorker extends BaseWorker {
   }
 
   async drain(): Promise<void> { await Promise.all(this.queues.values()); }
+
+  /** Stopping the agent means letting the turns it already accepted finish. */
+  async stop(): Promise<void> { await this.drain(); }
 }

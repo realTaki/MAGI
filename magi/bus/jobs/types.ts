@@ -12,6 +12,7 @@ import type { ChangeMcpServerNotify } from "./changeMcpServer.js";
 import type { ChangeProviderNotify } from "./changeProvider.js";
 import type { ChatNotify } from "./chatNotify.js";
 import type { DeliveryNotify } from "./deliveryNotify.js";
+import type { ManageWorkerNotify } from "./manageWorker.js";
 import type { RunTaskNotify } from "./runTask.js";
 import type { RunToolJob, RunToolResult } from "./runTool.js";
 
@@ -24,6 +25,7 @@ export type JobInput = {
   ChangeProviderNotify: ChangeProviderNotify;
   RunTaskNotify: RunTaskNotify;
   ChangeMcpServerNotify: ChangeMcpServerNotify;
+  ManageWorkerNotify: ManageWorkerNotify;
 };
 
 /** Job type -> what the worker writes back. Empty where the job only acts. */
@@ -35,6 +37,7 @@ export type JobOutput = {
   ChangeProviderNotify: Record<string, never>;
   RunTaskNotify: Record<string, never>;
   ChangeMcpServerNotify: Record<string, never>;
+  ManageWorkerNotify: { running: string[] };
 };
 
 export type JobType = keyof JobInput;

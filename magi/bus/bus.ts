@@ -21,8 +21,10 @@ import type { ChatNotify } from "./jobs/chatNotify.js";
 import type { DeliveryNotify } from "./jobs/deliveryNotify.js";
 import type { JobInput, JobType } from "./jobs/types.js";
 
-export const MAGI_CONTACT_ID = 1;
-export const SYSTEM_CONTACT_ID = 0;
+// Contacts are numbered like everything else in the workspace: from 1. The system
+// contact is the first one, the MAGI itself the second.
+export const SYSTEM_CONTACT_ID = 1;
+export const MAGI_CONTACT_ID = 2;
 
 export class Bus {
   readonly workspace: string;
@@ -116,6 +118,32 @@ export class Bus {
     const jobId = this.board("DeliveryNotify").publish({ ...input, channel: conversation.channel, address: conversation.delivery_address }, publisher);
     this.messages.add(input.conversation_id, MAGI_CONTACT_ID, input.text);
     return jobId;
+  }
+
+  /**
+   * The conversation the operator last spoke in: the only address a workspace has for
+   * reaching them. Channels write it when they hear the operator, ``publishNotice`` reads it.
+   */
+  homeConversation(): number | null {
+    const stored = this.settings.get("home.conversation_id");
+    const id = stored === null ? Number.NaN : Number(stored);
+    return Number.isInteger(id) && this.conversations.get(id) !== null ? id : null;
+  }
+
+  setHomeConversation(conversationId: number): void {
+    this.settings.set("home.conversation_id", String(conversationId));
+  }
+
+  /**
+   * How a component tells the operator that something went wrong: into the conversation
+   * the failure belongs to when the caller knows it, otherwise into the operator's home
+   * chat. Returns null before the operator has ever spoken — there is nobody to tell, and
+   * that is the only case where a process-level log line is still the answer.
+   */
+  publishNotice(text: string, conversationId?: number): number | null {
+    const target = conversationId ?? this.homeConversation();
+    if (target === null) return null;
+    return this.publishDelivery({ conversation_id: target, text });
   }
 
   close(): void {

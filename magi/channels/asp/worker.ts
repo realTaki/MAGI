@@ -1,4 +1,4 @@
-import { BaseWorker, type Bus } from "../../bus/index.js";
+import { BaseWorker, MAGI_CONTACT_ID, type Bus } from "../../bus/index.js";
 import { AspClient, type AspEvent } from "./client.js";
 
 export class AspWorker extends BaseWorker {
@@ -10,11 +10,18 @@ export class AspWorker extends BaseWorker {
   constructor(bus: Bus, base: string, token: string) {
     super(bus);
     this.client = new AspClient(bus.handle, base, token);
-    this.nickname = bus.contacts.get(1)?.nickname ?? null;
+    this.nickname = bus.contacts.get(MAGI_CONTACT_ID)?.nickname ?? null;
   }
 
-  connect(): Promise<void> { return this.client.connect((event) => this.onEvent(event)); }
+  connect(): Promise<void> { return this.client.connect((event) => this.handle(event), (error) => this.report(error)); }
   close(): void { this.client.close(); }
+
+  /** The manager starts and stops this worker like any other. */
+  start(): void { void this.connect(); }
+  stop(): void { this.close(); }
+
+  /** Connecting happens in the background and retries on its own, so this is the state. */
+  health(): string | null { return this.client.connected ? null : "ASP is not connected"; }
 
   async poll(): Promise<boolean> {
     const board = this.bus.board("DeliveryNotify");
@@ -28,6 +35,20 @@ export class AspWorker extends BaseWorker {
       board.submit(this.worker_name, job.id, { error: error instanceof Error ? error.message : String(error) });
     }
     return true;
+  }
+
+  /** The operator sent this event, so a failure handling it is theirs to hear about. */
+  private async handle(event: AspEvent): Promise<Record<string, unknown> | void> {
+    try {
+      return await this.onEvent(event);
+    } catch (error) {
+      this.report(error, event.session_id);
+    }
+  }
+
+  private report(error: unknown, session?: string): void {
+    const text = `[asp] ${error instanceof Error ? error.message : String(error)}`;
+    this.bus.publishNotice(text, session ? this.bus.conversations.forChannel("asp", session).id : undefined);
   }
 
   private async onEvent(event: AspEvent): Promise<Record<string, unknown> | void> {
@@ -92,7 +113,14 @@ export class AspWorker extends BaseWorker {
       if (typeof part === "object" && part !== null && "text" in part && typeof part.text === "string") return part.text;
       return "";
     }).join("") : "";
-    if (text.trim()) this.bus.publishChat({ text: text.trim(), channel: "asp", delivery_address: sessionId }, this.worker_name);
+    if (text.trim()) {
+      // Where the operator spoke last is the only address this workspace has for
+      // reaching them, so a notice that has no conversation of its own goes there.
+      if (payload.sender === "user") {
+        this.bus.setHomeConversation(this.bus.conversations.forChannel("asp", sessionId).id);
+      }
+      this.bus.publishChat({ text: text.trim(), channel: "asp", delivery_address: sessionId }, this.worker_name);
+    }
   }
 }
 

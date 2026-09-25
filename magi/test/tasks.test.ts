@@ -26,7 +26,7 @@ test("schedule tool persists a task and manual trigger enters the agent", async 
   })) as { task_id: number; cron: string };
   expect(saved.cron).toBe("30 9 * * *");
 
-  magi.start();
+  await magi.start();
   const board = magi.bus.board("RunTaskNotify");
   const id = board.publish({ task_id: saved.task_id, manual: true }, "test");
   for (let i = 0; i < 200 && (!board.result(id) || !delivered.length); i++) await Bun.sleep(10);

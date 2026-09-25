@@ -29,8 +29,9 @@ test("ASP invite enters ChatNotify and reply is delivered to the session", async
     client: { async complete() { return { role: "assistant", content: "hello back" } as const; } },
   });
   try {
-    magi.start();
-    await magi.asp!.connect();
+    await magi.start();
+    // The ASP worker connects in the background; wait until its socket is up.
+    for (let i = 0; i < 200 && !socket; i++) await Bun.sleep(10);
     expect(socket).not.toBeNull();
     socket!.send(JSON.stringify({
       type: "session.invited", event_id: "event-1", session_id: "s1",
@@ -82,8 +83,9 @@ test("ASP group only turns operator messages into agent work", async () => {
     client: { async complete() { completions++; return { role: "assistant", content: "heard" } as const; } },
   });
   try {
-    magi.start();
-    await magi.asp!.connect();
+    await magi.start();
+    // The ASP worker connects in the background; wait until its socket is up.
+    for (let i = 0; i < 200 && !socket; i++) await Bun.sleep(10);
     expect(socket).not.toBeNull();
     const emit = (id: string, sender: string, content: string) => socket!.send(JSON.stringify({
       type: "session.message", event_id: id, session_id: "group", payload: { sender, content },

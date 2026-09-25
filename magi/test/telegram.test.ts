@@ -27,7 +27,7 @@ test("Telegram text reaches Agent and its reply is delivered", async () => {
     client: { async complete() { return { role: "assistant", content: "hello" } as const; } },
   });
   try {
-    magi.start();
+    await magi.start();
     for (let i = 0; i < 200 && !delivered; i++) await Bun.sleep(10);
     expect(delivered as unknown).toEqual({ chat_id: 42, text: "hello" });
     const conversation = magi.bus.conversations.forChannel("tg", "42");

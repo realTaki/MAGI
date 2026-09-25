@@ -88,6 +88,10 @@ workspace. Bun owns that SQLite. Each Book declares the table it owns next to
 its queries (`magi/bus/books/`; job queue:
 `magi/bus/jobs/jobBoard.ts`); `bun run db:generate` writes the SQL
 migrations under `magi/bus/drizzle/`, which the runtime applies on boot.
+Errors are delivered, not logged: into the conversation the failure belongs to, into
+the job result the agent will surface, or — for a component that only sees trouble of
+its own — into the operator's home conversation (`home.conversation_id`, via
+`bus.publishNotice`).
 
 Without ASP arguments, `bun run start -- @alice.magi` is a terminal chat.
 With a base URL and token, the process attaches to ASP and does not take over

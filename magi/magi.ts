@@ -12,57 +12,66 @@ import { AspWorker } from "./channels/asp/worker.js";
 import { TelegramWorker } from "./channels/telegram/worker.js";
 import { TaskWorker } from "./channels/tasks/worker.js";
 import { McpWorker, type McpConnector } from "./mcp/worker.js";
+import { ManagerWorker } from "./manager/worker.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+export type MagiOptions = {
+  workspace?: string;
+  client?: LLMClient;
+  tools?: Tool[];
+  deliver?: (text: string) => void;
+  asp?: { base: string; token: string };
+  telegram?: { token: string; apiBase?: string };
+  mcpConnector?: McpConnector;
+};
+
+/**
+ * One long-lived MAGI: its BUS, and the worker that runs the other workers.
+ *
+ * This file is the only one allowed to know every module, so it is also the only one
+ * that names them — a worker added here is a worker the manager can start and stop.
+ */
 export class Magi {
   readonly bus: Bus;
-  readonly agent: AgentWorker;
-  readonly providers: ProvidersWorker;
-  readonly tools: ToolsWorker;
-  readonly cli: CliWorker;
-  readonly asp: AspWorker | null;
-  readonly telegram: TelegramWorker | null;
-  readonly tasks: TaskWorker;
-  readonly mcp: McpWorker;
+  readonly manager: ManagerWorker;
   private running = false;
-  private loops: Promise<void>[] = [];
+  private loop: Promise<void> | null = null;
 
-  constructor(handle: string, options: { workspace?: string; client?: LLMClient; tools?: Tool[]; deliver?: (text: string) => void; asp?: { base: string; token: string }; telegram?: { token: string; apiBase?: string }; mcpConnector?: McpConnector } = {}) {
+  constructor(handle: string, options: MagiOptions = {}) {
     this.bus = new Bus(handle, options.workspace);
-    this.tools = new ToolsWorker(this.bus, options.tools);
-    this.agent = new AgentWorker(this.bus);
-    this.providers = new ProvidersWorker(this.bus, options.client);
-    this.cli = new CliWorker(this.bus, options.deliver);
-    this.asp = options.asp ? new AspWorker(this.bus, options.asp.base, options.asp.token) : null;
-    const telegramToken = options.telegram?.token ?? this.bus.settings.get("telegram.bot_token") ?? undefined;
-    this.telegram = telegramToken ? new TelegramWorker(this.bus, telegramToken, options.telegram?.apiBase) : null;
-    this.tasks = new TaskWorker(this.bus);
-    this.mcp = new McpWorker(this.bus, options.mcpConnector);
+    this.manager = new ManagerWorker(this.bus, [
+      new AgentWorker(this.bus),
+      new ToolsWorker(this.bus, options.tools),
+      new ProvidersWorker(this.bus, options.client),
+      new CliWorker(this.bus, options.deliver),
+      new TaskWorker(this.bus),
+      new McpWorker(this.bus, options.mcpConnector),
+      ...(options.asp ? [new AspWorker(this.bus, options.asp.base, options.asp.token)] : []),
+      new TelegramWorker(this.bus, options.telegram),
+    ]);
   }
 
-  start(): void {
+  async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
-    this.telegram?.start();
-    void this.mcp.start().catch((error) => console.error("mcp:", error));
-    this.loops = [this.agent, this.tools, this.providers, this.cli, this.asp, this.telegram, this.tasks, this.mcp]
-      .filter((worker) => worker !== null)
-      .map((worker) => this.runWorkerLoop(worker));
+    this.loop = this.runManager();
+    await this.manager.start();
   }
 
-  private async runWorkerLoop(worker: { worker_name: string; poll(): Promise<boolean> }): Promise<void> {
+  private async runManager(): Promise<void> {
     while (this.running) {
       let worked = false;
-      try { worked = await worker.poll(); }
-      catch (error) { console.error(`${worker.worker_name}:`, error); }
-      if (!worked) await sleep(20);
+      try { worked = await this.manager.poll(); }
+      catch (error) { console.error("manager:", error); }
+      if (!worked && this.running) await sleep(20);
     }
   }
 
   async chat(text: string, address = "terminal"): Promise<number> {
     if (!this.running) throw new Error("MAGI is not running");
-    const id = this.bus.publishChat({ text, channel: "cli", delivery_address: address });
+    const conversation = this.bus.conversations.forOperator("cli", address);
+    const id = this.bus.publishChat({ conversation_id: conversation.id, text });
     while (this.running) {
       if (this.bus.board("ChatNotify").result(id)) return id;
       await sleep(20);
@@ -71,14 +80,10 @@ export class Magi {
   }
 
   async stop(): Promise<void> {
-    await this.agent.drain();
     this.running = false;
-    await Promise.all(this.loops);
-    this.loops = [];
-    this.asp?.close();
-    await this.telegram?.stop();
-    await this.mcp.stop();
-    await this.tools.stop();
+    await this.loop;
+    this.loop = null;
+    await this.manager.stop();
     this.bus.close();
   }
 }
@@ -89,10 +94,11 @@ async function main(): Promise<void> {
   const [base, token] = process.argv.slice(3);
   if ((base && !token) || (!base && token)) throw new Error("ASP base and token must be supplied together");
   const magi = new Magi(handle, { asp: base && token ? { base, token } : undefined });
-  magi.start();
-  if (magi.asp) {
+  await magi.start();
+  // With ASP the process is a service: it stays up until it is asked to stop.
+  // Without one it is a prompt, which is how a MAGI is tried out by hand.
+  if (base && token) {
     try {
-      await magi.asp.connect();
       await new Promise<void>((resolve) => {
         process.once("SIGINT", resolve);
         process.once("SIGTERM", resolve);
