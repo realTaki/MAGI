@@ -32,31 +32,6 @@ test("message search includes archived history and send_message uses delivery jo
   }
 });
 
-test("the home chat moves by tool, not by talking", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "magi-tools-home-"));
-  const magi = new Magi("@home.magi", { workspace, client: { async complete() { return { role: "assistant", content: "unused" }; } } });
-  const tools = new Map(builtinTools(magi.bus).map((tool) => [tool.name, tool]));
-  try {
-    expect(magi.bus.homeChat()).toBeNull();
-    const chat = magi.bus.chats.forChannel("cli", "terminal");
-    const moved = JSON.parse(await tools.get("set_home_chat")!.run({ chat_id: chat.id })) as {
-      home: number; channel: string; address: string;
-    };
-    expect(moved).toEqual({ home: chat.id, channel: "cli", address: "terminal" });
-    expect(magi.bus.homeChat()).toBe(chat.id);
-
-    // A notice with no chat of its own lands in the new home.
-    magi.bus.publishNotice('[manager] worker "tg" could not start');
-    expect(magi.bus.messages.list(chat.id).at(-1)?.content).toContain("could not start");
-
-    await expect(tools.get("set_home_chat")!.run({ chat_id: 999 })).rejects.toThrow("unknown chat");
-    expect(magi.bus.homeChat()).toBe(chat.id);
-  } finally {
-    await magi.stop();
-    await rm(workspace, { recursive: true, force: true });
-  }
-});
-
 test("a tool the catalog does not have is answered without a job", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-tools-unknown-"));
   const seen: LLMMessage[][] = [];

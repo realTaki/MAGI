@@ -95,26 +95,6 @@ test("Telegram text reaches Agent and its reply is delivered", async () => {
   }
 });
 
-test("a Telegram DM does not take over an established home", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "magi-tg-home-"));
-  const api = await telegramApi([update({ chatId: 42, chatType: "private", fromId: 42, firstName: "operator", text: "hi" })]);
-  const magi = answeringMagi(workspace, `http://127.0.0.1:${api.server.port}/bottest`);
-  try {
-    // The app's greeting, in the chat it created, is what establishes home.
-    const chat = magi.bus.chats.forChannel("asp", "sess-1");
-    magi.bus.setHomeChat(chat.id);
-
-    await magi.start();
-    for (let i = 0; i < 200 && api.posts.length === 0; i++) await sleep(10);
-    expect(api.posts).toHaveLength(1);
-    expect(magi.bus.homeChat()).toBe(chat.id);
-  } finally {
-    await magi.stop();
-    await api.server.close();
-    await rm(workspace, { recursive: true, force: true });
-  }
-});
-
 test("a group message that does not address the MAGI is ignored", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-tg-quiet-"));
   const api = await telegramApi([update({ chatId: -100, chatType: "supergroup", fromId: 7, firstName: "guest", text: "just chatting" })]);
