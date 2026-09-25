@@ -141,7 +141,7 @@ test("mentions decide who answers, and everything said is kept", async () => {
     emit("m2", "@eva-002.magi", "Me too", ["@eva-009.magi"]);
     // Named this MAGI: its turn.
     emit("m3", "user", "@eva-000.magi can you hear me?", ["@eva-000.magi"]);
-    for (let i = 0; i < 200 && completions < 2; i++) await Bun.sleep(10);
+    for (let i = 0; i < 200 && (completions < 2 || sent.length < 2); i++) await Bun.sleep(10);
     // Another agent naming someone else again: recorded only.
     emit("m4", "@eva-001.magi", "@eva-002.magi, you there?", ["@eva-002.magi"]);
     for (let i = 0; i < 200 && acks.length < 4; i++) await Bun.sleep(10);

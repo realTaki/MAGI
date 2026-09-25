@@ -1,5 +1,7 @@
 export type AspEvent = {
   type?: string; event_id?: string; session_id?: string; payload?: Record<string, unknown>;
+  /** Session events are numbered; control events (nickname, provider) are not. */
+  sequence?: number;
   request_id?: string; nickname?: string; provider?: string; api_key?: string; model?: string; base_url?: string;
 };
 

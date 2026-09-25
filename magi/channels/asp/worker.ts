@@ -76,6 +76,11 @@ export class AspWorker extends BaseWorker {
     const id = event.session_id;
     if (!id) return;
     const payload = event.payload ?? {};
+    // ASP replays what it has not seen acknowledged, so a sequence this workspace has
+    // passed is a replay of something already handled and is skipped.
+    if (this.taken(id, event.sequence)) {
+      return event.event_id ? { type: "session.ack", session_id: id, event_id: event.event_id } : undefined;
+    }
     if (event.type === "session.invited" && payload.invitee === this.bus.handle) {
       await this.client.join(id);
       // This MAGI is in the conversation too, so it belongs to its members.
@@ -83,8 +88,11 @@ export class AspWorker extends BaseWorker {
       const initial = payload.initial_message;
       if (typeof initial === "object" && initial !== null) {
         const message = initial as Record<string, unknown>;
-        if (this.asked(message)) this.ingest(id, message);
-        else this.record(id, message);
+        // The same message also arrives as an event of its own: whichever comes first wins.
+        if (!this.taken(id, message.sequence)) {
+          if (this.asked(message)) this.ingest(id, message);
+          else this.record(id, message);
+        }
       }
     } else if (event.type === "session.message" && payload.sender !== this.bus.handle) {
       // Everything said in the session is recorded — that is the conversation's history —
@@ -93,6 +101,20 @@ export class AspWorker extends BaseWorker {
       else this.record(id, payload);
     }
     if (event.event_id) return { type: "session.ack", session_id: id, event_id: event.event_id };
+  }
+
+  /**
+   * Whether this sequence was already taken in, recording it when it was not.
+   *
+   * The reading is recorded *before* the event is handled on purpose: a failure here is
+   * reported and the event is acknowledged anyway, so handling it twice is the worse
+   * mistake of the two.
+   */
+  private taken(sessionId: string, sequence: unknown): boolean {
+    if (typeof sequence !== "number") return false;
+    if (sequence <= this.bus.channelCursors.read("asp", sessionId)) return true;
+    this.bus.channelCursors.markRead("asp", sessionId, sequence);
+    return false;
   }
 
   /**
