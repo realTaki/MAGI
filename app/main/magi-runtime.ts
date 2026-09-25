@@ -43,7 +43,10 @@ export function agentBranch(handle) {
 }
 
 export function magiCli(bun, handle, base, token, workspace) {
-  return [bun, "run", "start", "--", handle, base, token, "--workspace", workspace];
+  // Execute the checkout's entry directly. `bun run start` shells out through
+  // package.json, which makes a managed launch depend on a separate `bun` in
+  // PATH even though the desktop already selected the project-owned binary.
+  return [bun, "magi.ts", handle, base, token, "--workspace", workspace];
 }
 
 function describe(error) {
@@ -216,8 +219,8 @@ export function createMagiRuntime({
     const { child } = entry;
     if (child.exitCode != null || child.signalCode != null) return false;
     if (process.platform !== "win32" && typeof child.pid === "number" && child.pid > 0) {
-      // `bun run start` can hand off to another Bun process: a detached process
-      // group stops the launcher and its MAGI descendant together.
+      // A detached process group stops the MAGI process and any descendants
+      // that a future entrypoint might create together.
       try {
         process.kill(-child.pid, "SIGTERM");
         return true;
@@ -226,9 +229,8 @@ export function createMagiRuntime({
       }
     }
     if (process.platform === "win32" && typeof child.pid === "number" && child.pid > 0) {
-      // Windows has no POSIX process groups. `bun run start` may hand off to a
-      // second Bun process, so killing only the launcher leaves MAGI (and the
-      // test runner's stderr pipe) alive. taskkill's /T includes descendants.
+      // Windows has no POSIX process groups, so taskkill's /T includes any
+      // descendants and prevents the test runner's stderr pipe staying alive.
       try {
         spawn("taskkill.exe", ["/pid", String(child.pid), "/t", "/f"], {
           stdio: "ignore",

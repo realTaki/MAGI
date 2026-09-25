@@ -114,7 +114,7 @@ test("every MAGI gets its own branch checked out inside its workspace", async (t
   assert.deepEqual(recorded.bun, [{ args: ["install", "--frozen-lockfile"], cwd: path.join(source, "magi") }]);
   assert.equal(recorded.spawns.length, 1);
   assert.deepEqual(recorded.spawns[0].args, [
-    "run", "start", "--", agent.handle, "http://127.0.0.1:42069", "tok",
+    "magi.ts", agent.handle, "http://127.0.0.1:42069", "tok",
     "--workspace", path.join(home, ".magi", "eva-000"),
   ]);
   assert.equal(recorded.spawns[0].options.cwd, path.join(source, "magi"));
@@ -249,6 +249,7 @@ test("a real MAGI boots from its own checkout", { timeout: 120_000 }, async (t) 
     if (previousHome === undefined) delete process.env[homeVariable];
     else process.env[homeVariable] = previousHome;
   });
+  const childLogs: string[] = [];
   const runtime = createMagiRuntime({
     checkout,
     home,
@@ -277,6 +278,7 @@ test("a real MAGI boots from its own checkout", { timeout: 120_000 }, async (t) 
         windowsHide: true,
       }),
     useWorktrees: true,
+    log: (line) => childLogs.push(line),
   });
   t.after(() => runtime.stopAll());
 
@@ -288,5 +290,9 @@ test("a real MAGI boots from its own checkout", { timeout: 120_000 }, async (t) 
   while (!existsSync(workspace) && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
-  assert.equal(existsSync(workspace), true, "the MAGI booted far enough to create its workspace");
+  assert.equal(
+    existsSync(workspace),
+    true,
+    `the MAGI booted far enough to create its workspace${childLogs.length ? `: ${childLogs.join(" | ")}` : ""}`,
+  );
 });
