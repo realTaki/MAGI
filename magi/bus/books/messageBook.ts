@@ -1,6 +1,6 @@
 import { and, count, desc, eq, lte, sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
-import type { BusDb } from "../database.js";
+import type { BusDb } from "../drizzle/database.js";
 
 export const messages = sqliteTable("books_messages", {
   id: integer("id").primaryKey(),

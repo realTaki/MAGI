@@ -21,8 +21,8 @@ export function migrateJobs(db: BusDb): void {
   migrate(db, { migrationsFolder: migrationsFolder("logs") });
 }
 
-// ``bus/drizzle/`` is a sibling of this file's folder; the second shape covers a
-// compiled copy under ``dist/``, which tsc emits without copying the .sql files.
+// ``bus/drizzle/`` holds this file next to the migrations; the second shape covers
+// a compiled copy under ``dist/``, which tsc emits without copying the .sql files.
 function migrationsFolder(name: string): string {
   for (let dir = import.meta.dir; ; dir = dirname(dir)) {
     for (const candidate of [join(dir, "drizzle", name), join(dir, "bus", "drizzle", name)]) {

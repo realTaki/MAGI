@@ -41,7 +41,7 @@ Edit `<workspace>/prompts/agent/AGENT.md`, `compaction.md`, or
 
 BUS owns SQLite Books, durable Jobs, and the live tool catalog through Bun
 SQLite and in-memory state. Every Book declares the table it owns right in
-`bus/firmware/books/` (the job queue in `bus/firmware/jobs/jobBoard.ts`);
+`bus/books/` (the job queue in `bus/jobs/jobBoard.ts`);
 `bun run db:generate` turns a table edit into the SQL under `bus/drizzle/`,
 which the runtime applies on boot, and Books query through Drizzle rather than
 hand-written SQL. Workers poll independently and communicate through

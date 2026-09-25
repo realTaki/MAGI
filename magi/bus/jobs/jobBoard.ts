@@ -1,6 +1,6 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
-import type { BusDb } from "../database.js";
+import type { BusDb } from "../drizzle/database.js";
 import type { Job, JobInput, JobOutput, JobResult, JobStatus, JobType } from "./types.js";
 
 export const jobs = sqliteTable("jobs", {

@@ -1,6 +1,6 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
-import type { BusDb } from "../database.js";
+import type { BusDb } from "../drizzle/database.js";
 import { contacts } from "./contactBook.js";
 
 export const contactNotes = sqliteTable("books_contact_notes", {

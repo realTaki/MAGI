@@ -3,6 +3,6 @@ import { defineConfig } from "drizzle-kit";
 /** Job queue: the table lives with its board. */
 export default defineConfig({
   dialect: "sqlite",
-  schema: "./bus/firmware/jobs/jobBoard.ts",
+  schema: "./bus/jobs/jobBoard.ts",
   out: "./bus/drizzle/logs",
 });

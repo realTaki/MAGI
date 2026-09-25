@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { sqliteTable, text } from "drizzle-orm/sqlite-core";
-import type { BusDb } from "../database.js";
+import type { BusDb } from "../drizzle/database.js";
 
 export const settings = sqliteTable("books_settings", {
   key: text("key").primaryKey(),

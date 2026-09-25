@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
-import type { BusDb } from "../database.js";
+import type { BusDb } from "../drizzle/database.js";
 
 export const mcpServers = sqliteTable("books_mcp_servers", {
   name: text("name").primaryKey(),

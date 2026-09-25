@@ -81,12 +81,12 @@ call each other. They publish Jobs and claim Jobs.
 | Tasks | due tasks | `RunTaskNotify` |
 | MCP | `ChangeMcpServerNotify` | tools from configured servers |
 
-Books in `magi/bus/firmware/books/` hold conversations, messages, memory,
+Books in `magi/bus/books/` hold conversations, messages, memory,
 skills, tasks, contacts, contact notes, prompts, MCP servers, and the tool
 catalog. SQLite files are `memories/magi.db` and `logs/magi.db` inside the
 workspace. Bun owns that SQLite. Each Book declares the table it owns next to
-its queries (`magi/bus/firmware/books/`; job queue:
-`magi/bus/firmware/jobs/jobBoard.ts`); `bun run db:generate` writes the SQL
+its queries (`magi/bus/books/`; job queue:
+`magi/bus/jobs/jobBoard.ts`); `bun run db:generate` writes the SQL
 migrations under `magi/bus/drizzle/`, which the runtime applies on boot.
 
 Without ASP arguments, `bun run start -- @alice.magi` is a terminal chat.
