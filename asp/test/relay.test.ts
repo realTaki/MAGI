@@ -120,6 +120,30 @@ test("a registered magi outlives an asp restart", async (t) => {
   });
 });
 
+test("a message records who it names", async (t) => {
+  const databasePath = path.join(tempRoot(t), "asp.sqlite");
+  await withApp({ databasePath, aspSeed: { "@second.magi": "second-token" } }, async (app) => {
+    const token = operatorToken(await request(app, "GET", "/operator"));
+    const sessionId = String(
+      record((await request(app, "POST", "/conversations", { token, body: { kind: "group" } })).data).conversation_id,
+    );
+    await request(app, "POST", `/conversations/${sessionId}/members`, { token, body: { handle: "@second.magi" } });
+    assert.equal((await request(app, "POST", `/sessions/${sessionId}/join`, { token: "second-token" })).status, 200);
+
+    // The long handle, the short name, and a message that names nobody.
+    for (const content of ["you there @second.magi?", "@second ping", "anyone around?"]) {
+      assert.equal(
+        (await request(app, "POST", `/sessions/${sessionId}/messages`, { token, body: { content } })).status,
+        201,
+      );
+    }
+    const mentions = eventsOf(await request(app, "GET", `/sessions/${sessionId}/events`, { token }))
+      .filter((event) => event.type === "session.message")
+      .map((event) => record(event.payload).mentions ?? null);
+    assert.deepEqual(mentions, [["@second.magi"], ["@second.magi"], null]);
+  });
+});
+
 function operatorToken(response: { data: unknown }): string {
   if (!isRecord(response.data) || typeof response.data.token !== "string") {
     throw new Error("operator token missing");

@@ -108,6 +108,10 @@ export class SessionService {
         if ("metadata" in input.initialMessage) {
           messagePayload.metadata = input.initialMessage.metadata;
         }
+        const mentions = this.#mentions(session.id, input.initialMessage.content);
+        if (mentions.length > 0) {
+          messagePayload.mentions = mentions;
+        }
         const event = this.store.appendSessionEvent(session.id, "session.message", messagePayload);
         messagePayload.sequence = event.sequence;
         initialSequence = event.sequence;
@@ -252,6 +256,10 @@ export class SessionService {
       }
       if (metadata !== null) {
         payload.metadata = metadata;
+      }
+      const mentions = this.#mentions(sessionId, content);
+      if (mentions.length > 0) {
+        payload.mentions = mentions;
       }
       const event = this.store.appendSessionEvent(sessionId, "session.message", payload);
       payload.sequence = event.sequence;
@@ -438,6 +446,32 @@ export class SessionService {
       throw new NotAllowed();
     }
     return participant;
+  }
+
+  /**
+   * Who a message is addressed to.
+   *
+   * A session holds several participants, so a message may name some of them —
+   * `@eva-001.magi` or just `@eva-001`. A MAGI treats a message as its own work only when
+   * it is named, which is what keeps a room full of them from answering each other
+   * forever; a message that names nobody is for whoever wants to answer.
+   */
+  #mentions(sessionId: string, content: unknown): string[] {
+    const text = typeof content === "string" ? content
+      : Array.isArray(content) ? content.map((part) => (typeof part === "object" && part !== null && "text" in part && typeof part.text === "string" ? part.text : "")).join("")
+      : "";
+    if (!text.includes("@")) {
+      return [];
+    }
+    const named = new Set([...text.matchAll(/@([A-Za-z0-9_.-]{1,64})/g)].map((match) => match[1]));
+    const mentioned: string[] = [];
+    for (const participant of this.store.participantsIn(sessionId)) {
+      const handle = participant.handle.replace(/^@/, "");
+      if (named.has(handle) || named.has(handle.replace(/\.magi$/, ""))) {
+        mentioned.push(participant.handle);
+      }
+    }
+    return mentioned;
   }
 
   async #fanOut(sessionId: string): Promise<void> {
