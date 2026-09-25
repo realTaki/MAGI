@@ -1,8 +1,8 @@
 /**
  * One-shot repair for databases from before the operator handle became `@user`.
  *
- * This is not a migration framework — the schema belongs to `schema.ts` and
- * `drizzle/`. It exists because a database that predates the rename still names
+ * This is not a migration framework — the schema belongs to `db/tables/` and the
+ * migrations to `drizzle/`. It exists because a database that predates the rename still names
  * the operator `user` in rows and in event payloads, and a relay that reads those
  * rows would treat the operator as a stranger. It runs only when such a row is
  * still there, so it is safe to call on every open.
@@ -11,15 +11,13 @@
 import { eq } from "drizzle-orm";
 
 import type { AspDb } from "./database.ts";
-import {
-  aspAgents,
-  aspChatKeys,
-  aspEventAcks,
-  aspEvents,
-  aspMessageKeys,
-  aspMessageRecipients,
-  aspParticipants,
-} from "./schema.ts";
+import { aspAgents } from "./tables/agents.ts";
+import { aspChatKeys } from "./tables/chatKeys.ts";
+import { aspEventAcks } from "./tables/eventAcks.ts";
+import { aspEvents } from "./tables/events.ts";
+import { aspMessageKeys } from "./tables/messageKeys.ts";
+import { aspMessageRecipients } from "./tables/messageRecipients.ts";
+import { aspParticipants } from "./tables/participants.ts";
 
 const LEGACY_HANDLE = "user";
 const OPERATOR_HANDLE = "@user";

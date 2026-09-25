@@ -5,16 +5,14 @@ import { randomUUID } from "node:crypto";
 import { and, eq, gt, notExists, sql } from "drizzle-orm";
 
 import { LocalDatabase, type AspDb } from "../db/database.ts";
-import {
-  aspAgents,
-  aspChatKeys,
-  aspChats,
-  aspEventAcks,
-  aspEvents,
-  aspMessageKeys,
-  aspMessageRecipients,
-  aspParticipants,
-} from "../db/schema.ts";
+import { aspAgents } from "../db/tables/agents.ts";
+import { aspChatKeys } from "../db/tables/chatKeys.ts";
+import { aspChats } from "../db/tables/chats.ts";
+import { aspEventAcks } from "../db/tables/eventAcks.ts";
+import { aspEvents } from "../db/tables/events.ts";
+import { aspMessageKeys } from "../db/tables/messageKeys.ts";
+import { aspMessageRecipients } from "../db/tables/messageRecipients.ts";
+import { aspParticipants } from "../db/tables/participants.ts";
 
 export type ParticipantStatus = "invited" | "joined" | "left";
 export type ChatState = "active" | "ended";

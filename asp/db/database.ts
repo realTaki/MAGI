@@ -11,7 +11,7 @@ import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3"
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
 import { repairLegacyOperatorHandle } from "./legacyOperator.ts";
-import { aspSettings } from "./schema.ts";
+import { aspSettings } from "./tables/settings.ts";
 
 /** The relay's drizzle client over a better-sqlite3 connection. */
 export type AspDb = BetterSQLite3Database & { $client: SQLiteDatabase };

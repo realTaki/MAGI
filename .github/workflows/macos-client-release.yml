@@ -36,13 +36,17 @@ jobs:
           cache-dependency-path: |
             shell/package-lock.json
             app/package-lock.json
+            magi/package-lock.json
 
       - name: Install dependencies
         run: |
           npm ci
           npm ci --prefix ../app
           # The app's provider catalog is read from the checkout's MAGI deps.
-          ./node_modules/.bin/bun install --frozen-lockfile --cwd ../magi
+          # `--ignore-scripts`: better-sqlite3 ships its compiled binary inside the
+          # package, while npm would still run node-gyp for it (the package carries
+          # a binding.gyp) — the desktop ships no C++ toolchain, on purpose.
+          npm ci --ignore-scripts --prefix ../magi
 
       - name: Set version from tag
         run: |

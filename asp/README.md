@@ -8,10 +8,10 @@ assembles the desktop operator routes and the shared chat HTTP and MAGI
 WebSocket protocol. `operator-service.ts` projects desktop views and registers
 agents; `service.ts` owns chat state and event delivery.
 `store.ts` / `transport.ts` persist relay state and manage live connections;
-`db/` owns the SQLite file. Its tables are declared in `db/schema.ts`, and
-`npm run db:generate` turns a change there into SQL under `db/drizzle/`, which
-the relay applies when it opens the database. Rows go through drizzle rather
-than hand-written SQL.
+`db/` owns the SQLite file. Its tables live under `db/tables/`, one file per
+table, and `npm run db:generate` turns a change there into SQL under
+`db/drizzle/`, which the relay applies when it opens the database. Rows go
+through drizzle rather than hand-written SQL.
 
 Desktop-only HTTP `/chats`, `/bots`, and `/settings/provider` require the
 operator Bearer token. Participant HTTP uses `/chats/open` and
