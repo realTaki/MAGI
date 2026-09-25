@@ -5,6 +5,12 @@ import test from "node:test";
 import { LocalDatabase } from "../db/database.ts";
 import { isRecord, request, tempRoot, withApp } from "./helpers.ts";
 
+/*
+ * Business flow: switching the model, ASP side (`ARCHITECTURE.md`, "ASP").
+ * `PUT /settings/provider` forwards one complete update to the MAGI that are
+ * connected, reports which synced, and keeps no copy of the key.
+ */
+
 test("provider update is transient", async (t) => {
   const databasePath = path.join(tempRoot(t), "asp.sqlite");
   await withApp({ databasePath }, async (app) => {

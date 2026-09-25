@@ -4,6 +4,13 @@ import test from "node:test";
 
 import { isRecord, request, tempRoot, withApp } from "./helpers.ts";
 
+/*
+ * Business flow: sending a message (`ARCHITECTURE.md`, "ASP").
+ * The desktop persists a message before it acknowledges; ASP relays it to every
+ * participant and deletes the event only after each intended recipient has
+ * acknowledged that exact event.
+ */
+
 test("relay survives restart and requires exact recipient acks", async (t) => {
   const databasePath = path.join(tempRoot(t), "asp.sqlite");
   const options = {

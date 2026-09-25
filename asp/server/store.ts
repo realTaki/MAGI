@@ -327,6 +327,9 @@ export class Store {
           mark.run(eventId, handle);
         }
       }
+      // A message event goes away only once no intended recipient is left unacked.
+      // ASP is a relay, not the transcript — the desktop keeps the long-term copy,
+      // and it is that write which makes its acknowledgment legal.
       const removable = this.#rows(
         db,
         `SELECT e.event_id FROM asp_events e

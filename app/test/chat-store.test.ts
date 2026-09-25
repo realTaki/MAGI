@@ -6,6 +6,12 @@ import { test } from "node:test";
 
 import { openChatStore } from "../main/chat-store.ts";
 
+/*
+ * Business flow: sending a message, desktop side (`ARCHITECTURE.md`, "ASP").
+ * The transcript is written before the acknowledgment goes out, and receipts
+ * that are still pending survive a restart.
+ */
+
 test("desktop chat history and pending receipts survive a restart", {
   skip: Number(process.versions.node.split(".")[0]) < 22,
 }, async (t) => {

@@ -236,8 +236,7 @@ See [shell details](shell/README.md).
 
 For the implementation-level view, see:
 
-- [Architecture](ARCHITECTURE.md)
-- [Business flows](BUSINESS_FLOWS.md)
+- [Architecture](ARCHITECTURE.md) — process boundaries and every business flow
 - [Terms and canonical ID names](TERMS.md)
 - [ASP](asp/README.md)
 

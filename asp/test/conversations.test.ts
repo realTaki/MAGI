@@ -4,6 +4,13 @@ import test from "node:test";
 
 import { connect, isRecord, receiveInvite, request, tempRoot, withApp } from "./helpers.ts";
 
+/*
+ * Business flow: creating a conversation (`ARCHITECTURE.md`, "ASP").
+ * `POST /conversations {kind:"bot"}` assigns the next `eva-NNN` and starts it;
+ * `{kind:"group"}` opens with the operator alone; an invite arrives as
+ * `session.invited`, and the MAGI joins on receipt.
+ */
+
 function databasePath(root: string): string {
   return path.join(root, "asp.sqlite");
 }

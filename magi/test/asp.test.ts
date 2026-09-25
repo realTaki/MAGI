@@ -5,6 +5,12 @@ import { join } from "node:path";
 import { Magi } from "../magi.js";
 import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "../bus/index.js";
 
+/*
+ * Business flow: sending a message, MAGI side (`ARCHITECTURE.md`, "A MAGI process").
+ * A session event is written into the workspace and acknowledged once; a replay
+ * is not taken in twice.
+ */
+
 test("a replayed event is not taken in twice", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "asp-replay-"));
   const acks: string[] = [];

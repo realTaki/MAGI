@@ -32,6 +32,31 @@ repository to `~/.magi/MAGI`. Later launches keep that checkout.
 An older workspace at `~/.magi/ts-magi/<name>` is still opened when
 `~/.magi/<name>` does not exist yet.
 
+## Desktop startup
+
+The shell puts Node.js 24, npm, and Bun on disk, then clones this repository to
+`~/.magi/MAGI`. What it asks the backend to do, in order (the bridge contract is
+documented in `app/main/index.ts`):
+
+1. `prepare()` — check the lockfiles are there, then, in a managed checkout with
+   no `node_modules` yet, run `npm ci` in `asp/`, `bun install --frozen-lockfile`
+   in `magi/`, and `npm ci` plus `npm run build` in `app/`. It answers with the
+   interface entry point.
+2. `start()` — run `asp/main.ts` with Node 24 and wait for `GET /health` to
+   report this runtime. `dispose()` releases reloadable resources; `shutdown()`
+   stops ASP.
+3. With no MAGI registered yet, the backend creates the first three through ASP
+   (`eva-000`, `eva-001`, `eva-002`), starts them, and names them MELCHIOR,
+   BALTHASAR, CASPER as they come online. One that never comes online does not
+   fail startup.
+
+Closing the window, or reloading the client, never stops ASP — only quitting the
+application does, which is what `before-quit` in `shell/main.mjs` and the
+`shutdown()` bridge method are for.
+
+`shell/` has no test tree, so this flow is a contract in prose rather than an
+assertion. The other flows live with the tests that hold them, named below.
+
 ## ASP
 
 `asp/main.ts` is the process entry. Node 24 runs the TypeScript directly.
@@ -59,10 +84,14 @@ history.
 `PUT /settings/provider` forwards a complete provider update to connected
 MAGI and reports which ones synced. ASP does not save a new copy of the key.
 
+Asserted in `asp/test/`: creating a conversation, relaying with exact recipient
+acks, and the update being transient.
+
 ## A MAGI process
 
 `magi/magi.ts` composes one BUS and the workers that poll it. Workers do not
-call each other. They publish Jobs and claim Jobs.
+call each other. They publish Jobs and claim Jobs — asserted in
+`magi/test/agent.test.ts`, `tools.test.ts`, and `tasks.test.ts`.
 
 | Worker | Reads | Writes |
 | --- | --- | --- |

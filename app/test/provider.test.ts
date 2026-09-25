@@ -6,6 +6,12 @@ import { test } from "node:test";
 
 import { createLocalApi } from "../main/index.ts";
 
+/*
+ * Business flow: switching the model, desktop side (`ARCHITECTURE.md`, "ASP").
+ * The key is kept in app data (`~/.magi/app/provider.json`) and reaches the MAGI
+ * through ASP; the desktop is the one that holds the file.
+ */
+
 function app(root) {
   return createLocalApi({
     paths: {

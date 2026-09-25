@@ -167,8 +167,7 @@ Electron App 启动本地 ASP，并运行本机的每条 MAGI 进程。ASP 负�
 
 深入实现请阅读：
 
-- [架构](ARCHITECTURE.md)
-- [关键业务流程](BUSINESS_FLOWS.md)
+- [架构](ARCHITECTURE.md) —— 进程边界与各条业务流程
 - [术语与 ID 命名规范](TERMS.md)
 - [ASP](asp/README.md)
 

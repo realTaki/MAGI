@@ -8,6 +8,13 @@ import { Magi } from "../magi.js";
 import { SYSTEM_CONTACT_ID, type CallLLMJob, type LLMMessage } from "../bus/index.js";
 import { PiAiClient } from "../providers/client.js";
 
+/*
+ * Business flow: one MAGI turn (`ARCHITECTURE.md`, "A MAGI process").
+ * A `ChatNotify` becomes a `CallLLMJob` and a `RunToolJob`; the answer leaves as a
+ * `DeliveryNotify`. Providers and tools answer through the BUS — never by calling
+ * each other — and a provider change is verified before it becomes active.
+ */
+
 const workspaces: string[] = [];
 afterEach(async () => { for (const path of workspaces.splice(0)) await rm(path, { recursive: true, force: true }); });
 async function workspace() { const path = await mkdtemp(join(tmpdir(), "magi-test-")); workspaces.push(path); return path; }

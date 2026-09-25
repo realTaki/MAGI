@@ -28,6 +28,14 @@ import type { JobInput, JobType } from "./jobs/types.js";
 export const SYSTEM_CONTACT_ID = 1;
 export const MAGI_CONTACT_ID = 2;
 
+/**
+ * One MAGI's shared bus: Books for durable state, Jobs for coordination.
+ *
+ * Workers never call each other. A component publishes a Job and whoever owns that
+ * work claims it, so these two methods — `publishChat` for a turn, `publishDelivery`
+ * for text that goes back out — are the only paths between them. Trouble is
+ * delivered, not logged: `publishNotice` is where it goes.
+ */
 export class Bus {
   readonly workspace: string;
   readonly conversations: ConversationBook;
