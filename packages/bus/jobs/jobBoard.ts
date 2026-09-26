@@ -4,8 +4,7 @@ import type { BusDb } from "../drizzle/database.js";
 import type { CallLLMJob, CallLLMResult } from "./callLlm.js";
 import type { ChangeMcpServerNotify } from "./changeMcpServer.js";
 import type { ChangeProviderNotify } from "./changeProvider.js";
-import type { ChatNotify } from "./chatNotify.js";
-import type { DeliveryNotify } from "./deliveryNotify.js";
+import type { MessageDeliveryJob } from "./messageDelivery.js";
 import type { ManageWorkerNotify } from "./manageWorker.js";
 import type { RunToolJob, RunToolResult } from "./runTool.js";
 
@@ -13,17 +12,16 @@ import type { RunToolJob, RunToolResult } from "./runTool.js";
  * The board contract: which job types exist, what each carries in and out, and
  * what a claimed job looks like.
  *
- * Each payload lives in its own file beside this one (`chatNotify.ts`,
+ * Each payload lives in its own file beside this one (`messageDelivery.ts`,
  * `callLlm.ts`, …), so a reader opens the job they care about instead of
  * scanning one long list. This file only wires them into the board.
  */
 
 /** Job type -> what its publisher hands to the board. */
 export type JobInput = {
-  ChatNotify: ChatNotify;
+  MessageDeliveryJob: MessageDeliveryJob;
   CallLLMJob: CallLLMJob;
   RunToolJob: RunToolJob;
-  DeliveryNotify: DeliveryNotify;
   ChangeProviderNotify: ChangeProviderNotify;
   ChangeMcpServerNotify: ChangeMcpServerNotify;
   ManageWorkerNotify: ManageWorkerNotify;
@@ -31,10 +29,9 @@ export type JobInput = {
 
 /** Job type -> what the worker writes back. Empty where the job only acts. */
 export type JobOutput = {
-  ChatNotify: Record<string, never>;
+  MessageDeliveryJob: Record<string, never>;
   CallLLMJob: CallLLMResult;
   RunToolJob: RunToolResult;
-  DeliveryNotify: Record<string, never>;
   ChangeProviderNotify: Record<string, never>;
   ChangeMcpServerNotify: Record<string, never>;
   ManageWorkerNotify: { running: string[] };

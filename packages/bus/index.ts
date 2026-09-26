@@ -13,14 +13,12 @@ export type { PromptSection, PromptSource } from "./books/promptBook.js";
 export type { Setting } from "./books/settingsBook.js";
 export type { ExecutableTool, LLMTool, ToolSource } from "./books/toolBook.js";
 // One file per job; `types.js` is only the board contract that binds them.
-export type { ChatNotify } from "./jobs/chatNotify.js";
+export type { MessageDeliveryJob } from "./jobs/messageDelivery.js";
 export type { CallLLMJob, CallLLMResult, LLMMessage } from "./jobs/callLlm.js";
 export type { RunToolJob, RunToolResult, LLMToolCall } from "./jobs/runTool.js";
-export type { DeliveryNotify } from "./jobs/deliveryNotify.js";
 export type { ChangeProviderNotify } from "./jobs/changeProvider.js";
 export type { ChangeMcpServerNotify } from "./jobs/changeMcpServer.js";
 export type { ManageWorkerNotify } from "./jobs/manageWorker.js";
 export type { Job, JobResult } from "./jobs/jobBoard.js";
-// The message jobs also export how their text is recorded and read back.
-export { chatNotify } from "./jobs/chatNotify.js";
-export { deliveryNotify } from "./jobs/deliveryNotify.js";
+// The message job also exports how its text is recorded and delivered.
+export { messageDelivery } from "./jobs/messageDelivery.js";

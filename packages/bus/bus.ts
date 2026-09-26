@@ -18,7 +18,7 @@ import { SettingsBook } from "./books/settingsBook.js";
 import { PromptBook } from "./books/promptBook.js";
 import { ToolBook } from "./books/toolBook.js";
 import { JobBoard, jobs, type JobInput, type JobType } from "./jobs/jobBoard.js";
-import { deliveryNotify } from "./jobs/deliveryNotify.js";
+import { messageDelivery } from "./jobs/messageDelivery.js";
 
 /**
  * One MAGI's shared bus: Books for durable state, Jobs for coordination.
@@ -134,7 +134,7 @@ export class Bus {
   publishNotice(text: string, chatId?: number): number | null {
     const target = chatId ?? this.homeChat();
     if (target === null) return null;
-    return deliveryNotify.send(this, { chat_id: target, text });
+    return messageDelivery.send(this, { chat_id: target, text, contact_id: MAGI_CONTACT_ID });
   }
 
   close(): void {

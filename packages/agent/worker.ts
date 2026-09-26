@@ -1,4 +1,4 @@
-import { BaseWorker, type Bus } from "@magi/bus";
+import { BaseWorker, MAGI_CONTACT_ID, type Bus } from "@magi/bus";
 import { Chat } from "./chats.js";
 import { PROMPT_DEFAULTS } from "./prompt_defaults.js";
 
@@ -12,11 +12,14 @@ export class AgentWorker extends BaseWorker {
   }
 
   async poll(): Promise<boolean> {
-    const job = this.bus.board("ChatNotify").claim(this.worker_name);
+    const board = this.bus.board("MessageDeliveryJob");
+    // What someone else said is this MAGI's to answer. Its own words are not: they are
+    // for a channel to deliver, and nobody answers them here.
+    const job = board.claim(this.worker_name, (input) => input.contact_id !== MAGI_CONTACT_ID);
     if (!job) return false;
     const id = job.input.chat_id;
     if (!id) {
-      this.bus.board("ChatNotify").submit(this.worker_name, job.id, { error: "chat_id is missing" });
+      board.submit(this.worker_name, job.id, { error: "chat_id is missing" });
       return true;
     }
     const previous = this.queues.get(id) ?? Promise.resolve();

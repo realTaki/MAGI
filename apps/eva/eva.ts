@@ -12,7 +12,7 @@
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
-import { Bus, chatNotify, type ManageWorkerNotify } from "@magi/bus";
+import { Bus, messageDelivery, type ManageWorkerNotify } from "@magi/bus";
 import { AgentWorker } from "@magi/agent/worker.js";
 import { ProvidersWorker } from "@magi/providers/worker.js";
 import type { LLMClient } from "@magi/providers/client.js";
@@ -123,9 +123,9 @@ export class Magi {
     // The terminal is the operator of a hand-run MAGI, and their first message is what
     // establishes where this workspace reports trouble.
     if (this.bus.homeChat() === null) this.bus.setHomeChat(chat.id);
-    const id = chatNotify.receive(this.bus, { chat_id: chat.id, text });
+    const id = messageDelivery.send(this.bus, { chat_id: chat.id, text });
     while (this.up) {
-      if (this.bus.board("ChatNotify").result(id)) return id;
+      if (this.bus.board("MessageDeliveryJob").result(id)) return id;
       await sleep(20);
     }
     throw new Error("MAGI stopped before completing the turn");

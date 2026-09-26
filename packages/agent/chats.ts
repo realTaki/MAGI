@@ -1,4 +1,4 @@
-import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, deliveryNotify, type Bus, type LLMMessage } from "@magi/bus";
+import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, messageDelivery, type Bus, type LLMMessage } from "@magi/bus";
 import { SYSTEM_PROMPT } from "./prompt_defaults.js";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const COMPACT_KEEP_RECENT = 20;
@@ -15,7 +15,7 @@ export class Chat {
   ) {}
 
   async run(jobId: number): Promise<void> {
-    const chatBoard = this.bus.board("ChatNotify");
+    const chatBoard = this.bus.board("MessageDeliveryJob");
     try {
       const record = this.bus.chats.get(this.chat_id);
       if (!record) throw new Error("chat does not exist");
@@ -60,12 +60,12 @@ export class Chat {
           if (reply.toUpperCase() !== NO_REPLY) {
             // A Notify is published and not awaited: a channel that cannot deliver reports
             // its own trouble, and there is nothing the agent could do about it here.
-            deliveryNotify.send(this.bus, { chat_id: this.chat_id, text: reply || "处理完毕。" });
+            messageDelivery.send(this.bus, { chat_id: this.chat_id, text: reply || "处理完毕。", contact_id: MAGI_CONTACT_ID });
           }
           chatBoard.submit("agent", jobId, { output: {} });
           return;
         }
-        if (response.content) deliveryNotify.send(this.bus, { chat_id: this.chat_id, text: response.content });
+        if (response.content) messageDelivery.send(this.bus, { chat_id: this.chat_id, text: response.content, contact_id: MAGI_CONTACT_ID });
         messages.push(response);
         // A name the catalog does not have is answered here: no worker would claim its job.
         const calls = response.tool_calls.map((call) => this.bus.tools.get(call.name)
@@ -88,7 +88,7 @@ export class Chat {
       // What went wrong is said in the chat itself: the Job result is for
       // whoever published the turn, not for whoever is waiting for an answer.
       const message = error instanceof Error ? error.message : String(error);
-      deliveryNotify.send(this.bus, { chat_id: this.chat_id, text: message });
+      messageDelivery.send(this.bus, { chat_id: this.chat_id, text: message, contact_id: MAGI_CONTACT_ID });
       chatBoard.submit("agent", jobId, { error: message });
     }
   }
