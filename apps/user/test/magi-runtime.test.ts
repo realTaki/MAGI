@@ -229,6 +229,10 @@ test("rebuilding installs and builds in the MAGI's own checkout", async (t) => {
 });
 
 test("a real MAGI boots from its own checkout", { timeout: 120_000 }, async (t) => {
+  if (process.env.MAGI_SKIP_LIVE_INTEGRATION === "1") {
+    t.skip("live MAGI-boot integration test skipped: MAGI_SKIP_LIVE_INTEGRATION=1");
+    return;
+  }
   if (installedRuntime === null) {
     t.skip("MAGI's bundled Node/npm runtime is not installed: run npm ci in apps/shell/, then node apps/shell/scripts/prepare-runtime.mjs");
     return;
