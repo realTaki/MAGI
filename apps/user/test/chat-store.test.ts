@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import Database from "better-sqlite3";
 
 import { openChatStore } from "../main/chat-store.ts";
 
@@ -43,4 +44,32 @@ test("desktop chat history and pending receipts survive a restart", {
   assert.deepEqual(reopened.listOutgoingMessages(), []);
   reopened.markAcknowledged("sess_1", event.sequence);
   assert.deepEqual(reopened.pendingAcks("sess_1"), []);
+});
+
+test("the versioned baseline adopts an existing desktop cache without replacing it", (t) => {
+  const directory = mkdtempSync(path.join(tmpdir(), "magi-chat-legacy-"));
+  const file = path.join(directory, "chat.sqlite");
+  const legacy = new Database(file);
+  const chat = { chat_id: "sess_existing", kind: "bot", agents: ["@eva-000.magi"] };
+  legacy.exec(`
+    CREATE TABLE chats (id TEXT PRIMARY KEY, record_json TEXT NOT NULL);
+    CREATE TABLE events (chat_id TEXT NOT NULL, sequence INTEGER NOT NULL, record_json TEXT NOT NULL, PRIMARY KEY (chat_id, sequence));
+    CREATE TABLE acknowledgements (chat_id TEXT PRIMARY KEY, through_sequence INTEGER NOT NULL);
+    CREATE TABLE outgoing_messages (id TEXT PRIMARY KEY, chat_id TEXT NOT NULL, content TEXT NOT NULL, created_at INTEGER NOT NULL);
+  `);
+  legacy.prepare("INSERT INTO chats VALUES (?, ?)").run(chat.chat_id, JSON.stringify(chat));
+  legacy.close();
+
+  const store = openChatStore(file);
+  t.after(() => store.close());
+  assert.deepEqual(store.listChats(), [chat]);
+
+  const migrations = new Database(file, { readonly: true });
+  t.after(() => migrations.close());
+  t.after(() => rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+  assert.equal(migrations.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get().count, 1);
+  assert.equal(
+    migrations.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'index' AND name = 'outgoing_messages_order'").get().count,
+    1,
+  );
 });
