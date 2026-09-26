@@ -252,7 +252,7 @@ describe("local MAGI agent", () => {
     magi.bus.memoryBook.save({ topic: "runtime goal", detail: "Finish magi", kind: "long_term" });
     magi.bus.settings.set("provider.context_window", "100");
     const chat = magi.bus.chats.forChannel("cli", "terminal");
-    for (let i = 0; i < 41; i++) magi.bus.messages.add(chat.id, 0, `old message ${i}`);
+    for (let i = 0; i < 41; i++) magi.bus.messages.add(chat.id, SYSTEM_CONTACT_ID, `old message ${i}`);
     await magi.start();
     await magi.chat("continue");
 
