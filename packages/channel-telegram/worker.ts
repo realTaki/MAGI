@@ -1,7 +1,7 @@
 import { Chat, type Logger, type Message, type Thread } from "chat";
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { createMemoryState } from "@chat-adapter/state-memory";
-import { BaseWorker, MAGI_CONTACT_ID, chatNotify, type Bus } from "@magi/bus";
+import { BaseWorker, MAGI_CONTACT_ID, messageDelivery, type Bus } from "@magi/bus";
 
 /** What a Telegram bot needs; a MAGI may not have one until someone sets it. */
 type Credentials = { token: string; apiBase?: string };
@@ -11,8 +11,8 @@ type Credentials = { token: string; apiBase?: string };
  *
  * The SDK owns the protocol — long polling (this runs on someone's machine, so there is
  * no webhook to receive), offsets, retries, and markdown rendering. This worker only
- * translates: an incoming message becomes a `ChatNotify`, a `DeliveryNotify` becomes a
- * post in that chat.
+ * translates: what arrives becomes a message in the chat, and what this MAGI says in
+ * that chat becomes a post.
  */
 export class TelegramWorker extends BaseWorker {
   readonly worker_name = "tg";
@@ -71,14 +71,18 @@ export class TelegramWorker extends BaseWorker {
   }
 
   async poll(): Promise<boolean> {
-    const board = this.bus.board("DeliveryNotify");
-    const job = board.claim(this.worker_name, (input) => input.channel === "tg");
+    const board = this.bus.board("MessageDeliveryJob");
+    // Its own channel, and only what this MAGI said: the chat knows where it lives, so
+    // the job carries no address that could drift from it.
+    const job = board.claim(this.worker_name, (input) =>
+      input.contact_id === MAGI_CONTACT_ID && this.bus.chats.get(input.chat_id)?.channel === this.worker_name);
     if (!job) return false;
     try {
       const bot = this.bot;
       if (!bot) throw new Error("Telegram is not running");
-      if (!job.input.address) throw new Error("delivery has no Telegram chat");
-      await bot.channel(`telegram:${job.input.address}`).post(job.input.text);
+      const chat = this.bus.chats.get(job.input.chat_id);
+      if (!chat?.delivery_address) throw new Error("delivery has no Telegram chat");
+      await bot.channel(`telegram:${chat.delivery_address}`).post(job.input.text);
       board.submit(this.worker_name, job.id, { output: {} });
     } catch (error) {
       board.submit(this.worker_name, job.id, { error: error instanceof Error ? error.message : String(error) });
@@ -101,7 +105,7 @@ export class TelegramWorker extends BaseWorker {
     // but only while nothing has established that yet: home is set once, and it moves by
     // the tool the operator asks for, not by whoever spoke last.
     if (direct && this.bus.homeChat() === null) this.bus.setHomeChat(chat.id);
-    chatNotify.receive(this.bus, { chat_id: chat.id, contact_id: contact.id, text }, this.worker_name);
+    messageDelivery.send(this.bus, { chat_id: chat.id, contact_id: contact.id, text }, this.worker_name);
   }
 
   /**

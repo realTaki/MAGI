@@ -1,4 +1,4 @@
-import { BaseWorker, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, chatNotify, type Bus, type Contact } from "@magi/bus";
+import { BaseWorker, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, messageDelivery, type Bus, type Contact } from "@magi/bus";
 import { setTimeout as sleep } from "node:timers/promises";
 import { AspClient, type AspEvent } from "./client.js";
 
@@ -24,12 +24,16 @@ export class AspWorker extends BaseWorker {
   health(): string | null { return this.client.connected ? null : "ASP is not connected"; }
 
   async poll(): Promise<boolean> {
-    const board = this.bus.board("DeliveryNotify");
-    const job = board.claim(this.worker_name, (input) => input.channel === "asp");
+    const board = this.bus.board("MessageDeliveryJob");
+    // Its own channel, and only what this MAGI said: the chat knows the channel it is on
+    // and the address it is delivered to, so the job carries neither.
+    const job = board.claim(this.worker_name, (input) =>
+      input.contact_id === MAGI_CONTACT_ID && this.bus.chats.get(input.chat_id)?.channel === this.worker_name);
     if (!job) return false;
     try {
-      if (!job.input.address) throw new Error("delivery has no ASP chat");
-      await this.client.send(job.input.address, job.input.text);
+      const chat = this.bus.chats.get(job.input.chat_id);
+      if (!chat?.delivery_address) throw new Error("delivery has no ASP chat");
+      await this.client.send(chat.delivery_address, job.input.text);
       board.submit(this.worker_name, job.id, { output: {} });
     } catch (error) {
       board.submit(this.worker_name, job.id, { error: error instanceof Error ? error.message : String(error) });
@@ -164,7 +168,7 @@ export class AspWorker extends BaseWorker {
     if (contact?.id === SYSTEM_CONTACT_ID && this.bus.homeChat() === null) {
       this.bus.setHomeChat(chat.id);
     }
-    chatNotify.receive(this.bus, { chat_id: chat.id, contact_id: contact?.id, text }, this.worker_name);
+    messageDelivery.send(this.bus, { chat_id: chat.id, contact_id: contact?.id, text }, this.worker_name);
   }
 
   /** Only record it: it was addressed to someone else, but the history keeps it. */
@@ -172,7 +176,7 @@ export class AspWorker extends BaseWorker {
     const text = this.content(payload);
     if (!text) return;
     const contact = this.remember(chatId, payload.sender);
-    chatNotify.record(this.bus, this.bus.chats.forChannel("asp", chatId).id, text, contact?.id);
+    messageDelivery.record(this.bus, this.bus.chats.forChannel("asp", chatId).id, text, contact?.id);
   }
 }
 

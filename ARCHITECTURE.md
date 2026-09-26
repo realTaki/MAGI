@@ -130,19 +130,25 @@ call each other. They publish Jobs and claim Jobs — asserted in
 
 | Worker | Reads | Writes |
 | --- | --- | --- |
-| Agent | `ChatNotify` | `CallLLMJob`, `RunToolJob` |
+| Agent | `MessageDeliveryJob` (anyone else's) | `CallLLMJob`, `RunToolJob`, `MessageDeliveryJob` (its own) |
 | Providers | `CallLLMJob` | the model result |
 | Tools | `RunToolJob` | the tool result |
-| ASP channel | chat events | `ChatNotify`, `DeliveryNotify` replies |
-| CLI | terminal lines | `ChatNotify` |
-| Telegram | bot updates | `ChatNotify` |
-| Tasks | due tasks, `RunToolJob` | `ChatNotify` for a fired task, the tool result |
+| ASP channel | chat events | `MessageDeliveryJob` (what it heard, and this MAGI's replies) |
+| CLI | terminal lines | `MessageDeliveryJob` |
+| Telegram | bot updates | `MessageDeliveryJob` |
+| Tasks | due tasks, `RunToolJob` | `MessageDeliveryJob` for a fired task, the tool result |
 | MCP | `ChangeMcpServerNotify` | tools from configured servers |
+
+Everything a chat and this MAGI say to each other is one job, `MessageDeliveryJob`, and
+its author decides who acts: what someone else said is the agent's to answer, this MAGI's
+own words are the chat channel's to post. The payload carries the chat alone — a channel
+reads its own name and address off the chat row — and the message is recorded by the
+job's `send()`, so no worker writes the message book.
 
 Channels stop at translating. The Telegram one is the Chat SDK's Telegram
 adapter in polling mode (`magi/channels/telegram/worker.ts`): the SDK owns long
-polling, offsets, retries, and rendering, the worker only publishes a
-`ChatNotify` or posts a `DeliveryNotify`, and adapter trouble is reported
+polling, offsets, retries, and rendering, the worker only records what it
+heard and posts what this MAGI said, and adapter trouble is reported
 through `health()` so the supervisor can tell the operator. A group is only
 heard when the MAGI is addressed — an @ mention, or a reply to one of its
 messages; a DM is the operator's own chat. What does arrive is recorded like
