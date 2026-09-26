@@ -33,17 +33,10 @@ export class Chat {
         ["Chat", `chat_id: ${this.chat_id}\nchannel: ${record.channel}\ndelivery_address: ${record.delivery_address}\ntopic: ${record.topic}\nhome_chat_id: ${this.bus.homeChat() ?? "none"}\nMAGI_CONTACT_ID: ${MAGI_CONTACT_ID}\nSYSTEM_CONTACT_ID: ${SYSTEM_CONTACT_ID}`],
       ]);
       const system = [agentPrompt, SYSTEM_PROMPT, chatContext].filter(Boolean).join("\n\n");
-      // Who spoke is the contact id alone: the blocks above already name every contact
-      // that can appear here, so a per-line label would only cost a lookup.
-      const history = this.bus.messages.list(this.chat_id, COMPACT_KEEP_RECENT).map((message): LLMMessage => {
-        // Only what others said is marked. The model imitates the shape of its own past
-        // replies, and a prefix here would come back inside the next one.
-        const own = message.contact_id === MAGI_CONTACT_ID;
-        return {
-          role: own ? "assistant" : "user",
-          content: own ? message.content : `[contact id ${message.contact_id} | ${message.created_at}]\n${message.content}`,
-        };
-      });
+      // Message rows are already LLM messages: roles and the user identity envelope are
+      // assigned when a message is recorded, not rebuilt for every agent turn.
+      const history: LLMMessage[] = this.bus.messages.list(this.chat_id, COMPACT_KEEP_RECENT)
+        .map(({ llm_role: role, llm_content: content }) => ({ role, content }));
       const messages: LLMMessage[] = [{ role: "system", content: system }, ...history];
       // No step limit is enforced: the model is told which step it is on and that it
       // should stop and ask the user before going much past the suggested number.
@@ -101,7 +94,7 @@ export class Chat {
     if (estimatedTokens <= Math.floor(contextWindow / 2)) return previousSummary;
     const old = active.slice(0, -COMPACT_KEEP_RECENT);
     if (!old.length) return previousSummary;
-    const content = old.map((message) => `[contact id ${message.contact_id} | ${message.created_at}]\n${message.content}`).join("\n\n");
+    const content = old.map((message) => `[${message.llm_role}]\n${message.llm_content}`).join("\n\n");
     const id = this.bus.board("CallLLMJob").publish({
       messages: [
         { role: "system", content: this.bus.prompts.get("agent/compaction") ?? "Summarize the chat." },

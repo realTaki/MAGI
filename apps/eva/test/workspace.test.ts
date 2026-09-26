@@ -61,17 +61,19 @@ test("one message job records both directions and carries only the message id", 
     // author the chat does not name is the operator.
     messageDelivery.send(bus, chat.id, "hello");
     const received = bus.messages.list(chat.id).at(-1)!;
-    expect(received).toMatchObject({ contact_id: SYSTEM_CONTACT_ID, content: "hello" });
+    expect(received).toMatchObject({ contact_id: SYSTEM_CONTACT_ID, llm_role: "user", content: "hello" });
+    expect(received.llm_content).toStartWith(`[contact id ${SYSTEM_CONTACT_ID} | `);
+    expect(received.llm_content).toContain("]\nhello");
     expect(bus.board("MessageDeliveryJob").claim("test")?.input)
       .toEqual({ message_id: received.id });
     // A message asked of someone else is kept as history, and nobody delivers it.
     messageDelivery.record(bus, chat.id, "not for me");
-    expect(bus.messages.list(chat.id).at(-1)).toMatchObject({ contact_id: SYSTEM_CONTACT_ID, content: "not for me" });
+    expect(bus.messages.list(chat.id).at(-1)?.llm_role).toBe("user");
     expect(bus.board("MessageDeliveryJob").claim("test")).toBeNull();
     // Sent: this MAGI's own words, so a channel is the one that acts on it.
     messageDelivery.send(bus, chat.id, "reply", MAGI_CONTACT_ID, "test");
     const sent = bus.messages.list(chat.id).at(-1)!;
-    expect(sent).toMatchObject({ contact_id: MAGI_CONTACT_ID, content: "reply" });
+    expect(sent).toMatchObject({ contact_id: MAGI_CONTACT_ID, llm_role: "assistant", llm_content: "reply", content: "reply" });
     expect(bus.board("MessageDeliveryJob").claim("test")?.input)
       .toEqual({ message_id: sent.id });
   } finally {
