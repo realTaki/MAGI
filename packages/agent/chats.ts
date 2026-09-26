@@ -20,29 +20,35 @@ export class Chat {
       const record = this.bus.chats.get(this.chat_id);
       if (!record) throw new Error("chat does not exist");
       const agentPrompt = this.bus.prompts.get("agent/AGENT") ?? "You are a helpful assistant.";
-      const summary = await this.compact(record.summary);
       // Blocks the running modules answer for: the agent renders them without knowing
       // which worker is behind one, or whether any worker is behind it at all.
       const contributed: ReadonlyArray<readonly [string, string]> = this.bus.prompts.sections(this.chat_id)
         .map((section): readonly [string, string] => [section.title, section.body]);
-      const chatContext = this.context([
+      const beforeSummary = this.context([
         ...contributed,
         ["Chat instruction", record.instruction],
         ["Chat info", record.info],
-        ["Prior chat summary", summary],
+      ]);
+      const chat = this.context([
         ["Chat", `chat_id: ${this.chat_id}\nchannel: ${record.channel}\ndelivery_address: ${record.delivery_address}\ntopic: ${record.topic}\nhome_chat_id: ${messageDelivery.homeChat(this.bus) ?? "none"}\nMAGI_CONTACT_ID: ${MAGI_CONTACT_ID}\nSYSTEM_CONTACT_ID: ${SYSTEM_CONTACT_ID}`],
       ]);
-      const system = [agentPrompt, SYSTEM_PROMPT, chatContext].filter(Boolean).join("\n\n");
+      // A turn receives one fixed catalog.  A worker starting midway through a turn
+      // becomes available on the next turn instead of changing the model's contract.
+      const tools = this.bus.tools.catalog();
+      const summary = await this.compact(record.summary, [agentPrompt, SYSTEM_PROMPT, beforeSummary, chat].filter(Boolean).join("\n\n"), tools);
+      const system = [agentPrompt, SYSTEM_PROMPT, beforeSummary, this.context([["Prior chat summary", summary]]), chat].filter(Boolean).join("\n\n");
       // Message rows are already LLM messages: roles and the user identity envelope are
       // assigned when a message is recorded, not rebuilt for every agent turn.
       const history: LLMMessage[] = this.bus.messages.list(this.chat_id, COMPACT_KEEP_RECENT)
         .map(({ llm_role: role, content }) => ({ role, content }));
-      const messages: LLMMessage[] = [{ role: "system", content: system }, ...history];
+      // Keep the cacheable instruction/context prefix byte-for-byte stable through a
+      // tool loop.  Step metadata is a separate trailing system message.
+      const messages: LLMMessage[] = [{ role: "system", content: system }, { role: "system", content: "" }, ...history];
       // No step limit is enforced: the model is told which step it is on and that it
       // should stop and ask the user before going much past the suggested number.
       for (let step = 1; ; step++) {
-        messages[0] = { role: "system", content: `${system}\n\n${this.section("Turn", `step: ${step}\nsuggested maximum: ${SUGGESTED_STEPS}\nStop and ask the user whether to continue once you reach the suggested maximum without finishing.`)}` };
-        const llmId = this.bus.board("CallLLMJob").publish({ messages, tools: this.bus.tools.catalog() }, "agent");
+        messages[1] = { role: "system", content: this.section("Turn", `step: ${step}\nsuggested maximum: ${SUGGESTED_STEPS}\nStop and ask the user whether to continue once you reach the suggested maximum without finishing.`) };
+        const llmId = this.bus.board("CallLLMJob").publish({ messages, tools }, "agent");
         const llm = await this.waitFor("CallLLMJob", llmId, 300_000);
         if (llm.status === "failed" || !llm.output?.message) throw new Error(llm.error ?? "LLM failed");
         const response = llm.output.message;
@@ -86,9 +92,18 @@ export class Chat {
     }
   }
 
-  private async compact(previousSummary: string): Promise<string> {
+  private async compact(previousSummary: string, staticContext: string, tools: unknown): Promise<string> {
     const active = this.bus.messages.list(this.chat_id, 10_000);
-    const estimatedTokens = active.reduce((sum, message) => sum + Math.max(1, Math.ceil(message.content.length / 4)), Math.max(0, Math.ceil(previousSummary.length / 4)));
+    // We cannot use one tokenizer for all providers, but every stable input part
+    // must count.  The previous estimate considered only stored chat rows, which
+    // understated large prompt blocks and tool catalogs.
+    const estimatedTokens = [
+      ...active.map((message) => message.content),
+      previousSummary,
+      staticContext,
+      JSON.stringify(tools),
+      this.section("Turn", `step: 1\nsuggested maximum: ${SUGGESTED_STEPS}`),
+    ].reduce((sum, text) => sum + Math.max(1, Math.ceil(text.length / 4)), 0);
     const configuredWindow = Number(this.bus.settings.get("provider.context_window"));
     const contextWindow = Number.isFinite(configuredWindow) && configuredWindow > 0 ? configuredWindow : COMPACT_CONTEXT_WINDOW;
     if (estimatedTokens <= Math.floor(contextWindow / 2)) return previousSummary;

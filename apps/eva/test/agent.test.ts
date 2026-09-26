@@ -177,6 +177,43 @@ describe("local MAGI agent", () => {
     memories.close(); jobs.close();
   });
 
+  test("keeps progress visible while an agent completes multiple tool rounds", async () => {
+    const path = await workspace();
+    const delivered: string[] = [];
+    const requests: CallLLMJob[] = [];
+    const magi = new Magi("@alice.magi", {
+      workspace: path,
+      deliver: (text) => { delivered.push(text); },
+      client: {
+        async complete(job): Promise<LLMMessage> {
+          requests.push(job);
+          if (requests.length === 1) return {
+            role: "assistant", content: "正在处理第一步。",
+            tool_calls: [{ tool_call_id: "call_1", name: "write_file", arguments: { path: "notes/one.txt", content: "one" } }],
+          };
+          if (requests.length === 2) return {
+            role: "assistant", content: "第一步完成，继续第二步。",
+            tool_calls: [{ tool_call_id: "call_2", name: "write_file", arguments: { path: "notes/two.txt", content: "two" } }],
+          };
+          return { role: "assistant", content: "全部完成。" };
+        },
+      },
+    });
+    await magi.start();
+    await magi.chat("完成两步工作");
+    for (let attempt = 0; attempt < 100 && delivered.length < 3; attempt++) await sleep(10);
+    await magi.stop();
+
+    expect(requests).toHaveLength(3);
+    expect(requests[2].messages.filter((message) => message.role === "tool").map((message) => ({
+      tool_call_id: message.tool_call_id, content: message.content,
+    }))).toEqual([
+      { tool_call_id: "call_1", content: "wrote 3 bytes" },
+      { tool_call_id: "call_2", content: "wrote 3 bytes" },
+    ]);
+    expect(delivered).toEqual(["正在处理第一步。", "第一步完成，继续第二步。", "全部完成。"]);
+  });
+
   test("the model's own past replies go back without a transcript prefix", async () => {
     const path = await workspace();
     const requests: CallLLMJob[] = [];

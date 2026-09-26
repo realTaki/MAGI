@@ -117,9 +117,13 @@ export class ProvidersWorker extends BaseWorker {
    * An injected/non-pi client simply leaves an existing explicit setting alone.
    */
   private syncContextWindow(): void {
-    const contextWindow = this.client.contextWindow?.();
-    if (typeof contextWindow === "number" && Number.isSafeInteger(contextWindow) && contextWindow > 0) {
-      this.bus.settings.set("provider.context_window", String(contextWindow));
+    try {
+      const contextWindow = this.client.contextWindow?.();
+      if (typeof contextWindow === "number" && Number.isSafeInteger(contextWindow) && contextWindow > 0) {
+        this.bus.settings.set("provider.context_window", String(contextWindow));
+      }
+    } catch {
+      // Keep the worker available to report/configure a previously saved bad model.
     }
   }
 
