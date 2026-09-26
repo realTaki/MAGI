@@ -26,10 +26,6 @@ const OPERATOR_HANDLE = "@user.magi";
 /** Payload keys that carried the sender's handle. */
 const HANDLE_KEYS = ["sender", "by", "agent", "invitee", "ended_by", "reopened_by"];
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 export function repairLegacyOperatorHandle(db: AspDb): void {
   for (const legacy of LEGACY_HANDLES) repairOperatorHandle(db, legacy);
 }
