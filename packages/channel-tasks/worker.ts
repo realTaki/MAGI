@@ -66,10 +66,13 @@ export class TaskWorker extends BaseWorker {
   }
 
   private fire(task: Task): void {
-    messageDelivery.send(this.bus, {
-      chat_id: task.chat_id,
-      text: `[task context]\nYou are EXECUTING a scheduled task that just fired.\nname: ${task.name}\nschedule: ${task.cron}\n\n[task prompt]\n${task.prompt}`,
-    }, this.worker_name);
+    messageDelivery.send(
+      this.bus,
+      task.chat_id,
+      `[task context]\nYou are EXECUTING a scheduled task that just fired.\nname: ${task.name}\nschedule: ${task.cron}\n\n[task prompt]\n${task.prompt}`,
+      undefined,
+      this.worker_name,
+    );
   }
 
   async stop(): Promise<void> { this.started = false; }

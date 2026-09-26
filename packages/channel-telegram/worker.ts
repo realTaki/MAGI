@@ -74,15 +74,19 @@ export class TelegramWorker extends BaseWorker {
     const board = this.bus.board("MessageDeliveryJob");
     // Its own channel, and only what this MAGI said: the chat knows where it lives, so
     // the job carries no address that could drift from it.
-    const job = board.claim(this.worker_name, (input) =>
-      input.contact_id === MAGI_CONTACT_ID && this.bus.chats.get(input.chat_id)?.channel === this.worker_name);
+    const job = board.claim(this.worker_name, (input) => {
+      const message = this.bus.messages.get(input.message_id);
+      return message?.contact_id === MAGI_CONTACT_ID && this.bus.chats.get(message.chat_id)?.channel === this.worker_name;
+    });
     if (!job) return false;
     try {
       const bot = this.bot;
       if (!bot) throw new Error("Telegram is not running");
-      const chat = this.bus.chats.get(job.input.chat_id);
+      const message = this.bus.messages.get(job.input.message_id);
+      if (!message) throw new Error(`message ${job.input.message_id} does not exist`);
+      const chat = this.bus.chats.get(message.chat_id);
       if (!chat?.delivery_address) throw new Error("delivery has no Telegram chat");
-      await bot.channel(`telegram:${chat.delivery_address}`).post(job.input.text);
+      await bot.channel(`telegram:${chat.delivery_address}`).post(message.content);
       board.submit(this.worker_name, job.id, { output: {} });
     } catch (error) {
       board.submit(this.worker_name, job.id, { error: error instanceof Error ? error.message : String(error) });
@@ -105,7 +109,7 @@ export class TelegramWorker extends BaseWorker {
     // but only while nothing has established that yet: home is set once, and it moves by
     // the tool the operator asks for, not by whoever spoke last.
     if (direct && this.bus.homeChat() === null) this.bus.setHomeChat(chat.id);
-    messageDelivery.send(this.bus, { chat_id: chat.id, contact_id: contact.id, text }, this.worker_name);
+    messageDelivery.send(this.bus, chat.id, text, contact.id, this.worker_name);
   }
 
   /**

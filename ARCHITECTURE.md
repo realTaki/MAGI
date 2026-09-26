@@ -141,9 +141,9 @@ call each other. They publish Jobs and claim Jobs — asserted in
 
 Everything a chat and this MAGI say to each other is one job, `MessageDeliveryJob`, and
 its author decides who acts: what someone else said is the agent's to answer, this MAGI's
-own words are the chat channel's to post. The payload carries the chat alone — a channel
-reads its own name and address off the chat row — and the message is recorded by the
-job's `send()`, so no worker writes the message book.
+own words are the chat channel's to post. The payload carries only the durable message
+id — a worker reads the author, chat, and text from that row — and the message is
+recorded by the job's `send()`, so no worker writes the message book.
 
 Channels stop at translating. The Telegram one is the Chat SDK's Telegram
 adapter in polling mode (`magi/channels/telegram/worker.ts`): the SDK owns long

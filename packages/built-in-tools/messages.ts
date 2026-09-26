@@ -52,7 +52,7 @@ export function messageTools(bus: Bus): ExecutableTool[] {
       async run(args) {
         const chatId = integerArg(args, "chat_id");
         if (!bus.chats.get(chatId)) throw new Error(`unknown chat ${chatId}`);
-        messageDelivery.send(bus, { chat_id: chatId, text: stringArg(args, "text"), contact_id: MAGI_CONTACT_ID }, "tools");
+        messageDelivery.send(bus, chatId, stringArg(args, "text"), MAGI_CONTACT_ID, "tools");
         return `queued to chat ${chatId}`;
       },
     },

@@ -27,13 +27,17 @@ export class AspWorker extends BaseWorker {
     const board = this.bus.board("MessageDeliveryJob");
     // Its own channel, and only what this MAGI said: the chat knows the channel it is on
     // and the address it is delivered to, so the job carries neither.
-    const job = board.claim(this.worker_name, (input) =>
-      input.contact_id === MAGI_CONTACT_ID && this.bus.chats.get(input.chat_id)?.channel === this.worker_name);
+    const job = board.claim(this.worker_name, (input) => {
+      const message = this.bus.messages.get(input.message_id);
+      return message?.contact_id === MAGI_CONTACT_ID && this.bus.chats.get(message.chat_id)?.channel === this.worker_name;
+    });
     if (!job) return false;
     try {
-      const chat = this.bus.chats.get(job.input.chat_id);
+      const message = this.bus.messages.get(job.input.message_id);
+      if (!message) throw new Error(`message ${job.input.message_id} does not exist`);
+      const chat = this.bus.chats.get(message.chat_id);
       if (!chat?.delivery_address) throw new Error("delivery has no ASP chat");
-      await this.client.send(chat.delivery_address, job.input.text);
+      await this.client.send(chat.delivery_address, message.content);
       board.submit(this.worker_name, job.id, { output: {} });
     } catch (error) {
       board.submit(this.worker_name, job.id, { error: error instanceof Error ? error.message : String(error) });
@@ -168,7 +172,7 @@ export class AspWorker extends BaseWorker {
     if (contact?.id === SYSTEM_CONTACT_ID && this.bus.homeChat() === null) {
       this.bus.setHomeChat(chat.id);
     }
-    messageDelivery.send(this.bus, { chat_id: chat.id, contact_id: contact?.id, text }, this.worker_name);
+    messageDelivery.send(this.bus, chat.id, text, contact?.id, this.worker_name);
   }
 
   /** Only record it: it was addressed to someone else, but the history keeps it. */

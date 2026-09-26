@@ -134,7 +134,7 @@ export class Bus {
   publishNotice(text: string, chatId?: number): number | null {
     const target = chatId ?? this.homeChat();
     if (target === null) return null;
-    return messageDelivery.send(this, { chat_id: target, text, contact_id: MAGI_CONTACT_ID });
+    return messageDelivery.send(this, target, text, MAGI_CONTACT_ID, "agent");
   }
 
   close(): void {

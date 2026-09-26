@@ -52,26 +52,28 @@ test("a notice reaches the operator's home chat", async () => {
   }
 });
 
-test("one message job records both directions and carries only the chat", async () => {
+test("one message job records both directions and carries only the message id", async () => {
   const path = await workspace();
   const bus = new Bus("@record.magi", path);
   try {
     const chat = bus.chats.forChannel("cli", "terminal");
     // Received: the row is the durable fact, the job is only the wake-up call, and the
     // author the chat does not name is the operator.
-    messageDelivery.send(bus, { chat_id: chat.id, text: "hello" });
-    expect(bus.messages.list(chat.id).at(-1)).toMatchObject({ contact_id: SYSTEM_CONTACT_ID, content: "hello" });
+    messageDelivery.send(bus, chat.id, "hello");
+    const received = bus.messages.list(chat.id).at(-1)!;
+    expect(received).toMatchObject({ contact_id: SYSTEM_CONTACT_ID, content: "hello" });
     expect(bus.board("MessageDeliveryJob").claim("test")?.input)
-      .toEqual({ chat_id: chat.id, text: "hello", contact_id: SYSTEM_CONTACT_ID });
+      .toEqual({ message_id: received.id });
     // A message asked of someone else is kept as history, and nobody delivers it.
     messageDelivery.record(bus, chat.id, "not for me");
     expect(bus.messages.list(chat.id).at(-1)).toMatchObject({ contact_id: SYSTEM_CONTACT_ID, content: "not for me" });
     expect(bus.board("MessageDeliveryJob").claim("test")).toBeNull();
     // Sent: this MAGI's own words, so a channel is the one that acts on it.
-    messageDelivery.send(bus, { chat_id: chat.id, text: "reply", contact_id: MAGI_CONTACT_ID }, "test");
-    expect(bus.messages.list(chat.id).at(-1)).toMatchObject({ contact_id: MAGI_CONTACT_ID, content: "reply" });
+    messageDelivery.send(bus, chat.id, "reply", MAGI_CONTACT_ID, "test");
+    const sent = bus.messages.list(chat.id).at(-1)!;
+    expect(sent).toMatchObject({ contact_id: MAGI_CONTACT_ID, content: "reply" });
     expect(bus.board("MessageDeliveryJob").claim("test")?.input)
-      .toEqual({ chat_id: chat.id, text: "reply", contact_id: MAGI_CONTACT_ID });
+      .toEqual({ message_id: sent.id });
   } finally {
     bus.close();
     await rm(path, { recursive: true, force: true });

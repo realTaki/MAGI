@@ -60,12 +60,12 @@ export class Chat {
           if (reply.toUpperCase() !== NO_REPLY) {
             // A Notify is published and not awaited: a channel that cannot deliver reports
             // its own trouble, and there is nothing the agent could do about it here.
-            messageDelivery.send(this.bus, { chat_id: this.chat_id, text: reply || "处理完毕。", contact_id: MAGI_CONTACT_ID });
+            messageDelivery.send(this.bus, this.chat_id, reply || "处理完毕。", MAGI_CONTACT_ID, "agent");
           }
           chatBoard.submit("agent", jobId, { output: {} });
           return;
         }
-        if (response.content) messageDelivery.send(this.bus, { chat_id: this.chat_id, text: response.content, contact_id: MAGI_CONTACT_ID });
+        if (response.content) messageDelivery.send(this.bus, this.chat_id, response.content, MAGI_CONTACT_ID, "agent");
         messages.push(response);
         // A name the catalog does not have is answered here: no worker would claim its job.
         const calls = response.tool_calls.map((call) => this.bus.tools.get(call.name)
@@ -88,7 +88,7 @@ export class Chat {
       // What went wrong is said in the chat itself: the Job result is for
       // whoever published the turn, not for whoever is waiting for an answer.
       const message = error instanceof Error ? error.message : String(error);
-      messageDelivery.send(this.bus, { chat_id: this.chat_id, text: message, contact_id: MAGI_CONTACT_ID });
+      messageDelivery.send(this.bus, this.chat_id, message, MAGI_CONTACT_ID, "agent");
       chatBoard.submit("agent", jobId, { error: message });
     }
   }

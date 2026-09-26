@@ -123,7 +123,7 @@ export class Magi {
     // The terminal is the operator of a hand-run MAGI, and their first message is what
     // establishes where this workspace reports trouble.
     if (this.bus.homeChat() === null) this.bus.setHomeChat(chat.id);
-    const id = messageDelivery.send(this.bus, { chat_id: chat.id, text });
+    const id = messageDelivery.send(this.bus, chat.id, text);
     while (this.up) {
       if (this.bus.board("MessageDeliveryJob").result(id)) return id;
       await sleep(20);

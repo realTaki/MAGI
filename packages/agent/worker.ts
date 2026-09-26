@@ -15,13 +15,16 @@ export class AgentWorker extends BaseWorker {
     const board = this.bus.board("MessageDeliveryJob");
     // What someone else said is this MAGI's to answer. Its own words are not: they are
     // for a channel to deliver, and nobody answers them here.
-    const job = board.claim(this.worker_name, (input) => input.contact_id !== MAGI_CONTACT_ID);
+    // A missing message is also claimed here so the invalid job is failed rather than
+    // left pending forever.
+    const job = board.claim(this.worker_name, (input) => this.bus.messages.get(input.message_id)?.contact_id !== MAGI_CONTACT_ID);
     if (!job) return false;
-    const id = job.input.chat_id;
-    if (!id) {
-      board.submit(this.worker_name, job.id, { error: "chat_id is missing" });
+    const message = this.bus.messages.get(job.input.message_id);
+    if (!message) {
+      board.submit(this.worker_name, job.id, { error: `message ${job.input.message_id} does not exist` });
       return true;
     }
+    const id = message.chat_id;
     const previous = this.queues.get(id) ?? Promise.resolve();
     const next = previous.then(() => new Chat(this.bus, id).run(job.id));
     this.queues.set(id, next);

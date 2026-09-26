@@ -19,8 +19,15 @@ const matches = (query: string) => sql`instr(lower(${messages.content}), lower($
 export class MessageBook {
   constructor(private readonly db: BusDb) {}
 
-  add(chatId: number, contactId: number, content: string): void {
-    this.db.insert(messages).values({ chat_id: chatId, contact_id: contactId, content }).run();
+  add(chatId: number, contactId: number, content: string): number {
+    return this.db.insert(messages).values({ chat_id: chatId, contact_id: contactId, content })
+      .returning({ id: messages.id })
+      .get().id;
+  }
+
+  /** Look up one durable message, including archived history. */
+  get(id: number): Message | undefined {
+    return this.db.select().from(messages).where(eq(messages.id, id)).get();
   }
 
   list(chatId: number, lastN = 20): Message[] {
