@@ -70,6 +70,9 @@ export class Bus {
     // Schema history lives in ``bus/drizzle/``, one folder per database.
     this.db = workspaceDatabase(memories);
     migrateBooks(this.db);
+    // SQLite recognizes foreign-key declarations only when each connection enables them.
+    // Migrations run first because older migrations rebuild parent tables.
+    memories.pragma("foreign_keys = ON");
     this.jobs = workspaceDatabase(jobDb);
     migrateJobs(this.jobs);
     // One MAGI owns this workspace. Recover work interrupted by a process exit.

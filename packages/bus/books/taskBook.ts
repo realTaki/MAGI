@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import type { BusDb } from "../drizzle/database.js";
+import { chats } from "./chatBook.js";
 
 export const tasks = sqliteTable("books_tasks", {
   id: integer("id").primaryKey(),
@@ -9,7 +10,7 @@ export const tasks = sqliteTable("books_tasks", {
   source: text("source").$type<"user" | "proactive">().notNull().default("user"),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
   cron: text("cron").notNull(),
-  chat_id: integer("chat_id").notNull(),
+  chat_id: integer("chat_id").notNull().references(() => chats.id, { onDelete: "cascade" }),
   last_fired_minute: text("last_fired_minute"),
 });
 

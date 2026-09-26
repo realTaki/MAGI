@@ -1,11 +1,13 @@
 import { and, count, desc, eq, lte, sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import type { BusDb } from "../drizzle/database.js";
+import { chats } from "./chatBook.js";
+import { contacts } from "./contactBook.js";
 
 export const messages = sqliteTable("books_messages", {
   id: integer("id").primaryKey(),
-  chat_id: integer("chat_id").notNull(),
-  contact_id: integer("contact_id").notNull(),
+  chat_id: integer("chat_id").notNull().references(() => chats.id, { onDelete: "cascade" }),
+  contact_id: integer("contact_id").notNull().references(() => contacts.id, { onDelete: "cascade" }),
   /** The role and content are stored exactly as the next LLM turn consumes them. */
   llm_role: text("llm_role").$type<"user" | "assistant">().notNull().default("user"),
   llm_content: text("llm_content").notNull().default(""),

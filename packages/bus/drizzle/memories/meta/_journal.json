@@ -57,6 +57,13 @@
       "when": 1790382070120,
       "tag": "0007_message_llm_payload",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1790382490205,
+      "tag": "0008_book_foreign_keys",
+      "breakpoints": true
     }
   ]
 }

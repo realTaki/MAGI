@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, unique } from "drizzle-orm/sqlite-core";
 import type { BusDb } from "../drizzle/database.js";
+import { chats } from "./chatBook.js";
 import { contacts, type Contact } from "./contactBook.js";
 
 /**
@@ -10,7 +11,7 @@ import { contacts, type Contact } from "./contactBook.js";
  */
 export const chatMembers = sqliteTable("books_chat_members", {
   id: integer("id").primaryKey(),
-  chat_id: integer("chat_id").notNull(),
+  chat_id: integer("chat_id").notNull().references(() => chats.id, { onDelete: "cascade" }),
   contact_id: integer("contact_id").notNull().references(() => contacts.id, { onDelete: "cascade" }),
   added_at: text("added_at").notNull().default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
