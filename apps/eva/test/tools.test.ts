@@ -18,7 +18,9 @@ test("message search includes archived history and send_message uses delivery jo
   const tools = new Map(builtinTools(magi.bus).map((tool) => [tool.name, tool]));
   try {
     const chatSearch = JSON.parse(await tools.get("search_chat_messages")!.run({ chat_id: chat.id, query: "BLUE" })) as { messages: Array<{ content: string }> };
-    expect(chatSearch.messages.map((message) => message.content)).toEqual(["remember the blue project"]);
+    expect(chatSearch.messages).toHaveLength(1);
+    expect(chatSearch.messages[0]!.content).toStartWith(`[contact id ${SYSTEM_CONTACT_ID} | `);
+    expect(chatSearch.messages[0]!.content).toContain("]\nremember the blue project");
     const contactSearch = JSON.parse(await tools.get("search_contact_messages")!.run({ contact_id: SYSTEM_CONTACT_ID, query: "project" })) as { messages: Array<{ content: string }> };
     expect(contactSearch.messages).toHaveLength(1);
 

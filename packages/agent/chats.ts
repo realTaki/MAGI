@@ -36,7 +36,7 @@ export class Chat {
       // Message rows are already LLM messages: roles and the user identity envelope are
       // assigned when a message is recorded, not rebuilt for every agent turn.
       const history: LLMMessage[] = this.bus.messages.list(this.chat_id, COMPACT_KEEP_RECENT)
-        .map(({ llm_role: role, llm_content: content }) => ({ role, content }));
+        .map(({ llm_role: role, content }) => ({ role, content }));
       const messages: LLMMessage[] = [{ role: "system", content: system }, ...history];
       // No step limit is enforced: the model is told which step it is on and that it
       // should stop and ask the user before going much past the suggested number.
@@ -94,7 +94,7 @@ export class Chat {
     if (estimatedTokens <= Math.floor(contextWindow / 2)) return previousSummary;
     const old = active.slice(0, -COMPACT_KEEP_RECENT);
     if (!old.length) return previousSummary;
-    const content = old.map((message) => `[${message.llm_role}]\n${message.llm_content}`).join("\n\n");
+    const content = old.map((message) => `[${message.llm_role}]\n${message.content}`).join("\n\n");
     const id = this.bus.board("CallLLMJob").publish({
       messages: [
         { role: "system", content: this.bus.prompts.get("agent/compaction") ?? "Summarize the chat." },

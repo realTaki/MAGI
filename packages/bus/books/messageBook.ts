@@ -10,7 +10,6 @@ export const messages = sqliteTable("books_messages", {
   contact_id: integer("contact_id").notNull().references(() => contacts.id, { onDelete: "cascade" }),
   /** The role and content are stored exactly as the next LLM turn consumes them. */
   llm_role: text("llm_role").$type<"user" | "assistant">().notNull().default("user"),
-  llm_content: text("llm_content").notNull().default(""),
   content: text("content").notNull(),
   created_at: text("created_at").notNull().default(sql`(CURRENT_TIMESTAMP)`),
   archived: integer("archived", { mode: "boolean" }).notNull().default(false),
@@ -26,8 +25,8 @@ export class MessageBook {
 
   add(chatId: number, contactId: number, text: string, llm_role: "user" | "assistant" = "user"): number {
     const created_at = new Date().toISOString();
-    const llm_content = llm_role === "user" ? `[contact id ${contactId} | ${created_at}]\n${text}` : text;
-    return this.db.insert(messages).values({ chat_id: chatId, contact_id: contactId, llm_role, llm_content, content: text, created_at })
+    const content = llm_role === "user" ? `[contact id ${contactId} | ${created_at}]\n${text}` : text;
+    return this.db.insert(messages).values({ chat_id: chatId, contact_id: contactId, llm_role, content, created_at })
       .returning({ id: messages.id })
       .get().id;
   }

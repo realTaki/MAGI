@@ -67,6 +67,10 @@ export class Bus {
       client.exec("PRAGMA journal_mode = WAL");
       client.exec("PRAGMA busy_timeout = 5000");
     }
+    // Older migrations rebuild parent tables. Disable checks while they run even if a
+    // caller supplied a connection with checks already enabled, then enforce every
+    // declared relationship for ordinary Book operations.
+    memories.pragma("foreign_keys = OFF");
     // Schema history lives in ``bus/drizzle/``, one folder per database.
     this.db = workspaceDatabase(memories);
     migrateBooks(this.db);

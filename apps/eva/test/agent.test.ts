@@ -155,7 +155,11 @@ describe("local MAGI agent", () => {
     expect(requests[0].messages[0].content).toContain("Every user-visible reply must be valid Markdown.");
     const memories = new Database(join(path, "memories/magi.db"), { readonly: true });
     const jobs = new Database(join(path, "jobs/magi.db"), { readonly: true });
-    expect((memories.prepare("SELECT content FROM books_messages ORDER BY id").all() as Array<{ content: string }>).map((row) => row.content)).toEqual(["save a note", "Done."]);
+    const stored = (memories.prepare("SELECT content FROM books_messages ORDER BY id").all() as Array<{ content: string }>).map((row) => row.content);
+    expect(stored).toHaveLength(2);
+    expect(stored[0]).toStartWith(`[contact id ${SYSTEM_CONTACT_ID} | `);
+    expect(stored[0]).toContain("]\nsave a note");
+    expect(stored[1]).toBe("Done.");
     expect((jobs.prepare("SELECT type, status FROM jobs ORDER BY id").all() as Array<{ type: string; status: string }>)).toEqual([
       { type: "MessageDeliveryJob", status: "completed" },
       { type: "CallLLMJob", status: "completed" },

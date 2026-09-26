@@ -55,7 +55,10 @@ test("a replayed event is not taken in twice", async () => {
     expect(acks).toEqual(["dup-1", "dup-1"]);
     expect(completions).toBe(1);
     const chat = magi.bus.chats.forChannel("asp", "replay");
-    expect(magi.bus.messages.list(chat.id).map((message) => message.content)).toEqual(["hello", "heard"]);
+    const stored = magi.bus.messages.list(chat.id);
+    expect(stored[0]?.content).toStartWith(`[contact id ${SYSTEM_CONTACT_ID} | `);
+    expect(stored[0]?.content).toContain("]\nhello");
+    expect(stored[1]?.content).toBe("heard");
   } finally {
     await magi.stop();
     server.stop(true);
@@ -146,7 +149,10 @@ test("ASP invite opens the message delivery job and the reply is delivered to th
     ]);
     expect(replies).toEqual([{ type: "chat.ack", chat_id: "s1", event_id: "event-1" }]);
     const chat = magi.bus.chats.forChannel("asp", "s1");
-    expect(magi.bus.messages.list(chat.id).map((message) => message.content)).toEqual(["hello", "hello back"]);
+    const stored = magi.bus.messages.list(chat.id);
+    expect(stored[0]?.content).toStartWith(`[contact id ${SYSTEM_CONTACT_ID} | `);
+    expect(stored[0]?.content).toContain("]\nhello");
+    expect(stored[1]?.content).toBe("hello back");
   } finally {
     await magi.stop();
     server.stop(true);
@@ -212,9 +218,9 @@ test("mentions decide who answers, and everything said is kept", async () => {
     const stored = magi.bus.messages.list(chat.id);
     const contents = stored.map((message) => message.content);
     // Nothing is dropped: what the others said stays in the history.
-    expect(contents).toContain("I can hear you");
-    expect(contents).toContain("Me too");
-    expect(contents).toContain("@eva-002.magi, you there?");
+    expect(contents.join("\n")).toContain("\nI can hear you");
+    expect(contents.join("\n")).toContain("\nMe too");
+    expect(contents.join("\n")).toContain("\n@eva-002.magi, you there?");
     expect(contents.filter((content) => content === "heard")).toHaveLength(2);
 
     const handle = (asp_handle: string) => magi.bus.contacts.list().find((contact) => contact.asp_handle === asp_handle);
