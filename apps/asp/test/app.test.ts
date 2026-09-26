@@ -43,9 +43,7 @@ test("a previous bare user identity migrates to @user.magi without losing its ch
     chatId = String((created.data as { chat_id?: unknown }).chat_id);
     await request(app, "POST", `/chats/${chatId}/messages`, { token, body: { content: "hello" } });
     const connection = app.database.connection!;
-    const agent = connection.prepare("SELECT record_json FROM asp_agents WHERE handle = '@user.magi'").get() as { record_json: string };
-    connection.prepare("UPDATE asp_agents SET handle = 'user', record_json = ? WHERE handle = '@user.magi'")
-      .run(JSON.stringify({ ...JSON.parse(agent.record_json) as Record<string, unknown>, handle: "user" }));
+    connection.prepare("UPDATE asp_contacts SET handle = 'user' WHERE handle = '@user.magi'").run();
     connection.prepare("UPDATE asp_participants SET handle = 'user' WHERE handle = '@user.magi'").run();
     connection.prepare("UPDATE asp_events SET payload_json = replace(payload_json, '\"@user.magi\"', '\"user\"')").run();
     connection.prepare("UPDATE asp_settings SET value_json = ? WHERE key = 'operator'")

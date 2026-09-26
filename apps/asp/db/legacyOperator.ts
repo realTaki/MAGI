@@ -11,7 +11,7 @@
 import { eq } from "drizzle-orm";
 
 import type { AspDb } from "./database.ts";
-import { aspAgents } from "./tables/agents.ts";
+import { aspContactAllowlist, aspContacts } from "./tables/contacts.ts";
 import { aspChatKeys } from "./tables/chatKeys.ts";
 import { aspEventAcks } from "./tables/eventAcks.ts";
 import { aspEvents } from "./tables/events.ts";
@@ -35,21 +35,17 @@ export function repairLegacyOperatorHandle(db: AspDb): void {
 }
 
 function repairOperatorHandle(db: AspDb, legacy: string): void {
-  const stale = db.select({ handle: aspAgents.handle }).from(aspAgents)
-    .where(eq(aspAgents.handle, legacy)).get();
+  const stale = db.select({ handle: aspContacts.handle }).from(aspContacts)
+    .where(eq(aspContacts.handle, legacy)).get();
   if (stale === undefined) {
     return;
   }
   db.transaction((tx) => {
-    const record = tx.select({ record: aspAgents.record_json }).from(aspAgents)
-      .where(eq(aspAgents.handle, legacy)).get()?.record;
-    tx.update(aspAgents)
-      .set({
-        handle: OPERATOR_HANDLE,
-        record_json: isRecord(record) ? { ...record, handle: OPERATOR_HANDLE } : record,
-      })
-      .where(eq(aspAgents.handle, legacy))
+    tx.update(aspContacts).set({ handle: OPERATOR_HANDLE })
+      .where(eq(aspContacts.handle, legacy))
       .run();
+    tx.update(aspContactAllowlist).set({ allowed_handle: OPERATOR_HANDLE })
+      .where(eq(aspContactAllowlist.allowed_handle, legacy)).run();
     tx.update(aspParticipants).set({ handle: OPERATOR_HANDLE })
       .where(eq(aspParticipants.handle, legacy)).run();
     tx.update(aspMessageRecipients).set({ handle: OPERATOR_HANDLE })

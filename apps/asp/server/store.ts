@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, gt, notExists, sql } from "drizzle-orm";
 
 import { LocalDatabase, type AspDb } from "../db/database.ts";
-import { aspAgents } from "../db/tables/agents.ts";
+import { aspContactAllowlist, aspContacts } from "../db/tables/contacts.ts";
 import { aspChatKeys } from "../db/tables/chatKeys.ts";
 import { aspChats } from "../db/tables/chats.ts";
 import { aspEventAcks } from "../db/tables/eventAcks.ts";
@@ -98,77 +98,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function optionalText(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
-}
-
-function isParticipantStatus(value: unknown): value is ParticipantStatus {
-  return value === "invited" || value === "joined" || value === "left";
-}
-
-function isChatState(value: unknown): value is ChatState {
-  return value === "active" || value === "ended";
-}
-
 function isInboundPolicy(value: unknown): value is InboundPolicy {
   return value === "allowlist" || value === "open";
-}
-
-function agentFromJson(value: unknown): Agent {
-  if (!isRecord(value) || typeof value.handle !== "string" || typeof value.token !== "string") {
-    throw new Error("asp_agents record is not an agent");
-  }
-  const allowlist = new Set<string>();
-  if (Array.isArray(value.allowlist)) {
-    for (const entry of value.allowlist) {
-      if (typeof entry === "string") {
-        allowlist.add(entry);
-      }
-    }
-  }
-  return {
-    handle: value.handle,
-    token: value.token,
-    name: optionalText(value.name),
-    nickname: optionalText(value.nickname),
-    inbound_policy: isInboundPolicy(value.inbound_policy) ? value.inbound_policy : "open",
-    allowlist,
-    managed: value.managed === true,
-  };
-}
-
-function chatFromJson(value: unknown): Chat {
-  if (
-    !isRecord(value) ||
-    typeof value.id !== "string" ||
-    typeof value.creator !== "string" ||
-    !isChatState(value.state) ||
-    typeof value.created_at !== "number"
-  ) {
-    throw new Error("asp_chats record is not a chat");
-  }
-  return {
-    id: value.id,
-    creator: value.creator,
-    state: value.state,
-    topic: optionalText(value.topic),
-    created_at: value.created_at,
-    ended_at: typeof value.ended_at === "number" ? value.ended_at : null,
-    description: optionalText(value.description),
-    kind: optionalText(value.kind),
-  };
-}
-
-function participantFromJson(value: unknown): Participant {
-  if (!isRecord(value) || typeof value.handle !== "string" || !isParticipantStatus(value.status)) {
-    throw new Error("asp_participants record is not a participant");
-  }
-  return {
-    handle: value.handle,
-    status: value.status,
-    joined_at: typeof value.joined_at === "number" ? value.joined_at : null,
-    left_at: typeof value.left_at === "number" ? value.left_at : null,
-  };
 }
 
 function payloadFromJson(value: unknown): Record<string, unknown> {
@@ -176,18 +107,6 @@ function payloadFromJson(value: unknown): Record<string, unknown> {
     throw new Error("event payload is not an object");
   }
   return value;
-}
-
-function agentRecord(agent: Agent): Record<string, unknown> {
-  return {
-    handle: agent.handle,
-    token: agent.token,
-    name: agent.name,
-    nickname: agent.nickname,
-    inbound_policy: agent.inbound_policy,
-    allowlist: [...agent.allowlist].sort(),
-    managed: agent.managed,
-  };
 }
 
 export class Store {
@@ -221,18 +140,46 @@ export class Store {
     this.chatSeq.clear();
     this.idempotency.clear();
     this.chatIdempotency.clear();
-    for (const row of db.select({ record: aspAgents.record_json }).from(aspAgents).all()) {
-      const agent = agentFromJson(row.record);
+    const allowlists = new Map<string, Set<string>>();
+    for (const row of db.select().from(aspContactAllowlist).all()) {
+      const allowlist = allowlists.get(row.contact_handle) ?? new Set<string>();
+      allowlist.add(row.allowed_handle);
+      allowlists.set(row.contact_handle, allowlist);
+    }
+    for (const row of db.select().from(aspContacts).all()) {
+      const agent: Agent = {
+        handle: row.handle,
+        token: row.token,
+        name: row.name,
+        nickname: row.nickname,
+        inbound_policy: row.inbound_policy,
+        allowlist: allowlists.get(row.handle) ?? new Set<string>(),
+        managed: row.managed,
+      };
       this.agents.set(agent.handle, agent);
       this.agentByToken.set(agent.token, agent.handle);
     }
-    for (const row of db.select({ record: aspChats.record_json, next_sequence: aspChats.next_sequence }).from(aspChats).all()) {
-      const chat = chatFromJson(row.record);
+    for (const row of db.select().from(aspChats).all()) {
+      const chat: Chat = {
+        id: row.id,
+        creator: row.creator,
+        state: row.state,
+        topic: row.topic,
+        created_at: row.created_at,
+        ended_at: row.ended_at,
+        description: row.description,
+        kind: row.kind,
+      };
       this.chats.set(chat.id, chat);
       this.chatSeq.set(chat.id, row.next_sequence);
     }
-    for (const row of db.select({ chat_id: aspParticipants.chat_id, record: aspParticipants.record_json }).from(aspParticipants).all()) {
-      const participant = participantFromJson(row.record);
+    for (const row of db.select().from(aspParticipants).all()) {
+      const participant: Participant = {
+        handle: row.handle,
+        status: row.status,
+        joined_at: row.joined_at,
+        left_at: row.left_at,
+      };
       this.participants.set(pair(row.chat_id, participant.handle), participant);
     }
     for (const row of db.select().from(aspMessageKeys).all()) {
@@ -633,10 +580,33 @@ export class Store {
     if (db === null) {
       return;
     }
-    const record = agentRecord(agent);
-    db.insert(aspAgents).values({ handle: agent.handle, record_json: record })
-      .onConflictDoUpdate({ target: aspAgents.handle, set: { record_json: record } })
-      .run();
+    db.transaction((tx) => {
+      tx.insert(aspContacts).values({
+        handle: agent.handle,
+        token: agent.token,
+        name: agent.name,
+        nickname: agent.nickname,
+        inbound_policy: agent.inbound_policy,
+        managed: agent.managed,
+      }).onConflictDoUpdate({
+        target: aspContacts.handle,
+        set: {
+          token: agent.token,
+          name: agent.name,
+          nickname: agent.nickname,
+          inbound_policy: agent.inbound_policy,
+          managed: agent.managed,
+        },
+      }).run();
+      tx.delete(aspContactAllowlist).where(eq(aspContactAllowlist.contact_handle, agent.handle)).run();
+      const allowlist = [...agent.allowlist].sort().map((allowed_handle) => ({
+        contact_handle: agent.handle,
+        allowed_handle,
+      }));
+      if (allowlist.length > 0) {
+        tx.insert(aspContactAllowlist).values(allowlist).run();
+      }
+    }, { behavior: "immediate" });
   }
 
   #saveChat(chat: Chat): void {
@@ -645,8 +615,8 @@ export class Store {
       return;
     }
     const next_sequence = this.chatSeq.get(chat.id) ?? 0;
-    db.insert(aspChats).values({ id: chat.id, record_json: chat, next_sequence })
-      .onConflictDoUpdate({ target: aspChats.id, set: { record_json: chat, next_sequence } })
+    db.insert(aspChats).values({ ...chat, next_sequence })
+      .onConflictDoUpdate({ target: aspChats.id, set: { ...chat, next_sequence } })
       .run();
   }
 
@@ -656,10 +626,10 @@ export class Store {
       return;
     }
     db.insert(aspParticipants)
-      .values({ chat_id: chatId, handle: participant.handle, record_json: participant })
+      .values({ chat_id: chatId, ...participant })
       .onConflictDoUpdate({
         target: [aspParticipants.chat_id, aspParticipants.handle],
-        set: { record_json: participant },
+        set: participant,
       })
       .run();
   }

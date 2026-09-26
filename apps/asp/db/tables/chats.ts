@@ -9,6 +9,12 @@ import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 export const aspChats = sqliteTable("asp_chats", {
   id: text("id").primaryKey(),
-  record_json: text("record_json", { mode: "json" }).$type<unknown>().notNull(),
+  creator: text("creator").notNull(),
+  state: text("state", { enum: ["active", "ended"] }).notNull(),
+  topic: text("topic"),
+  created_at: integer("created_at").notNull(),
+  ended_at: integer("ended_at"),
+  description: text("description"),
+  kind: text("kind"),
   next_sequence: integer("next_sequence").notNull(),
 });
