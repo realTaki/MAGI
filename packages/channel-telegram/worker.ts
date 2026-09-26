@@ -108,7 +108,7 @@ export class TelegramWorker extends BaseWorker {
     // A DM is the operator's own chat, so it can be where the workspace reports trouble —
     // but only while nothing has established that yet: home is set once, and it moves by
     // the tool the operator asks for, not by whoever spoke last.
-    if (direct && this.bus.homeChat() === null) this.bus.setHomeChat(chat.id);
+    if (direct && messageDelivery.homeChat(this.bus) === null) messageDelivery.setHomeChat(this.bus, chat.id);
     messageDelivery.send(this.bus, chat.id, text, contact.id, this.worker_name);
   }
 

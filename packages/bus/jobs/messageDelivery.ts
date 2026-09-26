@@ -32,4 +32,22 @@ function record(bus: Bus, chat_id: number, text: string, contact_id?: number): v
   bus.messages.add(chat_id, author, text, author === MAGI_CONTACT_ID ? "assistant" : "user");
 }
 
-export const messageDelivery = { send, record };
+/** The chat the operator chose for notices, or null before they have spoken. */
+function homeChat(bus: Bus): number | null {
+  const stored = bus.settings.get("home.chat_id");
+  const id = stored === null ? Number.NaN : Number(stored);
+  return Number.isInteger(id) && bus.chats.get(id) !== null ? id : null;
+}
+
+/** Persist the operator's chosen notice destination. Callers validate the chat first. */
+function setHomeChat(bus: Bus, chat_id: number): void {
+  bus.settings.set("home.chat_id", String(chat_id));
+}
+
+/** Deliver a system notice to its chat, or fall back to the operator's home chat. */
+function notify(bus: Bus, text: string, chat_id?: number): number | null {
+  const target = chat_id ?? homeChat(bus);
+  return target === null ? null : send(bus, target, text, MAGI_CONTACT_ID, "agent");
+}
+
+export const messageDelivery = { send, record, homeChat, setHomeChat, notify };

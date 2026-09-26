@@ -56,7 +56,7 @@ export class AspWorker extends BaseWorker {
 
   private report(error: unknown, chat?: string): void {
     const text = `[asp] ${error instanceof Error ? error.message : String(error)}`;
-    this.bus.publishNotice(text, chat ? this.bus.chats.forChannel("asp", chat).id : undefined);
+    messageDelivery.notify(this.bus, text, chat ? this.bus.chats.forChannel("asp", chat).id : undefined);
   }
 
   private async onEvent(event: AspEvent): Promise<Record<string, unknown> | void> {
@@ -169,8 +169,8 @@ export class AspWorker extends BaseWorker {
     const chat = this.bus.chats.forChannel("asp", chatId);
     // Home is where a notice with no chat of its own goes. The operator's first
     // message establishes it, and only a tool moves it afterwards.
-    if (contact?.id === SYSTEM_CONTACT_ID && this.bus.homeChat() === null) {
-      this.bus.setHomeChat(chat.id);
+    if (contact?.id === SYSTEM_CONTACT_ID && messageDelivery.homeChat(this.bus) === null) {
+      messageDelivery.setHomeChat(this.bus, chat.id);
     }
     messageDelivery.send(this.bus, chat.id, text, contact?.id, this.worker_name);
   }

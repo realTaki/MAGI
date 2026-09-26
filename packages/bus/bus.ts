@@ -18,7 +18,6 @@ import { SettingsBook } from "./books/settingsBook.js";
 import { PromptBook } from "./books/promptBook.js";
 import { ToolBook } from "./books/toolBook.js";
 import { JobBoard, jobs, type JobInput, type JobType } from "./jobs/jobBoard.js";
-import { messageDelivery } from "./jobs/messageDelivery.js";
 
 /**
  * One MAGI's shared bus: Books for durable state, Jobs for coordination.
@@ -26,8 +25,8 @@ import { messageDelivery } from "./jobs/messageDelivery.js";
  * Workers never call each other. A component publishes a Job and whoever owns that
  * work claims it; what a message job means for the workspace — which row it records,
  * where its text is read from — lives with the job itself in ``jobs/``, so nothing
- * here has to know the message jobs one by one. Trouble is delivered, not logged:
- * `publishNotice` is where it goes.
+ * here has to know the message jobs one by one. Trouble is delivered, not logged,
+ * through `messageDelivery.notify`.
  */
 export class Bus {
   readonly workspace: string;
@@ -116,32 +115,6 @@ export class Bus {
       this.boards.set(type, board);
     }
     return board as JobBoard<K>;
-  }
-
-  /**
-   * The chat the operator last spoke in: the only address a workspace has for
-   * reaching them. Channels write it when they hear the operator, ``publishNotice`` reads it.
-   */
-  homeChat(): number | null {
-    const stored = this.settings.get("home.chat_id");
-    const id = stored === null ? Number.NaN : Number(stored);
-    return Number.isInteger(id) && this.chats.get(id) !== null ? id : null;
-  }
-
-  setHomeChat(chatId: number): void {
-    this.settings.set("home.chat_id", String(chatId));
-  }
-
-  /**
-   * How a component tells the operator that something went wrong: into the chat
-   * the failure belongs to when the caller knows it, otherwise into the operator's home
-   * chat. Returns null before the operator has ever spoken — there is nobody to tell, and
-   * that is the only case where a process-level log line is still the answer.
-   */
-  publishNotice(text: string, chatId?: number): number | null {
-    const target = chatId ?? this.homeChat();
-    if (target === null) return null;
-    return messageDelivery.send(this, target, text, MAGI_CONTACT_ID, "agent");
   }
 
   close(): void {

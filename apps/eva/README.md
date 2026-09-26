@@ -66,7 +66,7 @@ delivers the failure into it; a component that claimed a job writes the error in
 job result, and the agent that published the job passes it on. A component that only
 sees trouble of its own — an MCP server that cannot connect, a worker that keeps
 throwing — sends it to the chat the operator last spoke in
-(`home.chat_id`, through `bus.publishNotice`). Only a process that cannot start
+(`home.chat_id`, through `messageDelivery.notify`). Only a process that cannot start
 at all writes to stderr.
 
 This runtime covers the local agent path, ASP chats, Telegram text messages,

@@ -42,7 +42,7 @@ export function messageTools(bus: Bus): ExecutableTool[] {
         const chatId = integerArg(args, "chat_id");
         const chat = bus.chats.get(chatId);
         if (!chat) throw new Error(`unknown chat ${chatId}`);
-        bus.setHomeChat(chatId);
+        messageDelivery.setHomeChat(bus, chatId);
         return JSON.stringify({ home: chatId, channel: chat.channel, address: chat.delivery_address });
       },
     },

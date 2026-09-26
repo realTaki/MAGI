@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Magi } from "../eva.js";
+import { messageDelivery } from "@magi/bus";
 import { jsonServer } from "./httpServer.js";
 
 /** Stands in for the Telegram API: it answers slowly, the way long polling does. */
@@ -86,7 +87,7 @@ test("a channel that fails while it runs reaches the chat the operator used", as
     await magi.start();
     // Speaking once is what gives the workspace an address to report trouble to.
     const chat = magi.bus.chats.forChannel("cli", "terminal");
-    magi.bus.setHomeChat(chat.id);
+    messageDelivery.setHomeChat(magi.bus, chat.id);
     magi.bus.settings.set("telegram.bot_token", "bad-token");
     magi.bus.settings.set("telegram.api_base", telegram.base);
     await manage(magi, "tg", "start");
@@ -116,7 +117,7 @@ test("a channel that cannot log in is reported instead of starting", async () =>
   try {
     await magi.start();
     const chat = magi.bus.chats.forChannel("cli", "terminal");
-    magi.bus.setHomeChat(chat.id);
+    messageDelivery.setHomeChat(magi.bus, chat.id);
     magi.bus.settings.set("telegram.bot_token", "bad-token");
     magi.bus.settings.set("telegram.api_base", telegram.base);
 

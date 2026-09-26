@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Magi } from "../eva.js";
+import { messageDelivery } from "@magi/bus";
 import type { McpConnector } from "@magi/mcp/worker.js";
 
 test("MCP worker owns configuration, connections, and dynamic tools", async () => {
@@ -58,7 +59,7 @@ test("an MCP server that cannot connect at boot reaches the operator", async () 
     client: { async complete() { return { role: "assistant", content: "unused" }; } },
   });
   try {
-    magi.bus.setHomeChat(magi.bus.chats.forChannel("cli", "terminal").id);
+    messageDelivery.setHomeChat(magi.bus, magi.bus.chats.forChannel("cli", "terminal").id);
     magi.bus.mcpServers.save({
       name: "dead", connection_type: "stdio", command: "missing", args: [], url: null,
       env: {}, headers: {}, enabled: true, connect_timeout: null, execute_timeout: null,

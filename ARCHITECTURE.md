@@ -165,7 +165,7 @@ migrations under `packages/bus/drizzle/`, which the runtime applies on boot.
 Errors are delivered, not logged: into the chat the failure belongs to, into
 the job result the agent will surface, or — for a component that only sees trouble of
 its own — into the operator's home chat (`home.chat_id`, via
-`bus.publishNotice`).
+`messageDelivery.notify`).
 
 Without ASP arguments, `npm start -- @alice.magi` is a terminal chat.
 With a base URL and token, the process attaches to ASP and does not take over

@@ -1,7 +1,7 @@
 import { Client, SSEClientTransport, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { setTimeout as sleep } from "node:timers/promises";
-import { BaseWorker, type Bus, type ExecutableTool, type McpServerConfig, type ToolSource } from "@magi/bus";
+import { BaseWorker, messageDelivery, type Bus, type ExecutableTool, type McpServerConfig, type ToolSource } from "@magi/bus";
 import { mcpTools } from "./tools.js";
 
 export type McpConnection = { tools: ExecutableTool[]; close(): Promise<void> };
@@ -32,12 +32,12 @@ export class McpWorker extends BaseWorker {
     this.started = true;
     await Promise.all(this.bus.mcpServers.list().filter((server) => server.enabled !== false).map(async (server) => {
       try { this.connections.set(server.name, await this.connector(server, this.bus.workspace)); }
-      catch (error) { this.bus.publishNotice(`[mcp] ${server.name}: ${message(error)}`); }
+      catch (error) { messageDelivery.notify(this.bus, `[mcp] ${server.name}: ${message(error)}`); }
     }));
     // A name clash here would make the whole catalog unreadable, and a boot is no
     // place to fail a MAGI over it: tell the operator, keep the connections, stay running.
     try { this.revalidate(); }
-    catch (error) { this.bus.publishNotice(`[mcp] catalog: ${message(error)}`); }
+    catch (error) { messageDelivery.notify(this.bus, `[mcp] catalog: ${message(error)}`); }
   }
 
   async poll(): Promise<boolean> {

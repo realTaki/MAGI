@@ -122,7 +122,7 @@ export class Magi {
     const chat = this.bus.chats.forChannel("cli", address);
     // The terminal is the operator of a hand-run MAGI, and their first message is what
     // establishes where this workspace reports trouble.
-    if (this.bus.homeChat() === null) this.bus.setHomeChat(chat.id);
+    if (messageDelivery.homeChat(this.bus) === null) messageDelivery.setHomeChat(this.bus, chat.id);
     const id = messageDelivery.send(this.bus, chat.id, text);
     while (this.up) {
       if (this.bus.board("MessageDeliveryJob").result(id)) return id;
@@ -256,12 +256,12 @@ export class Magi {
   }
 
   /**
-   * Tell the operator. `publishNotice` owns where that is, and answers null when they
+   * Tell the operator. `messageDelivery.notify` owns where that is, and answers null when they
    * have never spoken: then, and only then, a log line is the best there is.
    */
   private report(text: string): void {
     const notice = `[manager] ${text}`;
-    if (this.bus.publishNotice(notice) === null) console.error(notice);
+    if (messageDelivery.notify(this.bus, notice) === null) console.error(notice);
   }
 }
 

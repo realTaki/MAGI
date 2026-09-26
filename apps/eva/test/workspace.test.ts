@@ -47,16 +47,16 @@ test("a notice reaches the operator's home chat", async () => {
   const path = await workspace();
   const bus = new Bus("@notice.magi", path);
   try {
-    expect(bus.publishNotice("nobody to tell yet")).toBeNull();
+    expect(messageDelivery.notify(bus, "nobody to tell yet")).toBeNull();
     const home = bus.chats.forChannel("cli", "terminal");
-    bus.setHomeChat(home.id);
-    expect(bus.homeChat()).toBe(home.id);
+    messageDelivery.setHomeChat(bus, home.id);
+    expect(messageDelivery.homeChat(bus)).toBe(home.id);
 
-    bus.publishNotice("[mcp] demo: connect refused");
+    messageDelivery.notify(bus, "[mcp] demo: connect refused");
     expect(bus.messages.list(home.id).at(-1)?.content).toBe("[mcp] demo: connect refused");
 
     const elsewhere = bus.chats.forChannel("cli", "other");
-    bus.publishNotice("just here", elsewhere.id);
+    messageDelivery.notify(bus, "just here", elsewhere.id);
     expect(bus.messages.list(elsewhere.id).at(-1)?.content).toBe("just here");
   } finally {
     bus.close();
