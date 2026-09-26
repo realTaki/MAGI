@@ -15,7 +15,10 @@
   },
   "allowScripts": {
     "better-sqlite3": true,
+    "dugite": true,
+    "electron-winstaller": true,
     "esbuild": true,
+    "node": true,
     "protobufjs": true
   },
   "engines": {

@@ -4,24 +4,24 @@ import {
   mkdirSync,
   rmSync,
 } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DESKTOP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const RUNTIME_DIR = path.join(DESKTOP_ROOT, "runtime");
+const nodePackageDir = path.dirname(createRequire(import.meta.url).resolve("node/package.json"));
+const nodeBin = process.platform === "win32" ? "node.exe" : "node";
 
 rmSync(RUNTIME_DIR, { recursive: true, force: true });
 mkdirSync(path.join(RUNTIME_DIR, "bin"), { recursive: true });
 try {
+  // The `node` package is a shell devDependency. npm workspaces hoist it to
+  // the repository root, so look it up by package name rather than a path
+  // under apps/shell/node_modules.
   cpSync(
-    path.join(
-      DESKTOP_ROOT,
-      "node_modules",
-      "node",
-      "bin",
-      process.platform === "win32" ? "node.exe" : "node",
-    ),
-    path.join(RUNTIME_DIR, "bin", process.platform === "win32" ? "node.exe" : "node"),
+    path.join(nodePackageDir, "bin", nodeBin),
+    path.join(RUNTIME_DIR, "bin", nodeBin),
   );
   const npmArguments = [
     "install",

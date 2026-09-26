@@ -5,11 +5,6 @@
   "type": "module",
   "main": "main.mjs",
   "description": "MAGI Electron shell. It prepares the environment and loads the app.",
-  "allowScripts": {
-    "dugite": true,
-    "electron-winstaller": true,
-    "node": true
-  },
   "scripts": {
     "dev": "electron .",
     "build": "node scripts/prepare-runtime.mjs && electron-builder"
@@ -41,6 +36,7 @@
       "app": ".",
       "output": "release"
     },
+    "electronVersion": "44.4.5",
     "linux": {
       "target": [
         "AppImage"
@@ -51,7 +47,7 @@
     "dugite": "^3.2.3"
   },
   "devDependencies": {
-    "electron": "^44.4.4",
+    "electron": "44.4.5",
     "electron-builder": "^26.15.3",
     "node": "^24.21.0"
   }
