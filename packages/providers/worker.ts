@@ -76,8 +76,16 @@ export class ProvidersWorker extends BaseWorker {
     const job = board.claim(this.worker_name);
     if (!job) return false;
     try {
-      const message = await this.client.complete(job.input as CallLLMJob);
-      board.submit(this.worker_name, job.id, { output: { message } });
+      const turn_id = (job.input as CallLLMJob).turn_id;
+      // An append may have survived a process exit immediately before this Job was
+      // marked complete. Reuse it rather than asking the provider a second time.
+      let message: import("@magi/bus").LLMMessage;
+      try { message = this.bus.agentTurns.assistant(turn_id, job.id); }
+      catch {
+        message = await this.client.complete(this.bus.agentTurns.get(turn_id));
+        this.bus.agentTurns.appendAssistant(turn_id, job.id, message);
+      }
+      board.submit(this.worker_name, job.id, { output: { turn_id } });
     } catch (error) {
       board.submit(this.worker_name, job.id, { error: message(error) });
     }

@@ -18,6 +18,7 @@ import { SettingsBook } from "./books/settingsBook.js";
 import { PromptBook } from "./books/promptBook.js";
 import { ToolBook } from "./books/toolBook.js";
 import { JobBoard, jobs, type JobInput, type JobType } from "./jobs/jobBoard.js";
+import { AgentTurnCache } from "./jobs/agentTurnCache.js";
 
 /**
  * One MAGI's shared bus: Books for durable state, Jobs for coordination.
@@ -42,6 +43,7 @@ export class Bus {
   readonly prompts: PromptBook;
   readonly settings: SettingsBook;
   readonly tools = new ToolBook();
+  readonly agentTurns: AgentTurnCache;
   private readonly db: BusDb;
   private readonly jobs: BusDb;
   private readonly boards = new Map<JobType, JobBoard<JobType>>();
@@ -82,6 +84,7 @@ export class Bus {
     memories.pragma("foreign_keys = ON");
     this.jobs = workspaceDatabase(jobDb);
     migrateJobs(this.jobs);
+    jobDb.pragma("foreign_keys = ON");
     // One MAGI owns this workspace. Recover work interrupted by a process exit.
     this.jobs.update(jobs).set({ status: "pending", worker: null })
       .where(and(eq(jobs.status, "claimed"), ne(jobs.type, "RunToolJob"))).run();
@@ -100,6 +103,7 @@ export class Bus {
     this.contactNotes = new ContactNoteBook(this.db);
     this.mcpServers = new McpServerBook(this.db);
     this.prompts = new PromptBook(this.workspace);
+    this.agentTurns = new AgentTurnCache(this.jobs);
     // The system contact stands for the operator: "@user.magi" is the handle ASP gives them,
     // so their messages arrive already known. The MAGI is the other fixed contact, and
     // both record the identity they speak with — anyone else becomes a contact of their

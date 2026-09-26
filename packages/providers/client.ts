@@ -1,10 +1,10 @@
 import { createProvider, type Api, type AssistantMessage, type Context, type Message, type Model, type MutableModels, type Tool } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import type { CallLLMJob, LLMMessage, LLMToolCall } from "@magi/bus";
+import type { LLMRequest, LLMMessage, LLMToolCall } from "@magi/bus";
 
 export interface LLMClient {
-  complete(job: CallLLMJob): Promise<LLMMessage>;
+  complete(job: LLMRequest): Promise<LLMMessage>;
   verify?(settings: ProviderSettings): Promise<void>;
   configure?(settings: ProviderSettings): void;
   /** The selected model's advertised context capacity, when this client knows it. */
@@ -52,7 +52,7 @@ function resolveModel(models: MutableModels, settings: ProviderSettings): Model<
   return model;
 }
 
-function toContext(job: CallLLMJob, model: Model<Api>): Context {
+function toContext(job: LLMRequest, model: Model<Api>): Context {
   const messages: Message[] = job.messages.map((message): Message => {
     const timestamp = Date.now();
     if (message.role === "system") return { role: "system", content: message.content, timestamp };
@@ -88,7 +88,7 @@ export class PiAiClient implements LLMClient {
     await this.request({ messages: [{ role: "user", content: "Reply OK." }], tools: [] }, { ...this.settings, ...settings }, 256);
   }
 
-  complete(job: CallLLMJob): Promise<LLMMessage> { return this.request(job, this.settings); }
+  complete(job: LLMRequest): Promise<LLMMessage> { return this.request(job, this.settings); }
 
   contextWindow(): number | undefined {
     // A provider with no configured model is a normal fresh-workspace state, not an
@@ -97,7 +97,7 @@ export class PiAiClient implements LLMClient {
     return resolveModel(this.models, this.settings).contextWindow;
   }
 
-  private async request(job: CallLLMJob, settings: ProviderSettings, maxTokens?: number): Promise<LLMMessage> {
+  private async request(job: LLMRequest, settings: ProviderSettings, maxTokens?: number): Promise<LLMMessage> {
     if (!settings.api_key) throw new Error("provider.api_key is missing");
     const model = resolveModel(this.models, settings);
     const response = await this.models.completeSimple(model, toContext(job, model), {
