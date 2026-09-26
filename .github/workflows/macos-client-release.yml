@@ -20,6 +20,10 @@ jobs:
           - arch: x64
             runner: macos-15-intel
     runs-on: ${{ matrix.runner }}
+    # A release build normally takes minutes. Keep a leaked child process or
+    # stalled external download from consuming a runner for GitHub's six-hour
+    # default.
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: apps/shell
@@ -34,16 +38,32 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: |
+            package-lock.json
+            apps/asp/package-lock.json
             apps/shell/package-lock.json
             apps/user/package-lock.json
 
       - name: Install dependencies
-        # One install at the root covers every workspace, and it is what supplies
-        # the app's provider catalog. Scripts stay enabled: Electron's postinstall
-        # is what unpacks its binary. (Add the root `package-lock.json` back to
-        # `cache-dependency-path` once that lockfile is committed.)
+        # `npm ci` is faster than `npm install` on a CI cache hit and refuses to
+        # silently mutate the lockfile. Scripts stay enabled: Electron's
+        # postinstall is what unpacks its binary, and dugite/better-sqlite3
+        # require their native steps. (Match the Windows workflow so release
+        # builds on either platform reproduce the same dependency state.)
         working-directory: .
-        run: npm install
+        run: npm ci
+
+      - name: Restore prepared runtime
+        # The bundled Node binary is arch-specific: an arm64 Node must never
+        # ride an x64 DMG (or vice versa), and two matrix jobs sharing one key
+        # would clobber each other. The shell package-lock pins the Node/npm
+        # versions, so include its hash too — a dep bump then drops the cache
+        # instead of leaving a stale runtime.
+        uses: actions/cache@v5
+        with:
+          path: apps/shell/runtime
+          key: runtime-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('apps/shell/package-lock.json', 'apps/shell/scripts/prepare-runtime.mjs') }}
+          restore-keys: |
+            runtime-${{ runner.os }}-${{ matrix.arch }}-
 
       - name: Set version from tag
         run: |

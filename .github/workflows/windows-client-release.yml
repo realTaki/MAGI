@@ -32,16 +32,43 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: |
+            package-lock.json
+            apps/asp/package-lock.json
             apps/shell/package-lock.json
             apps/user/package-lock.json
 
       - name: Install dependencies
-        # One install at the root covers every workspace, and it is what supplies
-        # the app's provider catalog. Scripts stay enabled: Electron's postinstall
-        # is what unpacks its binary. (Add the root `package-lock.json` back to
-        # `cache-dependency-path` once that lockfile is committed.)
+        # `npm ci` is faster than `npm install` on a CI cache hit and refuses to
+        # silently mutate the lockfile. Scripts stay enabled: Electron's
+        # postinstall is what unpacks its binary, and dugite/better-sqlite3
+        # require their native steps.
         working-directory: .
-        run: npm install
+        run: npm ci
+
+      - name: Restore prepared runtime
+        # Include the shell package-lock hash so a dep bump drops the cache
+        # instead of leaving a stale npm/Node in `apps/shell/runtime`.
+        uses: actions/cache@v5
+        with:
+          path: apps/shell/runtime
+          key: runtime-${{ runner.os }}-${{ hashFiles('apps/shell/package-lock.json', 'apps/shell/scripts/prepare-runtime.mjs') }}
+          restore-keys: |
+            runtime-${{ runner.os }}-
+
+      - name: Cache electron-builder
+        # electron-builder downloads winCodeSign, the nsis installer, and the
+        # Windows Electron binary on first build (hundreds of MB). On Windows
+        # runners these land in %LOCALAPPDATA%\electron-builder, which
+        # `setup-node`'s built-in npm cache does not cover. The shell
+        # package-lock pins the electron / electron-builder versions, so use
+        # its hash as the cache key.
+        if: hashFiles('apps/shell/package-lock.json') != ''
+        uses: actions/cache@v5
+        with:
+          path: ~\AppData\Local\electron-builder
+          key: electron-builder-${{ runner.os }}-${{ hashFiles('apps/shell/package-lock.json') }}
+          restore-keys: |
+            electron-builder-${{ runner.os }}-
 
       - name: Set version from tag
         run: |
@@ -53,6 +80,15 @@ jobs:
           npm version "$version" --no-git-tag-version --allow-same-version
 
       - name: Test app
+        # `magi-runtime.test.ts` covers worktree creation, failure fallback,
+        # merge/restart and rebuild flows — none of which run elsewhere today
+        # (this repo has no PR workflow that re-executes them). The single test
+        # that's expensive on the Windows runner is the live "a real MAGI boots
+        # from its own checkout" integration test, which clones the repo and
+        # runs `npm ci` + `npm run build` inside it. Gate just that one test
+        # off via an env var so the rest of the file keeps running.
+        env:
+          MAGI_SKIP_LIVE_INTEGRATION: '1'
         run: npm test --prefix ../user
 
       - name: Build shell
