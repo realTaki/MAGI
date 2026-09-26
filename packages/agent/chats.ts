@@ -17,6 +17,21 @@ export class Chat {
   async run(jobId: number): Promise<void> {
     const chatBoard = this.bus.board("MessageDeliveryJob");
     try {
+      if (!this.bus.agentTurns.has(jobId)) await this.initialize(jobId);
+      await this.execute(jobId);
+    } catch (error) {
+      // What went wrong is said in the chat itself: the Job result is for
+      // whoever published the turn, not for whoever is waiting for an answer.
+      const message = error instanceof Error ? error.message : String(error);
+      messageDelivery.send(this.bus, this.chat_id, message, MAGI_CONTACT_ID, "agent");
+      chatBoard.submit("agent", jobId, { error: message });
+    } finally {
+      // Keep the cold append-only trace, but release this process's materialized context.
+      this.bus.agentTurns.evict(jobId);
+    }
+  }
+
+  private async initialize(jobId: number): Promise<void> {
       const record = this.bus.chats.get(this.chat_id);
       if (!record) throw new Error("chat does not exist");
       const agentPrompt = this.bus.prompts.get("agent/AGENT") ?? "You are a helpful assistant.";
@@ -35,7 +50,7 @@ export class Chat {
       // A turn receives one fixed catalog.  A worker starting midway through a turn
       // becomes available on the next turn instead of changing the model's contract.
       const tools = this.bus.tools.catalog();
-      const summary = await this.compact(record.summary, [agentPrompt, SYSTEM_PROMPT, beforeSummary, chat].filter(Boolean).join("\n\n"), tools);
+      const summary = await this.compact(jobId, record.summary, [agentPrompt, SYSTEM_PROMPT, beforeSummary, chat].filter(Boolean).join("\n\n"), tools);
       const system = [agentPrompt, SYSTEM_PROMPT, beforeSummary, this.context([["Prior chat summary", summary]]), chat].filter(Boolean).join("\n\n");
       // Message rows are already LLM messages: roles and the user identity envelope are
       // assigned when a message is recorded, not rebuilt for every agent turn.
@@ -43,15 +58,20 @@ export class Chat {
         .map(({ llm_role: role, content }) => ({ role, content }));
       // Keep the cacheable instruction/context prefix byte-for-byte stable through a
       // tool loop.  Step metadata is a separate trailing system message.
-      const messages: LLMMessage[] = [{ role: "system", content: system }, { role: "system", content: "" }, ...history];
+      this.bus.agentTurns.ensure(jobId, { messages: [{ role: "system", content: system }, { role: "system", content: "" }, ...history], tools });
+  }
+
+  private async execute(jobId: number): Promise<void> {
+      const chatBoard = this.bus.board("MessageDeliveryJob");
+      const { messages } = this.bus.agentTurns.get(jobId);
       // No step limit is enforced: the model is told which step it is on and that it
       // should stop and ask the user before going much past the suggested number.
       for (let step = 1; ; step++) {
         messages[1] = { role: "system", content: this.section("Turn", `step: ${step}\nsuggested maximum: ${SUGGESTED_STEPS}\nStop and ask the user whether to continue once you reach the suggested maximum without finishing.`) };
-        const llmId = this.bus.board("CallLLMJob").publish({ messages, tools }, "agent");
+        const llmId = this.bus.board("CallLLMJob").publish({ turn_id: jobId }, "agent");
         const llm = await this.waitFor("CallLLMJob", llmId, 300_000);
-        if (llm.status === "failed" || !llm.output?.message) throw new Error(llm.error ?? "LLM failed");
-        const response = llm.output.message;
+        if (llm.status === "failed" || llm.output?.turn_id !== jobId) throw new Error(llm.error ?? "LLM failed");
+        const response = this.bus.agentTurns.assistant(jobId, llmId);
         if (!response.tool_calls?.length) {
           const reply = (response.content ?? "").trim();
           // Saying nothing is a real answer in a room with several people in it, so the
@@ -65,34 +85,26 @@ export class Chat {
           return;
         }
         if (response.content) messageDelivery.send(this.bus, this.chat_id, response.content, MAGI_CONTACT_ID, "agent");
-        messages.push(response);
         // A name the catalog does not have is answered here: no worker would claim its job.
         const calls = response.tool_calls.map((call) => this.bus.tools.get(call.name)
           ? { call, jobId: this.bus.board("RunToolJob").publish({ call }, "agent") as number | null }
           : { call, jobId: null });
         for (const pending of calls) {
           if (pending.jobId === null) {
-            messages.push({ role: "tool", tool_call_id: pending.call.tool_call_id, tool_name: pending.call.name, content: `unknown tool ${pending.call.name}`, is_error: true });
+            this.bus.agentTurns.appendToolResult(jobId, { role: "tool", tool_call_id: pending.call.tool_call_id, tool_name: pending.call.name, content: `unknown tool ${pending.call.name}`, is_error: true });
             continue;
           }
           const result = await this.waitFor("RunToolJob", pending.jobId, 120_000);
-          messages.push({
+          this.bus.agentTurns.appendToolResult(jobId, {
             role: "tool", tool_call_id: pending.call.tool_call_id, tool_name: pending.call.name,
             content: result.status === "failed" ? result.error ?? "tool failed" : result.output?.content ?? "",
             is_error: result.status === "failed",
           });
         }
       }
-    } catch (error) {
-      // What went wrong is said in the chat itself: the Job result is for
-      // whoever published the turn, not for whoever is waiting for an answer.
-      const message = error instanceof Error ? error.message : String(error);
-      messageDelivery.send(this.bus, this.chat_id, message, MAGI_CONTACT_ID, "agent");
-      chatBoard.submit("agent", jobId, { error: message });
-    }
   }
 
-  private async compact(previousSummary: string, staticContext: string, tools: unknown): Promise<string> {
+  private async compact(turnId: number, previousSummary: string, staticContext: string, tools: unknown): Promise<string> {
     const active = this.bus.messages.list(this.chat_id, 10_000);
     // We cannot use one tokenizer for all providers, but every stable input part
     // must count.  The previous estimate considered only stored chat rows, which
@@ -110,16 +122,18 @@ export class Chat {
     const old = active.slice(0, -COMPACT_KEEP_RECENT);
     if (!old.length) return previousSummary;
     const content = old.map((message) => `[${message.llm_role}]\n${message.content}`).join("\n\n");
-    const id = this.bus.board("CallLLMJob").publish({
-      messages: [
+    this.bus.agentTurns.ensure(turnId, { messages: [
         { role: "system", content: this.bus.prompts.get("agent/compaction") ?? "Summarize the chat." },
         { role: "user", content: `${previousSummary ? `Previous summary:\n${previousSummary}\n\n` : ""}Transcript:\n${content}\n\n请仅总结上面的对话历史，并遵循 system 指令。` },
-      ],
-      tools: [],
-    }, "agent");
+      ], tools: [] });
+    const id = this.bus.board("CallLLMJob").publish({ turn_id: turnId }, "agent");
     const result = await this.waitFor("CallLLMJob", id, 300_000);
-    const summary = result.status === "completed" ? result.output?.message.content.trim() : "";
-    if (!summary || result.output?.message.tool_calls?.length) return previousSummary;
+    const response = result.status === "completed" && result.output?.turn_id === turnId ? this.bus.agentTurns.assistant(turnId, id) : null;
+    const summary = response?.content.trim() ?? "";
+    // The compaction result is durable in ChatBook; the turn's persistent cache starts
+    // fresh with the real interaction context rather than retaining this helper call.
+    this.bus.agentTurns.reset(turnId);
+    if (!summary || response?.tool_calls?.length) return previousSummary;
     this.bus.chats.updateSummary(this.chat_id, summary);
     this.bus.messages.archiveBefore(this.chat_id, old.at(-1)!.id);
     return summary;

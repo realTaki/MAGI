@@ -1,6 +1,6 @@
-import { and, asc, eq, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { and, asc, eq } from "drizzle-orm";
+import { type AnySQLiteColumn, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import type { BusDb } from "../drizzle/database.js";
-import type { LLMTool } from "../books/toolBook.js";
 import type { LLMMessage, LLMRequest } from "./callLlm.js";
 import { jobs } from "./jobBoard.js";
 
@@ -8,7 +8,7 @@ export const agentTurnsCache = sqliteTable("agent_turns_cache", {
   id: integer("id").primaryKey(),
   /** The MessageDeliveryJob id is the stable public identity of a turn. */
   turn_id: integer("turn_id").notNull().references(() => jobs.id, { onDelete: "cascade" }),
-  previous_block_id: integer("previous_block_id").references(() => agentTurnsCache.id, { onDelete: "cascade" }),
+  previous_block_id: integer("previous_block_id").references((): AnySQLiteColumn => agentTurnsCache.id, { onDelete: "cascade" }),
   sequence: integer("sequence").notNull(),
   kind: text("kind").$type<"context" | "assistant" | "tool_result">().notNull(),
   /** The producer CallLLMJob, when this is an assistant response. */
@@ -45,6 +45,12 @@ export class AgentTurnCache {
     return context;
   }
 
+  has(turn_id: number): boolean {
+    if (this.hot.has(turn_id)) return true;
+    return this.db.select({ id: agentTurnsCache.id }).from(agentTurnsCache)
+      .where(eq(agentTurnsCache.turn_id, turn_id)).limit(1).get() !== undefined;
+  }
+
   get(turn_id: number): AgentTurnContext {
     return this.getOrNull(turn_id) ?? (() => { throw new Error(`agent turn ${turn_id} does not exist`); })();
   }
@@ -71,6 +77,12 @@ export class AgentTurnCache {
   }
 
   evict(turn_id: number): void { this.hot.delete(turn_id); }
+
+  /** Replace a preparatory compaction transcript with the actual turn root. */
+  reset(turn_id: number): void {
+    this.db.delete(agentTurnsCache).where(eq(agentTurnsCache.turn_id, turn_id)).run();
+    this.hot.delete(turn_id);
+  }
 
   private getOrNull(turn_id: number): AgentTurnContext | null {
     const cached = this.hot.get(turn_id);

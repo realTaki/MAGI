@@ -25,10 +25,17 @@ export function migrateJobs(db: BusDb): void {
 // ``bus/drizzle/`` holds this file next to the migrations; the second shape covers
 // a compiled copy under ``dist/``, which tsc emits without copying the .sql files.
 function migrationsFolder(name: string): string {
+  let bundled: string | null = null;
   for (let dir = dirname(fileURLToPath(import.meta.url)); ; dir = dirname(dir)) {
     for (const candidate of [join(dir, "drizzle", name), join(dir, "bus", "drizzle", name)]) {
-      if (existsSync(candidate)) return candidate;
+      if (!existsSync(candidate)) continue;
+      // In a source workspace tsc leaves an older copied migration folder under
+      // dist/. Prefer the source folder so a newly added SQL migration is visible.
+      if (!candidate.includes("/dist/")) return candidate;
+      bundled ??= candidate;
     }
-    if (dirname(dir) === dir) throw new Error(`drizzle/${name} migrations are missing`);
+    if (dirname(dir) === dir) break;
   }
+  if (bundled) return bundled;
+  throw new Error(`drizzle/${name} migrations are missing`);
 }

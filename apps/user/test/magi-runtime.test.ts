@@ -115,7 +115,6 @@ test("every MAGI gets its own branch checked out inside its workspace", async (t
   assert.equal(recorded.spawns.length, 1);
   assert.deepEqual(recorded.spawns[0].args, [
     "dist/eva.js", agent.handle, "http://127.0.0.1:42069", "tok",
-    "--workspace", path.join(home, ".magi", "eva-000"),
   ]);
   assert.equal(recorded.spawns[0].options.cwd, path.join(source, "apps", "eva"));
 

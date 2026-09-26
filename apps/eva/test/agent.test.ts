@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { Magi } from "../eva.js";
-import { SYSTEM_CONTACT_ID, type CallLLMJob, type LLMMessage } from "@magi/bus";
+import { SYSTEM_CONTACT_ID, type LLMMessage, type LLMRequest } from "@magi/bus";
 import { PiAiClient } from "@magi/providers/client.js";
 import { AGENT_PROMPT, COMPACTION_PROMPT, SYSTEM_PROMPT } from "@magi/agent/prompt_defaults.js";
 
@@ -131,7 +131,7 @@ describe("local MAGI agent", () => {
     await mkdir(join(path, "prompts/agent"), { recursive: true });
     await writeFile(join(path, "prompts/agent/AGENT.md"), "You are Test MAGI.");
     const delivered: string[] = [];
-    const requests: CallLLMJob[] = [];
+    const requests: LLMRequest[] = [];
     const magi = new Magi("@alice.magi", {
       workspace: path,
       deliver: (text) => { delivered.push(text); },
@@ -153,6 +153,9 @@ describe("local MAGI agent", () => {
     // separate BUS job, so wait for the channel worker before stopping the
     // supervisor and inspecting its durable result.
     for (let attempt = 0; attempt < 100 && delivered.length === 0; attempt++) await sleep(10);
+    // Chat.run has already evicted its hot context; this must hydrate the exact
+    // provider transcript from the jobs-db cache instead of rebuilding history.
+    expect(magi.bus.agentTurns.get(id).messages.at(-1)).toMatchObject({ role: "assistant", content: "Done." });
     await magi.stop();
     expect(id).toBeGreaterThan(0);
     expect(await readFile(join(path, "notes/a.txt"), "utf8")).toBe("saved");
@@ -173,6 +176,10 @@ describe("local MAGI agent", () => {
       { type: "CallLLMJob", status: "completed" },
       { type: "MessageDeliveryJob", status: "completed" },
     ]);
+    const llmInputs = jobs.prepare("SELECT input FROM jobs WHERE type = 'CallLLMJob' ORDER BY id").all() as Array<{ input: string }>;
+    expect(llmInputs.map(({ input }) => JSON.parse(input))).toEqual([{ turn_id: id }, { turn_id: id }]);
+    expect((jobs.prepare("SELECT kind FROM agent_turns_cache WHERE turn_id = ? ORDER BY sequence").all(id) as Array<{ kind: string }>).map(({ kind }) => kind))
+      .toEqual(["context", "assistant", "tool_result", "assistant"]);
     expect(delivered).toEqual(["Done."]);
     memories.close(); jobs.close();
   });
@@ -180,7 +187,7 @@ describe("local MAGI agent", () => {
   test("keeps progress visible while an agent completes multiple tool rounds", async () => {
     const path = await workspace();
     const delivered: string[] = [];
-    const requests: CallLLMJob[] = [];
+    const requests: LLMRequest[] = [];
     const magi = new Magi("@alice.magi", {
       workspace: path,
       deliver: (text) => { delivered.push(text); },
@@ -216,7 +223,7 @@ describe("local MAGI agent", () => {
 
   test("the model's own past replies go back without a transcript prefix", async () => {
     const path = await workspace();
-    const requests: CallLLMJob[] = [];
+    const requests: LLMRequest[] = [];
     const magi = new Magi("@alice.magi", {
       workspace: path,
       deliver: () => {},
@@ -287,7 +294,7 @@ describe("local MAGI agent", () => {
 
   test("injects active memories and compacts old chat history", async () => {
     const path = await workspace();
-    const requests: CallLLMJob[] = [];
+    const requests: LLMRequest[] = [];
     const magi = new Magi("@alice.magi", {
       workspace: path,
       client: {
@@ -331,7 +338,7 @@ describe("local MAGI agent", () => {
 
   test("the chat's members are part of the context", async () => {
     const path = await workspace();
-    const requests: CallLLMJob[] = [];
+    const requests: LLMRequest[] = [];
     const magi = new Magi("@alice.magi", {
       workspace: path,
       client: { async complete(job) { requests.push(job); return { role: "assistant", content: "ok" }; } },
@@ -355,7 +362,7 @@ describe("local MAGI agent", () => {
 
   test("the system context is read from the prompt book, not from registries", async () => {
     const path = await workspace();
-    const requests: CallLLMJob[] = [];
+    const requests: LLMRequest[] = [];
     const magi = new Magi("@alice.magi", {
       workspace: path,
       client: { async complete(job) { requests.push(job); return { role: "assistant", content: "ok" }; } },
@@ -392,7 +399,7 @@ describe("local MAGI agent", () => {
 
   test("a stopped worker's block leaves the system context", async () => {
     const path = await workspace();
-    const requests: CallLLMJob[] = [];
+    const requests: LLMRequest[] = [];
     const magi = new Magi("@alice.magi", {
       workspace: path,
       client: { async complete(job) { requests.push(job); return { role: "assistant", content: "ok" }; } },

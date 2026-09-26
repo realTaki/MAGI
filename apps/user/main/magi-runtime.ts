@@ -42,10 +42,10 @@ export function agentBranch(handle) {
   return `${AGENT_BRANCH_PREFIX}${agentName(handle)}`;
 }
 
-export function magiCli(node, handle, base, token, workspace) {
+export function magiCli(node, handle, base, token) {
   // MAGI is compiled before launch. Run its explicit output with the desktop's
   // Node rather than looking up an executable on PATH.
-  return [node, "dist/eva.js", handle, base, token, "--workspace", workspace];
+  return [node, "dist/eva.js", handle, base, token];
 }
 
 function describe(error) {
@@ -191,9 +191,7 @@ export function createMagiRuntime({
   }
 
   function launch(handle, token, root) {
-    // The desktop runtime already owns the profile location. Pass it to MAGI
-    // directly instead of relying on the child's interpretation of HOME.
-    const command = magiCli(nodeBinary(), handle, base, token, agentWorkspace(home, handle));
+    const command = magiCli(nodeBinary(), handle, base, token);
     const child = spawnProcess(command[0], command.slice(1), {
       cwd: path.join(root, "apps", "eva"),
       env: tools.env,
