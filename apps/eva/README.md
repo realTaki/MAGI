@@ -41,8 +41,8 @@ URL, model ID and API key there. The Python LiteLLM dependency is not used.
 `/exit` stops terminal chat; Ctrl-C stops ASP mode. Telegram runs when the
 workspace has a `telegram.bot_token` setting; the channel is the Chat SDK's
 Telegram adapter (`chat`, `@chat-adapter/telegram`) in long-polling mode, so
-the protocol is not ours — the worker only turns an update into a `ChatNotify`
-and a delivery into a post. In a group it hears only what addresses it: an @
+the protocol is not ours — the worker only records an update and posts what
+this MAGI said. In a group it hears only what addresses it: an @
 mention or a reply to one of its messages.
 Edit `<workspace>/prompts/agent/AGENT.md`, `compaction.md`, or
 `skills_block.md` to override the managed agent prompts.
@@ -53,9 +53,9 @@ better-sqlite3 and in-memory state. Every Book declares the table it owns right 
 `npm run db:generate` turns a table edit into the SQL under `packages/bus/drizzle/`,
 which the runtime applies on boot, and Books query through Drizzle rather than
 hand-written SQL. Workers poll independently and communicate through
-BUS using `ChatNotify`,
-`CallLLMJob`, `RunToolJob`, `ChangeProviderNotify`, and
-`DeliveryNotify`. Agent turns are serial per chat. Provider and tool
+BUS using `MessageDeliveryJob`,
+`CallLLMJob`, `RunToolJob`, and `ChangeProviderNotify`. Agent turns are
+serial per chat. Provider and tool
 errors are saved on their Jobs. Provider changes are verified before becoming
 active, ASP reconnects and acknowledges durable chat events, long histories
 are compacted, and active memories and workspace Skills are injected into the

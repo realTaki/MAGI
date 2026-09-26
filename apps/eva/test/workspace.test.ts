@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
-import { Bus, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, chatNotify, deliveryNotify } from "@magi/bus";
+import { Bus, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, messageDelivery } from "@magi/bus";
 
 const workspaces: string[] = [];
 afterEach(async () => { for (const path of workspaces.splice(0)) await rm(path, { recursive: true, force: true }); });
@@ -52,23 +52,26 @@ test("a notice reaches the operator's home chat", async () => {
   }
 });
 
-test("the message jobs own how their text is recorded", async () => {
+test("one message job records both directions and carries only the chat", async () => {
   const path = await workspace();
   const bus = new Bus("@record.magi", path);
   try {
     const chat = bus.chats.forChannel("cli", "terminal");
-    // Received: the row is the durable fact, the job is only the wake-up call.
-    chatNotify.receive(bus, { chat_id: chat.id, text: "hello" });
+    // Received: the row is the durable fact, the job is only the wake-up call, and the
+    // author the chat does not name is the operator.
+    messageDelivery.send(bus, { chat_id: chat.id, text: "hello" });
     expect(bus.messages.list(chat.id).at(-1)).toMatchObject({ contact_id: SYSTEM_CONTACT_ID, content: "hello" });
-    expect(bus.board("ChatNotify").claim("test")?.input).toMatchObject({ chat_id: chat.id, text: "hello" });
-    // A message addressed to someone else is recorded the same way, without a turn.
-    chatNotify.record(bus, chat.id, "not for me");
+    expect(bus.board("MessageDeliveryJob").claim("test")?.input)
+      .toEqual({ chat_id: chat.id, text: "hello", contact_id: SYSTEM_CONTACT_ID });
+    // A message asked of someone else is kept as history, and nobody delivers it.
+    messageDelivery.record(bus, chat.id, "not for me");
     expect(bus.messages.list(chat.id).at(-1)).toMatchObject({ contact_id: SYSTEM_CONTACT_ID, content: "not for me" });
-    expect(bus.board("ChatNotify").claim("test")).toBeNull();
-    // Sent: recorded as this MAGI's own, and queued with the chat's channel filled in.
-    deliveryNotify.send(bus, { chat_id: chat.id, text: "reply" }, "test");
+    expect(bus.board("MessageDeliveryJob").claim("test")).toBeNull();
+    // Sent: this MAGI's own words, so a channel is the one that acts on it.
+    messageDelivery.send(bus, { chat_id: chat.id, text: "reply", contact_id: MAGI_CONTACT_ID }, "test");
     expect(bus.messages.list(chat.id).at(-1)).toMatchObject({ contact_id: MAGI_CONTACT_ID, content: "reply" });
-    expect(bus.board("DeliveryNotify").claim("test")?.input).toMatchObject({ channel: "cli", address: "terminal", text: "reply" });
+    expect(bus.board("MessageDeliveryJob").claim("test")?.input)
+      .toEqual({ chat_id: chat.id, text: "reply", contact_id: MAGI_CONTACT_ID });
   } finally {
     bus.close();
     await rm(path, { recursive: true, force: true });

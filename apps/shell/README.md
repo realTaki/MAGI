@@ -32,9 +32,9 @@ on a remote server while this machine still works and keeps its own data.
 The app stores its chat history in `~/.magi/app/chat.sqlite`. It writes
 events before acknowledging them to ASP, and reloads that history from SQLite
 after a restart. ASP keeps relay events in its own SQLite until each intended
-recipient acknowledges the exact event. Each MAGI keeps only its own incoming
-ChatNotify jobs and chat state in its workspace; outbound messages go
-through DeliveryNotify jobs.
+recipient acknowledges the exact event. Each MAGI keeps only its own jobs and
+chat state in its workspace: every message it hears and every message it says
+is a message delivery job.
 An old running ASP kept events only in memory. Before stopping it for this
 upgrade, run the bundled Node.js with `apps/user/scripts/import-asp-history.ts` from the MAGI
 checkout. This copies its available chats and events into the desktop

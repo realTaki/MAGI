@@ -12,8 +12,8 @@ import { AGENT_PROMPT, COMPACTION_PROMPT, SYSTEM_PROMPT } from "@magi/agent/prom
 
 /*
  * Business flow: one MAGI turn (`ARCHITECTURE.md`, "A MAGI process").
- * A `ChatNotify` becomes a `CallLLMJob` and a `RunToolJob`; the answer leaves as a
- * `DeliveryNotify`. Providers and tools answer through the BUS — never by calling
+ * A message delivery job becomes a `CallLLMJob` and a `RunToolJob`; the answer leaves as
+ * another one. Providers and tools answer through the BUS — never by calling
  * each other — and a provider change is verified before it becomes active.
  */
 
@@ -157,11 +157,11 @@ describe("local MAGI agent", () => {
     const jobs = new Database(join(path, "jobs/magi.db"), { readonly: true });
     expect((memories.prepare("SELECT content FROM books_messages ORDER BY id").all() as Array<{ content: string }>).map((row) => row.content)).toEqual(["save a note", "Done."]);
     expect((jobs.prepare("SELECT type, status FROM jobs ORDER BY id").all() as Array<{ type: string; status: string }>)).toEqual([
-      { type: "ChatNotify", status: "completed" },
+      { type: "MessageDeliveryJob", status: "completed" },
       { type: "CallLLMJob", status: "completed" },
       { type: "RunToolJob", status: "completed" },
       { type: "CallLLMJob", status: "completed" },
-      { type: "DeliveryNotify", status: "completed" },
+      { type: "MessageDeliveryJob", status: "completed" },
     ]);
     expect(delivered).toEqual(["Done."]);
     memories.close(); jobs.close();
@@ -198,7 +198,7 @@ describe("local MAGI agent", () => {
     });
     await magi.start();
     const id = await magi.chat("hello");
-    expect(magi.bus.board("ChatNotify").result(id)).toMatchObject({ status: "failed", error: "bad credentials" });
+    expect(magi.bus.board("MessageDeliveryJob").result(id)).toMatchObject({ status: "failed", error: "bad credentials" });
     await magi.stop();
     expect(delivered).toEqual(["bad credentials"]);
   });

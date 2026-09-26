@@ -106,7 +106,7 @@ test("each speaker in a chat is a contact of their own", async () => {
   }
 });
 
-test("ASP invite enters ChatNotify and reply is delivered to the chat", async () => {
+test("ASP invite opens the message delivery job and the reply is delivered to the chat", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "asp-"));
   const requests: Array<{ path: string; body: unknown }> = [];
   const replies: unknown[] = [];
