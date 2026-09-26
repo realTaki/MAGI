@@ -31,7 +31,10 @@ export class ProvidersWorker extends BaseWorker {
     bus.tools.registerSource("providers", () => (this.started ? this.own : []));
   }
 
-  async start(): Promise<void> { this.started = true; }
+  async start(): Promise<void> {
+    this.started = true;
+    this.syncContextWindow();
+  }
 
   async poll(): Promise<boolean> {
     if (await this.pollChange()) return true;
@@ -105,6 +108,19 @@ export class ProvidersWorker extends BaseWorker {
     if (change.api_key !== undefined) this.bus.settings.set("provider.api_key", change.api_key);
     if (change.model !== undefined) this.bus.settings.set("provider.model", change.model);
     if (change.base_url !== undefined) this.bus.settings.set("provider.base_url", change.base_url);
+    this.syncContextWindow();
+  }
+
+  /**
+   * The agent owns compaction, while pi-ai owns model metadata.  Bridge the two
+   * once a provider is active so users never have to enter a context limit by hand.
+   * An injected/non-pi client simply leaves an existing explicit setting alone.
+   */
+  private syncContextWindow(): void {
+    const contextWindow = this.client.contextWindow?.();
+    if (typeof contextWindow === "number" && Number.isSafeInteger(contextWindow) && contextWindow > 0) {
+      this.bus.settings.set("provider.context_window", String(contextWindow));
+    }
   }
 
   async stop(): Promise<void> { this.started = false; }

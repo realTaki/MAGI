@@ -15,7 +15,7 @@ export function workspaceDatabase(client: SQLiteDatabase): BusDb {
 
 /** Bring a workspace database up to the schema the code expects. */
 export function migrateBooks(db: BusDb): void {
-  migrate(db, { migrationsFolder: migrationsFolder("memories") });
+  migrate(db, { migrationsFolder: migrationsFolder("books") });
 }
 
 export function migrateJobs(db: BusDb): void {

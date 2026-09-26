@@ -157,7 +157,7 @@ as members.
 
 Books in `packages/bus/books/` hold chats, messages, memory,
 skills, tasks, contacts, contact notes, prompts, MCP servers, and the tool
-catalog. SQLite files are `memories/magi.db` and `jobs/magi.db` inside the
+catalog. SQLite files are `memories/books.db` and `logs/jobs.db` inside the
 workspace. Node owns SQLite through `better-sqlite3`. Each Book declares the
 table it owns next to its queries (`packages/bus/books/`; job queue:
 `packages/bus/jobs/jobBoard.ts`); `npm run db:generate` writes the SQL

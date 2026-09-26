@@ -17,7 +17,7 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "db:generate": "drizzle-kit generate --config=drizzle/memories.config.ts && drizzle-kit generate --config=drizzle/jobs.config.ts"
+    "db:generate": "drizzle-kit generate --config=drizzle/books.config.ts && drizzle-kit generate --config=drizzle/jobs.config.ts"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

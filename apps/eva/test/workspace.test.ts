@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "./test.js";
+import { existsSync, mkdirSync, renameSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,7 +11,7 @@ afterEach(async () => { for (const path of workspaces.splice(0)) await rm(path, 
 async function workspace() { const path = await mkdtemp(join(tmpdir(), "magi-workspace-")); workspaces.push(path); return path; }
 
 function tables(path: string, database: string): string[] {
-  const db = new Database(join(path, database, "magi.db"), { readonly: true });
+  const db = new Database(join(path, database), { readonly: true });
   const rows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>;
   db.close();
   return rows.map((row) => row.name);
@@ -20,14 +21,14 @@ test("a fresh workspace gets every Book table from the migrations", async () => 
   const path = await workspace();
   const bus = new Bus("@fresh.magi", path);
   try {
-    expect(tables(path, "memories")).toEqual(expect.arrayContaining([
+    expect(tables(path, "memories/books.db")).toEqual(expect.arrayContaining([
       "books_contacts", "books_contact_notes", "books_chat_members",
       "books_chats", "books_mcp_servers", "books_memories", "books_messages", "books_settings",
       "books_tasks",
     ]));
     // The channel reading position is a field on the chat now, not a table of its own.
-    expect(tables(path, "memories")).not.toContain("books_channel_cursors");
-    expect(tables(path, "jobs")).toContain("jobs");
+    expect(tables(path, "memories/books.db")).not.toContain("books_channel_cursors");
+    expect(tables(path, "logs/jobs.db")).toContain("jobs");
   } finally { bus.close(); }
 });
 
@@ -106,8 +107,8 @@ test("adopts a workspace an earlier release created, keeping its data", async ()
 
   // What an earlier release left behind: the tables, but no migration bookkeeping.
   const dropped: string[] = [];
-  for (const database of ["memories", "jobs"]) {
-    const db = new Database(join(path, database, "magi.db"));
+  for (const database of ["memories/books.db", "logs/jobs.db"]) {
+    const db = new Database(join(path, database));
     for (const row of db.prepare("SELECT name FROM sqlite_master WHERE name LIKE '__drizzle%'").all() as Array<{ name: string }>) {
       db.exec(`DROP TABLE "${row.name}"`);
       dropped.push(`${database}:${row.name}`);
@@ -123,7 +124,25 @@ test("adopts a workspace an earlier release created, keeping its data", async ()
     const restored = reopened.messages.list(reopened.chats.forChannel("cli", "legacy").id)[0]?.content;
     expect(restored).toStartWith(`[contact id ${SYSTEM_CONTACT_ID} | `);
     expect(restored).toContain("]\nhello");
-    expect(tables(path, "memories")).toContain("__drizzle_migrations");
+    expect(tables(path, "memories/books.db")).toContain("__drizzle_migrations");
+  } finally { reopened.close(); }
+});
+
+test("moves legacy database files into the current workspace layout", async () => {
+  const path = await workspace();
+  const first = new Bus("@relocate.magi", path);
+  first.settings.set("provider.name", "openai");
+  first.close();
+
+  mkdirSync(join(path, "jobs"), { recursive: true });
+  moveDatabase(join(path, "memories/books.db"), join(path, "memories/magi.db"));
+  moveDatabase(join(path, "logs/jobs.db"), join(path, "jobs/magi.db"));
+
+  const reopened = new Bus("@relocate.magi", path);
+  try {
+    expect(reopened.settings.get("provider.name")).toBe("openai");
+    expect(existsSync(join(path, "memories/books.db"))).toBe(true);
+    expect(existsSync(join(path, "logs/jobs.db"))).toBe(true);
   } finally { reopened.close(); }
 });
 
@@ -133,7 +152,7 @@ test("a workspace numbered from 0 gets its contacts renumbered from 1", async ()
   const chat = first.chats.forChannel("cli", "legacy");
   // What a workspace from before the change holds: the system contact at 0, the MAGI
   // at 1, and messages pointing at both.
-  const db = new Database(join(path, "memories", "magi.db"));
+  const db = new Database(join(path, "memories", "books.db"));
   db.exec("DELETE FROM books_messages");
   db.exec("DELETE FROM books_contacts");
   db.exec(`INSERT INTO books_contacts (id, name, role) VALUES (0, 'system', 'system'), (1, '@rebase.magi', 'magi'), (5, 'Ada', 'authorized')`);
@@ -161,11 +180,17 @@ test("a workspace numbered from 0 gets its contacts renumbered from 1", async ()
 });
 
 function dropBookkeeping(path: string): void {
-  for (const database of ["memories", "jobs"]) {
-    const db = new Database(join(path, database, "magi.db"));
+  for (const database of ["memories/books.db", "logs/jobs.db"]) {
+    const db = new Database(join(path, database));
     for (const row of db.prepare("SELECT name FROM sqlite_master WHERE name LIKE '__drizzle%'").all() as Array<{ name: string }>) {
       db.exec(`DROP TABLE "${row.name}"`);
     }
     db.close();
+  }
+}
+
+function moveDatabase(from: string, to: string): void {
+  for (const suffix of ["-wal", "-shm", ""]) {
+    if (existsSync(`${from}${suffix}`)) renameSync(`${from}${suffix}`, `${to}${suffix}`);
   }
 }

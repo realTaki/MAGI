@@ -296,7 +296,7 @@ test("a real MAGI boots from its own checkout", { timeout: 120_000 }, async (t) 
   assert.deepEqual(await runtime.start(agent), { handle: agent.handle, started: true });
   const source = agentSource(home, agent.handle);
   assert.equal(existsSync(path.join(source, "node_modules")), true);
-  const workspace = path.join(home, ".magi", "eva-000", "memories", "magi.db");
+  const workspace = path.join(home, ".magi", "eva-000", "memories", "books.db");
   const deadline = Date.now() + 30_000;
   while (!existsSync(workspace) && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 200));

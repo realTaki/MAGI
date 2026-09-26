@@ -63,12 +63,18 @@ describe("local MAGI agent", () => {
     expect(message.content).toBe('{"tool":"plain text"}');
     expect(message.tool_calls).toEqual([{ tool_call_id: "call_1", name: "read_file", arguments: { path: "a.txt" } }]);
     expect(message.provider_state).toBeDefined();
+    expect(requests[0].body.reasoning_effort).toBe("medium");
     const followUp = await client.complete({ messages: [
       { role: "user", content: "hello" }, message,
       { role: "tool", tool_call_id: "call_1", tool_name: "read_file", content: "file contents" },
     ], tools: [] });
     expect(followUp.content).toBe("done");
     expect((requests[1].body.messages as Array<{ role: string }>).map((item) => item.role)).toEqual(["user", "assistant", "tool"]);
+  });
+
+  test("pi-ai exposes selected-model context metadata", () => {
+    const client = new PiAiClient({ provider: "custom", model: "local-model", api_key: "key", base_url: "http://localhost:8888/v1" });
+    expect(client.contextWindow()).toBe(128_000);
   });
 
   test("pi-ai uses its built-in DeepSeek endpoint and model metadata", async () => {
@@ -153,8 +159,8 @@ describe("local MAGI agent", () => {
     expect(requests).toHaveLength(2);
     expect(requests[0].messages[0].content).toContain("You are Test MAGI.");
     expect(requests[0].messages[0].content).toContain("Every user-visible reply must be valid Markdown.");
-    const memories = new Database(join(path, "memories/magi.db"), { readonly: true });
-    const jobs = new Database(join(path, "jobs/magi.db"), { readonly: true });
+    const memories = new Database(join(path, "memories/books.db"), { readonly: true });
+    const jobs = new Database(join(path, "logs/jobs.db"), { readonly: true });
     const stored = (memories.prepare("SELECT content FROM books_messages ORDER BY id").all() as Array<{ content: string }>).map((row) => row.content);
     expect(stored).toHaveLength(2);
     expect(stored[0]).toStartWith(`[contact id ${SYSTEM_CONTACT_ID} | `);
@@ -218,6 +224,7 @@ describe("local MAGI agent", () => {
           if (settings.api_key === "bad-secret") throw new Error("invalid key bad-secret");
         },
         configure(settings) { configured.push(settings); },
+        contextWindow() { return 1_000_000; },
       },
     });
     await magi.start();
@@ -236,6 +243,7 @@ describe("local MAGI agent", () => {
     expect(magi.bus.settings.get("provider.model")).toBe("gpt-test");
     expect(magi.bus.settings.get("provider.base_url")).toBe("https://example.com/v1");
     expect(magi.bus.settings.get("provider.api_key")).toBe("good-secret");
+    expect(magi.bus.settings.get("provider.context_window")).toBe("1000000");
     expect(configured).toHaveLength(1);
     await magi.stop();
   });

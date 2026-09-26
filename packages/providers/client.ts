@@ -7,6 +7,8 @@ export interface LLMClient {
   complete(job: CallLLMJob): Promise<LLMMessage>;
   verify?(settings: ProviderSettings): Promise<void>;
   configure?(settings: ProviderSettings): void;
+  /** The selected model's advertised context capacity, when this client knows it. */
+  contextWindow?(): number | undefined;
 }
 
 export type ProviderSettings = { provider?: string; api_key?: string; model?: string; base_url?: string };
@@ -32,7 +34,10 @@ function resolveModel(models: MutableModels, settings: ProviderSettings): Model<
     }
     const model: Model<"openai-completions"> = {
       id, name: id, api: "openai-completions", provider: "custom", baseUrl: url.toString().replace(/\/$/, ""),
-      reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      // A custom endpoint has no catalog metadata.  Treat it as reasoning-capable so
+      // pi-ai can use the standard OpenAI-compatible capability when the endpoint
+      // supports it; its compatibility adapter omits unsupported request fields.
+      reasoning: true, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: 128_000, maxTokens: 8_192,
     };
     models.setProvider(createProvider({
@@ -85,10 +90,21 @@ export class PiAiClient implements LLMClient {
 
   complete(job: CallLLMJob): Promise<LLMMessage> { return this.request(job, this.settings); }
 
+  contextWindow(): number | undefined {
+    // A provider with no configured model is a normal fresh-workspace state, not an
+    // error for the worker starting up.
+    if (!this.settings.model?.trim()) return undefined;
+    return resolveModel(this.models, this.settings).contextWindow;
+  }
+
   private async request(job: CallLLMJob, settings: ProviderSettings, maxTokens?: number): Promise<LLMMessage> {
     if (!settings.api_key) throw new Error("provider.api_key is missing");
     const model = resolveModel(this.models, settings);
     const response = await this.models.completeSimple(model, toContext(job, model), {
+      // pi-ai maps this neutral level to each provider's native reasoning API and
+      // ignores it for models which do not advertise reasoning support.  Thinking
+      // remains internal: only ordinary text is delivered to the user.
+      reasoning: "medium",
       apiKey: settings.api_key, fetch: this.fetcher, maxTokens, timeoutMs: 120_000,
     });
     if (["error", "aborted", "length", "deferred"].includes(response.stopReason)) {
