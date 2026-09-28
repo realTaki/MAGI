@@ -10,9 +10,9 @@ Your state (memory, skills, prompts, logs) is the workspace. The source you may 
 
 ## Find and read
 
-Paths for `list_files`, `read_file`, `edit_file`, and `write_file` are relative to the workspace. Prefix source paths with `MAGI/`.
+Paths for `list_files`, `read_file`, `search_files`, `edit_file`, and `write_file` are relative to the workspace. Prefix source paths with `MAGI/`.
 
-`read_file` returns at most 8 KiB. `bash` starts in the workspace, so a search is `rg -n <pattern> MAGI` and a slice of a long file is `sed -n '1,200p' MAGI/<path>`. Load `codebase_search` before hunting for a symbol. Read `MAGI/ARCHITECTURE.md` before changing a boundary between the shell, the app, ASP, and a MAGI.
+`search_files` finds a literal string and returns `path:line: text`. Narrow it with `path` and `glob` before reading. `read_file` returns numbered lines (`N|text`); the number is not part of the file. Pass `offset` and `limit` to read past the first window. Load `codebase_search` before hunting for a symbol. Read `MAGI/ARCHITECTURE.md` before changing a boundary between the shell, the app, ASP, and a MAGI.
 
 | Tree | What runs from it |
 | --- | --- |
@@ -35,6 +35,12 @@ cd MAGI && git status --short && git add <paths you changed> && git commit -m "<
 ```
 
 Do not `git add` secrets, `memories/`, or `skills/`.
+
+## Check
+
+A saved file is not a passing change. `apps/eva/dist` tests run the last build, not the TypeScript you just wrote. Do not treat a green dist test as proof of an unbuilt edit.
+
+When a check can run in this process, run that one file with the checkout's Node at `apps/shell/runtime/bin/node`. If that binary is missing, say so. Do not use a system Node, and do not run the whole suite. If the check fails, do not `request_rebuild`.
 
 ## Rebuild
 
