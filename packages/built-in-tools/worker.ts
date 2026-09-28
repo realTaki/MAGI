@@ -6,6 +6,8 @@
  *   files.ts     read_file / list_files / write_file / edit_file
  *   messages.ts  search_chat_messages / search_contact_messages /
  *                send_message / set_home_chat
+ *   rebuild.ts   request_rebuild — ask the desktop app, via a magi:// link
+
  *
  * `load_skill` is not here: it reads the SKILL.md files that `@magi/skills`
  * owns, so that package's worker registers the tool itself. The contact tools
@@ -22,6 +24,7 @@ import { BaseWorker } from "@magi/bus";
 import type { Bus, ExecutableTool } from "@magi/bus";
 import { fileTools } from "./files.js";
 import { messageTools } from "./messages.js";
+import { rebuildTools } from "./rebuild.js";
 import { shellTools } from "./shell.js";
 import { ShellManager } from "./shellManager.js";
 
@@ -33,6 +36,7 @@ export function builtinTools(bus: Bus, shells = new ShellManager()): Tool[] {
     ...shellTools(bus.workspace, shells),
     ...fileTools(bus.workspace),
     ...messageTools(bus),
+    ...rebuildTools(bus.handle),
   ];
 }
 

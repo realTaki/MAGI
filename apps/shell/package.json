@@ -13,6 +13,12 @@
     "appId": "ai.magi.app",
     "productName": "MAGI",
     "executableName": "MAGI",
+    "protocols": [
+      {
+        "name": "MAGI",
+        "schemes": ["magi"]
+      }
+    ],
     "files": [
       "main.mjs",
       "preload.cjs",

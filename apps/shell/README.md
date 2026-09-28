@@ -67,7 +67,7 @@ packaged launch.
 
 ## What the shell does
 
-Only six things, none of them product-specific:
+Only seven things, none of them product-specific:
 
 1. Clone `~/.magi/MAGI` when it is missing, then create the `magi/user`
    worktree (packaged builds).
@@ -76,9 +76,12 @@ Only six things, none of them product-specific:
    bundled tools, `openExternal`, clipboard, and event forwarding.
 4. Forward calls: `local:invoke` in, `local:event` out. Method names belong to
    the app, so a new capability never changes the shell.
-5. Ask the backend to `prepare()` (returns the interface entry) and `start()`,
+5. Accept a `magi://` link. The OS will only deliver it to this process, so the
+   shell keeps a single instance and forwards the raw URL to
+   `runtime.applyDeeplink`. What the link is allowed to do stays in the app.
+6. Ask the backend to `prepare()` (returns the interface entry) and `start()`,
    then show that entry — a built file or a dev URL.
-6. Stop the backend on quit (`shutdown()`), which tears down what it started.
+7. Stop the backend on quit (`shutdown()`), which tears down what it started.
 
 That leaves one contract: the checkout must contain `apps/user/main/index.ts`
 exporting `createLocalApi(context)`, with a `prepare`, `start` and `shutdown`,

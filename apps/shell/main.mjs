@@ -331,6 +331,8 @@ async function launchLocalOperator(win) {
     if (!win.isDestroyed()) {
       await loadApp(win, ui);
     }
+    appReady = true;
+    await deliverDeeplinks();
   } catch (error) {
     if (!win.isDestroyed()) {
       win.webContents.send(
@@ -486,7 +488,9 @@ function createWindow() {
 }
 
 // One generic bridge: every local capability lives in the app backend, so the
-// shell does not change when the app grows one.
+// shell does not change when the app grows one. A magi:// link is the exception
+// the OS forces on us: only this process can receive it, and the only thing it
+// does is hand the raw URL to runtime.applyDeeplink.
 ipcMain.handle("local:invoke", async (_event, method, payload) => {
   if (localApi === null) {
     throw localApiError ?? new Error("The desktop app backend is not loaded yet.");
@@ -523,17 +527,102 @@ async function installShellUpdate(installer) {
   return { quitting: true };
 }
 
-app.whenReady().then(() => {
-  Menu.setApplicationMenu(null);
-  mainWindow = createWindow();
-  void loadStartup(mainWindow).then(() => launchLocalOperator(mainWindow));
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      mainWindow = createWindow();
-      void loadStartup(mainWindow).then(() => launchLocalOperator(mainWindow));
+const pendingDeeplinks = [];
+let deliveringDeeplink = false;
+let appReady = false;
+let lastDeeplink = { url: "", at: 0 };
+let argvDeeplinksQueued = false;
+
+function focusMainWindow() {
+  if (mainWindow === null || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function queueDeeplink(raw) {
+  if (typeof raw !== "string" || !raw.startsWith("magi:")) return;
+  const now = Date.now();
+  if (lastDeeplink.url === raw && now - lastDeeplink.at < 2000) return;
+  lastDeeplink = { url: raw, at: now };
+  pendingDeeplinks.push(raw);
+  focusMainWindow();
+}
+
+function queueArgvDeeplinks() {
+  if (argvDeeplinksQueued) return;
+  argvDeeplinksQueued = true;
+  for (const arg of process.argv) queueDeeplink(arg);
+}
+
+async function deliverDeeplinks() {
+  if (!appReady || deliveringDeeplink || localApi === null) return;
+  if (typeof localApi["runtime.applyDeeplink"] !== "function") {
+    pendingDeeplinks.length = 0;
+    console.error("[magi] this app backend does not accept magi:// links");
+    return;
+  }
+  deliveringDeeplink = true;
+  try {
+    while (pendingDeeplinks.length > 0) {
+      const url = pendingDeeplinks.shift();
+      try {
+        await localApi["runtime.applyDeeplink"]({ url });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`[magi] deeplink: ${message}`);
+        sendToWindow(mainWindow, "local:event", {
+          event: "runtime.deeplink-failed",
+          payload: { url, message },
+        });
+      }
     }
+  } finally {
+    deliveringDeeplink = false;
+    if (pendingDeeplinks.length > 0) void deliverDeeplinks();
+  }
+}
+
+function registerMagiProtocol() {
+  // An unpackaged `electron .` is not the app the OS registered, so name the
+  // executable and the app entry. A packaged build registers `magi://` itself.
+  if (process.defaultApp && process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient("magi", process.execPath, [path.resolve(process.argv[1])]);
+    return;
+  }
+  app.setAsDefaultProtocolClient("magi");
+}
+
+const ownsInstance = app.requestSingleInstanceLock();
+if (!ownsInstance) {
+  app.quit();
+} else {
+  app.on("second-instance", (_event, argv) => {
+    for (const arg of argv) queueDeeplink(arg);
+    if (appReady) void deliverDeeplinks();
   });
-});
+  app.on("open-url", (event, url) => {
+    event.preventDefault();
+    queueDeeplink(url);
+    if (appReady) void deliverDeeplinks();
+  });
+  registerMagiProtocol();
+  queueArgvDeeplinks();
+
+  app.whenReady().then(() => {
+    Menu.setApplicationMenu(null);
+    mainWindow = createWindow();
+    void loadStartup(mainWindow).then(() => launchLocalOperator(mainWindow));
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        mainWindow = createWindow();
+        void loadStartup(mainWindow).then(() => launchLocalOperator(mainWindow));
+      } else {
+        focusMainWindow();
+      }
+    });
+  });
+}
 
 app.on("before-quit", () => {
   // The desktop owns the processes started by every cache-busted backend

@@ -33,6 +33,7 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { openChatStore } from "./chat-store.ts";
+import { parseRebuildLink } from "./deeplink.ts";
 import { agentBranch, createMagiRuntime } from "./magi-runtime.ts";
 import { downloadShellInstaller, installerPath, shellRelease } from "./shell-update.ts";
 
@@ -1458,6 +1459,39 @@ export function createLocalApi(context) {
     });
   }
 
+  /**
+   * A magi:// link from a MAGI. The shell is the only process the OS can hand
+   * that link to; this method is the only thing the shell asks us to do with it.
+   * The pause lets the caller's tool job finish recording before a self or ASP
+   * rebuild stops that process.
+   */
+  async function applyDeeplink(payload) {
+    const request = parseRebuildLink(typeof payload?.url === "string" ? payload.url : "");
+    if (request === null) throw new Error("Unsupported MAGI link.");
+    await delay(1000);
+    if (request.target === "self") return await magiRebuild({ handle: request.handle });
+    const from = agentBranch(request.handle);
+    if (request.target === "app") {
+      return await runtimeAction(async () => {
+        const merged = await mergeInto(appCheckout, "magi/user", from);
+        await rebuildInterface();
+        emit("app.interface-updated", {});
+        return { ui: uiEntry(), merged };
+      });
+    }
+    return await runtimeAction(async () => {
+      await ensureAspWorktree();
+      const merged = await mergeInto(aspCheckout, "magi/asp", from);
+      await stopOwnedAsp();
+      await command(tools.node, [tools.npm, "ci"], {
+        cwd: path.join(aspCheckout, "apps", "asp"), env: tools.env,
+        description: "Could not install ASP dependencies",
+      });
+      await start();
+      return { ...(await runtimeStatus()), merged };
+    });
+  }
+
   function installerExtension() {
     return process.platform === "darwin" ? ".dmg" : process.platform === "win32" ? ".exe" : ".AppImage";
   }
@@ -1698,6 +1732,7 @@ export function createLocalApi(context) {
     "magi.rebuildAll": () => runtimeAction(() => magiRebuildAll()),
     "magi.syncAll": () => runtimeAction(syncMagis),
     "runtime.rebuildApp": rebuildApp,
+    "runtime.applyDeeplink": applyDeeplink,
     "runtime.buildInstaller": buildInstaller,
     "runtime.buildAndInstallInstaller": buildAndInstallInstaller,
     "shell.updateStatus": shellUpdateStatus,
