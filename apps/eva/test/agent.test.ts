@@ -391,9 +391,10 @@ describe("local MAGI agent", () => {
     magi.bus.memoryBook.save({ topic: "goal", detail: "ship it", kind: "long_term" });
     await magi.start();
     // Identity leads: the order comes from `eva.ts`'s worker order, which is the one
-    // place that knows every module. The agent has no opinion about it.
+    // place that knows every module. Source checkout is the agent's own block and
+    // sits where the agent itself is constructed.
     expect(magi.bus.prompts.sections(chat.id).map((section) => section.title))
-      .toEqual(["Identity", "Members", "Available skills", "Long-term memory"]);
+      .toEqual(["Identity", "Members", "Available skills", "Source checkout", "Long-term memory"]);
     await magi.stop();
   });
 
@@ -418,7 +419,7 @@ describe("local MAGI agent", () => {
       const id = board.publish({ worker, action: "stop" }, "test");
       for (let attempt = 0; attempt < 500 && !board.result(id); attempt++) await sleep(10);
     }
-    expect(magi.bus.prompts.sections(chat.id)).toEqual([]);
+    expect(magi.bus.prompts.sections(chat.id).map((section) => section.title)).toEqual(["Source checkout"]);
 
     await magi.chat("again");
     for (const title of titles) expect(requests[1].messages[0].content).not.toContain(`## ${title}`);

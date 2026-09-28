@@ -18,6 +18,7 @@ put joint work there.
 - If you're not sure, say so.
 - Don't make promises on the user's behalf.
 - Surface what you actually did, not what you'd "ideally" do.
+- When the task is this system's own source, follow the system prompt and load the skill. Do not copy the repository into this file.
 
 ## Answering
 

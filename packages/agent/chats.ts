@@ -1,5 +1,5 @@
 import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, messageDelivery, type Bus, type LLMMessage } from "@magi/bus";
-import { SYSTEM_PROMPT } from "./prompt_defaults.js";
+import { COMPACTION_INVARIANT, SYSTEM_PROMPT } from "./prompt_defaults.js";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const COMPACT_KEEP_RECENT = 20;
 const COMPACT_CONTEXT_WINDOW = 200_000;
@@ -123,7 +123,7 @@ export class Chat {
     if (!old.length) return previousSummary;
     const content = old.map((message) => `[${message.llm_role}]\n${message.content}`).join("\n\n");
     this.bus.agentTurns.ensure(turnId, { messages: [
-        { role: "system", content: this.bus.prompts.get("agent/compaction") ?? "Summarize the chat." },
+        { role: "system", content: `${this.bus.prompts.get("agent/compaction") ?? "Summarize the chat."}\n\n${COMPACTION_INVARIANT}` },
         { role: "user", content: `${previousSummary ? `Previous summary:\n${previousSummary}\n\n` : ""}Transcript:\n${content}\n\n请仅总结上面的对话历史，并遵循 system 指令。` },
       ], tools: [] });
     const id = this.bus.board("CallLLMJob").publish({ turn_id: turnId }, "agent");

@@ -1,14 +1,23 @@
 import { BaseWorker, MAGI_CONTACT_ID, type Bus } from "@magi/bus";
 import { Chat } from "./chats.js";
+import { sourceCheckout } from "./checkout.js";
 import { PROMPT_DEFAULTS } from "./prompt_defaults.js";
 
 export class AgentWorker extends BaseWorker {
   readonly worker_name = "agent";
   private readonly queues = new Map<number, Promise<void>>();
+  private started = false;
 
   constructor(bus: Bus) {
     super(bus);
     for (const [key, value] of PROMPT_DEFAULTS) bus.prompts.register(key, value);
+    // Present only while this worker is up, same as the other live blocks.
+    bus.prompts.registerSource("agent/source", "Source checkout", () =>
+      this.started ? sourceCheckout(bus.handle, bus.workspace) : "");
+  }
+
+  async start(): Promise<void> {
+    this.started = true;
   }
 
   async poll(): Promise<boolean> {
@@ -35,5 +44,8 @@ export class AgentWorker extends BaseWorker {
   async drain(): Promise<void> { await Promise.all(this.queues.values()); }
 
   /** Stopping the agent means letting the turns it already accepted finish. */
-  async stop(): Promise<void> { await this.drain(); }
+  async stop(): Promise<void> {
+    await this.drain();
+    this.started = false;
+  }
 }

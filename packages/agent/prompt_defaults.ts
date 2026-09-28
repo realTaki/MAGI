@@ -23,6 +23,15 @@ export const AGENT_PROMPT = template("AGENT");
 /** Code-owned constraints: never seeded into or overridden by a workspace. */
 export const SYSTEM_PROMPT = source("system");
 export const COMPACTION_PROMPT = template("compaction");
+/**
+ * Appended to whatever compaction prompt the workspace has. An older or edited
+ * copy must not be able to drop source-change outcomes on the floor.
+ */
+export const COMPACTION_INVARIANT = [
+  "Preserve source-change outcomes that are in the history: paths, what was decided,",
+  "whether a check passed or failed, and any rebuild that was requested, with its target.",
+  "Do not copy tool transcripts, file bodies, or line-numbered reads.",
+].join(" ");
 
 export const PROMPT_DEFAULTS: ReadonlyArray<readonly [string, string]> = [
   ["agent/AGENT", AGENT_PROMPT],
