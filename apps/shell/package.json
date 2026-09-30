@@ -5,9 +5,14 @@
   "type": "module",
   "main": "main.mjs",
   "description": "MAGI Electron shell. It prepares the environment and loads the app.",
+  "allowScripts": {
+    "dugite": true,
+    "electron": true,
+    "electron-winstaller": true
+  },
   "scripts": {
     "dev": "electron .",
-    "build": "node scripts/prepare-runtime.mjs && electron-builder"
+    "build": "node scripts/build.mjs"
   },
   "build": {
     "appId": "ai.magi.app",
