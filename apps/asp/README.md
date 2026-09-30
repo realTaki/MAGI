@@ -38,7 +38,7 @@ Group profile **invite** uses:
 - `GET /bots` — MAGI this operator can add
 - `POST /chats/{chat_id}/members` `{ "handle" }` — invite that MAGI; it joins on receipt
 
-The desktop app owns provider settings and the API key in `~/.magi/app/provider.json`.
+The desktop user module owns provider settings and the API key in `~/.magi/user/provider.json`.
 ASP only forwards a complete update to MAGI; it never saves a new copy:
 
 - `PUT /settings/provider` — transiently hands `agent.provider.update` to

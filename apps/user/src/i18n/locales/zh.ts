@@ -88,7 +88,7 @@ export default {
     sourceUpdated: "已从远程更新 {branch}（{count} 个新提交）",
     sourceCurrent: "{branch} 已是最新",
     installer: "本机安装包",
-    installerHint: "从当前 App worktree 打包当前平台的客户端，不会停止 ASP 或 MAGI。产物保存在 App worktree 的 shell/release 目录；直接升级会退出并重新打开客户端。",
+    installerHint: "从当前 User worktree 打包当前平台的客户端，不会停止 ASP 或 MAGI。产物保存在 User worktree 的 shell/release 目录；直接升级会退出并重新打开客户端。",
     buildInstaller: "构建可分发安装包",
     buildAndUpgradeInstaller: "构建并直接升级",
     installerBuilt: "安装包已构建到：{path}",

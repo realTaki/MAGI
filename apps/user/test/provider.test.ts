@@ -8,7 +8,7 @@ import { createLocalApi } from "../main/index.ts";
 
 /*
  * Business flow: switching the model, desktop side (`ARCHITECTURE.md`, "ASP").
- * The key is kept in app data (`~/.magi/app/provider.json`) and reaches the MAGI
+ * The key is kept in user data (`~/.magi/user/provider.json`) and reaches the MAGI
  * through ASP; the desktop is the one that holds the file.
  */
 
@@ -51,12 +51,26 @@ test("the app saves the provider key locally and only broadcasts it through ASP"
   assert.deepEqual(saved.synced, ["@eva-000.magi"]);
   assert.ok(requests.some((request) => request.method === "PUT" && request.path === "/settings/provider"));
   assert.equal(JSON.parse(requests.find((request) => request.method === "PUT" && request.path === "/settings/provider").body).base_url, "https://example.com/v1");
-  const providerFile = path.join(root, ".magi", "app", "provider.json");
+  const providerFile = path.join(root, ".magi", "user", "provider.json");
   assert.equal(JSON.parse(readFileSync(providerFile, "utf8")).api_key, "sk-local");
   assert.equal(JSON.parse(readFileSync(providerFile, "utf8")).base_url, "https://example.com/v1");
   if (process.platform !== "win32") assert.equal(statSync(providerFile).mode & 0o777, 0o600);
   assert.equal(app(root)["provider.settings"]().api_key, "sk-local");
   first.dispose();
+});
+
+test("legacy app state moves to the user directory", (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-user-directory-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const legacy = path.join(root, ".magi", "app");
+  mkdirSync(legacy, { recursive: true });
+  writeFileSync(path.join(legacy, "provider.json"), JSON.stringify({ api_key: "preserved" }));
+
+  const backend = app(root);
+  assert.equal(backend["provider.settings"]().api_key, "preserved");
+  assert.equal(existsSync(path.join(root, ".magi", "user", "provider.json")), true);
+  assert.equal(existsSync(legacy), false);
+  backend.dispose();
 });
 
 test("the app reads the curated provider catalog from pi-ai", async (t) => {
@@ -142,14 +156,14 @@ test("the app copies a legacy ASP key before deleting that copy", async (t) => {
 
   const backend = app(root);
   await backend.start();
-  assert.equal(existsSync(path.join(root, ".magi", "app", "provider.json")), true);
+  assert.equal(existsSync(path.join(root, ".magi", "user", "provider.json")), true);
   assert.ok(requests.includes("DELETE /settings/provider/legacy"));
   backend.dispose();
 });
 
 test("usage reads DeepSeek balance with the locally saved API key", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-provider-usage-"));
-  const appData = path.join(root, ".magi", "app");
+  const appData = path.join(root, ".magi", "user");
   mkdirSync(appData, { recursive: true });
   writeFileSync(
     path.join(appData, "provider.json"),

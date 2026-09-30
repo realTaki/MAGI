@@ -88,7 +88,7 @@ export default {
     sourceUpdated: "Updated {branch} from the remote ({count} new commits)",
     sourceCurrent: "{branch} is up to date",
     installer: "Local installer",
-    installerHint: "Build a client installer for this platform from the current App worktree. ASP and MAGI keep running; output is in shell/release. Direct upgrade exits and reopens the client.",
+    installerHint: "Build a client installer for this platform from the current User worktree. ASP and MAGI keep running; output is in shell/release. Direct upgrade exits and reopens the client.",
     buildInstaller: "Build distributable installer",
     buildAndUpgradeInstaller: "Build and upgrade now",
     installerBuilt: "Installer built at: {path}",

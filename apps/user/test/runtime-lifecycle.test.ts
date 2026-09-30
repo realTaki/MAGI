@@ -105,7 +105,7 @@ test("the app refuses to attach to a running legacy Python ASP", async (t) => {
   api.dispose();
 });
 
-test("the App creates and runs ASP from its own magi/asp worktree", async (t) => {
+test("the User module creates and runs ASP from its own magi/asp worktree", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-runtime-worktrees-"));
   const checkout = path.join(root, "source", "MAGI");
   mkdirSync(path.join(checkout, "apps", "asp"), { recursive: true });
@@ -201,4 +201,3 @@ test("a MAGI's runtime is driven from its own profile methods", async (t) => {
   assert.ok(calls.includes("GET /agents"));
   api.dispose();
 });
-

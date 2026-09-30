@@ -33,16 +33,23 @@ const MAGI_REPOSITORY =
 // directory also removes Chromium storage, caches, logs, and crash dumps.
 const MAGI_DATA_ROOT = path.join(app.getPath("home"), ".magi");
 const MAGI_CHECKOUT_ROOT = path.join(MAGI_DATA_ROOT, "MAGI");
-const MAGI_APP_DATA = path.join(MAGI_DATA_ROOT, "app");
-const MAGI_APP_CHECKOUT = path.join(MAGI_APP_DATA, "MAGI");
-const ELECTRON_USER_DATA = path.join(MAGI_APP_DATA, "electron");
+const LEGACY_MAGI_APP_DATA = path.join(MAGI_DATA_ROOT, "app");
+const MAGI_USER_DATA = path.join(MAGI_DATA_ROOT, "user");
+const MAGI_APP_CHECKOUT = path.join(MAGI_USER_DATA, "MAGI");
+const ELECTRON_USER_DATA = path.join(MAGI_USER_DATA, "electron");
 const ELECTRON_CACHE = path.join(MAGI_DATA_ROOT, "cache", "electron");
-const ELECTRON_LOGS = path.join(MAGI_APP_DATA, "logs");
-const ELECTRON_CRASH_DUMPS = path.join(MAGI_APP_DATA, "crash-dumps");
-const WINDOW_STATE_FILE = path.join(MAGI_APP_DATA, "window-state.json");
+const ELECTRON_LOGS = path.join(MAGI_USER_DATA, "logs");
+const ELECTRON_CRASH_DUMPS = path.join(MAGI_USER_DATA, "crash-dumps");
+const WINDOW_STATE_FILE = path.join(MAGI_USER_DATA, "window-state.json");
 const DEFAULT_WINDOW_SIZE = { width: 1040, height: 760 };
 const MINIMUM_WINDOW_SIZE = { width: 720, height: 560 };
 const WINDOW_EDGE_MARGIN = 24;
+
+// `apps/user` is the desktop module. Keep existing operator state intact while
+// moving its former generic `app` directory to the matching runtime role.
+if (!existsSync(MAGI_USER_DATA) && existsSync(LEGACY_MAGI_APP_DATA)) {
+  renameSync(LEGACY_MAGI_APP_DATA, MAGI_USER_DATA);
+}
 
 for (const directory of [
   ELECTRON_USER_DATA,
@@ -165,8 +172,8 @@ async function cloneMagiSource(tools, progress) {
 }
 
 /**
- * The shell needs an App worktree before it can load the App backend. All
- * other runtime worktrees, including ASP, are the App's responsibility.
+ * The shell needs a User worktree before it can load the User backend. All
+ * other runtime worktrees, including ASP, are the User module's responsibility.
  */
 async function ensureAppWorktree(checkout, tools, progress) {
   if (!app.isPackaged && !localCheckoutManaged) {
@@ -174,7 +181,7 @@ async function ensureAppWorktree(checkout, tools, progress) {
   }
   if (existsSync(path.join(MAGI_APP_CHECKOUT, ".git"))) return MAGI_APP_CHECKOUT;
   if (existsSync(MAGI_APP_CHECKOUT)) {
-    throw new Error(`MAGI App worktree path is not a Git checkout: ${MAGI_APP_CHECKOUT}`);
+    throw new Error(`MAGI User worktree path is not a Git checkout: ${MAGI_APP_CHECKOUT}`);
   }
   mkdirSync(path.dirname(MAGI_APP_CHECKOUT), { recursive: true });
   await command(tools.git, ["worktree", "prune"], {
@@ -187,7 +194,7 @@ async function ensureAppWorktree(checkout, tools, progress) {
     await command(tools.git, ["show-ref", "--verify", "--quiet", "refs/heads/magi/user"], {
       cwd: checkout,
       env: tools.env,
-      description: "Could not look up the App worktree branch",
+      description: "Could not look up the User worktree branch",
     });
   } catch {
     branchExists = false;
@@ -197,14 +204,14 @@ async function ensureAppWorktree(checkout, tools, progress) {
     branchExists
       ? ["worktree", "add", MAGI_APP_CHECKOUT, "magi/user"]
       : ["worktree", "add", "-b", "magi/user", MAGI_APP_CHECKOUT, "HEAD"],
-    { cwd: checkout, env: tools.env, description: "Could not create the App worktree" },
+    { cwd: checkout, env: tools.env, description: "Could not create the User worktree" },
   );
-  progress("Prepared App source…", 0.14);
+  progress("Prepared User source…", 0.14);
   return MAGI_APP_CHECKOUT;
 }
 
 // The shell loads the app and forwards calls. It does not implement them.
-// The packaged shell loads its backend from the App worktree. An unpackaged
+// The packaged shell loads its backend from the User worktree. An unpackaged
 // developer tree remains untouched, while an explicit scratch checkout uses
 // the same isolated-runtime layout as a packaged app.
 let localApi = null;

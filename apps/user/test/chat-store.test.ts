@@ -6,6 +6,7 @@ import { test } from "node:test";
 import Database from "better-sqlite3";
 
 import { openChatStore } from "../main/chat-store.ts";
+import { createLocalApi } from "../main/index.ts";
 
 /*
  * Business flow: sending a message, desktop side (`ARCHITECTURE.md`, "ASP").
@@ -17,7 +18,7 @@ test("desktop chat history and pending receipts survive a restart", {
   skip: Number(process.versions.node.split(".")[0]) < 22,
 }, async (t) => {
   const directory = mkdtempSync(path.join(tmpdir(), "magi-chat-"));
-  const file = path.join(directory, "app", "chat.sqlite");
+  const file = path.join(directory, "user", "chat.sqlite");
   const chat = { chat_id: "sess_1", kind: "group", agents: [] };
   const event = {
     event_id: "evt_1", sequence: 3, type: "chat.message",
@@ -72,4 +73,22 @@ test("the versioned baseline adopts an existing desktop cache without replacing 
     migrations.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'index' AND name = 'outgoing_messages_order'").get().count,
     1,
   );
+});
+
+test("disposing the backend after opening chat storage does not throw", async (t) => {
+  const directory = mkdtempSync(path.join(tmpdir(), "magi-chat-dispose-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+  const api = createLocalApi({
+    paths: {
+      home: directory,
+      userData: path.join(directory, "electron"),
+      checkout: path.join(directory, "checkout"),
+    },
+    repository: "https://github.com/AgenticSocietyLab/MAGI.git",
+    tools: { git: "git", env: process.env },
+    emit: () => {}, openExternal: async () => {}, copy: () => {},
+  });
+  await api["chat.saveChats"]([]);
+  api.dispose();
+  await new Promise((resolve) => setImmediate(resolve));
 });

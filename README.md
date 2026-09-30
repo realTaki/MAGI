@@ -129,8 +129,8 @@ should say, and it never starts a process.
   tasks, contacts, prompts, and tools; Jobs for chat, model calls, tool calls,
   delivery, provider changes, tasks, and MCP server changes.
 - **Operator data stays on the desktop** — chat history is
-  `~/.magi/app/chat.sqlite`. Provider settings and the API key are
-  `~/.magi/app/provider.json`. ASP forwards a provider update and does not
+  `~/.magi/user/chat.sqlite`. Provider settings and the API key are
+  `~/.magi/user/provider.json`. ASP forwards a provider update and does not
   keep a new copy of the key.
 - **Other channels** — a MAGI can also talk on the terminal, Telegram, and
   configured MCP servers. Those are part of the MAGI process, not of ASP.
@@ -170,7 +170,7 @@ Creating a bot is `POST /chats { "kind": "bot" }` — ASP assigns
 3. **Talk.** The desktop writes the transcript locally, then sends the message
    through ASP. The MAGI answers on its WebSocket and the desktop stores that
    too.
-4. **Set a provider.** Settings writes `~/.magi/app/provider.json`. ASP hands
+4. **Set a provider.** Settings writes `~/.magi/user/provider.json`. ASP hands
    the same values to each connected MAGI, which stores them in its own BUS.
 5. **Invite.** A group chat can add a MAGI the app already started.
    That MAGI joins when it receives `chat.invited`.

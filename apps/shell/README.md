@@ -6,8 +6,8 @@ interface (`apps/user/src/`) plus local backend (`apps/user/main/`) — and the 
 prepares the checkout, starts local ASP on `127.0.0.1:42069`, runs every MAGI
 from its own branch (`magi/eva-000`, checked out at `~/.magi/eva-000/MAGI`) and
 reports which interface entry the shell should show. The app
-module keeps its own files in `~/.magi/app/`; Electron's own profile moves under
-the same tree (`~/.magi/app/electron`, with the Chromium cache, logs and crash
+module keeps its own files in `~/.magi/user/`; Electron's own profile moves under
+the same tree (`~/.magi/user/electron`, with the Chromium cache, logs and crash
 dumps beside it), so removing `~/.magi` removes everything MAGI-owned.
 
 The project directory stays the Electron app directory (`build.directories.app`
@@ -17,19 +17,19 @@ two-package.json layout), so the packaged entry point stays `apps/shell/main.mjs
 The app is also the machine-local layer of the system. `~/.magi/MAGI` is the
 source-of-truth checkout connected to the operator's GitHub fork; it owns the
 Git remotes and worktree registry, but does not receive local builds. The shell
-creates the App worktree so it can load the backend; the App then creates and
+creates the User worktree so it can load the backend; the User module then creates and
 owns the ASP worktree:
 
 ```
 ~/.magi/MAGI       source checkout only
-~/.magi/app/MAGI   App worktree; `~/.magi/app/` also holds its credentials, UI profile and logs
+~/.magi/user/MAGI  User worktree; `~/.magi/user/` also holds its credentials, UI profile and logs
 ~/.magi/asp/MAGI   ASP worktree; `~/.magi/asp/` holds its relay database and logs
 ```
 
-The app keeps the operator's GitHub credentials in `~/.magi/app/`.
+The app keeps the operator's GitHub credentials in `~/.magi/user/`.
 ASP owns its server state, while each MAGI keeps its own store, so both may run
 on a remote server while this machine still works and keeps its own data.
-The app stores its chat history in `~/.magi/app/chat.sqlite`. It writes
+The app stores its chat history in `~/.magi/user/chat.sqlite`. It writes
 events before acknowledging them to ASP, and reloads that history from SQLite
 after a restart. ASP keeps relay events in its own SQLite until each intended
 recipient acknowledges the exact event. Each MAGI keeps only its own jobs and
@@ -44,13 +44,13 @@ automatically. Events from an already stopped in-memory ASP cannot be recovered.
 The import preserves the desktop transcript; the old ASP's in-memory chat
 routing is unavailable after that ASP stops, so those older chats cannot send
 new messages until a new chat is created.
-The app stores provider credentials in `~/.magi/app/provider.json` (owner-only
+The app stores provider credentials in `~/.magi/user/provider.json` (owner-only
 permissions). ASP forwards a provider update to MAGI without storing the key;
 the app retries delivery as MAGI come online.
 
 On first launch the packaged shell clones the complete repository into
 `~/.magi/MAGI` with its bundled Git, creates the `magi/user` worktree at
-`~/.magi/app/MAGI`, then hands the app bundled Node.js and npm. The App
+`~/.magi/user/MAGI`, then hands the app bundled Node.js and npm. The User module
 creates the `magi/asp` worktree at `~/.magi/asp/MAGI` and uses the tools to install
 dependencies and build only inside those worktrees before starting ASP. The
 startup page shows the current stage and offers Retry if preparation fails. It
@@ -72,7 +72,7 @@ Only seven things, none of them product-specific:
 1. Clone `~/.magi/MAGI` when it is missing, then create the `magi/user`
    worktree (packaged builds).
 2. Load its packaged startup/recovery page.
-3. Load the app backend from the App worktree and give it native pieces: paths,
+3. Load the app backend from the User worktree and give it native pieces: paths,
    bundled tools, `openExternal`, clipboard, and event forwarding.
 4. Forward calls: `local:invoke` in, `local:event` out. Method names belong to
    the app, so a new capability never changes the shell.
@@ -100,8 +100,8 @@ account is shown in Settings. It calls `github.state`,
   (`Ov23li74Up8NcM5yCb61`): the operator approves a one-time code in the browser,
   so no client secret ships and only the token is per machine.
   `MAGI_GITHUB_CLIENT_ID` points a rebranded build at its own app.
-- The token is stored at `~/.magi/app/github-token` (mode 0600) and the app records
-  the account and fork in `~/.magi/app/github.json`.
+- The token is stored at `~/.magi/user/github-token` (mode 0600) and the app records
+  the account and fork in `~/.magi/user/github.json`.
 - If the account has no `MAGI` repository, `POST /repos/<upstream>/forks` creates
   one. A repository that is already there is used as it is — fork or not — and
   is never overwritten.

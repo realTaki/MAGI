@@ -88,7 +88,7 @@ export default {
     sourceUpdated: "リモートから {branch} を更新しました（{count} 件の新しいコミット）",
     sourceCurrent: "{branch} は最新です",
     installer: "ローカルインストーラー",
-    installerHint: "現在の App worktree からこのプラットフォーム用のクライアントをビルドします。ASP と MAGI は停止せず、出力先は shell/release です。直接アップグレードではクライアントを終了して再起動します。",
+    installerHint: "現在の User worktree からこのプラットフォーム用のクライアントをビルドします。ASP と MAGI は停止せず、出力先は shell/release です。直接アップグレードではクライアントを終了して再起動します。",
     buildInstaller: "配布用インストーラーをビルド",
     buildAndUpgradeInstaller: "ビルドして今すぐアップグレード",
     installerBuilt: "インストーラーを作成しました: {path}",

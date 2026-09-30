@@ -59,8 +59,8 @@ participant operations use `/chats/:chat_id/...`.
 | Path | Owner | What it is |
 | --- | --- | --- |
 | `~/.magi/MAGI` | desktop | Git checkout of this repository. |
-| `~/.magi/app/chat.sqlite` | desktop | The operator's transcript. |
-| `~/.magi/app/provider.json` | desktop | Provider, model, and API key. |
+| `~/.magi/user/chat.sqlite` | desktop | The operator's transcript. |
+| `~/.magi/user/provider.json` | desktop | Provider, model, and API key. |
 | `~/.magi/asp/asp.sqlite` | ASP | Chats, participants, and relay events. |
 | `~/.magi/<name>` | that MAGI | Workspace. Books and Job history. |
 

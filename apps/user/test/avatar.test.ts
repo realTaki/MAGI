@@ -27,7 +27,7 @@ function backend({ viewer = {}, viewerStatus = 200, avatarStatus = 200, metadata
     userData: path.join(root, "userData"),
     checkout: path.join(root, "checkout"),
   };
-  const appData = path.join(paths.home, ".magi", "app");
+  const appData = path.join(paths.home, ".magi", "user");
   mkdirSync(appData, { recursive: true });
   mkdirSync(paths.checkout, { recursive: true });
   writeFileSync(path.join(appData, "github-token"), "ghp_test\n");
@@ -73,9 +73,9 @@ function backend({ viewer = {}, viewerStatus = 200, avatarStatus = 200, metadata
   return {
     api,
     requests,
-    avatarFile: () => path.join(paths.home, ".magi", "app", "github-avatar"),
-    tokenFile: () => path.join(paths.home, ".magi", "app", "github-token"),
-    metadata: () => JSON.parse(readFileSync(path.join(paths.home, ".magi", "app", "github.json"), "utf8")),
+    avatarFile: () => path.join(paths.home, ".magi", "user", "github-avatar"),
+    tokenFile: () => path.join(paths.home, ".magi", "user", "github-token"),
+    metadata: () => JSON.parse(readFileSync(path.join(paths.home, ".magi", "user", "github.json"), "utf8")),
     downloads: () => requests.filter((url) => url === AVATAR_URL).length,
     dispose: () => {
       globalThis.fetch = originalFetch;

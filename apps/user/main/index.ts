@@ -32,7 +32,6 @@ import { spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { openChatStore } from "./chat-store.ts";
 import { parseRebuildLink } from "./deeplink.ts";
 import { agentBranch, createMagiRuntime } from "./magi-runtime.ts";
 import { downloadShellInstaller, installerPath, shellRelease } from "./shell-update.ts";
@@ -190,7 +189,7 @@ function parseGitHubSlug(url) {
 
 export function createLocalApi(context) {
   const { paths, repository, tools, emit, openExternal, copy, shellUpdate, managed = false } = context;
-  // Shell loads this backend from the App worktree, while the source checkout
+  // Shell loads this backend from the User worktree, while the source checkout
   // remains the Git/worktree authority for the local runtime.
   const appCheckout = paths.appCheckout ?? paths.checkout;
   let aspCheckout = paths.checkout;
@@ -229,9 +228,9 @@ export function createLocalApi(context) {
   }
 
   /**
-   * ASP is a local runtime owned by the App, not by the Electron shell. The
-   * shell has already made the App worktree so it can load this module; from
-   * here on the App owns this separate `magi/asp` worktree.
+   * ASP is a local runtime owned by the User module, not by the Electron shell. The
+   * shell has already made the User worktree so it can load this module; from
+   * here on the User module owns this separate `magi/asp` worktree.
    */
   async function ensureAspWorktree() {
     if (!managed) return aspCheckout;
@@ -268,10 +267,14 @@ export function createLocalApi(context) {
     return aspCheckout;
   }
 
-  const appData = path.join(paths.home, ".magi", "app");
+  const magiDataRoot = path.join(paths.home, ".magi");
+  const legacyAppData = path.join(magiDataRoot, "app");
+  const appData = path.join(magiDataRoot, "user");
+  if (!existsSync(appData) && existsSync(legacyAppData)) renameSync(legacyAppData, appData);
   mkdirSync(appData, { recursive: true });
-  function chatStore() {
-    chatStorePromise ??= openChatStore(path.join(appData, "chat.sqlite"));
+  async function chatStore() {
+    chatStorePromise ??= import("./chat-store.ts")
+      .then(({ openChatStore }) => openChatStore(path.join(appData, "chat.sqlite")));
     return chatStorePromise;
   }
   const tokenPath = path.join(appData, "github-token");
@@ -828,7 +831,7 @@ export function createLocalApi(context) {
     } catch (error) {
       // A pulled commit can bring a new lockfile: install once, then try again.
       try {
-        await command(tools.node, [tools.npm, "ci"], {
+        await command(tools.node, [tools.npm, "ci", "--ignore-scripts"], {
           cwd: appDir,
           env: tools.env,
           description: "Could not install the app dependencies",
@@ -849,7 +852,7 @@ export function createLocalApi(context) {
     const aspDir = path.join(aspCheckout, "apps", "asp");
     const appDir = path.join(appCheckout, "apps", "user");
     // The MAGI runtime is a workspace now: its packages hang off the checkout root,
-    // so the root carries their lockfile and their node_modules — the App worktree
+    // so the root carries their lockfile and their node_modules — the User worktree
     // installs them for itself, while each MAGI's own worktree installs its own.
     const magiDir = appCheckout;
     const required = [
@@ -885,7 +888,7 @@ export function createLocalApi(context) {
     }
     if (managed && !existsSync(path.join(appDir, "node_modules"))) {
       progress?.("Installing app dependencies…", 0.6);
-      await command(tools.node, [tools.npm, "ci"], {
+      await command(tools.node, [tools.npm, "ci", "--ignore-scripts"], {
         cwd: appDir,
         env: tools.env,
         description: "Could not install the desktop app dependencies",
@@ -1147,7 +1150,7 @@ export function createLocalApi(context) {
 
   function dispose() {
     if (chatStorePromise !== null) {
-      void chatStorePromise.then((store) => store.close());
+      void Promise.resolve(chatStorePromise).then((store) => store.close());
       chatStorePromise = null;
     }
     if (providerTimer !== null) clearTimeout(providerTimer);
@@ -1496,7 +1499,7 @@ export function createLocalApi(context) {
     return process.platform === "darwin" ? ".dmg" : process.platform === "win32" ? ".exe" : ".AppImage";
   }
 
-  /** Build from the App worktree without touching the live shell or services. */
+  /** Build from the User worktree without touching the live shell or services. */
   async function buildInstallerFiles() {
     const shellDir = path.join(appCheckout, "apps", "shell");
     if (!existsSync(path.join(shellDir, "package-lock.json"))) {

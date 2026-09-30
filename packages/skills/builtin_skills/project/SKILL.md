@@ -17,7 +17,7 @@ Paths for `list_files`, `read_file`, `search_files`, `edit_file`, and `write_fil
 | Tree | What runs from it |
 | --- | --- |
 | `MAGI/` on `magi/<you>` | This process, after a `self` rebuild |
-| `magi/user` (`~/.magi/app/MAGI`) | Operator UI. Not this checkout |
+| `magi/user` (`~/.magi/user/MAGI`) | Operator UI. Not this checkout |
 | `magi/asp` (`~/.magi/asp/MAGI`) | ASP. Not this checkout |
 
 Editing `MAGI/apps/user` or `MAGI/apps/asp` does not change the running UI or ASP.
