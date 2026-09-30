@@ -671,7 +671,10 @@ function armShellSwap(installer) {
 }
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+  // MAGI is a foreground desktop runtime: closing its last window is an
+  // application exit on every platform. `before-quit` then stops the ASP and
+  // every MAGI process owned by the desktop backend. Keeping the usual macOS
+  // background-app behaviour here would leave those children running after
+  // the user has closed MAGI's only window.
+  app.quit();
 });
