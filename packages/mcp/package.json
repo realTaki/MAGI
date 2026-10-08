@@ -20,6 +20,6 @@
   },
   "dependencies": {
     "@magi/bus": "*",
-    "@modelcontextprotocol/client": "2.1.0"
+    "@modelcontextprotocol/client": "2.3.1"
   }
 }
