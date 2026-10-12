@@ -1,0 +1,31 @@
+{
+  "name": "@magi/userend",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "MAGI runtime package: the operator backend worker.",
+  "exports": {
+    ".": {
+      "types": "./dist/worker.d.ts",
+      "default": "./dist/worker.js"
+    },
+    "./*": {
+      "types": "./dist/*",
+      "default": "./dist/*"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "db:generate": "drizzle-kit generate --config=drizzle.config.ts"
+  },
+  "dependencies": {
+    "@magi/bus": "*",
+    "better-sqlite3": "^13.0.3",
+    "drizzle-orm": "^0.45.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "drizzle-kit": "^0.31.11"
+  }
+}

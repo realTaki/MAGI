@@ -1,15 +1,13 @@
 /**
- * The desktop app's local backend.
+ * The operator backend: GitHub, MAGI processes, ASP lifecycle, and the cache
+ * tables BUS does not cover.
  *
- * The Electron shell loads this module from the checkout, so everything in
- * here evolves with the source tree instead of with the installed package: the
- * shell only knows how to load it and how to forward calls to it.
+ * Electron loads `apps/user/main/index.ts`, which starts the User process
+ * (BUS + this worker) and returns this table through ``local:invoke``.
  *
  * The shell hands over a context (paths, Git, and small native helpers) and
- * gets back a table of methods that the operator interface reaches through the
- * ``local:invoke`` bridge. Nothing here talks to ASP or MAGI.
- *
- * The shell calls the methods it knows about and nothing else:
+ * gets back a table of methods. The shell calls the methods it knows about
+ * and nothing else:
  *   prepare(progress)        — get this checkout ready and report the interface
  *                              entry point (a file path or a URL).
  *   start(progress)          — bring up local ASP, the service this app talks to.
@@ -32,9 +30,9 @@ import { spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { parseRebuildLink } from "./deeplink.ts";
-import { agentBranch, createMagiRuntime } from "./magi-runtime.ts";
-import { downloadShellInstaller, installerPath, shellRelease } from "./shell-update.ts";
+import { parseRebuildLink } from "./deeplink.js";
+import { agentBranch, createMagiRuntime } from "./magi-runtime.js";
+import { downloadShellInstaller, installerPath, shellRelease } from "./shell-update.js";
 
 const ASP_ORIGIN = new URL("http://127.0.0.1:42069");
 // A brand-new society should not be an empty room. ASP names MAGI eva-000,
@@ -273,7 +271,7 @@ export function createLocalApi(context) {
   if (!existsSync(appData) && existsSync(legacyAppData)) renameSync(legacyAppData, appData);
   mkdirSync(appData, { recursive: true });
   async function chatStore() {
-    chatStorePromise ??= import("./chat-store.ts")
+    chatStorePromise ??= import("./chat-store.js")
       .then(({ openChatStore }) => openChatStore(path.join(appData, "chat.sqlite")));
     return chatStorePromise;
   }
@@ -789,7 +787,7 @@ export function createLocalApi(context) {
 
   function spawnAsp() {
     const aspDir = path.join(aspCheckout, "apps", "asp");
-    const child = spawnProcess(aspNode(), ["main.ts"], {
+    const child = spawnProcess(aspNode(), ["main.js"], {
       cwd: aspDir,
       env: {
         ...tools.env,
@@ -1119,7 +1117,7 @@ export function createLocalApi(context) {
       return { origin: ASP_ORIGIN.href };
     }
     const aspDir = path.join(aspCheckout, "apps", "asp");
-    if (!existsSync(path.join(aspDir, "main.ts"))) {
+    if (!existsSync(path.join(aspDir, "main.js"))) {
       throw new Error(`ASP was not found at ${aspDir}`);
     }
     progress?.("Starting local ASP…", 0.94);

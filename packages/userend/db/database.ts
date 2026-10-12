@@ -1,4 +1,4 @@
-/** Versioned SQLite cache owned by the desktop operator application. */
+/** Versioned SQLite cache owned by userend. */
 
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
@@ -9,7 +9,7 @@ import { and, asc, eq, gt, isNull, max, or, sql } from "drizzle-orm";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
-import { appAcknowledgements, appChats, appEvents, appOutgoingMessages } from "./tables/chatCache.ts";
+import { appAcknowledgements, appChats, appEvents, appOutgoingMessages } from "./tables/chatCache.js";
 
 type AppDb = BetterSQLite3Database & { $client: SQLiteDatabase };
 
@@ -129,13 +129,18 @@ function isOutgoingMessage(value: unknown): value is OutgoingMessage {
     && typeof message.content === "string" && Number.isSafeInteger(message.createdAt);
 }
 
-// The source tree owns db/drizzle. Walking upward also supports a bundled copy
-// loaded from a managed App checkout, matching ASP and BUS migration lookup.
+// ``db/drizzle/`` holds the migrations. The walk covers a compiled copy under
+// ``dist/``, which tsc emits without copying the .sql files, and prefers source.
 function migrationsFolder(): string {
-  for (let directory = import.meta.dirname; ; directory = path.dirname(directory)) {
-    const candidate = path.join(directory, "drizzle");
-    if (existsSync(path.join(candidate, "meta", "_journal.json"))) return candidate;
-    if (path.dirname(directory) === directory) break;
+  let bundled: string | null = null;
+  for (let dir = import.meta.dirname; ; dir = path.dirname(dir)) {
+    for (const candidate of [path.join(dir, "drizzle"), path.join(dir, "db", "drizzle")]) {
+      if (!existsSync(path.join(candidate, "meta", "_journal.json"))) continue;
+      if (!candidate.includes("/dist/")) return candidate;
+      bundled ??= candidate;
+    }
+    if (path.dirname(dir) === dir) break;
   }
+  if (bundled) return bundled;
   throw new Error("Desktop database migrations are missing (db/drizzle)");
 }
