@@ -6,4 +6,4 @@ export {
   shellRelease,
   downloadShellInstaller,
   installerPath,
-} from "@magi/userend/shell-update.js";
+} from "@magi/webapp/shell-update.js";

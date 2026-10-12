@@ -6,4 +6,4 @@ export {
   agentBranch,
   magiCli,
   createMagiRuntime,
-} from "@magi/userend/magi-runtime.js";
+} from "@magi/webapp/magi-runtime.js";

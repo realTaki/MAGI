@@ -1,1 +1,1 @@
-export { parseRebuildLink, type RebuildLink } from "@magi/userend/deeplink.js";
+export { parseRebuildLink, type RebuildLink } from "@magi/webapp/deeplink.js";

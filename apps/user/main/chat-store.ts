@@ -1,1 +1,1 @@
-export { openChatStore } from "@magi/userend/chat-store.js";
+export { openChatStore } from "@magi/webapp/chat-store.js";

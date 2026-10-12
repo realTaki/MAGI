@@ -2,19 +2,19 @@
  * One operator process: its BUS, and the workers on it.
  *
  * Same shape as `apps/eva/eva.ts`. This file chooses the workers.
- * ManagerWorker runs them. The backend is `@magi/userend`.
+ * ManagerWorker runs them. The backend is `@magi/webapp`.
  */
 
 import { join } from "node:path";
 import { Bus } from "@magi/bus";
 import { ManagerWorker } from "@magi/manager";
-import { AspProcessWorker, UserendWorker, USER_HANDLE } from "@magi/userend";
+import { AspProcessWorker, WebappWorker, USER_HANDLE } from "@magi/webapp";
 
-type UserContext = ConstructorParameters<typeof UserendWorker>[1];
+type UserContext = ConstructorParameters<typeof WebappWorker>[1];
 
 export class User {
   readonly bus: Bus;
-  readonly worker: UserendWorker;
+  readonly worker: WebappWorker;
   readonly aspProcess: AspProcessWorker;
   private readonly manager: ManagerWorker;
   private ready: Promise<void> | null = null;
@@ -29,9 +29,9 @@ export class User {
       env: context.tools.env,
       spawnProcess: context.spawn,
     });
-    this.worker = new UserendWorker(this.bus, { ...context, aspProcess: this.aspProcess });
+    this.worker = new WebappWorker(this.bus, { ...context, aspProcess: this.aspProcess });
     this.manager = new ManagerWorker(this.bus, [this.worker, this.aspProcess], {
-      drain: ["userend"],
+      drain: ["webapp"],
     });
   }
 
@@ -64,7 +64,7 @@ export class User {
   }
 }
 
-export function createLocalApi(context: ConstructorParameters<typeof UserendWorker>[1]) {
+export function createLocalApi(context: ConstructorParameters<typeof WebappWorker>[1]) {
   const user = new User(context);
   const ready = user.start();
   let startError: unknown;
