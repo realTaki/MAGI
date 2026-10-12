@@ -17,6 +17,12 @@
       "path": "../../packages/bus"
     },
     {
+      "path": "../../packages/manager"
+    },
+    {
+      "path": "../../packages/skills"
+    },
+    {
       "path": "../../packages/agent"
     },
     {

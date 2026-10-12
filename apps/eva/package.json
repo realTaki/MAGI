@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@magi/bus": "*",
+    "@magi/manager": "*",
     "@magi/agent": "*",
     "@magi/providers": "*",
     "@magi/built-in-tools": "*",

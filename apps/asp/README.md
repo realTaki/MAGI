@@ -3,15 +3,12 @@
 Run with `node main.ts` from this directory (what the desktop app does). Node 24
 runs the TypeScript directly. `npm test` runs the suite.
 
-Layout: `main.ts` is the composition root and process entry. `server/app.ts`
-assembles the desktop operator routes and the shared chat HTTP and MAGI
-WebSocket protocol. `operator-service.ts` projects desktop views and registers
-agents; `service.ts` owns chat state and event delivery.
-`store.ts` / `transport.ts` persist relay state and manage live connections;
-`db/` owns the SQLite file. Its tables live under `db/tables/`, one file per
-table, and `npm run db:generate` turns a change there into SQL under
-`db/drizzle/`, which the relay applies when it opens the database. Rows go
-through drizzle rather than hand-written SQL.
+Layout: `main.ts` is the process entry. `asp.ts` is the supervisor: it starts a
+BUS and the `asp-server` worker from `@magi/asp-server`. That package owns the
+operator HTTP, MAGI WebSocket, relay tables, and `db/`. `npm run db:generate`
+in `packages/asp-server` turns a table change into SQL under `db/drizzle/`,
+which the worker applies when it opens the database. Rows go through drizzle
+rather than hand-written SQL.
 
 Desktop-only HTTP `/chats`, `/bots`, and `/settings/provider` require the
 operator Bearer token. Participant HTTP uses `/chats/open` and

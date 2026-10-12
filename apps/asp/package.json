@@ -3,23 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "MAGI ASP server — chats and live event delivery.",
+  "description": "MAGI ASP process: BUS manager and asp-server worker.",
   "scripts": {
     "start": "node main.ts",
-    "test": "node --test test/*.test.ts",
-    "db:generate": "drizzle-kit generate --config=db/drizzle.config.ts"
+    "test": "node --test test/*.test.ts"
   },
   "dependencies": {
     "@magi/bus": "*",
-    "better-sqlite3": "^13.0.3",
-    "drizzle-orm": "^0.45.3",
-    "ws": "^8.18.3"
+    "@magi/asp-server": "*",
+    "@magi/manager": "*"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^24.13.6",
     "@types/ws": "^8.18.1",
-    "drizzle-kit": "^0.31.11",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "ws": "^8.18.3"
   }
 }

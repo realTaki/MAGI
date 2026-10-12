@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { LocalDatabase } from "../db/database.ts";
+import { LocalDatabase } from "@magi/asp-server/db/database.js";
 import { isRecord, request, tempRoot, withApp } from "./helpers.ts";
 
 /*
