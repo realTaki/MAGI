@@ -293,3 +293,20 @@ test("stop followed immediately by start waits for the old instance", async (t) 
   assert.notEqual((await f.states()).eva.pid, before.eva.pid);
   assert.equal(f.supervisor.snapshots().filter((p) => p.spec.args?.[0] === "@eva.magi").length, 1);
 });
+
+test("a broken User host pipe cannot take down the Shell supervisor", async (t) => {
+  const f = await fixture(t);
+  f.supervisor.stop(f.handles.user.id);
+  while (f.supervisor.snapshots().some((p) => p.id === f.handles.user.id)) await new Promise((r) => setTimeout(r, 10));
+  const cwd = path.join(f.directory, "broken", "apps", "user");
+  await mkdir(path.join(cwd, "dist"), { recursive: true });
+  const entry = path.join(cwd, "dist", "user.js");
+  await writeFile(entry, "import { closeSync } from 'node:fs'; process.stdin.destroy(); try { closeSync(0); } catch {} process.send({type:'ready'}); setInterval(()=>{},1000);");
+  const host = await f.supervisor.start({ cwd, entry }, { host: {} });
+  await host.whenReady();
+  await assert.rejects(host.invoke("ready"), /EPIPE|closed|exited|EOF|broken pipe|write/i);
+  f.supervisor.stop(f.handles.eva.id);
+  while (f.supervisor.snapshots().some((p) => p.id === f.handles.eva.id)) await new Promise((r) => setTimeout(r, 10));
+  assert.ok(f.supervisor.snapshots().some((p) => p.id === f.handles.other.id), "other peers remain owned");
+  host.stop();
+});

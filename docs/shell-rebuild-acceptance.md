@@ -10,7 +10,8 @@ waiting and ready waiting for User, ASP and EVA. `magi://runtime/rebuild` is
 handled by Shell, including while User is unavailable. User's backend can
 request spawn/stop over its existing host channel; it does not implement the
 self-rebuild transaction. Its retirement closes its own BUS, workers and host
-pipe without stopping its peers. Shell terminates all supervised apps on quit.
+pipe without stopping its peers. A broken User host pipe cannot crash Shell when a
+peer exits; a replacement User restores the supervisor snapshot. Shell terminates all supervised apps on quit.
 User's worker still holds roster/worktree policy and proxies to supervised
 handles; moving those product policies is outside this change.
 
@@ -102,7 +103,7 @@ queued separately; they are not silently waived as a green full User suite.
 
 ## Evidence and remaining end-to-end work
 
-Local Linux acceptance: root 99/99, related Shell/User 37/37 before the added stop/start regression, root and User builds
+Local Linux acceptance: root 100/100, related Shell/User 37/37 before the added stop/start and host-pipe regressions, root and User builds
 passed. Native Windows result must be read from the workflow for the actual
 pushed commit; producing an EXE does not prove installation or runtime boot.
 

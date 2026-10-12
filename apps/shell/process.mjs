@@ -48,6 +48,12 @@ export function createSupervisor({ node, env, readyTimeoutMs = 30_000, stopTimeo
     stream.write(`${JSON.stringify(message)}\n`);
   }
 
+  function notifyHost(message) {
+    if (hostSend === null) return;
+    try { hostSend(message); }
+    catch { /* User may be retiring; a replacement restores the current snapshot. */ }
+  }
+
   function stop(id) {
     const entry = children.get(id);
     if (entry === undefined) return;
@@ -131,7 +137,7 @@ export function createSupervisor({ node, env, readyTimeoutMs = 30_000, stopTimeo
       records.get(id).exit = { code, signal };
       children.delete(id);
       if (!isHost && !entry.replacing && hostSend !== null) {
-        hostSend({ type: "event", event: "process.exit", payload: { id, code, signal } });
+        notifyHost({ type: "event", event: "process.exit", payload: { id, code, signal } });
       }
     });
     await new Promise((resolve, reject) => {
@@ -192,9 +198,9 @@ export function createSupervisor({ node, env, readyTimeoutMs = 30_000, stopTimeo
           } else {
             throw new Error(`Unknown host method: ${String(message.method)}`);
           }
-          if (!exited) send({ type: "res", id: message.id, result });
+          if (!exited && !child.stdin.destroyed) send({ type: "res", id: message.id, result });
         } catch (error) {
-          if (!exited) send({
+          if (!exited && !child.stdin.destroyed) send({
             type: "err",
             id: message.id,
             error: error instanceof Error ? error.message : String(error),
@@ -263,7 +269,7 @@ export function createSupervisor({ node, env, readyTimeoutMs = 30_000, stopTimeo
     } catch (error) {
       const failed = children.get(id);
       if (failed) { failed.replacing = false; stop(id); }
-      else if (hostSend) hostSend({ type: "event", event: "process.exit", payload: { id, ...(records.get(id).exit ?? { code: null, signal: null }) } });
+      else if (hostSend) notifyHost({ type: "event", event: "process.exit", payload: { id, ...(records.get(id).exit ?? { code: null, signal: null }) } });
       throw error;
     }
   }
