@@ -2,7 +2,9 @@
 import path from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { Bus } from "@magi/bus";
 import { openChatStore } from "@magi/userend/chat-store.js";
+import { USER_HANDLE } from "@magi/userend";
 
 export async function importAspHistory({
   asp = "http://127.0.0.1:42069",
@@ -28,7 +30,7 @@ export async function importAspHistory({
     return { chat, events };
   }));
 
-  const store = await openChatStore(database);
+  const store = await openChatStore(database, new Bus(USER_HANDLE));
   try {
     store.saveChats(snapshots.map(({ chat }) => chat));
     for (const { chat, events } of snapshots) store.saveEvents(chat.chat_id, events);
