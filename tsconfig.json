@@ -5,6 +5,15 @@
       "path": "packages/bus"
     },
     {
+      "path": "packages/asp-server"
+    },
+    {
+      "path": "packages/manager"
+    },
+    {
+      "path": "packages/userend"
+    },
+    {
       "path": "packages/agent"
     },
     {

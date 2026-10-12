@@ -10,10 +10,10 @@ on the BUS rather than directly on one another.
 
 ```text
 apps/shell/            Electron. Clones the repo, opens the window.
-apps/user/              Operator UI and the local backend that starts ASP.
+apps/user/              Operator process: BUS manager and UI. The backend worker is packages/userend.
 apps/asp/              Node 24. HTTP and WebSocket on 127.0.0.1:42069.
 apps/eva/             Node 24. One process per MAGI: its entry and supervisor.
-packages/              The runtime's packages: bus, agent, providers, built-in-tools, mcp, channel-*.
+packages/              The runtime's packages: bus, manager, asp-server, userend, agent, providers, built-in-tools, mcp, channel-*.
 ```
 
 The installed package contains the shell plus Node.js 24 and npm. It
@@ -71,7 +71,7 @@ An older workspace at `~/.magi/ts-magi/<name>` is still opened when
 
 The shell puts Node.js 24 and npm on disk, then clones this repository to
 `~/.magi/MAGI`. What it asks the backend to do, in order (the bridge contract is
-documented in `apps/user/main/index.ts`):
+documented in `apps/user/main/index.ts`; the worker is `packages/userend`):
 
 1. `prepare()` — check the lockfiles are there, then, in a managed checkout with
    no `node_modules` yet, run `npm install` at the root and `npm ci` in `apps/asp/`,

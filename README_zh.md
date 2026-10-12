@@ -156,7 +156,7 @@ Electron App 启动本地 ASP，并运行本机的每条 MAGI 进程。ASP 负�
 桌面端会询问是否重新加载，不会擅自刷新界面。
 
 真正留在安装包里的只有启动壳：`apps/shell/` 克隆仓库、从里面加载整个应用
-（界面 `apps/user/src/` + 本地后端 `apps/user/main/`），然后只是请这个后端
+（界面 `apps/user/src/` + 操作者进程 `apps/user/user.ts`，worker 在 `packages/userend`），然后只是请这个后端
 自己去准备依赖、启动 ASP、并交回界面入口——壳只提供一个通用桥。改 app **不需要
 重新打包**；改 `apps/shell/` 才需要。
 

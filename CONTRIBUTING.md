@@ -73,9 +73,9 @@ docs: Update README with new architecture
 | Directory | Purpose |
 |-----------|---------|
 | `apps/shell/` | Electron shell: window, bundled Node 24 and npm |
-| `apps/user/` | Operator interface and local backend |
-| `apps/asp/` | ASP chat server (`main.ts` + `server/` + `db/`, Node 24) |
-| `apps/eva/` + `packages/` | The runtime entry and its packages: bus, agent, providers, tools, mcp, channels, tests |
+| `apps/user/` | Operator process: BUS manager (`user.ts`) and UI (`src/`) |
+| `apps/asp/` | ASP process: BUS manager (`asp.ts` + `main.ts`) |
+| `apps/eva/` + `packages/` | The runtime entry and its packages: bus, manager, asp-server, userend, agent, providers, tools, mcp, channels, tests |
 | `docs/` | Design docs + roadmap |
 
 **Package names follow one rule: a role in the society stays bare, everything else carries the `@magi/` scope.** `user` (the operator's app) and `eva` (the agent runtime behind each `eva-000`) are roles; `@magi/asp`, `@magi/shell` and every library under `packages/` are the machinery around them. The scope is not part of the module name, so `apps/asp` ↔ `@magi/asp` is aligned — what has to match is the *module*: `apps/user/`, `apps/eva/`, `apps/eva/eva.ts`.

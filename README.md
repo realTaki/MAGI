@@ -75,10 +75,10 @@ improvement **within explicit, inspectable constraints**.
 
 ```text
 apps/shell/        Electron shell: window, checkout, and bundled Node 24 and npm
-apps/user/          Operator UI and the local backend that starts ASP
-apps/asp/          ASP server (TypeScript, node main.ts): /chats, WS /connect, ~/.magi/asp.sqlite
+apps/user/          Operator process (BUS + userend worker) and UI
+apps/asp/          ASP process (node main.ts): BUS manager; worker in packages/asp-server
 apps/eva/         MAGI runtime: one process per MAGI — its entry and supervisor
-packages/          The runtime's own packages: bus, agent, providers, tools, mcp, channel-*
+packages/          The runtime's own packages: bus, manager, asp-server, userend, agent, providers, tools, mcp, channel-*
 ```
 
 ## Toward recursive self-improvement
@@ -183,7 +183,7 @@ Operator
    ▼
 apps/shell/       Electron window
    │  loads
-apps/user/         operator UI and local backend
+apps/user/         operator process (BUS + userend) and UI
    │  starts Node 24
    ▼
 apps/asp/         127.0.0.1:42069   chats and relay, never a process
@@ -225,8 +225,8 @@ account.
 When `apps/user/dist/index.html` changes, the app asks before reloading.
 
 Only the bootstrap stays in the installed package: `apps/shell/` clones the
-checkout, loads the app from it — interface (`apps/user/src/`) and local
-backend (`apps/user/main/`) — and then simply asks that backend to prepare the
+checkout, loads the app from it — interface (`apps/user/src/`) and operator
+process (`apps/user/user.ts`, worker in `packages/userend`) — and then simply asks that backend to prepare the
 checkout, start ASP and name the interface entry, through one generic bridge.
 Editing the app takes effect without a new package; editing `apps/shell/`
 still does not change the running shell. Code changes in MAGI or ASP also need the affected process
