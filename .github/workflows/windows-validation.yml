@@ -34,6 +34,10 @@ jobs:
           # setup-node is used only to provision the checkout dependencies.
           npm ci
           if ($LASTEXITCODE -ne 0) { throw "Dependency bootstrap failed" }
+          # Give the owned Node an explicit bootstrap npm CLI. Windows .cmd
+          # shims cannot be passed to execFileSync (EINVAL).
+          $env:npm_execpath = Join-Path (Split-Path (Get-Command npm.cmd).Source) "node_modules/npm/bin/npm-cli.js"
+          if (!(Test-Path $env:npm_execpath)) { throw "Bootstrap npm CLI is missing" }
           & ./node_modules/node/bin/node.exe apps/shell/scripts/prepare-runtime.mjs
           if ($LASTEXITCODE -ne 0) { throw "Runtime preparation failed" }
       - name: Root acceptance tests

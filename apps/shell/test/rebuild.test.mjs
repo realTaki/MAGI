@@ -283,3 +283,13 @@ test("publishing refuses a target on another branch before merge", async () => {
   await assert.rejects(rebuild("magi://runtime/rebuild?target=asp&handle=@eva.magi"), /own managed branch/);
   assert.equal(calls, 2);
 });
+
+test("stop followed immediately by start waits for the old instance", async (t) => {
+  const f = await fixture(t), before = await f.states();
+  f.supervisor.stop(f.handles.eva.id);
+  const replacement = await f.supervisor.start(f.specs.eva);
+  await replacement.whenReady();
+  assert.notEqual(replacement.id, f.handles.eva.id, "a stopping instance must not be adopted");
+  assert.notEqual((await f.states()).eva.pid, before.eva.pid);
+  assert.equal(f.supervisor.snapshots().filter((p) => p.spec.args?.[0] === "@eva.magi").length, 1);
+});

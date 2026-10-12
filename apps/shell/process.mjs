@@ -51,6 +51,7 @@ export function createSupervisor({ node, env, readyTimeoutMs = 30_000, stopTimeo
   function stop(id) {
     const entry = children.get(id);
     if (entry === undefined) return;
+    entry.stopping = true;
     const { child, host } = entry;
     if (!host && process.platform !== "win32" && typeof child.pid === "number" && child.pid > 0) {
       try {
@@ -77,6 +78,17 @@ export function createSupervisor({ node, env, readyTimeoutMs = 30_000, stopTimeo
       for (const [id, entry] of children) {
         if ((identity && entry.identity === identity) || entry.key === key) {
           if (entry.key !== key) throw new Error(`Conflicting process specification: ${identity}`);
+          if (entry.stopping) {
+            await new Promise((resolve, reject) => {
+              const done = () => { clearTimeout(timer); resolve(); };
+              const timer = setTimeout(() => {
+                entry.child.removeListener("exit", done);
+                reject(new Error(`App did not stop: ${spec.cwd}`));
+              }, stopTimeoutMs);
+              entry.child.once("exit", done);
+            });
+            return await start(spec, { host });
+          }
           if (entry.host) throw new Error("User is already supervised");
           return { id, whenReady: entry.whenReady };
         }

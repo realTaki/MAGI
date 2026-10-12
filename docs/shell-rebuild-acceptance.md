@@ -17,7 +17,8 @@ handles; moving those product policies is outside this change.
 Targets must have a canonical `apps/<kind>/dist/<kind>.js` entry. Publishing an
 EVA branch into User/ASP checks both `magi/<caller>` and `magi/user`/`magi/asp`,
 refuses dirty target trees, and does not restart unrelated apps. Simultaneous
-restarts of one supervisor id share one replacement. Queued equivalent links
+restarts of one supervisor id share one replacement. A stop followed by start
+waits for the stopping process to exit instead of adopting its dying handle. Queued equivalent links
 are coalesced; overlapping rebuild transactions are rejected.
 
 An OS-accepted link is a request. A ready result requires the new process's IPC
@@ -61,7 +62,8 @@ stop timeout, wrong entry/branches, and restored User management relationships.
 Current compiled EVA CLI, ASP class and User CLI are exercised. The ignored
 SIGTERM fixture is POSIX-only: Windows forcibly terminates that signal target.
 The Windows path test runs on all platforms; native Windows CI provides the
-platform-specific process/build evidence.
+platform-specific process/build evidence. Windows bootstrap passes an explicit
+npm CLI to the owned Node rather than executing an npm.cmd shim with execFileSync.
 
 The architecture test now inspects every worker package's source imports and
 manifest dependencies, allowing only itself and BUS. Negative cases explicitly
@@ -100,7 +102,7 @@ queued separately; they are not silently waived as a green full User suite.
 
 ## Evidence and remaining end-to-end work
 
-Local Linux acceptance: root 98/98, related Shell/User 37/37, root and User builds
+Local Linux acceptance: root 99/99, related Shell/User 37/37 before the added stop/start regression, root and User builds
 passed. Native Windows result must be read from the workflow for the actual
 pushed commit; producing an EXE does not prove installation or runtime boot.
 
