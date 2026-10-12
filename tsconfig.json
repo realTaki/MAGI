@@ -11,7 +11,7 @@
       "path": "packages/manager"
     },
     {
-      "path": "packages/userend"
+      "path": "packages/webapp"
     },
     {
       "path": "packages/agent"

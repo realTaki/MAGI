@@ -3,8 +3,8 @@ import path from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { Bus } from "@magi/bus";
-import { openChatStore } from "@magi/userend/chat-store.js";
-import { USER_HANDLE } from "@magi/userend";
+import { openChatStore } from "@magi/webapp/chat-store.js";
+import { USER_HANDLE } from "@magi/webapp";
 
 export async function importAspHistory({
   asp = "http://127.0.0.1:42069",
