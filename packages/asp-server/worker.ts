@@ -2,7 +2,7 @@
 
 import type { IncomingMessage } from "node:http";
 import type { WebSocket } from "ws";
-import type { Bus } from "@magi/bus";
+import { BaseWorker, type Bus } from "@magi/bus";
 
 import { LocalDatabase, defaultDatabasePath } from "../db/database.ts";
 import { bearerHandle, HttpError, listen, optionalInt, optionalString, requireContent, requireObject, Router, type RunningServer } from "./http.ts";
@@ -23,6 +23,8 @@ export type CreateAppOptions = {
   aspSeed?: AspSeed;
   aspBase?: string;
   requestShutdown?: () => void;
+  host?: string;
+  port?: number;
 };
 
 type InitialMessage = {
@@ -30,7 +32,7 @@ type InitialMessage = {
   metadata?: unknown;
 };
 
-export class AspServer {
+export class AspServer extends BaseWorker {
   readonly worker_name = "asp-server";
   readonly database: LocalDatabase;
   readonly relay: RelayWorker;
@@ -45,10 +47,13 @@ export class AspServer {
   operatorToken = "";
   #running: RunningServer | null = null;
   #seed: AspSeed;
+  #host: string;
+  #port: number;
 
-  constructor(readonly bus: Bus, options: CreateAppOptions = {}) {
+  constructor(bus: Bus, options: CreateAppOptions = {}) {
+    super(bus);
     this.database = new LocalDatabase(options.databasePath ?? defaultDatabasePath());
-    this.relay = new RelayWorker(this.bus, this.database);
+    this.relay = new RelayWorker(bus, this.database);
     this.store = new Store(this.database, this.relay);
     this.transport = new Transport(this.store);
     this.chats = new ChatService(this.store, this.transport);
@@ -56,9 +61,11 @@ export class AspServer {
     this.requestShutdown = options.requestShutdown;
     this.operator = new OperatorService(this.chats, this.store, this.transport);
     this.#seed = options.aspSeed ?? {};
+    this.#host = options.host ?? "127.0.0.1";
+    this.#port = options.port ?? 0;
   }
 
-  async start(host = "127.0.0.1", port = 0): Promise<void> {
+  async start(): Promise<void> {
     this.database.open();
     this.store.activate(this.#seed);
     const existing = this.store.getAgent(OPERATOR_HANDLE);
@@ -73,7 +80,7 @@ export class AspServer {
     }
     const router = new Router();
     registerRoutes(router, this);
-    this.#running = await listen(router, (request, socket) => this.#accept(request, socket), host, port);
+    this.#running = await listen(router, (request, socket) => this.#accept(request, socket), this.#host, this.#port);
     this.origin = this.#running.origin;
   }
 

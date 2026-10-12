@@ -15,8 +15,8 @@ export async function withApp(
   options: CreateAppOptions,
   run: (app: Asp) => Promise<void>,
 ): Promise<void> {
-  const app = createApp({ aspBase: "http://asp.test", ...options });
-  await app.start("127.0.0.1", 0);
+  const app = createApp({ aspBase: "http://asp.test", host: "127.0.0.1", port: 0, ...options });
+  await app.start();
   try {
     await run(app);
   } finally {

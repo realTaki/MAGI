@@ -5,7 +5,12 @@ import { Asp, intranetBaseUrl } from "./asp.ts";
 function main(): void {
   const host = process.env.MAGI_ASP_HOST ?? "127.0.0.1";
   const port = Number(process.env.MAGI_ASP_PORT ?? "42069");
-  const asp = new Asp({ aspBase: intranetBaseUrl(), requestShutdown: () => process.kill(process.pid, "SIGTERM") });
+  const asp = new Asp({
+    aspBase: intranetBaseUrl(),
+    requestShutdown: () => process.kill(process.pid, "SIGTERM"),
+    host,
+    port,
+  });
   let closing = false;
   const shutdown = () => {
     if (closing) {
@@ -22,7 +27,7 @@ function main(): void {
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
-  void asp.start(host, port).then(
+  void asp.start().then(
     () => {
       console.error(`[asp] listening on ${asp.origin}`);
     },
