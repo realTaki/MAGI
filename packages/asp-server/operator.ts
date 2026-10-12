@@ -2,7 +2,7 @@
 
 import { randomBytes } from "node:crypto";
 
-import type { LocalDatabase } from "../db/database.ts";
+import type { LocalDatabase } from "./db/database.js";
 
 export const OPERATOR_HANDLE = "@user.magi";
 /** What this identity was called before: `user`, then `@user`. */

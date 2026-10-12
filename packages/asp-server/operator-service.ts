@@ -2,9 +2,9 @@
 
 import { randomBytes } from "node:crypto";
 
-import { NotAllowed, NotFound, ChatService } from "./service.ts";
-import { Store } from "./store.ts";
-import type { Transport } from "./transport.ts";
+import { NotAllowed, NotFound, ChatService } from "./service.js";
+import { Store } from "./store.js";
+import type { Transport } from "./transport.js";
 
 export class OperatorService {
   readonly chats: ChatService;

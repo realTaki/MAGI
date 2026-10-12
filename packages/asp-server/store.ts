@@ -4,13 +4,13 @@ import { randomUUID } from "node:crypto";
 
 import { and, eq, gt, notExists, sql } from "drizzle-orm";
 
-import { LocalDatabase, type AspDb } from "../db/database.ts";
-import { aspChatKeys } from "../db/tables/chatKeys.ts";
-import { aspEventAcks } from "../db/tables/eventAcks.ts";
-import { aspEvents } from "../db/tables/events.ts";
-import { aspMessageKeys } from "../db/tables/messageKeys.ts";
-import { aspMessageRecipients } from "../db/tables/messageRecipients.ts";
-import type { RelayWorker } from "./relayWorker.ts";
+import { LocalDatabase, type AspDb } from "./db/database.js";
+import { aspChatKeys } from "./db/tables/chatKeys.js";
+import { aspEventAcks } from "./db/tables/eventAcks.js";
+import { aspEvents } from "./db/tables/events.js";
+import { aspMessageKeys } from "./db/tables/messageKeys.js";
+import { aspMessageRecipients } from "./db/tables/messageRecipients.js";
+import type { RelayWorker } from "./relayWorker.js";
 
 export type ParticipantStatus = "invited" | "joined" | "left";
 export type ChatState = "active" | "ended";

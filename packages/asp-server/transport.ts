@@ -3,8 +3,8 @@
 import { randomUUID } from "node:crypto";
 import type { WebSocket } from "ws";
 
-import type { ChatEvent, Store } from "./store.ts";
-import { eventToWire } from "./store.ts";
+import type { ChatEvent, Store } from "./store.js";
+import { eventToWire } from "./store.js";
 
 const GRACE_MS = 30_000;
 const CONTROL_TIMEOUT_MS = 5_000;

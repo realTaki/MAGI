@@ -1,8 +1,8 @@
 /** Chat lifecycle and event fan-out. */
 
-import type { Participant, Chat, ChatEvent, Store } from "./store.ts";
-import { eventToWire, makeId, nowMs } from "./store.ts";
-import type { Transport } from "./transport.ts";
+import type { Participant, Chat, ChatEvent, Store } from "./store.js";
+import { eventToWire, makeId, nowMs } from "./store.js";
+import type { Transport } from "./transport.js";
 
 export class NotFound extends Error {}
 export class Conflict extends Error {}

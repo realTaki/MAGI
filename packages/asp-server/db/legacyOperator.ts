@@ -10,16 +10,16 @@
 
 import { eq } from "drizzle-orm";
 
-import type { AspDb } from "./database.ts";
-import { aspContactAllowlist, aspContacts } from "./tables/contacts.ts";
-import { aspChatKeys } from "./tables/chatKeys.ts";
-import { aspEventAcks } from "./tables/eventAcks.ts";
-import { aspEvents } from "./tables/events.ts";
-import { aspMessageKeys } from "./tables/messageKeys.ts";
-import { aspMessageRecipients } from "./tables/messageRecipients.ts";
-import { aspParticipants } from "./tables/participants.ts";
-import { relayAllowlist, relayPrincipals } from "./tables/relayPrincipals.ts";
-import { relayParticipants } from "./tables/relayParticipants.ts";
+import type { AspDb } from "./database.js";
+import { aspContactAllowlist, aspContacts } from "./tables/contacts.js";
+import { aspChatKeys } from "./tables/chatKeys.js";
+import { aspEventAcks } from "./tables/eventAcks.js";
+import { aspEvents } from "./tables/events.js";
+import { aspMessageKeys } from "./tables/messageKeys.js";
+import { aspMessageRecipients } from "./tables/messageRecipients.js";
+import { aspParticipants } from "./tables/participants.js";
+import { relayAllowlist, relayPrincipals } from "./tables/relayPrincipals.js";
+import { relayParticipants } from "./tables/relayParticipants.js";
 
 /** What the operator was called before this one: `user`, then `@user`. */
 const LEGACY_HANDLES = ["user", "@user"];

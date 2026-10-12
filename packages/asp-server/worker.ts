@@ -1,17 +1,20 @@
-/** Compose the ASP operator and participant protocol APIs. */
+/** The asp-server worker: operator HTTP and MAGI WebSocket on a BUS. */
 
 import type { IncomingMessage } from "node:http";
 import type { WebSocket } from "ws";
 import { BaseWorker, type Bus } from "@magi/bus";
 
-import { LocalDatabase, defaultDatabasePath } from "../db/database.ts";
-import { bearerHandle, HttpError, listen, optionalInt, optionalString, requireContent, requireObject, Router, type RunningServer } from "./http.ts";
-import { loadOrCreateOperator, OPERATOR_HANDLE } from "./operator.ts";
-import { OperatorService } from "./operator-service.ts";
-import { RelayWorker } from "./relayWorker.ts";
-import { Conflict, NotAllowed, NotFound, ChatService } from "./service.ts";
-import { type AgentSeed, Store } from "./store.ts";
-import { ConnectionError, TimeoutError, Transport } from "./transport.ts";
+import { LocalDatabase, defaultDatabasePath } from "./db/database.js";
+import { bearerHandle, HttpError, listen, optionalInt, optionalString, requireContent, requireObject, Router, type RunningServer } from "./http.js";
+import { loadOrCreateOperator, OPERATOR_HANDLE } from "./operator.js";
+import { OperatorService } from "./operator-service.js";
+import { RelayWorker } from "./relayWorker.js";
+import { Conflict, NotAllowed, NotFound, ChatService } from "./service.js";
+import { type AgentSeed, Store } from "./store.js";
+import { ConnectionError, TimeoutError, Transport } from "./transport.js";
+
+export { defaultDatabasePath };
+export { ASP_HANDLE } from "./relayWorker.js";
 
 const PROVIDER_SETTING_KEY = "provider";
 

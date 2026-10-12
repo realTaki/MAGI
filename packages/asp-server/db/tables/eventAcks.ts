@@ -2,7 +2,7 @@
 
 import { primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
-import { aspEvents } from "./events.ts";
+import { aspEvents } from "./events.js";
 
 export const aspEventAcks = sqliteTable("asp_event_acks", {
   event_id: text("event_id").notNull().references(() => aspEvents.event_id, { onDelete: "cascade" }),

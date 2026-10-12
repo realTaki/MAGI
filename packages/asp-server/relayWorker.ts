@@ -3,17 +3,17 @@
 import { eq } from "drizzle-orm";
 import { BaseWorker, Bus, SYSTEM_CONTACT_ID } from "@magi/bus";
 
-import { LocalDatabase } from "../db/database.ts";
-import { aspContactAllowlist, aspContacts } from "../db/tables/contacts.ts";
-import { aspChats } from "../db/tables/chats.ts";
-import { aspEvents } from "../db/tables/events.ts";
-import { aspMessageRecipients } from "../db/tables/messageRecipients.ts";
-import { aspParticipants } from "../db/tables/participants.ts";
-import { relayAllowlist, relayPrincipals } from "../db/tables/relayPrincipals.ts";
-import { relayChats } from "../db/tables/relayChats.ts";
-import { relayParticipants } from "../db/tables/relayParticipants.ts";
-import { OPERATOR_HANDLE } from "./operator.ts";
-import type { Agent, Chat, ChatEvent, Participant } from "./store.ts";
+import { LocalDatabase } from "./db/database.js";
+import { aspContactAllowlist, aspContacts } from "./db/tables/contacts.js";
+import { aspChats } from "./db/tables/chats.js";
+import { aspEvents } from "./db/tables/events.js";
+import { aspMessageRecipients } from "./db/tables/messageRecipients.js";
+import { aspParticipants } from "./db/tables/participants.js";
+import { relayAllowlist, relayPrincipals } from "./db/tables/relayPrincipals.js";
+import { relayChats } from "./db/tables/relayChats.js";
+import { relayParticipants } from "./db/tables/relayParticipants.js";
+import { OPERATOR_HANDLE } from "./operator.js";
+import type { Agent, Chat, ChatEvent, Participant } from "./store.js";
 
 export const ASP_HANDLE = "@asp.magi";
 export const ASP_CHANNEL = "asp";

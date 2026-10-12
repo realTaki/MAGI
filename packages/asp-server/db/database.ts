@@ -10,8 +10,8 @@ import { eq } from "drizzle-orm";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
-import { repairLegacyOperatorHandle } from "./legacyOperator.ts";
-import { aspSettings } from "./tables/settings.ts";
+import { repairLegacyOperatorHandle } from "./legacyOperator.js";
+import { aspSettings } from "./tables/settings.js";
 
 /** The relay's drizzle client over a better-sqlite3 connection. */
 export type AspDb = BetterSQLite3Database & { $client: SQLiteDatabase };
@@ -103,16 +103,18 @@ export class LocalDatabase {
   }
 }
 
-// ``db/drizzle/`` holds the migrations; the walk also covers a copy run from
-// somewhere else in the tree, and stops at the filesystem root.
+// ``db/drizzle/`` holds the migrations. The walk covers a compiled copy under
+// ``dist/``, which tsc emits without copying the .sql files, and prefers source.
 function migrationsFolder(): string {
+  let bundled: string | null = null;
   for (let dir = import.meta.dirname; ; dir = path.dirname(dir)) {
-    const candidate = path.join(dir, "drizzle");
-    if (existsSync(path.join(candidate, "meta", "_journal.json"))) {
-      return candidate;
+    for (const candidate of [path.join(dir, "drizzle"), path.join(dir, "db", "drizzle")]) {
+      if (!existsSync(path.join(candidate, "meta", "_journal.json"))) continue;
+      if (!candidate.includes("/dist/")) return candidate;
+      bundled ??= candidate;
     }
-    if (path.dirname(dir) === dir) {
-      throw new Error("ASP migrations are missing (db/drizzle)");
-    }
+    if (path.dirname(dir) === dir) break;
   }
+  if (bundled) return bundled;
+  throw new Error("ASP migrations are missing (db/drizzle)");
 }
