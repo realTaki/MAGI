@@ -17,7 +17,7 @@
  *   github.signIn            — OAuth device flow; stores the token for Git to use.
  *   github.connect           — fork when the account has none, then point the
  *                              checkout at it.
- *   provider.settings/save   — keep the key in app data and sync through ASP.
+ *   provider.settings/save   — keep the key on SettingsBook and sync through ASP.
  *   source.status            — branch, commit, and how this checkout sits
  *                              against the AgenticSociety remote.
  *   source.update            — fetch the remote and merge it into this checkout,
@@ -185,7 +185,7 @@ function parseGitHubSlug(url) {
 }
 
 export function createLocalApi(context) {
-  const { paths, repository, tools, emit, openExternal, copy, shellUpdate, managed = false, aspProcess } = context;
+  const { paths, repository, tools, emit, openExternal, copy, shellUpdate, managed = false, aspProcess, bus } = context;
   // Shell loads this backend from the User worktree, while the source checkout
   // remains the Git/worktree authority for the local runtime.
   const appCheckout = paths.appCheckout ?? paths.checkout;
@@ -270,7 +270,7 @@ export function createLocalApi(context) {
   mkdirSync(appData, { recursive: true });
   async function chatStore() {
     chatStorePromise ??= import("./chat-store.js")
-      .then(({ openChatStore }) => openChatStore(path.join(appData, "chat.sqlite")));
+      .then(({ openChatStore }) => openChatStore(path.join(appData, "chat.sqlite"), bus));
     return chatStorePromise;
   }
   const tokenPath = path.join(appData, "github-token");
@@ -387,20 +387,37 @@ export function createLocalApi(context) {
   }
 
   function readProvider() {
-    if (!existsSync(providerPath)) return null;
-    return normalizeProvider(JSON.parse(readFileSync(providerPath, "utf8")));
+    const settings = {
+      provider: bus.settings.get("provider.name"),
+      model: bus.settings.get("provider.model"),
+      api_key: bus.settings.get("provider.api_key"),
+      base_url: bus.settings.get("provider.base_url"),
+    };
+    if (settings.provider === null && settings.model === null && settings.api_key === null && settings.base_url === null) {
+      return null;
+    }
+    return normalizeProvider(settings);
   }
 
   function writeProvider(settings) {
-    const temporary = `${providerPath}.${process.pid}.tmp`;
-    writeFileSync(temporary, `${JSON.stringify(settings)}\n`, { mode: 0o600 });
-    try {
-      renameSync(temporary, providerPath);
-      chmodSync(providerPath, 0o600);
-    } finally {
-      rmSync(temporary, { force: true });
-    }
+    const normalized = normalizeProvider(settings);
+    bus.settings.set("provider.name", normalized.provider ?? "");
+    bus.settings.set("provider.model", normalized.model ?? "");
+    bus.settings.set("provider.api_key", normalized.api_key ?? "");
+    bus.settings.set("provider.base_url", normalized.base_url ?? "");
   }
+
+  function adoptProvider() {
+    if (!existsSync(providerPath)) return;
+    try {
+      writeProvider(JSON.parse(readFileSync(providerPath, "utf8")));
+    } catch {
+      return;
+    }
+    rmSync(providerPath, { force: true });
+  }
+  adoptProvider();
+  void chatStore();
 
   async function providerUsage() {
     const settings = readProvider();
@@ -875,11 +892,7 @@ export function createLocalApi(context) {
   async function migrateLegacyProvider(token) {
     const legacy = await aspJson("/settings/provider/legacy", { token });
     if (legacy === null) return;
-    if (!existsSync(providerPath)) {
-      writeProvider(normalizeProvider(legacy));
-    } else {
-      readProvider(); // Do not remove the old copy if the app's file is unreadable.
-    }
+    if (readProvider() === null) writeProvider(normalizeProvider(legacy));
     await aspJson("/settings/provider/legacy", { token, method: "DELETE" });
   }
 
@@ -913,8 +926,7 @@ export function createLocalApi(context) {
     }
     if ((result.synced ?? []).length === 0 && (result.failed ?? []).length > 0 &&
         result.failed.every((item) => item.detail === "MAGI rejected provider configuration")) {
-      if (previous === null) rmSync(providerPath, { force: true });
-      else writeProvider(previous);
+      writeProvider(previous);
       throw new Error("MAGI rejected the provider configuration; the previous settings were kept");
     }
     for (const handle of result.synced ?? []) providerAttempted.add(handle);

@@ -1,27 +1,16 @@
 /**
- * The desktop's operator-side cache of ASP data.
- *
- * ASP remains authoritative. These rows preserve received events and queued
- * sends across an unavailable relay or an Electron restart.
+ * What Books cannot hold: the full ASP event JSON the UI still paints, and the
+ * outbound queue while ASP is down. Chat directory, members, and the ack
+ * cursor live on the operator BUS.
  */
 
 import { index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
-
-export const appChats = sqliteTable("chats", {
-  id: text("id").primaryKey(),
-  record_json: text("record_json", { mode: "json" }).$type<unknown>().notNull(),
-});
 
 export const appEvents = sqliteTable("events", {
   chat_id: text("chat_id").notNull(),
   sequence: integer("sequence").notNull(),
   record_json: text("record_json", { mode: "json" }).$type<unknown>().notNull(),
 }, (table) => [primaryKey({ columns: [table.chat_id, table.sequence] })]);
-
-export const appAcknowledgements = sqliteTable("acknowledgements", {
-  chat_id: text("chat_id").primaryKey(),
-  through_sequence: integer("through_sequence").notNull(),
-});
 
 export const appOutgoingMessages = sqliteTable("outgoing_messages", {
   id: text("id").primaryKey(),

@@ -17,7 +17,7 @@ export class UserendWorker extends BaseWorker {
 
   constructor(bus: Bus, context: Parameters<typeof createLocalApi>[0]) {
     super(bus);
-    this.methods = createLocalApi(context);
+    this.methods = createLocalApi({ ...context, bus });
   }
 
   requestShutdown(): void {

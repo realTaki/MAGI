@@ -1,15 +1,17 @@
-/** Versioned SQLite cache owned by userend. */
+/** Versioned SQLite cache owned by userend: events and the outbound queue. */
 
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 
+import type { Bus } from "@magi/bus";
 import Database from "better-sqlite3";
 import type { Database as SQLiteDatabase } from "better-sqlite3";
-import { and, asc, eq, gt, isNull, max, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, max } from "drizzle-orm";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
-import { appAcknowledgements, appChats, appEvents, appOutgoingMessages } from "./tables/chatCache.js";
+import { ackThrough, listChats as listDirectory, markAcknowledged as ackChat, saveChats as saveDirectory } from "../directory.js";
+import { appEvents, appOutgoingMessages } from "./tables/chatCache.js";
 
 type AppDb = BetterSQLite3Database & { $client: SQLiteDatabase };
 
@@ -20,15 +22,16 @@ export type OutgoingMessage = {
   createdAt: number;
 };
 
-/** The public cache interface used by the desktop bridge and its tests. */
+/** The public cache interface used by the desktop bridge. */
 export type ChatStore = ReturnType<typeof openChatStore>;
 
-export function openChatStore(file: string) {
+export function openChatStore(file: string, bus: Bus) {
   mkdirSync(path.dirname(file), { recursive: true });
   const connection = new Database(file);
   connection.pragma("foreign_keys = ON");
   connection.pragma("journal_mode = WAL");
   connection.pragma("busy_timeout = 5000");
+  adoptDirectory(connection, bus);
   const db: AppDb = drizzle(connection);
   migrate(db, { migrationsFolder: migrationsFolder() });
 
@@ -36,17 +39,10 @@ export function openChatStore(file: string) {
 
   return {
     saveChats(chats: unknown[]) {
-      transaction(() => {
-        for (const chat of chats) {
-          if (!isChat(chat)) continue;
-          db.insert(appChats).values({ id: chat.chat_id, record_json: chat })
-            .onConflictDoUpdate({ target: appChats.id, set: { record_json: chat } })
-            .run();
-        }
-      });
+      saveDirectory(bus, chats);
     },
     listChats(): unknown[] {
-      return db.select({ record: appChats.record_json }).from(appChats).all().map((row) => row.record);
+      return listDirectory(bus);
     },
     saveEvents(chatId: string, events: unknown[]): number {
       transaction(() => {
@@ -68,21 +64,13 @@ export function openChatStore(file: string) {
       return lastSequence(db, chatId);
     },
     pendingAcks(chatId: string): unknown[] {
+      const through = ackThrough(bus, chatId);
       return db.select({ record: appEvents.record_json }).from(appEvents)
-        .leftJoin(appAcknowledgements, eq(appEvents.chat_id, appAcknowledgements.chat_id))
-        .where(and(
-          eq(appEvents.chat_id, chatId),
-          or(isNull(appAcknowledgements.through_sequence), gt(appEvents.sequence, appAcknowledgements.through_sequence)),
-        ))
+        .where(and(eq(appEvents.chat_id, chatId), gt(appEvents.sequence, through)))
         .orderBy(asc(appEvents.sequence)).limit(500).all().map((row) => row.record);
     },
     markAcknowledged(chatId: string, sequence: number): void {
-      db.insert(appAcknowledgements).values({ chat_id: chatId, through_sequence: sequence })
-        .onConflictDoUpdate({
-          target: appAcknowledgements.chat_id,
-          set: { through_sequence: sql`max(${appAcknowledgements.through_sequence}, excluded.through_sequence)` },
-        })
-        .run();
+      ackChat(bus, chatId, sequence);
     },
     queueOutgoingMessage(message: OutgoingMessage): void {
       if (!isOutgoingMessage(message)) throw new Error("Invalid outgoing message");
@@ -113,8 +101,41 @@ function lastSequence(db: AppDb, chatId: string): number {
     .where(eq(appEvents.chat_id, chatId)).get()?.sequence ?? -1;
 }
 
-function isChat(value: unknown): value is { chat_id: string } {
-  return typeof value === "object" && value !== null && typeof (value as { chat_id?: unknown }).chat_id === "string";
+function adoptDirectory(connection: SQLiteDatabase, bus: Bus): void {
+  const chats = tableExists(connection, "chats");
+  const acks = tableExists(connection, "acknowledgements");
+  if (!chats && !acks) return;
+  if (chats) {
+    const rows = connection.prepare("SELECT record_json FROM chats").all();
+    saveDirectory(bus, rows.map((row) => parseJson(jsonText(row, "record_json"))));
+  }
+  if (acks) {
+    const rows = connection.prepare("SELECT chat_id, through_sequence FROM acknowledgements").all();
+    for (const row of rows) {
+      const chatId = jsonText(row, "chat_id");
+      const sequence = typeof row === "object" && row !== null && "through_sequence" in row ? row.through_sequence : null;
+      if (typeof chatId === "string" && typeof sequence === "number") ackChat(bus, chatId, sequence);
+    }
+  }
+}
+
+function tableExists(connection: SQLiteDatabase, name: string): boolean {
+  return connection.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !== undefined;
+}
+
+function jsonText(row: unknown, key: string): string {
+  if (typeof row !== "object" || row === null || !(key in row)) return "";
+  const value: unknown = row[key];
+  return typeof value === "string" ? value : "";
+}
+
+function parseJson(text: string): unknown {
+  if (text === "") return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
 
 function isEvent(value: unknown): value is { sequence: number } {
