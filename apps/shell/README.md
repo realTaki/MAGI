@@ -73,20 +73,20 @@ Only seven things, none of them product-specific:
 1. Clone `~/.magi/MAGI` when it is missing, then create the `magi/user`
    worktree (packaged builds).
 2. Load its packaged startup/recovery page.
-3. Load the app backend from the User worktree and give it native pieces: paths,
-   bundled tools, `openExternal`, clipboard, and event forwarding.
+3. Spawn `apps/user/dist/user.js` and give it native pieces over a host channel:
+   paths, bundled tools, `openExternal`, clipboard, and event forwarding.
 4. Forward calls: `local:invoke` in, `local:event` out. Method names belong to
    the app, so a new capability never changes the shell.
 5. Accept a `magi://` link. The OS will only deliver it to this process, so the
    shell keeps a single instance and forwards the raw URL to
    `runtime.applyDeeplink`. What the link is allowed to do stays in the app.
-6. Ask the backend to `prepare()` (returns the interface entry) and `start()`,
+6. Ask User to `prepare()` (returns the interface entry) and `start()`,
    then show that entry — a built file or a dev URL.
-7. Stop the backend on quit (`shutdown()`), which tears down what it started.
+7. SIGTERM User on quit. Reloads do not kill User.
 
-That leaves one contract: the checkout must contain `apps/user/main/index.ts`
-exporting `createLocalApi(context)`, with a `prepare`, `start` and `shutdown`,
-and whatever else the interface calls.
+That leaves one contract: the checkout must contain `apps/user/dist/user.js`,
+started as `node dist/user.js` with a host channel on stdio. `prepare` returns
+the interface entry. `start` brings ASP up. Quit SIGTERMs User.
 
 ## GitHub connection
 
@@ -94,8 +94,8 @@ Connecting the checkout to the operator's GitHub account is a capability of this
 machine, not part of the startup sequence and not an ASP concern. The app starts
 without it; the connection is offered once on first run, and the signed-in
 account is shown in Settings. It calls `github.state`,
-`github.signIn` and `github.connect` on the app backend
-(`apps/user/main/index.ts` → `packages/webapp`), which the shell reaches through its generic bridge.
+`github.signIn` and `github.connect` on User
+(`apps/user/dist/user.js` → `packages/webapp`), which the shell reaches through its generic bridge.
 
 - Sign-in is the OAuth device flow of the MAGI GitHub OAuth app
   (`Ov23li74Up8NcM5yCb61`): the operator approves a one-time code in the browser,

@@ -59,6 +59,7 @@ export function createMagiRuntime({
   tools,
   run,
   spawnProcess,
+  startProcess,
   useWorktrees = true,
   log = () => {},
 }) {
@@ -191,6 +192,18 @@ export function createMagiRuntime({
   }
 
   function launch(handle, token, root) {
+    if (startProcess) {
+      return startProcess({
+        entry: "dist/eva.js",
+        cwd: path.join(root, "apps", "eva"),
+        args: [handle, base, token],
+        env: tools.env,
+      }).then((child) => {
+        child.onExit(() => children.delete(handle));
+        children.set(handle, { child, root });
+        return child;
+      });
+    }
     const command = magiCli(nodeBinary(), handle, base, token);
     const child = spawnProcess(command[0], command.slice(1), {
       cwd: path.join(root, "apps", "eva"),
@@ -214,7 +227,7 @@ export function createMagiRuntime({
     const { handle, token } = require(agent);
     if (isRunning(handle)) return { handle, started: false };
     const root = await rootFor(handle);
-    launch(handle, token, root);
+    await launch(handle, token, root);
     return { handle, started: true };
   }
 
@@ -240,6 +253,10 @@ export function createMagiRuntime({
     if (entry === undefined) return false;
     children.delete(handle);
     const { child } = entry;
+    if (startProcess) {
+      child.stop();
+      return true;
+    }
     if (child.exitCode != null || child.signalCode != null) return false;
     if (process.platform !== "win32" && typeof child.pid === "number" && child.pid > 0) {
       // A detached process group stops the MAGI process and any descendants

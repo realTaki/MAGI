@@ -25,12 +25,28 @@ export type AspProgress = (message: string, fraction: number) => void;
 
 type SpawnAsp = (command: string, args: readonly string[], options: SpawnOptions) => ChildProcess;
 
+type ProcessSpec = {
+  entry: string;
+  cwd: string;
+  args?: string[];
+  env?: NodeJS.ProcessEnv;
+};
+
+type ProcessHandle = {
+  id: string;
+  stop(): void;
+  onExit(cb: (code: number | null, signal: string | null) => void): void;
+};
+
+type StartProcess = (spec: ProcessSpec) => Promise<ProcessHandle>;
+
 export type AspProcessOptions = {
   origin?: URL;
   sourceCheckout: string;
   node?: string;
   env: NodeJS.ProcessEnv;
   spawnProcess?: SpawnAsp;
+  startProcess?: StartProcess;
 };
 
 export class AspProcessWorker extends BaseWorker {
@@ -40,7 +56,9 @@ export class AspProcessWorker extends BaseWorker {
   private readonly node: string | undefined;
   private readonly env: NodeJS.ProcessEnv;
   private readonly spawnProcess: SpawnAsp;
+  private readonly startProcess: StartProcess | undefined;
   private child: ChildProcess | null = null;
+  private handle: ProcessHandle | null = null;
   private checkout: string | null = null;
   private wanted = false;
   private wantsShutdown = false;
@@ -55,6 +73,7 @@ export class AspProcessWorker extends BaseWorker {
     this.node = options.node;
     this.env = options.env;
     this.spawnProcess = options.spawnProcess ?? spawn;
+    this.startProcess = options.startProcess;
   }
 
   requestShutdown(): void {
@@ -62,6 +81,7 @@ export class AspProcessWorker extends BaseWorker {
   }
 
   owned(): boolean {
+    if (this.handle !== null) return true;
     return Boolean(this.child && !this.child.killed);
   }
 
@@ -125,23 +145,47 @@ export class AspProcessWorker extends BaseWorker {
       throw new Error(`ASP was not found at ${aspDir}`);
     }
     progress?.("Starting local ASP…", 0.94);
-    const child = this.spawnAsp(aspDir);
-    this.child = child;
     this.stoppingProcess = false;
     try {
-      await new Promise<void>((resolve, reject) => {
-        child.once("error", reject);
-        child.once("spawn", resolve);
-      });
-      progress?.("Waiting for local ASP…", 0.97);
-      await Promise.race([
-        this.waitUntilReady(),
-        new Promise<never>((_, reject) => {
-          child.once("exit", (code, signal) => {
+      if (this.startProcess) {
+        const handle = await this.startProcess({
+          entry: "dist/asp.js",
+          cwd: aspDir,
+          env: {
+            ...this.env,
+            MAGI_ASP_HOST: this.origin.hostname,
+            MAGI_ASP_PORT: this.origin.port || "42069",
+          },
+        });
+        this.handle = handle;
+        const exited = new Promise<never>((_, reject) => {
+          handle.onExit((code, signal) => {
+            if (this.stoppingProcess) return;
+            if (this.handle !== handle) return;
+            this.issue = `ASP exited (${code ?? signal ?? "unknown"})`;
             reject(new Error(`ASP exited (${code ?? signal ?? "unknown"})`));
           });
-        }),
-      ]);
+        });
+        void exited.catch(() => undefined);
+        progress?.("Waiting for local ASP…", 0.97);
+        await Promise.race([this.waitUntilReady(), exited]);
+      } else {
+        const child = this.spawnAsp(aspDir);
+        this.child = child;
+        await new Promise<void>((resolve, reject) => {
+          child.once("error", reject);
+          child.once("spawn", resolve);
+        });
+        progress?.("Waiting for local ASP…", 0.97);
+        await Promise.race([
+          this.waitUntilReady(),
+          new Promise<never>((_, reject) => {
+            child.once("exit", (code, signal) => {
+              reject(new Error(`ASP exited (${code ?? signal ?? "unknown"})`));
+            });
+          }),
+        ]);
+      }
       this.issue = null;
     } catch (error) {
       this.killOwned();
@@ -152,7 +196,9 @@ export class AspProcessWorker extends BaseWorker {
   async stopOwned(): Promise<void> {
     if (await this.probe() !== "ready") return;
     this.stoppingProcess = true;
-    if (this.child && !this.child.killed) {
+    if (this.handle !== null) {
+      this.handle.stop();
+    } else if (this.child && !this.child.killed) {
       this.child.kill("SIGTERM");
     } else {
       await this.requestStop();
@@ -160,6 +206,7 @@ export class AspProcessWorker extends BaseWorker {
     for (let attempt = 0; attempt < 50; attempt++) {
       if (await this.probe() === "unavailable") {
         this.child = null;
+        this.handle = null;
         this.wanted = false;
         this.issue = null;
         return;
@@ -206,7 +253,9 @@ export class AspProcessWorker extends BaseWorker {
 
   private killOwned(): void {
     this.stoppingProcess = true;
-    if (this.child && !this.child.killed) this.child.kill("SIGTERM");
+    if (this.handle !== null) this.handle.stop();
+    else if (this.child && !this.child.killed) this.child.kill("SIGTERM");
+    this.handle = null;
     this.child = null;
     this.wanted = false;
     this.issue = null;

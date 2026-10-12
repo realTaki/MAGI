@@ -2,8 +2,8 @@
  * The operator backend: GitHub, MAGI processes, ASP lifecycle, and the cache
  * tables BUS does not cover.
  *
- * Electron loads `apps/user/main/index.ts`, which starts the User process
- * (BUS + this worker) and returns this table through ``local:invoke``.
+ * Electron no longer loads `main/index.ts`. User is `node dist/user.js`.
+ * The shell talks to that process over NDJSON and forwards ``local:invoke``.
  *
  * The shell hands over a context (paths, Git, and small native helpers) and
  * gets back a table of methods. The shell calls the methods it knows about
@@ -209,6 +209,7 @@ export function createLocalApi(context) {
     tools,
     run: command,
     spawnProcess,
+    startProcess: context.startProcess,
     useWorktrees: managed,
     log: (message) => console.error(message),
   });

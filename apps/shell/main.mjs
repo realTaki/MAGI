@@ -1,7 +1,7 @@
 /**
  * Electron shell. It prepares what the app needs in order to exist — bundled
- * tools and the checkout — and opens a window. The app in app/ owns the local
- * backend and everything it starts; add a capability there, not in this file.
+ * tools and the checkout — and opens a window. User, ASP, and Eva are the same
+ * kind of child: `node <entry> ...args`. The shell starts User once.
  */
 import { spawn } from "node:child_process";
 import {
@@ -16,12 +16,13 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 import dugite from "dugite";
 import { app, BrowserWindow, Menu, clipboard, ipcMain, screen, shell } from "electron";
 
 import { updateScript } from "./update-script.mjs";
+import { createSupervisor } from "./process.mjs";
 
 const { resolveGitBinary, setupEnvironment } = dugite;
 const SHELL_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -172,7 +173,7 @@ async function cloneMagiSource(tools, progress) {
 }
 
 /**
- * The shell needs a User worktree before it can load the User backend. All
+ * The shell needs a User worktree before it can spawn `dist/user.js`. All
  * other runtime worktrees, including ASP, are the User module's responsibility.
  */
 async function ensureAppWorktree(checkout, tools, progress) {
@@ -210,16 +211,13 @@ async function ensureAppWorktree(checkout, tools, progress) {
   return MAGI_APP_CHECKOUT;
 }
 
-// The shell loads the app and forwards calls. It does not implement them.
-// The packaged shell loads its backend from the User worktree. An unpackaged
+// The shell starts User once and forwards calls. Reloads do not kill User.
+// The packaged shell runs `dist/user.js` from the User worktree. An unpackaged
 // developer tree remains untouched, while an explicit scratch checkout uses
 // the same isolated-runtime layout as a packaged app.
 let localApi = null;
 let localApiError = null;
-// Cache-busted app backends are reloadable, but an older instance may still
-// own the children it started. Retain each instance until desktop shutdown so
-// the stable shell, rather than a client reload, owns final process cleanup.
-const localApiInstances = new Set();
+let supervisor = null;
 // Where the bundled runtime is, when this build has one. The app starts every
 // child process from this: Node.js and npm for the TypeScript components.
 let localTools = null;
@@ -232,49 +230,61 @@ function devTools() {
   return toolsForRuntime(path.join(SHELL_DIR, "runtime"));
 }
 
-function appBackendEntry(appCheckout) {
+function userProcessSpec(appCheckout) {
   if (app.isPackaged || localCheckoutManaged) {
-    return path.join(appCheckout, "apps", "user", "main", "index.ts");
+    return {
+      entry: path.join(appCheckout, "apps", "user", "dist", "user.js"),
+      cwd: path.join(appCheckout, "apps", "user"),
+    };
   }
-  return path.join(SHELL_DIR, "..", "user", "main", "index.ts");
+  return {
+    entry: path.join(SHELL_DIR, "..", "user", "dist", "user.js"),
+    cwd: path.join(SHELL_DIR, "..", "user"),
+  };
 }
 
-async function loadLocalApp(runtimeRoot, appCheckout) {
-  const entry = appBackendEntry(appCheckout);
-  localApi = null;
-  localApiError = null;
-  if (!existsSync(entry)) {
-    localApiError = new Error(`The app backend is missing: ${entry}`);
-    console.error(`[magi-app] ${localApiError.message}`);
-    return;
-  }
-  try {
-    // Cache-bust on mtime so a retry in this process picks up an edited backend.
-    const backend = await import(`${pathToFileURL(entry).href}?v=${statSync(entry).mtimeMs}`);
-    localApi = backend.createLocalApi({
-      paths: {
-        checkout: runtimeRoot,
-        appCheckout,
-        home: app.getPath("home"),
-        userData: app.getPath("userData"),
-      },
-      repository: MAGI_REPOSITORY,
-      managed: localCheckoutManaged,
-      shellUpdate: {
-        packaged: app.isPackaged,
-        currentVersion: app.getVersion(),
-        install: installShellUpdate,
-      },
-      tools: localTools ?? devTools(),
-      emit: (event, payload) => sendToWindow(mainWindow, "local:event", { event, payload }),
-      openExternal: (url) => shell.openExternal(url),
-      copy: (text) => clipboard.writeText(text),
+async function spawnUser(runtimeRoot, appCheckout) {
+  const tools = localTools ?? devTools();
+  supervisor ??= createSupervisor({ node: tools.node, env: tools.env });
+  const spec = userProcessSpec(appCheckout);
+  if (!existsSync(spec.entry)) {
+    await command(tools.node, [tools.npm, "run", "build:process"], {
+      cwd: spec.cwd,
+      env: tools.env,
+      description: "Could not build the User process",
     });
-    localApiInstances.add(localApi);
-  } catch (error) {
-    localApiError = error instanceof Error ? error : new Error(String(error));
-    console.error(`[magi-app] could not load the local backend: ${localApiError.message}`);
   }
+  if (!existsSync(spec.entry)) {
+    throw new Error(`The User process is missing: ${spec.entry}`);
+  }
+  return await supervisor.start(
+    {
+      ...spec,
+      env: {
+        ...tools.env,
+        MAGI_CHECKOUT: runtimeRoot,
+        MAGI_APP_CHECKOUT: appCheckout,
+        MAGI_HOME: app.getPath("home"),
+        MAGI_USER_DATA: app.getPath("userData"),
+        MAGI_REPOSITORY,
+        MAGI_MANAGED: localCheckoutManaged ? "1" : "",
+        MAGI_PACKAGED: app.isPackaged ? "1" : "",
+        MAGI_SHELL_VERSION: app.getVersion(),
+        MAGI_GIT: tools.git,
+        MAGI_NODE: tools.node,
+        MAGI_NPM: tools.npm,
+      },
+    },
+    {
+      host: {
+        openExternal: ({ url }) => shell.openExternal(url),
+        copy: ({ text }) => clipboard.writeText(text),
+        installShellUpdate: ({ installer }) => installShellUpdate(installer),
+        emit: ({ event, payload }) => sendToWindow(mainWindow, "local:event", { event, payload }),
+        progress: ({ message, percent }) => reportStartup(mainWindow, message, percent),
+      },
+    },
+  );
 }
 
 
@@ -326,21 +336,27 @@ async function launchLocalOperator(win) {
     const runtimeRoot = await resolveRuntimeRoot(progress);
     const appCheckout = await ensureAppWorktree(runtimeRoot, localTools ?? devTools(), progress);
     progress("Loading the app…", 0.15);
-    // A retry replaces only reloadable backend resources. The services the app
-    // started have an independent lifecycle and must survive client reloads.
-    localApi?.dispose?.();
-    await loadLocalApp(runtimeRoot, appCheckout);
     if (localApi === null) {
-      throw localApiError ?? new Error("The desktop app backend is not loaded.");
+      try {
+        localApi = await spawnUser(runtimeRoot, appCheckout);
+        localApiError = null;
+      } catch (error) {
+        localApiError = error instanceof Error ? error : new Error(String(error));
+        console.error(`[magi-app] could not start User: ${localApiError.message}`);
+        throw localApiError;
+      }
     }
-    const { ui } = await localApi.prepare(progress);
-    await localApi.start(progress);
+    const { ui } = await localApi.invoke("prepare");
+    await localApi.invoke("start");
     if (!win.isDestroyed()) {
       await loadApp(win, ui);
     }
     appReady = true;
     await deliverDeeplinks();
   } catch (error) {
+    if (error instanceof Error && error.message === "User process exited") {
+      localApi = null;
+    }
     if (!win.isDestroyed()) {
       win.webContents.send(
         "startup:error",
@@ -502,10 +518,10 @@ ipcMain.handle("local:invoke", async (_event, method, payload) => {
   if (localApi === null) {
     throw localApiError ?? new Error("The desktop app backend is not loaded yet.");
   }
-  if (typeof method !== "string" || !Object.hasOwn(localApi, method)) {
+  if (typeof method !== "string") {
     throw new Error(`Unknown app method: ${String(method)}`);
   }
-  return await localApi[method](payload);
+  return await localApi.invoke(method, payload);
 });
 
 ipcMain.handle("startup:retry", async () => {
@@ -564,17 +580,12 @@ function queueArgvDeeplinks() {
 
 async function deliverDeeplinks() {
   if (!appReady || deliveringDeeplink || localApi === null) return;
-  if (typeof localApi["runtime.applyDeeplink"] !== "function") {
-    pendingDeeplinks.length = 0;
-    console.error("[magi] this app backend does not accept magi:// links");
-    return;
-  }
   deliveringDeeplink = true;
   try {
     while (pendingDeeplinks.length > 0) {
       const url = pendingDeeplinks.shift();
       try {
-        await localApi["runtime.applyDeeplink"]({ url });
+        await localApi.invoke("runtime.applyDeeplink", { url });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error(`[magi] deeplink: ${message}`);
@@ -632,12 +643,9 @@ if (!ownsInstance) {
 }
 
 app.on("before-quit", () => {
-  // The desktop owns the processes started by every cache-busted backend
-  // instance. Only a real application quit, never a client reload, stops them.
-  for (const api of localApiInstances) {
-    api.shutdown?.();
-  }
-  localApiInstances.clear();
+  // Quit SIGTERMs User. Reloads do not. User then stops ASP and every MAGI.
+  localApi?.stop();
+  localApi = null;
 });
 
 function armShellSwap(installer) {

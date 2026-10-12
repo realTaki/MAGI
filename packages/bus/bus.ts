@@ -108,8 +108,12 @@ export class Bus {
     // so their messages arrive already known. The MAGI is the other fixed contact, and
     // both record the identity they speak with — anyone else becomes a contact of their
     // own the first time they are heard from.
-    this.db.insert(contacts).values({ id: SYSTEM_CONTACT_ID, name: "system", role: "system", asp_handle: "@user.magi" })
-      .onConflictDoUpdate({ target: contacts.id, set: { asp_handle: "@user.magi" } })
+    // asp_handle is UNIQUE. Bus("@user.magi") would collide with SYSTEM if both used
+    // that handle; SQLite UNIQUE allows multiple NULLs, so the operator workspace
+    // leaves SYSTEM unnamed on ASP.
+    const systemHandle = handle === "@user.magi" ? null : "@user.magi";
+    this.db.insert(contacts).values({ id: SYSTEM_CONTACT_ID, name: "system", role: "system", asp_handle: systemHandle })
+      .onConflictDoUpdate({ target: contacts.id, set: { asp_handle: systemHandle } })
       .run();
     this.db.insert(contacts).values({ id: MAGI_CONTACT_ID, name: handle, role: "magi", asp_handle: handle })
       .onConflictDoUpdate({ target: contacts.id, set: { name: handle, asp_handle: handle } })
