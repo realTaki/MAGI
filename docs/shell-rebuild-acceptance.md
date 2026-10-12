@@ -117,11 +117,14 @@ write; matching retry is idempotent, differing/invalid files stay recoverable.
 User credential databases/WAL/SHM keep the old key file's POSIX 0600 privacy.
 `user-state.test.ts` covers history/receipts/queued messages across rename and
 restart, directory/provider conflicts, malformed migration data, atomic write
-failure, ready failure and disposal during an active provider poll.
+failure, ready failure and disposal during an active provider poll. A first
+provider save adopts/persists the old ASP key before deleting the relay copy,
+then tries the new settings; a rejected change restores that durable old key.
+Offline save still retains the operator's requested configuration locally.
 
 ## Evidence and remaining end-to-end work
 
-Local Linux acceptance after the User fixes: root 100/100, full User 49/49
+Local Linux acceptance after the User fixes: root 100/100, full User 50/50
 with no skips (including real checkout startup), root and User builds passed. Native Windows result must be read from the workflow for the actual
 pushed commit; producing an EXE does not prove installation or runtime boot.
 

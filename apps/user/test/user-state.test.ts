@@ -93,6 +93,14 @@ test("matching migration retry is idempotent; malformed file remains recoverable
 test("provider write failure rolls back every SettingsBook field", async (t) => {
   const f = fixture(t);
   seedSettings(f.current, keys);
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  globalThis.fetch = async (url) => {
+    const endpoint = new URL(url).pathname;
+    if (endpoint === "/operator") return Response.json({ token: "test" });
+    if (endpoint === "/settings/provider/legacy") return Response.json(null);
+    throw new Error("Provider must not broadcast after a write failure");
+  };
   const api = f.app(); await api.ready();
   const db = new Database(path.join(f.current, "memories", "books.db"));
   try { db.exec("CREATE TRIGGER reject_provider BEFORE INSERT ON books_settings WHEN NEW.key='provider.model' BEGIN SELECT RAISE(ABORT,'injected provider write failure'); END"); } finally { db.close(); }
@@ -152,4 +160,28 @@ test("invalid legacy cache record is retained and its failed connection closes",
   const retained = new Database(file);
   try { assert.equal(retained.prepare("SELECT record_json FROM chats WHERE id='broken'").get().record_json, "invalid JSON"); }
   finally { retained.close(); }
+});
+
+test("rejected first provider change preserves the legacy ASP key before deleting its copy", async (t) => {
+  const f = fixture(t);
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  let deleted = false;
+  globalThis.fetch = async (url, options = {}) => {
+    const endpoint = new URL(url).pathname;
+    if (endpoint === "/operator") return Response.json({ token: "test" });
+    if (endpoint === "/settings/provider/legacy" && options.method === "DELETE") {
+      const persisted = new Bus("@user.magi", f.current);
+      try { assert.equal(persisted.settings.get("provider.api_key"), "old-key", "legacy key must be durable before deleting ASP copy"); }
+      finally { persisted.close(); }
+      deleted = true; return Response.json({ ok: true });
+    }
+    if (endpoint === "/settings/provider/legacy") return Response.json({ provider: "openai", model: "old-model", api_key: "old-key" });
+    if (endpoint === "/settings/provider") return Response.json({ synced: [], failed: [{ handle: "@eva.magi", detail: "MAGI rejected provider configuration" }] });
+    throw new Error(`Unexpected endpoint ${endpoint}`);
+  };
+  const api = f.app(); await api.ready();
+  await assert.rejects(api["provider.save"]({ provider: "custom", model: "bad-model", api_key: "bad-key" }), /previous settings were kept/);
+  assert.equal(deleted, true);
+  assert.deepEqual(api["provider.settings"](), { provider: "openai", model: "old-model", api_key: "old-key", base_url: null });
 });

@@ -952,15 +952,21 @@ export function createLocalApi(context) {
 
   async function saveProvider(input) {
     const settings = normalizeProvider(input);
+    let token;
+    try {
+      token = (await aspJson("/operator")).token;
+      // Adopt durable legacy state before the requested change can replace it.
+      await ensureProviderRelay(token);
+    } catch (error) {
+      writeProvider(settings); // Preserve the existing offline-save contract.
+      throw new Error(`Saved in the app, but MAGI sync failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
     const previous = readProvider();
     writeProvider(settings);
     providerAttempted.clear();
     let result;
-    try {
-      const { token } = await aspJson("/operator");
-      await ensureProviderRelay(token);
-      result = await syncProvider(settings, null, token);
-    } catch (error) {
+    try { result = await syncProvider(settings, null, token); }
+    catch (error) {
       throw new Error(`Saved in the app, but MAGI sync failed: ${error instanceof Error ? error.message : String(error)}`);
     }
     if ((result.synced ?? []).length === 0 && (result.failed ?? []).length > 0 &&
