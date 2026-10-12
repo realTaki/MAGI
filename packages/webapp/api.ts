@@ -58,8 +58,8 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function command(binary, args, { cwd, env, description }) {
-  return new Promise((resolve, reject) => {
+function command(binary, args, { cwd, env, description }): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
     const child = spawn(binary, args, {
       cwd,
       env,
@@ -87,7 +87,29 @@ function command(binary, args, { cwd, env, description }) {
   });
 }
 
-async function githubApi(endpoint, { token, method = "GET", body } = {}) {
+type JsonRequestOptions = {
+  token?: string;
+  method?: string;
+  body?: unknown;
+  timeoutMs?: number;
+};
+
+type DeviceCode = {
+  device_code: string;
+  user_code: string;
+  expires_in: number;
+  interval?: number;
+  error_description?: string;
+  error?: string;
+};
+
+type OAuthToken = {
+  access_token?: string;
+  error_description?: string;
+  error?: string;
+};
+
+async function githubApi(endpoint, { token, method = "GET", body }: JsonRequestOptions = {}) {
   const response = await fetch(`${GITHUB_API}${endpoint}`, {
     method,
     headers: {
@@ -128,7 +150,7 @@ async function requestDeviceCode() {
     body: JSON.stringify({ client_id: GITHUB_CLIENT_ID, scope: GITHUB_TOKEN_SCOPE }),
     signal: AbortSignal.timeout(GITHUB_TIMEOUT_MS),
   });
-  const data = await response.json().catch(() => null);
+  const data = await response.json().catch(() => null) as DeviceCode | null;
   if (!response.ok || typeof data?.device_code !== "string") {
     const detail = data?.error_description ?? data?.error ?? response.statusText;
     throw new Error(`GitHub did not return a sign-in code (${detail}).`);
@@ -136,7 +158,7 @@ async function requestDeviceCode() {
   return data;
 }
 
-async function pollDeviceToken({ device_code, interval, expires_in }) {
+async function pollDeviceToken({ device_code, interval, expires_in }: DeviceCode) {
   const deadline = Date.now() + Math.max(60, Number(expires_in) || 900) * 1000;
   let waitMs = Math.max(1, Number(interval) || 5) * 1000;
   while (Date.now() < deadline) {
@@ -155,7 +177,7 @@ async function pollDeviceToken({ device_code, interval, expires_in }) {
       }),
       signal: AbortSignal.timeout(GITHUB_TIMEOUT_MS),
     });
-    const data = await response.json().catch(() => null);
+    const data = await response.json().catch(() => null) as OAuthToken | null;
     if (typeof data?.access_token === "string") {
       return data.access_token;
     }
@@ -442,7 +464,10 @@ export function createLocalApi(context) {
           message: `DeepSeek balance request failed (${response.status})`,
         };
       }
-      const body = await response.json();
+      const body = await response.json() as {
+        balance_infos?: Array<{ currency?: unknown; total_balance?: unknown }>;
+        is_available?: boolean;
+      } | null;
       const balances = Array.isArray(body?.balance_infos)
         ? body.balance_infos.flatMap((entry) =>
             typeof entry?.currency === "string" && typeof entry?.total_balance === "string"
@@ -793,7 +818,7 @@ export function createLocalApi(context) {
    * Everything this checkout needs before it can run. Only a managed checkout
    * is prepared: a developer's own tree is already theirs to prepare.
    */
-  async function prepare(progress) {
+  async function prepare(progress?: (message: string, percent: number) => void) {
     await ensureAspWorktree();
     const aspDir = path.join(aspCheckout, "apps", "asp");
     const appDir = path.join(appCheckout, "apps", "user");
@@ -861,7 +886,7 @@ export function createLocalApi(context) {
     return { ui: uiEntry() };
   }
 
-  async function aspJson(endpoint, { token, method = "GET", body, timeoutMs = 20_000 } = {}) {
+  async function aspJson(endpoint, { token, method = "GET", body, timeoutMs = 20_000 }: JsonRequestOptions = {}) {
     const response = await fetch(new URL(endpoint, ASP_ORIGIN), {
       method,
       headers: {
@@ -881,10 +906,9 @@ export function createLocalApi(context) {
       }
     }
     if (!response.ok) {
-      const error = new Error(
+      const error = Object.assign(new Error(
         `ASP ${method} ${endpoint} failed (${response.status}): ${data?.detail ?? response.statusText}`,
-      );
-      error.status = response.status;
+      ), { status: response.status });
       throw error;
     }
     return data;
@@ -1054,7 +1078,7 @@ export function createLocalApi(context) {
   }
 
   /** Brings local ASP up unless something already answers on its port. */
-  async function start(progress) {
+  async function start(progress?: (message: string, percent: number) => void) {
     await ensureAspWorktree();
     try {
       await aspProcess.ensure(aspCheckout, progress);

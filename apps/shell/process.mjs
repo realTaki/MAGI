@@ -7,8 +7,34 @@
  */
 
 import { spawn } from "node:child_process";
-import { basename } from "node:path";
+import { existsSync } from "node:fs";
+import { basename, resolve } from "node:path";
 import { createInterface } from "node:readline";
+
+/** Bootstrap User before it can run its own prepare method. */
+export async function prepareUserProcess(spec, { node, npm, env, managed, command }) {
+  const checkout = resolve(spec.cwd, "..", "..");
+  if (managed && !existsSync(resolve(checkout, "node_modules"))) {
+    if (!existsSync(resolve(checkout, "package-lock.json"))) {
+      throw new Error(`MAGI checkout is incomplete: ${checkout}/package-lock.json is missing`);
+    }
+    await command(node, [npm, "ci", "--ignore-scripts"], {
+      cwd: checkout,
+      env,
+      description: "Could not install the User process dependencies",
+    });
+  }
+  if (!existsSync(spec.entry)) {
+    await command(node, [npm, "run", "build:process"], {
+      cwd: spec.cwd,
+      env,
+      description: "Could not build the User process",
+    });
+  }
+  if (!existsSync(spec.entry)) {
+    throw new Error(`The User process is missing: ${spec.entry}`);
+  }
+}
 
 export function createSupervisor({ node, env }) {
   const children = new Map();

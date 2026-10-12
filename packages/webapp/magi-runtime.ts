@@ -61,7 +61,7 @@ export function createMagiRuntime({
   spawnProcess,
   startProcess,
   useWorktrees = true,
-  log = () => {},
+  log = (_message: string) => {},
 }) {
   const children = new Map(); // handle -> { child, root }
   const sources = new Map(); // handle -> prepared checkout root

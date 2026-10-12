@@ -22,7 +22,7 @@ import dugite from "dugite";
 import { app, BrowserWindow, Menu, clipboard, ipcMain, screen, shell } from "electron";
 
 import { updateScript } from "./update-script.mjs";
-import { createSupervisor } from "./process.mjs";
+import { createSupervisor, prepareUserProcess } from "./process.mjs";
 
 const { resolveGitBinary, setupEnvironment } = dugite;
 const SHELL_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -247,16 +247,11 @@ async function spawnUser(runtimeRoot, appCheckout) {
   const tools = localTools ?? devTools();
   supervisor ??= createSupervisor({ node: tools.node, env: tools.env });
   const spec = userProcessSpec(appCheckout);
-  if (!existsSync(spec.entry)) {
-    await command(tools.node, [tools.npm, "run", "build:process"], {
-      cwd: spec.cwd,
-      env: tools.env,
-      description: "Could not build the User process",
-    });
-  }
-  if (!existsSync(spec.entry)) {
-    throw new Error(`The User process is missing: ${spec.entry}`);
-  }
+  await prepareUserProcess(spec, {
+    ...tools,
+    managed: localCheckoutManaged,
+    command,
+  });
   return await supervisor.start(
     {
       ...spec,

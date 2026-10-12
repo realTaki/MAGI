@@ -20,6 +20,11 @@ The installed package contains the shell plus Node.js 24 and npm. It
 does not contain a Python runtime. On first launch the shell clones this
 repository to `~/.magi/MAGI`. Later launches keep that checkout.
 
+Before starting User in a fresh managed worktree, the shell installs the root
+lockfile with `npm ci --ignore-scripts`, then runs `build:process` in `apps/user`
+when `dist/user.js` is missing. This bootstrap happens before User can prepare
+the remaining desktop components.
+
 ## Canonical terminology and names
 
 This section is the repository's sole terminology authority. Code, persisted
