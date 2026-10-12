@@ -70,24 +70,25 @@ An older workspace at `~/.magi/ts-magi/<name>` is still opened when
 ## Desktop startup
 
 The shell puts Node.js 24 and npm on disk, then clones this repository to
-`~/.magi/MAGI`. What it asks the backend to do, in order (the bridge contract is
-documented in `apps/user/main/index.ts`; the worker is `packages/webapp`):
+`~/.magi/MAGI`. It starts User once as `node dist/user.js` from `apps/user/`
+(unpackaged: `apps/shell/../user/dist/user.js`). Reloads do not kill User. Quit
+sends SIGTERM. User then spawns ASP and Eva through the same supervisor. What
+User does, in order (the worker is `packages/webapp`):
 
 1. `prepare()` — check the lockfiles are there, then, in a managed checkout with
    no `node_modules` yet, run `npm install` at the root and `npm ci` in `apps/asp/`,
    and `npm ci` plus `npm run build` in `apps/user/`. It answers with the
    interface entry point.
 2. `start()` — run `apps/asp/dist/asp.js` with Node 24 and wait for `GET /health` to
-   report this runtime. `dispose()` releases reloadable resources; `shutdown()`
-   stops ASP.
+   report this runtime.
 3. With no MAGI registered yet, the backend creates the first three through ASP
    (`eva-000`, `eva-001`, `eva-002`), starts them, and names them MELCHIOR,
    BALTHASAR, CASPER as they come online. One that never comes online does not
    fail startup.
 
-Closing the window, or reloading the client, never stops ASP — only quitting the
-application does, which is what `before-quit` in `apps/shell/main.mjs` and the
-`shutdown()` bridge method are for.
+Closing the window, or reloading the client, never stops User or ASP — only
+quitting the application does, which is `before-quit` SIGTERM of User in
+`apps/shell/main.mjs`.
 
 `apps/shell/` has no test tree, so this flow is a contract in prose rather than an
 assertion. The other flows live with the tests that hold them, named below.
