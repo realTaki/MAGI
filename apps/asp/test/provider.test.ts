@@ -3,7 +3,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { LocalDatabase } from "@magi/asp-server/db/database.js";
-import { isRecord, request, tempRoot, withApp } from "./helpers.ts";
+import { isRecord, request, tempRoot, withApp } from "./helpers.js";
 
 /*
  * Business flow: switching the model, ASP side (`ARCHITECTURE.md`, "ASP").

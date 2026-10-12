@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { isRecord, request, tempRoot, withApp } from "./helpers.ts";
+import { isRecord, request, tempRoot, withApp } from "./helpers.js";
 
 /*
  * Business flow: sending a message (`ARCHITECTURE.md`, "ASP").

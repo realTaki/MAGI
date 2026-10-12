@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { connect, isRecord, receiveInvite, request, tempRoot, withApp } from "./helpers.ts";
+import { connect, isRecord, receiveInvite, request, tempRoot, withApp } from "./helpers.js";
 
 /*
  * Business flow: creating a chat (`ARCHITECTURE.md`, "ASP").

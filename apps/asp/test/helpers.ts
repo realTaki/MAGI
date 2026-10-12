@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import WebSocket from "ws";
 
-import { Asp, type CreateAppOptions } from "../asp.ts";
+import { Asp, type CreateAppOptions } from "../asp.js";
 
 export function tempRoot(t: { after: (fn: () => void) => void }): string {
   const root = mkdtempSync(path.join(tmpdir(), "asp-"));
