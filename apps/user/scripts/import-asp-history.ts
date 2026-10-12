@@ -30,13 +30,14 @@ export async function importAspHistory({
     return { chat, events };
   }));
 
-  const store = await openChatStore(database, new Bus(USER_HANDLE, path.dirname(database)));
+  const bus = new Bus(USER_HANDLE, path.dirname(database));
   try {
-    store.saveChats(snapshots.map(({ chat }) => chat));
-    for (const { chat, events } of snapshots) store.saveEvents(chat.chat_id, events);
-  } finally {
-    store.close();
-  }
+    const store = await openChatStore(database, bus);
+    try {
+      store.saveChats(snapshots.map(({ chat }) => chat));
+      for (const { chat, events } of snapshots) store.saveEvents(chat.chat_id, events);
+    } finally { store.close(); }
+  } finally { bus.close(); }
   return { chats: snapshots.length, events: snapshots.reduce((total, item) => total + item.events.length, 0), database };
 }
 

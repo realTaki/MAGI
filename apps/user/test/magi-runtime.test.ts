@@ -250,7 +250,20 @@ test("a real MAGI boots from its own checkout", { timeout: 120_000 }, async (t) 
     return;
   }
   const root = mkdtempSync(path.join(tmpdir(), "magi-live-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+  let runtime;
+  const children = [];
+  t.after(async () => {
+    const stopped = children.map((child) => {
+      if (!child.pid || child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("Live test MAGI did not exit")), 10_000);
+        child.once("exit", () => { clearTimeout(timer); resolve(); });
+      });
+    });
+    runtime?.stopAll();
+    await Promise.all(stopped);
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
   const checkout = path.join(root, "checkout");
   // `--local` hard-links Git objects, which macOS sandboxed temp directories
   // reject. `--no-local` still tests a real clone without that filesystem tie.
@@ -268,9 +281,11 @@ test("a real MAGI boots from its own checkout", { timeout: 120_000 }, async (t) 
   const childLogs: string[] = [];
   const runtimeEnv = {
     ...process.env,
+    // npm test injects its cache path; keep this integration entirely isolated.
+    npm_config_cache: path.join(root, "npm-cache"),
     PATH: [path.dirname(installedRuntime.node), process.env.PATH ?? ""].join(path.delimiter),
   };
-  const runtime = createMagiRuntime({
+  runtime = createMagiRuntime({
     checkout,
     home,
     // Nothing listens there: this test only checks that the agent boots.
@@ -289,22 +304,21 @@ test("a real MAGI boots from its own checkout", { timeout: 120_000 }, async (t) 
       }
     },
     // A real process: this test is about a MAGI actually booting.
-    spawnProcess: (binary, args, options) =>
-      spawn(binary, args, {
-        cwd: options.cwd,
-        env: options.env,
-        stdio: ["ignore", "ignore", "pipe"],
-        detached: true,
-        windowsHide: true,
-      }),
+    spawnProcess: (binary, args, options) => {
+      const child = spawn(binary, args, {
+        cwd: options.cwd, env: options.env,
+        stdio: ["ignore", "ignore", "pipe"], detached: true, windowsHide: true,
+      });
+      children.push(child);
+      return child;
+    },
     useWorktrees: true,
     log: (line) => childLogs.push(line),
   });
-  t.after(() => runtime.stopAll());
 
   assert.deepEqual(await runtime.start(agent), { handle: agent.handle, started: true });
   const source = agentSource(home, agent.handle);
-  assert.equal(existsSync(path.join(source, "node_modules")), true);
+  assert.equal(existsSync(path.join(source, "node_modules")), true, `own checkout was not prepared: ${childLogs.join(" | ")}`);
   const workspace = path.join(home, ".magi", "eva-000", "memories", "books.db");
   const deadline = Date.now() + 30_000;
   while (!existsSync(workspace) && Date.now() < deadline) {

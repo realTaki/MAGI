@@ -218,6 +218,10 @@ export function createLocalApi(context) {
   let runtimeBusy = false;
   let chatStorePromise = null;
   let providerTimer = null;
+  let disposed = false;
+  let disposal = null;
+  let initialization = null;
+  const lifetime = new AbortController();
   let providerRelayReady = false;
   const providerAttempted = new Set();
   // ASP keeps the roll of agents; this backend owns their source trees and
@@ -287,11 +291,10 @@ export function createLocalApi(context) {
   }
 
   const magiDataRoot = path.join(paths.home, ".magi");
-  const legacyAppData = path.join(magiDataRoot, "app");
   const appData = path.join(magiDataRoot, "user");
-  if (!existsSync(appData) && existsSync(legacyAppData)) renameSync(legacyAppData, appData);
   mkdirSync(appData, { recursive: true });
   async function chatStore() {
+    if (disposed) throw new Error("The User backend is disposed.");
     chatStorePromise ??= import("./chat-store.js")
       .then(({ openChatStore }) => openChatStore(path.join(appData, "chat.sqlite"), bus));
     return chatStorePromise;
@@ -424,23 +427,34 @@ export function createLocalApi(context) {
 
   function writeProvider(settings) {
     const normalized = normalizeProvider(settings);
-    bus.settings.set("provider.name", normalized.provider ?? "");
-    bus.settings.set("provider.model", normalized.model ?? "");
-    bus.settings.set("provider.api_key", normalized.api_key ?? "");
-    bus.settings.set("provider.base_url", normalized.base_url ?? "");
+    bus.settings.setMany({
+      "provider.name": normalized.provider ?? "",
+      "provider.model": normalized.model ?? "",
+      "provider.api_key": normalized.api_key ?? "",
+      "provider.base_url": normalized.base_url ?? "",
+    });
   }
 
   function adoptProvider() {
     if (!existsSync(providerPath)) return;
-    try {
-      writeProvider(JSON.parse(readFileSync(providerPath, "utf8")));
-    } catch {
-      return;
+    let legacy;
+    try { legacy = JSON.parse(readFileSync(providerPath, "utf8")); }
+    catch { throw new Error(`Invalid legacy provider settings; retained at ${providerPath}`); }
+    const fields = ["provider", "model", "api_key", "base_url"];
+    if (!legacy || typeof legacy !== "object" || Array.isArray(legacy)
+        || !fields.some((field) => field in legacy)
+        || fields.some((field) => legacy[field] !== undefined && legacy[field] !== null && typeof legacy[field] !== "string")) {
+      throw new Error(`Invalid legacy provider settings; retained at ${providerPath}`);
     }
+    const settings = normalizeProvider(legacy);
+    const existing = readProvider();
+    if (existing !== null && JSON.stringify(existing) !== JSON.stringify(settings)) {
+      throw new Error(`Legacy provider settings conflict with SettingsBook; retained at ${providerPath}`);
+    }
+    if (existing === null) writeProvider(settings);
     rmSync(providerPath, { force: true });
   }
   adoptProvider();
-  void chatStore();
 
   async function providerUsage() {
     const settings = readProvider();
@@ -894,7 +908,7 @@ export function createLocalApi(context) {
         ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: AbortSignal.any([AbortSignal.timeout(timeoutMs), lifetime.signal]),
     });
     const text = await response.text();
     let data = null;
@@ -960,7 +974,7 @@ export function createLocalApi(context) {
   }
 
   function watchProviderRecipients(token) {
-    if (providerTimer !== null) return;
+    if (disposed || providerTimer !== null) return;
     const poll = async () => {
       try {
         const settings = readProvider();
@@ -978,7 +992,7 @@ export function createLocalApi(context) {
           }
         }
       } catch (error) {
-        console.error(`[magi-app] provider sync: ${error instanceof Error ? error.message : String(error)}`);
+        if (!disposed) console.error(`[magi-app] provider sync: ${error instanceof Error ? error.message : String(error)}`);
       }
       if (providerTimer !== null) {
         providerTimer = setTimeout(() => void poll(), PROVIDER_POLL_MS);
@@ -1083,7 +1097,7 @@ export function createLocalApi(context) {
     try {
       await aspProcess.ensure(aspCheckout, progress);
     } catch (error) {
-      dispose();
+      await dispose();
       throw error;
     }
     // The society comes up once here; after that it is the operator's to
@@ -1094,20 +1108,24 @@ export function createLocalApi(context) {
     return { origin: ASP_ORIGIN.href };
   }
 
-  function dispose() {
-    if (chatStorePromise !== null) {
-      void Promise.resolve(chatStorePromise).then((store) => store.close());
-      chatStorePromise = null;
-    }
+  async function dispose() {
+    if (disposal !== null) return await disposal;
+    disposed = true;
+    lifetime.abort();
     if (providerTimer !== null) clearTimeout(providerTimer);
     providerTimer = null;
+    const pendingStore = chatStorePromise;
+    chatStorePromise = null;
+    disposal = (async () => {
+      // Initialization failures retain their ready error; no open store exists.
+      const store = pendingStore === null ? null : await pendingStore.catch(() => null);
+      store?.close();
+    })();
+    await disposal;
   }
 
-  // Renderer/backend reloads and runtime shutdown are deliberately separate.
-  // A cache-busted backend instance can be retired while the ASP process (and
-  // therefore its MAGI children) keeps serving the newly loaded interface.
-  function shutdown() {
-    dispose();
+  async function shutdown() {
+    await dispose();
     magiRuntime.stopAll();
   }
 
@@ -1609,6 +1627,7 @@ export function createLocalApi(context) {
   }
 
   return {
+    ready: () => { initialization ??= chatStore().then(() => undefined); return initialization; },
     prepare,
     resume: async () => { if (await aspProcess.probe() === "ready") await activateProviderSync(); },
     start,

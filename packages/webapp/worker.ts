@@ -24,6 +24,10 @@ export class WebappWorker extends BaseWorker {
     this.wantsShutdown = true;
   }
 
+  async start(): Promise<void> {
+    await this.methods.ready();
+  }
+
   async poll(): Promise<boolean> {
     return false;
   }
@@ -33,11 +37,11 @@ export class WebappWorker extends BaseWorker {
       if (this.shutdownClosed) return;
       this.shutdownClosed = true;
       this.apiClosed = true;
-      this.methods.shutdown();
+      await this.methods.shutdown();
       return;
     }
     if (this.apiClosed) return;
     this.apiClosed = true;
-    this.methods.dispose();
+    await this.methods.dispose();
   }
 }

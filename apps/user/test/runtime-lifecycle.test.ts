@@ -15,6 +15,7 @@ function git(cwd, args) {
 
 test("retiring a reloaded client backend keeps ASP and MAGI running", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-runtime-lifecycle-"));
+  let api;
   const checkout = path.join(root, "checkout");
   mkdirSync(path.join(checkout, "apps", "asp", "dist"), { recursive: true });
   writeFileSync(path.join(checkout, "apps", "asp", "dist", "asp.js"), "");
@@ -53,12 +54,13 @@ test("retiring a reloaded client backend keeps ASP and MAGI running", async (t) 
     return child;
   };
 
-  t.after(() => {
+  t.after(async () => {
+    await api?.dispose();
     globalThis.fetch = originalFetch;
-    rmSync(root, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
-  const api = createLocalApi({
+  api = createLocalApi({
     paths: { home: root, userData: path.join(root, "userData"), checkout },
     repository: "https://github.com/AgenticSocietyLab/MAGI.git",
     tools: { git: "git", env: process.env },
@@ -78,6 +80,7 @@ test("retiring a reloaded client backend keeps ASP and MAGI running", async (t) 
 
 test("the app refuses to attach to a running legacy Python ASP", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-legacy-asp-"));
+  let api;
   const checkout = path.join(root, "checkout");
   mkdirSync(path.join(checkout, "apps", "asp", "dist"), { recursive: true });
   writeFileSync(path.join(checkout, "apps", "asp", "dist", "asp.js"), "");
@@ -86,12 +89,13 @@ test("the app refuses to attach to a running legacy Python ASP", async (t) => {
     if (new URL(url).pathname === "/health") return Response.json({ status: "ok" });
     throw new Error(`unexpected request: ${url}`);
   };
-  t.after(() => {
+  t.after(async () => {
+    await api?.dispose();
     globalThis.fetch = originalFetch;
-    rmSync(root, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
   let spawned = false;
-  const api = createLocalApi({
+  api = createLocalApi({
     paths: { home: root, userData: path.join(root, "userData"), checkout },
     repository: "https://github.com/AgenticSocietyLab/MAGI.git",
     tools: { git: "git", env: process.env },
@@ -107,6 +111,7 @@ test("the app refuses to attach to a running legacy Python ASP", async (t) => {
 
 test("the User module creates and runs ASP from its own magi/asp worktree", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-runtime-worktrees-"));
+  let api;
   const checkout = path.join(root, "source", "MAGI");
   mkdirSync(path.join(checkout, "apps", "asp", "dist"), { recursive: true });
   writeFileSync(path.join(checkout, "apps", "asp", "package-lock.json"), "{}");
@@ -131,7 +136,7 @@ test("the User module creates and runs ASP from its own magi/asp worktree", asyn
   child.stderr = new EventEmitter();
   child.kill = () => true;
   let spawnedCwd = "";
-  const api = createLocalApi({
+  api = createLocalApi({
     paths: { home: root, userData: path.join(root, "userData"), checkout },
     repository: "https://github.com/AgenticSocietyLab/MAGI.git",
     tools: { git: "git", env: process.env }, emit: () => {}, openExternal: async () => {}, copy: () => {},
@@ -142,7 +147,7 @@ test("the User module creates and runs ASP from its own magi/asp worktree", asyn
       return child;
     },
   });
-  t.after(async () => { globalThis.fetch = originalFetch; await api.dispose(); rmSync(root, { recursive: true, force: true }); });
+  t.after(async () => { await api?.dispose(); globalThis.fetch = originalFetch; rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
 
   await api.start();
   assert.equal(spawnedCwd, path.join(root, ".magi", "asp", "MAGI", "apps", "asp"));
@@ -152,6 +157,7 @@ test("the User module creates and runs ASP from its own magi/asp worktree", asyn
 
 test("a MAGI's runtime is driven from its own profile methods", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-runtime-controls-"));
+  let api;
   const originalFetch = globalThis.fetch;
   const calls = [];
   globalThis.fetch = async (url, options = {}) => {
@@ -170,12 +176,13 @@ test("a MAGI's runtime is driven from its own profile methods", async (t) => {
     }
     throw new Error(`unexpected request: ${endpoint}`);
   };
-  t.after(() => {
+  t.after(async () => {
+    await api?.dispose();
     globalThis.fetch = originalFetch;
-    rmSync(root, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
   // An unmanaged checkout: this test is about the bridge, not about worktrees.
-  const api = createLocalApi({
+  api = createLocalApi({
     paths: { home: root, userData: path.join(root, "userData"), checkout: root },
     repository: "https://github.com/AgenticSocietyLab/MAGI.git",
     tools: { git: "unused", env: process.env, node: process.execPath, npm: fileURLToPath(import.meta.url) },

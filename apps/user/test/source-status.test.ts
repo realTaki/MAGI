@@ -23,7 +23,8 @@ test("about reports the running commit and where it forked from AgenticSociety",
   const root = mkdtempSync(path.join(tmpdir(), "magi-source-"));
   const origin = path.join(root, "origin");
   const checkout = path.join(root, "checkout");
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+  let api;
+  t.after(async () => { await api?.dispose(); rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
 
   mkdirSync(origin);
   git(origin, ["init", "-b", "main"]);
@@ -59,7 +60,7 @@ test("about reports the running commit and where it forked from AgenticSociety",
     "https://github.com/realTaki/MAGI.git",
   ]);
 
-  const api = createLocalApi({
+  api = createLocalApi({
     paths: { home: root, userData: path.join(root, "userData"), checkout },
     repository: "https://github.com/AgenticSocietyLab/MAGI.git",
     tools: { git: "git", env: gitEnv },
@@ -67,7 +68,6 @@ test("about reports the running commit and where it forked from AgenticSociety",
     openExternal: async () => {},
     copy: () => {},
   });
-  t.after(async () => { await api.dispose(); });
 
   const status = await api["source.status"]();
   assert.equal(status.available, true);
@@ -96,9 +96,10 @@ test("about stays local when the checkout is not a Git repository", async (t) =>
   const root = mkdtempSync(path.join(tmpdir(), "magi-source-empty-"));
   const checkout = path.join(root, "checkout");
   mkdirSync(checkout);
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+  let api;
+  t.after(async () => { await api?.dispose(); rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
 
-  const api = createLocalApi({
+  api = createLocalApi({
     paths: { home: root, userData: path.join(root, "userData"), checkout },
     repository: "https://github.com/AgenticSocietyLab/MAGI.git",
     tools: { git: "git", env: gitEnv },
@@ -106,7 +107,6 @@ test("about stays local when the checkout is not a Git repository", async (t) =>
     openExternal: async () => {},
     copy: () => {},
   });
-  t.after(async () => { await api.dispose(); });
 
   const status = await api["source.status"]();
   assert.equal(status.available, false);

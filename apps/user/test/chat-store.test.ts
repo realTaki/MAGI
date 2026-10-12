@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { Bus } from "@magi/bus";
 import Database from "better-sqlite3";
 
 import { openChatStore } from "../main/chat-store.ts";
@@ -24,18 +25,21 @@ test("desktop chat history and pending receipts survive a restart", {
     event_id: "evt_1", sequence: 3, type: "chat.message",
     payload: { sender: "@user.magi", content: "hello" },
   };
-  const first = await openChatStore(file);
+  let bus = new Bus("@user.magi", path.dirname(file));
+  let activeStore;
+  t.after(() => { activeStore?.close(); bus.close(); rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
+  const first = activeStore = await openChatStore(file, bus);
   first.saveChats([chat]);
   assert.equal(first.saveEvents("sess_1", [event, event]), 3);
   first.queueOutgoingMessage({ id: "out_1", chatId: "sess_1", content: "send later", createdAt: 4 });
   first.close();
-
-  const reopened = await openChatStore(file);
+  activeStore = null;
+  bus.close();
+  bus = new Bus("@user.magi", path.dirname(file));
+  const reopened = activeStore = await openChatStore(file, bus);
   // after hooks run in registration order. Close the database before removing
   // its directory; Windows refuses to delete a file that is still open.
-  t.after(() => reopened.close());
-  t.after(() => rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
-  assert.deepEqual(reopened.listChats(), [chat]);
+  assert.deepEqual(reopened.listChats(), [{ ...chat, participants: [{ handle: "@user.magi", status: "joined" }], name: undefined, topic: undefined, description: undefined, created_at: undefined }]);
   assert.deepEqual(reopened.listEvents("sess_1"), [event]);
   assert.deepEqual(reopened.pendingAcks("sess_1"), [event]);
   assert.deepEqual(reopened.listOutgoingMessages(), [
@@ -61,14 +65,16 @@ test("the versioned baseline adopts an existing desktop cache without replacing 
   legacy.prepare("INSERT INTO chats VALUES (?, ?)").run(chat.chat_id, JSON.stringify(chat));
   legacy.close();
 
-  const store = openChatStore(file);
+  const bus = new Bus("@user.magi", directory);
+  const store = openChatStore(file, bus);
   t.after(() => store.close());
-  assert.deepEqual(store.listChats(), [chat]);
+  t.after(() => bus.close());
+  assert.deepEqual(store.listChats(), [{ ...chat, participants: [{ handle: "@user.magi", status: "joined" }, { handle: "@eva-000.magi", status: "joined" }], name: "@eva-000.magi", topic: undefined, description: undefined, created_at: undefined }]);
 
   const migrations = new Database(file, { readonly: true });
   t.after(() => migrations.close());
   t.after(() => rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
-  assert.equal(migrations.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get().count, 1);
+  assert.equal(migrations.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get().count, 2);
   assert.equal(
     migrations.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type = 'index' AND name = 'outgoing_messages_order'").get().count,
     1,
@@ -77,7 +83,6 @@ test("the versioned baseline adopts an existing desktop cache without replacing 
 
 test("disposing the backend after opening chat storage does not throw", async (t) => {
   const directory = mkdtempSync(path.join(tmpdir(), "magi-chat-dispose-"));
-  t.after(() => rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const api = createLocalApi({
     paths: {
       home: directory,
@@ -88,6 +93,9 @@ test("disposing the backend after opening chat storage does not throw", async (t
     tools: { git: "git", env: process.env },
     emit: () => {}, openExternal: async () => {}, copy: () => {},
   });
+  t.after(async () => { await api.dispose(); rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
   await api["chat.saveChats"]([]);
   await api.dispose();
+  await assert.rejects(api.ready(), /disposed/);
+  await assert.rejects(api["chat.listChats"](), /disposed/);
 });

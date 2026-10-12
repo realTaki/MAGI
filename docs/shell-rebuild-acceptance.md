@@ -50,7 +50,7 @@ git diff --check
 
 Windows uses `apps/shell/runtime/bin/node.exe` and the same npm CLI. The
 `Windows validation (no release)` workflow bootstraps the owned runtime, runs
-root and related User acceptance, builds User, and produces an unsigned NSIS
+root and full User acceptance, builds User, and produces an unsigned NSIS
 installer with `--publish never`. It triggers on `codex/**` branches, main PRs
 and manual dispatch, not tags. Its token has only `contents: read`; no release
 job or release upload exists. The EXE is retained only as a short-lived Actions
@@ -80,38 +80,52 @@ children to exit before deleting their working directories; these cleanup fixes
 preserve all content and migration assertions. The broken-host test closes the
 actual parent pipe; closing CRT fd 0 does not close Node's Windows pipe handle.
 
-## Known User baseline failures, kept outside the related acceptance gate
+## Historical User baseline failures and their fixes
 
-The following six failures reproduced both on the original base and this
-change, using the original base's compiled webapp package. Original tests and
-assertions remain intact. Provider failures leave timers running; capture the
-failures and terminate the isolated test group afterward (a test-runner timeout
-alone did not clear those timers). Do not treat this diagnostic run as passing.
+The following six failures reproduced at the original base and the Shell
+rebuild delivery (`e7921cb7`). This follow-up fixes them and adds User state
+regressions; they now belong to the full User acceptance gate, including the
+real checkout startup integration. Its npm cache is explicitly inside the
+disposable test root, including when invoked through npm (which injects a cache
+path into child environments). The historical failure evidence is retained
+below. No raw temporary logs are committed.
 
 ```sh
 apps/shell/runtime/bin/node --test apps/user/test/chat-store.test.ts apps/user/test/import-asp-history.test.ts apps/user/test/provider.test.ts
 ```
 
-| Test | Original base and current result | Independent next step |
+| Test | Historical failure | Fix applied |
 | --- | --- | --- |
-| desktop chat history and pending receipts survive a restart | `bus` is undefined in directory `saveChats` | Supply/reopen a real BUS alongside chat storage in the fixture |
-| versioned baseline adopts existing desktop cache | Same missing BUS parameter | Keep migration assertions and give them the new directory owner |
-| legacy ASP import preserves events without acknowledging | Missing BUS in `listChats` | Provide BUS and retain exact event/ack assertions |
-| app saves provider key locally and broadcasts through ASP | Expected `provider.json` is absent | Assert SettingsBook persistence and unchanged transient ASP broadcast |
-| legacy app state moves to user directory | Expected preserved key is null | BUS creates `user` before the old directory rename check; repair migration ordering separately |
-| app copies legacy ASP key before deleting that copy | Old file-based migration assertion fails | Assert stored SettingsBook key before deleting the ASP copy |
+| desktop chat history and pending receipts survive a restart | `bus` is undefined in directory `saveChats` | Supplied/reopened a real BUS alongside chat storage in the fixture |
+| versioned baseline adopts existing desktop cache | Same missing BUS parameter | Retained migration assertions with the new directory owner |
+| legacy ASP import preserves events without acknowledging | Missing BUS in `listChats` | Provided BUS and retained exact event/ack assertions |
+| app saves provider key locally and broadcasts through ASP | Expected `provider.json` is absent | Asserted SettingsBook persistence and unchanged transient ASP broadcast |
+| legacy app state moves to user directory | Expected preserved key is null | Moved directory preparation before BUS creates `user` |
+| app copies legacy ASP key before deleting that copy | Old file-based migration assertion fails | Asserted stored SettingsBook key before deleting the ASP copy |
 
-Every provider fixture must dispose its API in `t.after`, including failed
-assertions, so a baseline failure cannot leak its relay timer. These repairs are
-queued separately; they are not silently waived as a green full User suite.
+Every provider fixture now disposes its API in `t.after`, including failed
+assertions, so an assertion failure cannot leak its relay timer. The fixes provide/reopen BUS in storage fixtures, verify SettingsBook rather
+than the retired provider JSON file, and close resources before deleting test
+directories. Import owns/closes both BUS and cache. Webapp initialization is
+awaited before ready; disposal aborts its ASP requests, cancels polling, awaits
+cache closure, and only then allows User to close BUS.
+
+`apps/user/workspace.ts` migrates the old directory before BUS creation. Both
+old/new directories present is a visible conflict: neither is merged, deleted
+or overwritten. Provider files are removed only after an atomic SettingsBook
+write; matching retry is idempotent, differing/invalid files stay recoverable.
+User credential databases/WAL/SHM keep the old key file's POSIX 0600 privacy.
+`user-state.test.ts` covers history/receipts/queued messages across rename and
+restart, directory/provider conflicts, malformed migration data, atomic write
+failure, ready failure and disposal during an active provider poll.
 
 ## Evidence and remaining end-to-end work
 
-Local Linux acceptance: root 100/100, related Shell/User 37/37 before the added stop/start and host-pipe regressions, root and User builds
-passed. Native Windows result must be read from the workflow for the actual
+Local Linux acceptance after the User fixes: root 100/100, full User 49/49
+with no skips (including real checkout startup), root and User builds passed. Native Windows result must be read from the workflow for the actual
 pushed commit; producing an EXE does not prove installation or runtime boot.
 
-Still queued: fix the six User baselines; run one real EVA turn that edits its
+Still queued: run one real EVA turn that edits its
 own worktree, writes/runs a meaningful test, compiles, invokes the actual tool
 and OS link, is restarted by Shell, then verifies the changed behavior and
 preserved identity/state after ASP reconnection. The current tests prove these

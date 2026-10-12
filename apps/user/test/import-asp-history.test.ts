@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { Bus } from "@magi/bus";
 import { openChatStore } from "../main/chat-store.ts";
 import { importAspHistory } from "../scripts/import-asp-history.ts";
 
@@ -19,10 +20,11 @@ test("legacy ASP import preserves events without acknowledging them", async (t) 
     throw new Error(`unexpected request: ${endpoint}`);
   };
   assert.deepEqual(await importAspHistory({ database, fetcher }), { chats: 1, events: 1, database });
-  const store = await openChatStore(database);
+  const bus = new Bus("@user.magi", root);
+  const store = await openChatStore(database, bus);
   try {
     assert.equal(store.listChats().length, 1);
     assert.equal(store.listEvents("sess_1").length, 1);
     assert.equal(store.pendingAcks("sess_1").length, 1);
-  } finally { store.close(); }
+  } finally { store.close(); bus.close(); }
 });

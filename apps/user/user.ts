@@ -5,8 +5,8 @@
  * ManagerWorker runs them. The backend is `@magi/webapp`.
  */
 
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { prepareUserWorkspace, secureUserDatabases } from "./workspace.ts";
 import type { ProcessSpec } from "./host.js";
 import { Bus } from "@magi/bus";
 import { ManagerWorker } from "@magi/manager";
@@ -23,26 +23,38 @@ export class User {
   private stopping: Promise<void> | null = null;
 
   constructor(context: UserContext) {
-    const workspace = join(context.paths.home, ".magi", "user");
+    const workspace = prepareUserWorkspace(context.paths.home);
+    secureUserDatabases(workspace);
     this.bus = new Bus(USER_HANDLE, workspace);
-    this.aspProcess = new AspProcessWorker(this.bus, {
-      sourceCheckout: context.paths.checkout,
-      node: context.tools.node,
-      env: context.tools.env,
-      spawnProcess: context.spawn,
-      startProcess: context.startProcess,
-      initialProcess: context.initialProcesses?.find(({ spec }: { spec: ProcessSpec }) => spec.entry.endsWith("asp.js")),
-    });
-    this.worker = new WebappWorker(this.bus, { ...context, aspProcess: this.aspProcess });
-    this.manager = new ManagerWorker(this.bus, [this.worker, this.aspProcess], {
-      drain: ["webapp"],
-    });
+    try {
+      secureUserDatabases(workspace);
+      this.aspProcess = new AspProcessWorker(this.bus, {
+        sourceCheckout: context.paths.checkout,
+        node: context.tools.node,
+        env: context.tools.env,
+        spawnProcess: context.spawn,
+        startProcess: context.startProcess,
+        initialProcess: context.initialProcesses?.find(({ spec }: { spec: ProcessSpec }) => spec.entry.endsWith("asp.js")),
+      });
+      this.worker = new WebappWorker(this.bus, { ...context, aspProcess: this.aspProcess });
+      this.manager = new ManagerWorker(this.bus, [this.worker, this.aspProcess], {
+        drain: ["webapp"],
+      });
+    } catch (error) {
+      this.bus.close();
+      throw error;
+    }
   }
 
   start(): Promise<void> {
-    this.ready ??= this.manager.start();
+    this.ready ??= (async () => {
+      await this.manager.start();
+      await this.worker.methods.ready();
+    })();
     return this.ready;
   }
+
+  get stopped(): boolean { return this.stopping !== null; }
 
   async stop(shutdown = false): Promise<void> {
     if (shutdown) {
@@ -82,6 +94,7 @@ export function createLocalApi(context: ConstructorParameters<typeof WebappWorke
     } catch (error) {
       throw startError ?? error;
     }
+    if (user.stopped) throw new Error("The User backend is disposed.");
     return await run();
   };
   return {
@@ -105,63 +118,65 @@ function requireEnv(name: string): string {
 async function main(): Promise<void> {
   const { connectHost } = await import("./host.js");
   const host = connectHost(process.stdin, process.stdout);
-  const checkout = requireEnv("MAGI_CHECKOUT");
-  const initialProcesses = await host.restoreProcesses();
-  const api = createLocalApi({
-    initialProcesses,
-    paths: {
-      checkout,
-      appCheckout: process.env.MAGI_APP_CHECKOUT || checkout,
-      home: requireEnv("MAGI_HOME"),
-      userData: requireEnv("MAGI_USER_DATA"),
-    },
-    repository: requireEnv("MAGI_REPOSITORY"),
-    managed: process.env.MAGI_MANAGED === "1",
-    shellUpdate: {
-      packaged: process.env.MAGI_PACKAGED === "1",
-      currentVersion: process.env.MAGI_SHELL_VERSION ?? "",
-      install: (installer: string) => host.installShellUpdate({ installer }),
-    },
-    tools: {
-      git: requireEnv("MAGI_GIT"),
-      node: requireEnv("MAGI_NODE"),
-      npm: requireEnv("MAGI_NPM"),
-      env: process.env,
-    },
-    emit: (event: string, payload: unknown) => {
-      void host.emit({ event, payload });
-    },
-    openExternal: (url: string) => host.openExternal({ url }),
-    copy: (text: string) => {
-      void host.copy({ text });
-    },
-    startProcess: host.startProcess,
-  });
-  const handlers: Record<string, (params: unknown) => unknown> = {};
-  for (const [name, value] of Object.entries(api)) {
-    if (typeof value !== "function") continue;
-    handlers[name] = (params) => value(params);
-  }
-  handlers.prepare = () =>
-    api.prepare((message: string, percent: number) => {
-      void host.progress({ message, percent });
-    });
-  handlers.start = () =>
-    api.start((message: string, percent: number) => {
-      void host.progress({ message, percent });
-    });
-  host.serve(handlers);
-  await api.ready();
-  process.send?.({ type: "ready" });
+  let retire: (() => Promise<void>) | undefined;
   try {
+    const checkout = requireEnv("MAGI_CHECKOUT");
+    const initialProcesses = await host.restoreProcesses();
+    const api = createLocalApi({
+      initialProcesses,
+      paths: {
+        checkout,
+        appCheckout: process.env.MAGI_APP_CHECKOUT || checkout,
+        home: requireEnv("MAGI_HOME"),
+        userData: requireEnv("MAGI_USER_DATA"),
+      },
+      repository: requireEnv("MAGI_REPOSITORY"),
+      managed: process.env.MAGI_MANAGED === "1",
+      shellUpdate: {
+        packaged: process.env.MAGI_PACKAGED === "1",
+        currentVersion: process.env.MAGI_SHELL_VERSION ?? "",
+        install: (installer: string) => host.installShellUpdate({ installer }),
+      },
+      tools: {
+        git: requireEnv("MAGI_GIT"),
+        node: requireEnv("MAGI_NODE"),
+        npm: requireEnv("MAGI_NPM"),
+        env: process.env,
+      },
+      emit: (event: string, payload: unknown) => {
+        void host.emit({ event, payload });
+      },
+      openExternal: (url: string) => host.openExternal({ url }),
+      copy: (text: string) => {
+        void host.copy({ text });
+      },
+      startProcess: host.startProcess,
+    });
+    retire = () => api.dispose();
+    const handlers: Record<string, (params: unknown) => unknown> = {};
+    for (const [name, value] of Object.entries(api)) {
+      if (typeof value !== "function") continue;
+      handlers[name] = (params) => value(params);
+    }
+    handlers.prepare = () =>
+      api.prepare((message: string, percent: number) => {
+        void host.progress({ message, percent });
+      });
+    handlers.start = () =>
+      api.start((message: string, percent: number) => {
+        void host.progress({ message, percent });
+      });
+    host.serve(handlers);
+    await api.ready();
+    process.send?.({ type: "ready" });
     await new Promise<void>((resolve) => {
       process.once("SIGINT", resolve);
       process.once("SIGTERM", resolve);
     });
   } finally {
-    // Shell owns sibling processes; retiring User only closes its own BUS/workers.
-    await api.dispose();
-    host.close();
+    // Close this User only; Shell continues to own the other apps.
+    try { await retire?.(); }
+    finally { host.close(); }
   }
 }
 

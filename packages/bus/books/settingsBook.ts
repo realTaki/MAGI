@@ -17,6 +17,11 @@ export class SettingsBook {
   get(key: string): string | null {
     return this.db.select().from(settings).where(eq(settings.key, key)).get()?.value ?? null;
   }
+  setMany(values: Record<string, string>): void {
+    this.db.$client.transaction(() => {
+      for (const [key, value] of Object.entries(values)) this.set(key, value);
+    })();
+  }
   set(key: string, value: string): void {
     this.db.insert(settings).values({ key, value })
       .onConflictDoUpdate({ target: settings.key, set: { value } })

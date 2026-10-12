@@ -45,15 +45,10 @@ jobs:
           $env:PATH = "$PWD/apps/shell/runtime/bin;$env:PATH"
           & ./apps/shell/runtime/bin/node.exe ./apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js test
           if ($LASTEXITCODE -ne 0) { throw "Root acceptance failed" }
-      - name: User lifecycle and CRLF regressions
-        env:
-          # Shell acceptance already boots current compiled EVA, ASP and User.
-          MAGI_SKIP_LIVE_INTEGRATION: '1'
+      - name: Full User acceptance
         run: |
-          & ./apps/shell/runtime/bin/node.exe --test apps/user/test/user-bootstrap.test.ts apps/user/test/runtime-lifecycle.test.ts apps/user/test/deeplink.test.ts apps/user/test/magi-runtime.test.ts
-          if ($LASTEXITCODE -ne 0) { throw "User lifecycle acceptance failed" }
-          # Six unrelated User baseline failures remain separately documented in
-          # docs/shell-rebuild-acceptance.md; their assertions are unchanged.
+          & ./apps/shell/runtime/bin/node.exe --test apps/user/test/*.test.ts
+          if ($LASTEXITCODE -ne 0) { throw "Full User acceptance failed" }
       - name: Build User interface and backend
         run: |
           $env:PATH = "$PWD/apps/shell/runtime/bin;$env:PATH"

@@ -28,12 +28,17 @@ export type ChatStore = ReturnType<typeof openChatStore>;
 export function openChatStore(file: string, bus: Bus) {
   mkdirSync(path.dirname(file), { recursive: true });
   const connection = new Database(file);
-  connection.pragma("foreign_keys = ON");
-  connection.pragma("journal_mode = WAL");
-  connection.pragma("busy_timeout = 5000");
-  adoptDirectory(connection, bus);
   const db: AppDb = drizzle(connection);
-  migrate(db, { migrationsFolder: migrationsFolder() });
+  try {
+    connection.pragma("foreign_keys = ON");
+    connection.pragma("journal_mode = WAL");
+    connection.pragma("busy_timeout = 5000");
+    adoptDirectory(connection, bus);
+    migrate(db, { migrationsFolder: migrationsFolder() });
+  } catch (error) {
+    connection.close();
+    throw error;
+  }
 
   const transaction = connection.transaction((write: () => void) => write());
 
@@ -107,7 +112,12 @@ function adoptDirectory(connection: SQLiteDatabase, bus: Bus): void {
   if (!chats && !acks) return;
   if (chats) {
     const rows = connection.prepare("SELECT record_json FROM chats").all();
-    saveDirectory(bus, rows.map((row) => parseJson(jsonText(row, "record_json"))));
+    const records = rows.map((row) => parseJson(jsonText(row, "record_json")));
+    if (records.some((record) => !record || typeof record !== "object" || !("chat_id" in record)
+        || typeof record.chat_id !== "string" || record.chat_id === "")) {
+      throw new Error("Legacy chat directory contains an invalid record; retained without migration");
+    }
+    saveDirectory(bus, records);
   }
   if (acks) {
     const rows = connection.prepare("SELECT chat_id, through_sequence FROM acknowledgements").all();

@@ -1,23 +1,29 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
+import { Bus } from "@magi/bus";
 import { createLocalApi } from "../main/index.ts";
 
 /*
  * Business flow: switching the model, desktop side (`ARCHITECTURE.md`, "ASP").
- * The key is kept in user data (`~/.magi/user/provider.json`) and reaches the MAGI
- * through ASP; the desktop is the one that holds the file.
+ * The key is kept in the User BUS SettingsBook and reaches the MAGI
+ * through ASP; User persists credentials atomically and ASP only relays.
  */
 
-function app(root) {
-  return createLocalApi({
+const active = new Map();
+async function closeApps(root) {
+  for (const api of active.get(root) ?? []) await api.dispose();
+  active.delete(root);
+}
+function app(root, checkout = path.join(root, "checkout")) {
+  const api = createLocalApi({
     paths: {
       home: root,
       userData: path.join(root, "userData"),
-      checkout: path.join(root, "checkout"),
+      checkout,
     },
     repository: "https://github.com/AgenticSocietyLab/MAGI.git",
     tools: { git: "git", env: process.env },
@@ -25,6 +31,10 @@ function app(root) {
     openExternal: async () => {},
     copy: () => {},
   });
+  const instances = active.get(root) ?? [];
+  instances.push(api);
+  active.set(root, instances);
+  return api;
 }
 
 test("the app saves the provider key locally and only broadcasts it through ASP", async (t) => {
@@ -44,7 +54,7 @@ test("the app saves the provider key locally and only broadcasts it through ASP"
     }
     throw new Error(`unexpected request: ${url}`);
   };
-  t.after(() => { globalThis.fetch = originalFetch; rmSync(root, { recursive: true, force: true }); });
+  t.after(async () => { await closeApps(root); globalThis.fetch = originalFetch; rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
 
   const first = app(root);
   const saved = await first["provider.save"]({ provider: "custom", model: "opus", api_key: "sk-local", base_url: "https://example.com/v1" });
@@ -52,38 +62,36 @@ test("the app saves the provider key locally and only broadcasts it through ASP"
   assert.ok(requests.some((request) => request.method === "PUT" && request.path === "/settings/provider"));
   assert.equal(JSON.parse(requests.find((request) => request.method === "PUT" && request.path === "/settings/provider").body).base_url, "https://example.com/v1");
   const providerFile = path.join(root, ".magi", "user", "provider.json");
-  assert.equal(JSON.parse(readFileSync(providerFile, "utf8")).api_key, "sk-local");
-  assert.equal(JSON.parse(readFileSync(providerFile, "utf8")).base_url, "https://example.com/v1");
-  if (process.platform !== "win32") assert.equal(statSync(providerFile).mode & 0o777, 0o600);
+  assert.equal(existsSync(providerFile), false, "credentials live in SettingsBook");
+  const books = path.join(root, ".magi", "user", "memories", "books.db");
+  if (process.platform !== "win32") assert.equal(statSync(books).mode & 0o777, 0o600);
+  await first.dispose();
   const second = app(root);
   assert.equal(second["provider.settings"]().api_key, "sk-local");
+  assert.equal(second["provider.settings"]().base_url, "https://example.com/v1");
   await second.dispose();
   await first.dispose();
 });
 
 test("legacy app state moves to the user directory", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-user-directory-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+  t.after(async () => { await closeApps(root); rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
   const legacy = path.join(root, ".magi", "app");
   mkdirSync(legacy, { recursive: true });
   writeFileSync(path.join(legacy, "provider.json"), JSON.stringify({ api_key: "preserved" }));
 
   const backend = app(root);
   assert.equal(backend["provider.settings"]().api_key, "preserved");
-  assert.equal(existsSync(path.join(root, ".magi", "user", "provider.json")), true);
+  assert.equal(existsSync(path.join(root, ".magi", "user", "provider.json")), false);
   assert.equal(existsSync(legacy), false);
   await backend.dispose();
 });
 
 test("the app reads the curated provider catalog from pi-ai", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-provider-catalog-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+  t.after(async () => { await closeApps(root); rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
   const checkout = path.resolve(import.meta.dirname, "../../..");
-  const backend = createLocalApi({
-    paths: { home: root, userData: path.join(root, "userData"), checkout },
-    repository: "https://github.com/AgenticSocietyLab/MAGI.git",
-    tools: { git: "git", env: process.env }, emit: () => {}, openExternal: async () => {}, copy: () => {},
-  });
+  const backend = app(root, checkout);
   const catalog = await backend["provider.catalog"]();
   assert.deepEqual(Object.keys(catalog), ["openai", "anthropic", "minimax-cn", "minimax-global", "deepseek"]);
   for (const models of Object.values(catalog)) assert.ok(models.length > 0);
@@ -102,7 +110,7 @@ test("the app does not send the key to an older ASP that still persists it", asy
     if (endpoint === "/settings/provider/legacy") return Response.json({ detail: "not found" }, { status: 404 });
     throw new Error(`unexpected request: ${url}`);
   };
-  t.after(() => { globalThis.fetch = originalFetch; rmSync(root, { recursive: true, force: true }); });
+  t.after(async () => { await closeApps(root); globalThis.fetch = originalFetch; rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
 
   const backend = app(root);
   await assert.rejects(backend["provider.save"]({ api_key: "sk-local" }), /Saved in the app, but MAGI sync failed/);
@@ -126,7 +134,7 @@ test("a provider rejection keeps the app's previous key", async (t) => {
     }
     throw new Error(`unexpected request: ${url}`);
   };
-  t.after(() => { globalThis.fetch = originalFetch; rmSync(root, { recursive: true, force: true }); });
+  t.after(async () => { await closeApps(root); globalThis.fetch = originalFetch; rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
 
   const backend = app(root);
   await backend["provider.save"]({ provider: "openai", model: "gpt", api_key: "good-key" });
@@ -146,9 +154,9 @@ test("the app copies a legacy ASP key before deleting that copy", async (t) => {
     if (endpoint === "/operator") return Response.json({ token: "operator-token" });
     if (endpoint === "/bots") return Response.json({ bots: [{ handle: "@eva-000.magi", online: false }] });
     if (endpoint === "/settings/provider/legacy" && options.method === "DELETE") {
-      const check = app(root);
-      assert.equal(check["provider.settings"]().api_key, "old-key");
-      await check.dispose();
+      const check = new Bus("@user.magi", path.join(root, ".magi", "user"));
+      try { assert.equal(check.settings.get("provider.api_key"), "old-key"); }
+      finally { check.close(); }
       return Response.json({ ok: true });
     }
     if (endpoint === "/settings/provider/legacy") {
@@ -156,11 +164,12 @@ test("the app copies a legacy ASP key before deleting that copy", async (t) => {
     }
     throw new Error(`unexpected request: ${url}`);
   };
-  t.after(() => { globalThis.fetch = originalFetch; rmSync(root, { recursive: true, force: true }); });
+  t.after(async () => { await closeApps(root); globalThis.fetch = originalFetch; rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
 
   const backend = app(root);
   await backend.start();
-  assert.equal(existsSync(path.join(root, ".magi", "user", "provider.json")), true);
+  assert.equal(existsSync(path.join(root, ".magi", "user", "provider.json")), false);
+  assert.equal(backend["provider.settings"]().api_key, "old-key");
   assert.ok(requests.includes("DELETE /settings/provider/legacy"));
   await backend.dispose();
 });
@@ -182,7 +191,8 @@ test("usage reads DeepSeek balance with the locally saved API key", async (t) =>
       balance_infos: [{ currency: "USD", total_balance: "12.34" }],
     });
   };
-  t.after(() => {
+  t.after(async () => {
+    await closeApps(root);
     globalThis.fetch = originalFetch;
     rmSync(root, { recursive: true, force: true });
   });

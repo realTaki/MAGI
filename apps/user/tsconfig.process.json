@@ -2,12 +2,14 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": ".",
+    "rewriteRelativeImportExtensions": true,
     "outDir": "dist",
     "tsBuildInfoFile": "dist/.tsbuildinfo"
   },
   "include": [
     "user.ts",
-    "host.ts"
+    "host.ts",
+    "workspace.ts"
   ],
   "exclude": [
     "dist",
