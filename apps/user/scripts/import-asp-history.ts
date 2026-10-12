@@ -30,7 +30,7 @@ export async function importAspHistory({
     return { chat, events };
   }));
 
-  const store = await openChatStore(database, new Bus(USER_HANDLE));
+  const store = await openChatStore(database, new Bus(USER_HANDLE, path.dirname(database)));
   try {
     store.saveChats(snapshots.map(({ chat }) => chat));
     for (const { chat, events } of snapshots) store.saveEvents(chat.chat_id, events);
