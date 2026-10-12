@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 /**
  * One operator process: its BUS, and the workers on it.
  *
@@ -180,6 +181,6 @@ async function main(): Promise<void> {
   }
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+if (process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])) {
   main().catch((error) => { console.error(error); process.exitCode = 1; });
 }

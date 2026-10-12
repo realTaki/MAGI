@@ -90,7 +90,9 @@ disposable test root, including when invoked through npm (which injects a cache
 path into child environments). The live fixture passes an explicit temporary
 workspace instead of changing global HOME/USERPROFILE, reports install/build
 phases and allows five minutes for cold Windows dependency installation. Its
-commands observe the test cancellation signal; all content assertions remain. The historical failure evidence is retained
+commands observe the test cancellation signal; all content assertions remain. App entry detection compares real filesystem
+paths so Windows short-path/directory aliases cannot silently skip main; a
+compiled EVA directory-alias startup regression verifies this on all runners. The historical failure evidence is retained
 below. No raw temporary logs are committed.
 
 ```sh
@@ -127,7 +129,7 @@ Offline save still retains the operator's requested configuration locally.
 
 ## Evidence and remaining end-to-end work
 
-Local Linux acceptance after the User fixes: root 100/100, full User 50/50
+Local Linux acceptance after the User fixes: root 101/101, full User 50/50
 with no skips (including real checkout startup), root and User builds passed. Native Windows result must be read from the workflow for the actual
 pushed commit; producing an EXE does not prove installation or runtime boot.
 

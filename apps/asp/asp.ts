@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 /**
  * One ASP process: its BUS, and the workers on it.
  *
@@ -68,6 +69,6 @@ async function main(): Promise<void> {
   } finally { await asp.stop(); }
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+if (process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])) {
   main().catch((error) => { console.error(error); process.exitCode = 1; });
 }

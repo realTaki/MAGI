@@ -2,7 +2,7 @@ import test from "node:test";
 import { spawn } from "node:child_process";
 import { Bus } from "@magi/bus";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -326,4 +326,17 @@ test("a broken User host pipe cannot take down the Shell supervisor", { timeout:
   while (f.supervisor.snapshots().some((p) => p.id === f.handles.eva.id)) await new Promise((r) => setTimeout(r, 10));
   assert.ok(f.supervisor.snapshots().some((p) => p.id === f.handles.other.id), "other peers remain owned");
   host.stop();
+});
+
+test("compiled EVA starts through a directory alias instead of silently skipping main", async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "magi-entry-alias-"));
+  const repository = path.resolve(import.meta.dirname, "../../..");
+  const alias = path.join(directory, "compiled");
+  await symlink(path.join(repository, "apps", "eva", "dist"), alias, "junction");
+  const supervisor = createSupervisor({ node: process.execPath, env: process.env, readyTimeoutMs: 5000 });
+  t.after(() => cleanup(supervisor, directory));
+  const state = path.join(directory, "state");
+  const child = await supervisor.start({ cwd: path.join(repository, "apps", "eva"), entry: path.join(alias, "eva.js"), args: ["@alias.magi", "http://127.0.0.1:9", "test-token", "--workspace", state] });
+  await child.whenReady();
+  assert.ok((await readFile(path.join(state, "memories", "books.db"))).length > 0);
 });
