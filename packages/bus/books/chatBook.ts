@@ -34,6 +34,10 @@ export class ChatBook {
     this.db.update(chats).set({ summary }).where(eq(chats.id, id)).run();
   }
 
+  setTopic(id: number, topic: string): void {
+    this.db.update(chats).set({ topic }).where(eq(chats.id, id)).run();
+  }
+
   /**
    * How far this workspace has read a channel's stream: -1 until anything is taken in.
    *
