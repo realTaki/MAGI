@@ -1,4 +1,4 @@
-/** Versioned SQLite cache owned by userend: events and the outbound queue. */
+/** Versioned SQLite cache owned by webapp: events and the outbound queue. */
 
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";

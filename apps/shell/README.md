@@ -3,7 +3,7 @@
 The Electron shell is a bootstrap for a local MAGI installation: it clones the
 checkout and loads the app from it. The app itself lives in `apps/user/` — operator
 interface (`apps/user/src/`) plus the operator process (`user.ts` starts a BUS and the
-`userend` worker in `packages/userend`) — and the backend
+`webapp` worker in `packages/webapp`) — and the backend
 prepares the checkout, starts local ASP on `127.0.0.1:42069`, runs every MAGI
 from its own branch (`magi/eva-000`, checked out at `~/.magi/eva-000/MAGI`) and
 reports which interface entry the shell should show. The app
@@ -95,7 +95,7 @@ machine, not part of the startup sequence and not an ASP concern. The app starts
 without it; the connection is offered once on first run, and the signed-in
 account is shown in Settings. It calls `github.state`,
 `github.signIn` and `github.connect` on the app backend
-(`apps/user/main/index.ts` → `packages/userend`), which the shell reaches through its generic bridge.
+(`apps/user/main/index.ts` → `packages/webapp`), which the shell reaches through its generic bridge.
 
 - Sign-in is the OAuth device flow of the MAGI GitHub OAuth app
   (`Ov23li74Up8NcM5yCb61`): the operator approves a one-time code in the browser,
@@ -129,11 +129,11 @@ user tokens are short-lived and installed per repository.
 | `magi/` | Restart the affected MAGI process. |
 | `asp/` | Restart local ASP. |
 | `app/` | Settings → Runtime & build rebuilds the interface on demand; the app then asks whether to reload it. Source changes do not trigger automatic rebuilds. |
-| `apps/user/user.ts`, `apps/user/main/`, `packages/userend/` | Loaded on the next launch. No rebuild, no reinstall. |
+| `apps/user/user.ts`, `apps/user/main/`, `packages/webapp/` | Loaded on the next launch. No rebuild, no reinstall. |
 | `apps/shell/boot/`, `apps/shell/*.mjs`, `apps/shell/preload.cjs`, packaged tools and build configuration | Rebuild and install a new shell. The App's About screen chooses and downloads the release from the checkout's active `origin`; the shell only performs its local replacement. |
 
 Loading the interface only replaces the interface: ASP and the MAGI processes keep
-running, so a change under `packages/userend/` still waits for the next launch.
+running, so a change under `packages/webapp/` still waits for the next launch.
 
 This gives each user an editable Git working tree for the running MAGI system.
 A coding agent can modify it and merge upstream changes. Automatic revision

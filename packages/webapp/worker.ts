@@ -1,4 +1,4 @@
-/** The userend worker: operator backend on a BUS. */
+/** The webapp worker: a user-facing webapp on a BUS. */
 
 import { BaseWorker, type Bus } from "@magi/bus";
 
@@ -8,8 +8,8 @@ export const USER_HANDLE = "@user.magi";
 export { AspProcessWorker, ASP_ORIGIN } from "./asp-process.js";
 export type { AspHealth, AspProcessOptions, AspProgress } from "./asp-process.js";
 
-export class UserendWorker extends BaseWorker {
-  readonly worker_name = "userend";
+export class WebappWorker extends BaseWorker {
+  readonly worker_name = "webapp";
   readonly methods: ReturnType<typeof createLocalApi>;
   private apiClosed = false;
   private shutdownClosed = false;

@@ -1,9 +1,9 @@
 {
-  "name": "@magi/userend",
+  "name": "@magi/webapp",
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "MAGI runtime package: the operator backend worker.",
+  "description": "MAGI runtime package: the operator webapp worker.",
   "exports": {
     ".": {
       "types": "./dist/worker.d.ts",
