@@ -16,8 +16,8 @@ function git(cwd, args) {
 test("retiring a reloaded client backend keeps ASP and MAGI running", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-runtime-lifecycle-"));
   const checkout = path.join(root, "checkout");
-  mkdirSync(path.join(checkout, "apps", "asp"), { recursive: true });
-  writeFileSync(path.join(checkout, "apps", "asp", "asp.ts"), "");
+  mkdirSync(path.join(checkout, "apps", "asp", "dist"), { recursive: true });
+  writeFileSync(path.join(checkout, "apps", "asp", "dist", "asp.js"), "");
 
   const originalFetch = globalThis.fetch;
   let healthy = false;
@@ -79,8 +79,8 @@ test("retiring a reloaded client backend keeps ASP and MAGI running", async (t) 
 test("the app refuses to attach to a running legacy Python ASP", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-legacy-asp-"));
   const checkout = path.join(root, "checkout");
-  mkdirSync(path.join(checkout, "apps", "asp"), { recursive: true });
-  writeFileSync(path.join(checkout, "apps", "asp", "asp.ts"), "");
+  mkdirSync(path.join(checkout, "apps", "asp", "dist"), { recursive: true });
+  writeFileSync(path.join(checkout, "apps", "asp", "dist", "asp.js"), "");
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
     if (new URL(url).pathname === "/health") return Response.json({ status: "ok" });
@@ -108,9 +108,9 @@ test("the app refuses to attach to a running legacy Python ASP", async (t) => {
 test("the User module creates and runs ASP from its own magi/asp worktree", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-runtime-worktrees-"));
   const checkout = path.join(root, "source", "MAGI");
-  mkdirSync(path.join(checkout, "apps", "asp"), { recursive: true });
+  mkdirSync(path.join(checkout, "apps", "asp", "dist"), { recursive: true });
   writeFileSync(path.join(checkout, "apps", "asp", "package-lock.json"), "{}");
-  writeFileSync(path.join(checkout, "apps", "asp", "asp.ts"), "");
+  writeFileSync(path.join(checkout, "apps", "asp", "dist", "asp.js"), "");
   git(root, ["init", "--quiet", checkout]);
   git(checkout, ["add", "."]);
   git(checkout, ["-c", "user.email=test@example.invalid", "-c", "user.name=MAGI test", "commit", "--quiet", "-m", "initial"]);

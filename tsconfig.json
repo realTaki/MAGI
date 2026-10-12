@@ -48,6 +48,9 @@
     },
     {
       "path": "apps/eva"
+    },
+    {
+      "path": "apps/asp"
     }
   ]
 }

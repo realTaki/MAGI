@@ -76,7 +76,7 @@ improvement **within explicit, inspectable constraints**.
 ```text
 apps/shell/        Electron shell: window, checkout, and bundled Node 24 and npm
 apps/user/          Operator process (BUS + userend worker) and UI
-apps/asp/          ASP process (node asp.ts): BUS manager; worker in packages/asp-server
+apps/asp/          ASP process (node dist/asp.js): BUS manager; worker in packages/asp-server
 apps/eva/         MAGI runtime: one process per MAGI — its entry and supervisor
 packages/          The runtime's own packages: bus, manager, asp-server, userend, agent, providers, tools, mcp, channel-*
 ```
@@ -118,7 +118,7 @@ should say, and it never starts a process.
 - **Desktop** — an Electron shell clones this repository to `~/.magi/MAGI`,
   installs the workspace (`packages/`, `apps/`), builds the operator UI, and starts ASP. The
   package carries Node.js 24 and npm. It does not carry a Python runtime.
-- **ASP** — Node 24, `apps/asp/asp.ts`, bound to `127.0.0.1:42069`. It stores
+- **ASP** — Node 24, `apps/asp/dist/asp.js`, bound to `127.0.0.1:42069`. It stores
   chats and relay events in `~/.magi/asp/asp.sqlite`. Creating a bot spawns
   that MAGI; creating a group opens a chat the operator can invite
   MAGI into.

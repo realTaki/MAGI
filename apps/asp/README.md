@@ -1,7 +1,8 @@
 # asp
 
-Run with `node asp.ts` from this directory (what the desktop app does). Node 24
-runs the TypeScript directly. `npm test` runs the suite.
+Build with `npm run build` at the repository root, then run `node dist/asp.js`
+from this directory (what the desktop app does). `npm test` runs the suite
+against the compiled output.
 
 Layout: `asp.ts` is the composition root, same shape as `apps/eva/eva.ts`. It
 starts a BUS and the `asp-server` worker from `@magi/asp-server`. That package owns the
