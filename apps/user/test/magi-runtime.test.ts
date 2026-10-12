@@ -234,7 +234,7 @@ test("rebuilding installs and builds in the MAGI's own checkout", async (t) => {
   assert.equal(recorded.spawns.length, 2);
 });
 
-test("a real MAGI boots from its own checkout", { timeout: 120_000 }, async (t) => {
+test("a real MAGI boots from its own checkout", { timeout: 300_000 }, async (t) => {
   if (process.env.MAGI_SKIP_LIVE_INTEGRATION === "1") {
     t.skip("live MAGI-boot integration test skipped: MAGI_SKIP_LIVE_INTEGRATION=1");
     return;
@@ -269,15 +269,6 @@ test("a real MAGI boots from its own checkout", { timeout: 120_000 }, async (t) 
   // reject. `--no-local` still tests a real clone without that filesystem tie.
   await git(root, ["clone", "--quiet", "--no-local", repository, checkout]);
   const home = path.join(root, "home");
-  // `homedir()` follows HOME on POSIX and USERPROFILE on Windows. Keep the
-  // MAGI workspace inside the temp root on either GitHub Actions runner.
-  const homeVariable = process.platform === "win32" ? "USERPROFILE" : "HOME";
-  const previousHome = process.env[homeVariable];
-  process.env[homeVariable] = home;
-  t.after(() => {
-    if (previousHome === undefined) delete process.env[homeVariable];
-    else process.env[homeVariable] = previousHome;
-  });
   const childLogs: string[] = [];
   const runtimeEnv = {
     ...process.env,
@@ -292,12 +283,15 @@ test("a real MAGI boots from its own checkout", { timeout: 120_000 }, async (t) 
     base: "http://127.0.0.1:9",
     tools: { git: "git", env: runtimeEnv, ...installedRuntime },
     run: async (binary, args, options) => {
+      console.error(`[live integration] ${options.description}`);
       try {
         const result = await exec(binary, args, {
           cwd: options.cwd,
           env: { ...process.env, ...options.env },
           maxBuffer: 8 * 1024 * 1024,
+          signal: t.signal,
         });
+        console.error(`[live integration] completed: ${options.description}`);
         return `${result.stdout}`;
       } catch (error) {
         throw new Error(`${options.description} (${error.code ?? "?"}): ${error.stderr ?? ""}`);
@@ -305,7 +299,8 @@ test("a real MAGI boots from its own checkout", { timeout: 120_000 }, async (t) 
     },
     // A real process: this test is about a MAGI actually booting.
     spawnProcess: (binary, args, options) => {
-      const child = spawn(binary, args, {
+      console.error(`[live integration] starting compiled EVA in ${options.cwd}`);
+      const child = spawn(binary, [...args, "--workspace", path.join(home, ".magi", "eva-000")], {
         cwd: options.cwd, env: options.env,
         stdio: ["ignore", "ignore", "pipe"], detached: true, windowsHide: true,
       });

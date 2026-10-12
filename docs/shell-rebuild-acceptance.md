@@ -87,7 +87,10 @@ rebuild delivery (`e7921cb7`). This follow-up fixes them and adds User state
 regressions; they now belong to the full User acceptance gate, including the
 real checkout startup integration. Its npm cache is explicitly inside the
 disposable test root, including when invoked through npm (which injects a cache
-path into child environments). The historical failure evidence is retained
+path into child environments). The live fixture passes an explicit temporary
+workspace instead of changing global HOME/USERPROFILE, reports install/build
+phases and allows five minutes for cold Windows dependency installation. Its
+commands observe the test cancellation signal; all content assertions remain. The historical failure evidence is retained
 below. No raw temporary logs are committed.
 
 ```sh
