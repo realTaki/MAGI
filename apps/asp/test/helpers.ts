@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import WebSocket from "ws";
 
-import { createApp, type AspApp, type CreateAppOptions } from "../server/app.ts";
+import { Asp, createApp, type CreateAppOptions } from "../asp.ts";
 
 export function tempRoot(t: { after: (fn: () => void) => void }): string {
   const root = mkdtempSync(path.join(tmpdir(), "asp-"));
@@ -13,19 +13,19 @@ export function tempRoot(t: { after: (fn: () => void) => void }): string {
 
 export async function withApp(
   options: CreateAppOptions,
-  run: (app: AspApp) => Promise<void>,
+  run: (app: Asp) => Promise<void>,
 ): Promise<void> {
   const app = createApp({ aspBase: "http://asp.test", ...options });
-  await app.listen("127.0.0.1", 0);
+  await app.start("127.0.0.1", 0);
   try {
     await run(app);
   } finally {
-    await app.close();
+    await app.stop();
   }
 }
 
 export async function request(
-  app: AspApp,
+  app: Asp,
   method: string,
   pathname: string,
   options: { token?: string; body?: unknown } = {},
@@ -46,7 +46,7 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function connect(app: AspApp, token: string): Promise<{ socket: WebSocket; next: () => Promise<unknown> }> {
+export function connect(app: Asp, token: string): Promise<{ socket: WebSocket; next: () => Promise<unknown> }> {
   const socket = new WebSocket(app.origin.replace(/^http/, "ws") + "/connect", {
     headers: { authorization: `Bearer ${token}` },
   });

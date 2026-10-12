@@ -1,15 +1,14 @@
 /** Compose the ASP operator and participant protocol APIs. */
 
 import type { IncomingMessage } from "node:http";
-import { dirname } from "node:path";
 import type { WebSocket } from "ws";
-import { Bus } from "@magi/bus";
+import type { Bus } from "@magi/bus";
 
 import { LocalDatabase, defaultDatabasePath } from "../db/database.ts";
 import { bearerHandle, HttpError, listen, optionalInt, optionalString, requireContent, requireObject, Router, type RunningServer } from "./http.ts";
 import { loadOrCreateOperator, OPERATOR_HANDLE } from "./operator.ts";
 import { OperatorService } from "./operator-service.ts";
-import { ASP_HANDLE, RelayWorker } from "./relayWorker.ts";
+import { RelayWorker } from "./relayWorker.ts";
 import { Conflict, NotAllowed, NotFound, ChatService } from "./service.ts";
 import { type AgentSeed, Store } from "./store.ts";
 import { ConnectionError, TimeoutError, Transport } from "./transport.ts";
@@ -20,6 +19,7 @@ export type AspSeed = Record<string, string | AgentSeed>;
 
 export type CreateAppOptions = {
   databasePath?: string;
+  workspace?: string;
   aspSeed?: AspSeed;
   aspBase?: string;
   requestShutdown?: () => void;
@@ -30,9 +30,9 @@ type InitialMessage = {
   metadata?: unknown;
 };
 
-export class AspApp {
+export class AspServer {
+  readonly worker_name = "asp-server";
   readonly database: LocalDatabase;
-  readonly bus: Bus;
   readonly relay: RelayWorker;
   readonly store: Store;
   readonly transport: Transport;
@@ -46,9 +46,8 @@ export class AspApp {
   #running: RunningServer | null = null;
   #seed: AspSeed;
 
-  constructor(options: CreateAppOptions = {}) {
+  constructor(readonly bus: Bus, options: CreateAppOptions = {}) {
     this.database = new LocalDatabase(options.databasePath ?? defaultDatabasePath());
-    this.bus = new Bus(ASP_HANDLE, dirname(this.database.path));
     this.relay = new RelayWorker(this.bus, this.database);
     this.store = new Store(this.database, this.relay);
     this.transport = new Transport(this.store);
@@ -59,7 +58,7 @@ export class AspApp {
     this.#seed = options.aspSeed ?? {};
   }
 
-  async listen(host = "127.0.0.1", port = 0): Promise<void> {
+  async start(host = "127.0.0.1", port = 0): Promise<void> {
     this.database.open();
     this.store.activate(this.#seed);
     const existing = this.store.getAgent(OPERATOR_HANDLE);
@@ -78,14 +77,17 @@ export class AspApp {
     this.origin = this.#running.origin;
   }
 
-  async close(): Promise<void> {
+  async stop(): Promise<void> {
     await this.transport.close();
     if (this.#running !== null) {
       await this.#running.close();
       this.#running = null;
     }
-    this.bus.close();
     this.database.close();
+  }
+
+  async poll(): Promise<boolean> {
+    return false;
   }
 
   async #accept(request: IncomingMessage, socket: WebSocket): Promise<void> {
@@ -130,9 +132,7 @@ export class AspApp {
   }
 }
 
-export function createApp(options: CreateAppOptions = {}): AspApp {
-  return new AspApp(options);
-}
+
 
 export function intranetBaseUrl(): string {
   const host = process.env.MAGI_ASP_HOST ?? "127.0.0.1";
@@ -140,7 +140,7 @@ export function intranetBaseUrl(): string {
   return process.env.MAGI_ASP_PUBLIC_URL || `http://${host}:${port}`;
 }
 
-function registerRoutes(router: Router, app: AspApp): void {
+function registerRoutes(router: Router, app: AspServer): void {
   const auth = (headers: IncomingMessage["headers"]) => bearerHandle(headers, (token) => app.store.authenticate(token));
   const operatorOnly = (headers: IncomingMessage["headers"]) => {
     const handle = auth(headers);

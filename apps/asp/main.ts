@@ -1,22 +1,18 @@
-/** ASP server: composition root and process entry point.
+/** ASP process entry. Desktop runs `node main.ts`. */
 
-`node main.ts` is what the desktop app runs. Routes live in `server/`, the
-sqlite file in `db/`.
-*/
-
-import { createApp, intranetBaseUrl } from "./server/app.ts";
+import { Asp, intranetBaseUrl } from "./asp.ts";
 
 function main(): void {
   const host = process.env.MAGI_ASP_HOST ?? "127.0.0.1";
   const port = Number(process.env.MAGI_ASP_PORT ?? "42069");
-  const app = createApp({ aspBase: intranetBaseUrl(), requestShutdown: () => process.kill(process.pid, "SIGTERM") });
+  const asp = new Asp({ aspBase: intranetBaseUrl(), requestShutdown: () => process.kill(process.pid, "SIGTERM") });
   let closing = false;
   const shutdown = () => {
     if (closing) {
       return;
     }
     closing = true;
-    void app.close().then(
+    void asp.stop().then(
       () => process.exit(0),
       (error: unknown) => {
         console.error("[asp]", error instanceof Error ? error.message : String(error));
@@ -26,9 +22,9 @@ function main(): void {
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
-  void app.listen(host, port).then(
+  void asp.start(host, port).then(
     () => {
-      console.error(`[asp] listening on ${app.origin}`);
+      console.error(`[asp] listening on ${asp.origin}`);
     },
     (error: unknown) => {
       console.error("[asp]", error instanceof Error ? error.message : String(error));
