@@ -787,7 +787,7 @@ export function createLocalApi(context) {
 
   function spawnAsp() {
     const aspDir = path.join(aspCheckout, "apps", "asp");
-    const child = spawnProcess(aspNode(), ["main.js"], {
+    const child = spawnProcess(aspNode(), ["main.ts"], {
       cwd: aspDir,
       env: {
         ...tools.env,
@@ -1117,7 +1117,7 @@ export function createLocalApi(context) {
       return { origin: ASP_ORIGIN.href };
     }
     const aspDir = path.join(aspCheckout, "apps", "asp");
-    if (!existsSync(path.join(aspDir, "main.js"))) {
+    if (!existsSync(path.join(aspDir, "main.ts"))) {
       throw new Error(`ASP was not found at ${aspDir}`);
     }
     progress?.("Starting local ASP…", 0.94);

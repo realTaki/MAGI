@@ -14,6 +14,8 @@ export class User {
   readonly bus: Bus;
   readonly worker: UserendWorker;
   private readonly manager: ManagerWorker;
+  private ready: Promise<void> | null = null;
+  private stopping: Promise<void> | null = null;
 
   constructor(context: ConstructorParameters<typeof UserendWorker>[1]) {
     const workspace = join(context.paths.home, ".magi", "user");
@@ -22,9 +24,24 @@ export class User {
     this.manager = new ManagerWorker(this.bus, [this.worker]);
   }
 
-  start(): Promise<void> { return this.manager.start(); }
+  start(): Promise<void> {
+    this.ready ??= this.manager.start();
+    return this.ready;
+  }
 
-  async stop(): Promise<void> {
+  async stop(shutdown = false): Promise<void> {
+    if (shutdown) this.worker.requestShutdown();
+    if (this.stopping) {
+      await this.stopping;
+      if (shutdown) await this.worker.stop();
+      return;
+    }
+    this.stopping = this.stopOnce();
+    await this.stopping;
+  }
+
+  private async stopOnce(): Promise<void> {
+    if (this.ready) await this.ready.catch(() => undefined);
     await this.manager.stop();
     this.bus.close();
   }
@@ -32,17 +49,27 @@ export class User {
 
 export function createLocalApi(context: ConstructorParameters<typeof UserendWorker>[1]) {
   const user = new User(context);
-  void user.start();
+  const ready = user.start();
+  let startError: unknown;
+  void ready.catch((error: unknown) => {
+    startError = error;
+  });
   const methods = user.worker.methods;
-  const shutdown = methods.shutdown;
+  const whenReady = async <T>(run: () => T | Promise<T>): Promise<T> => {
+    try {
+      await ready;
+    } catch (error) {
+      throw startError ?? error;
+    }
+    return await run();
+  };
   return {
     ...methods,
-    dispose: () => {
-      void user.stop();
-    },
-    shutdown: () => {
-      shutdown();
-      void user.stop();
-    },
+    prepare: (progress: Parameters<typeof methods.prepare>[0]) =>
+      whenReady(() => methods.prepare(progress)),
+    start: (progress: Parameters<typeof methods.start>[0]) =>
+      whenReady(() => methods.start(progress)),
+    dispose: () => user.stop(),
+    shutdown: () => user.stop(true),
   };
 }
