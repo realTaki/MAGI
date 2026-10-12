@@ -45,6 +45,8 @@ test("a previous bare user identity migrates to @user.magi without losing its ch
     const connection = app.database.connection!;
     connection.prepare("UPDATE asp_contacts SET handle = 'user' WHERE handle = '@user.magi'").run();
     connection.prepare("UPDATE asp_participants SET handle = 'user' WHERE handle = '@user.magi'").run();
+    connection.prepare("UPDATE relay_principals SET handle = 'user' WHERE handle = '@user.magi'").run();
+    connection.prepare("UPDATE relay_participants SET handle = 'user' WHERE handle = '@user.magi'").run();
     connection.prepare("UPDATE asp_events SET payload_json = replace(payload_json, '\"@user.magi\"', '\"user\"')").run();
     connection.prepare("UPDATE asp_settings SET value_json = ? WHERE key = 'operator'")
       .run(JSON.stringify({ handle: "user", token }));

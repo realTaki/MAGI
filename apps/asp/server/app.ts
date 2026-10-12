@@ -1,12 +1,15 @@
 /** Compose the ASP operator and participant protocol APIs. */
 
 import type { IncomingMessage } from "node:http";
+import { dirname } from "node:path";
 import type { WebSocket } from "ws";
+import { Bus } from "@magi/bus";
 
 import { LocalDatabase, defaultDatabasePath } from "../db/database.ts";
 import { bearerHandle, HttpError, listen, optionalInt, optionalString, requireContent, requireObject, Router, type RunningServer } from "./http.ts";
 import { loadOrCreateOperator, OPERATOR_HANDLE } from "./operator.ts";
 import { OperatorService } from "./operator-service.ts";
+import { ASP_HANDLE, RelayWorker } from "./relayWorker.ts";
 import { Conflict, NotAllowed, NotFound, ChatService } from "./service.ts";
 import { type AgentSeed, Store } from "./store.ts";
 import { ConnectionError, TimeoutError, Transport } from "./transport.ts";
@@ -29,6 +32,8 @@ type InitialMessage = {
 
 export class AspApp {
   readonly database: LocalDatabase;
+  readonly bus: Bus;
+  readonly relay: RelayWorker;
   readonly store: Store;
   readonly transport: Transport;
   readonly chats: ChatService;
@@ -43,7 +48,9 @@ export class AspApp {
 
   constructor(options: CreateAppOptions = {}) {
     this.database = new LocalDatabase(options.databasePath ?? defaultDatabasePath());
-    this.store = new Store(this.database);
+    this.bus = new Bus(ASP_HANDLE, dirname(this.database.path));
+    this.relay = new RelayWorker(this.bus, this.database);
+    this.store = new Store(this.database, this.relay);
     this.transport = new Transport(this.store);
     this.chats = new ChatService(this.store, this.transport);
     this.baseUrl = options.aspBase ?? intranetBaseUrl();
@@ -55,10 +62,16 @@ export class AspApp {
   async listen(host = "127.0.0.1", port = 0): Promise<void> {
     this.database.open();
     this.store.activate(this.#seed);
-    const [handle, token] = loadOrCreateOperator(this.database);
-    this.operatorHandle = handle;
-    this.operatorToken = token;
-    this.store.registerAgent({ handle, token });
+    const existing = this.store.getAgent(OPERATOR_HANDLE);
+    if (existing !== undefined) {
+      this.operatorHandle = existing.handle;
+      this.operatorToken = existing.token;
+    } else {
+      const [handle, token] = loadOrCreateOperator(this.database);
+      this.operatorHandle = handle;
+      this.operatorToken = token;
+      this.store.registerAgent({ handle, token });
+    }
     const router = new Router();
     registerRoutes(router, this);
     this.#running = await listen(router, (request, socket) => this.#accept(request, socket), host, port);
@@ -71,6 +84,7 @@ export class AspApp {
       await this.#running.close();
       this.#running = null;
     }
+    this.bus.close();
     this.database.close();
   }
 

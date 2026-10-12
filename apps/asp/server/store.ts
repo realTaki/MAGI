@@ -5,14 +5,12 @@ import { randomUUID } from "node:crypto";
 import { and, eq, gt, notExists, sql } from "drizzle-orm";
 
 import { LocalDatabase, type AspDb } from "../db/database.ts";
-import { aspContactAllowlist, aspContacts } from "../db/tables/contacts.ts";
 import { aspChatKeys } from "../db/tables/chatKeys.ts";
-import { aspChats } from "../db/tables/chats.ts";
 import { aspEventAcks } from "../db/tables/eventAcks.ts";
 import { aspEvents } from "../db/tables/events.ts";
 import { aspMessageKeys } from "../db/tables/messageKeys.ts";
 import { aspMessageRecipients } from "../db/tables/messageRecipients.ts";
-import { aspParticipants } from "../db/tables/participants.ts";
+import type { RelayWorker } from "./relayWorker.ts";
 
 export type ParticipantStatus = "invited" | "joined" | "left";
 export type ChatState = "active" | "ended";
@@ -118,9 +116,11 @@ export class Store {
   readonly idempotency = new Map<string, [string, number]>();
   readonly chatIdempotency = new Map<string, [string, number | null]>();
   readonly storage: LocalDatabase | null;
+  readonly relay: RelayWorker | null;
 
-  constructor(storage: LocalDatabase | null = null) {
+  constructor(storage: LocalDatabase | null = null, relay: RelayWorker | null = null) {
     this.storage = storage;
+    this.relay = relay;
   }
 
   #db(): AspDb | null {
@@ -140,47 +140,22 @@ export class Store {
     this.chatSeq.clear();
     this.idempotency.clear();
     this.chatIdempotency.clear();
-    const allowlists = new Map<string, Set<string>>();
-    for (const row of db.select().from(aspContactAllowlist).all()) {
-      const allowlist = allowlists.get(row.contact_handle) ?? new Set<string>();
-      allowlist.add(row.allowed_handle);
-      allowlists.set(row.contact_handle, allowlist);
-    }
-    for (const row of db.select().from(aspContacts).all()) {
-      const agent: Agent = {
-        handle: row.handle,
-        token: row.token,
-        name: row.name,
-        nickname: row.nickname,
-        inbound_policy: row.inbound_policy,
-        allowlist: allowlists.get(row.handle) ?? new Set<string>(),
-        managed: row.managed,
-      };
-      this.agents.set(agent.handle, agent);
-      this.agentByToken.set(agent.token, agent.handle);
-    }
-    for (const row of db.select().from(aspChats).all()) {
-      const chat: Chat = {
-        id: row.id,
-        creator: row.creator,
-        state: row.state,
-        topic: row.topic,
-        created_at: row.created_at,
-        ended_at: row.ended_at,
-        description: row.description,
-        kind: row.kind,
-      };
-      this.chats.set(chat.id, chat);
-      this.chatSeq.set(chat.id, row.next_sequence);
-    }
-    for (const row of db.select().from(aspParticipants).all()) {
-      const participant: Participant = {
-        handle: row.handle,
-        status: row.status,
-        joined_at: row.joined_at,
-        left_at: row.left_at,
-      };
-      this.participants.set(pair(row.chat_id, participant.handle), participant);
+    this.relay?.adoptLegacy();
+    const directory = this.relay?.loadDirectory();
+    if (directory) {
+      for (const agent of directory.agents) {
+        this.agents.set(agent.handle, agent);
+        this.agentByToken.set(agent.token, agent.handle);
+      }
+      for (const chat of directory.chats) {
+        this.chats.set(chat.id, chat);
+      }
+      for (const [chatId, sequence] of directory.chatSeq) {
+        this.chatSeq.set(chatId, sequence);
+      }
+      for (const { chatId, participant } of directory.participants) {
+        this.participants.set(pair(chatId, participant.handle), participant);
+      }
     }
     for (const row of db.select().from(aspMessageKeys).all()) {
       this.idempotency.set(triple(row.chat_id, row.sender, row.key), [row.message_id, row.sequence]);
@@ -464,33 +439,12 @@ export class Store {
       chat_id: chatId,
       sequence,
     };
-    const db = this.#db();
-    if (db !== null) {
-      db.transaction((tx) => {
-        tx.insert(aspEvents).values({
-          chat_id: chatId,
-          sequence,
-          event_id: event.event_id,
-          type,
-          created_at: event.created_at,
-          payload_json: payload,
-        }).run();
-        if (type === "chat.message") {
-          // Everyone who was in the room when it was said owes a receipt for it.
-          const recipients = this.participantsIn(chatId)
-            .filter((participant) => participant.status === "joined" || participant.status === "invited")
-            .map((participant) => ({ event_id: event.event_id, handle: participant.handle }));
-          if (recipients.length > 0) {
-            tx.insert(aspMessageRecipients).values(recipients).run();
-          }
-        }
-        const nextSequence = this.chatSeq.get(chatId);
-        if (nextSequence === undefined) {
-          throw new Error(chatId);
-        }
-        tx.update(aspChats).set({ next_sequence: nextSequence }).where(eq(aspChats.id, chatId)).run();
-      }, { behavior: "immediate" });
-    }
+    const recipients = type === "chat.message"
+      ? this.participantsIn(chatId)
+        .filter((participant) => participant.status === "joined" || participant.status === "invited")
+        .map((participant) => participant.handle)
+      : [];
+    this.relay?.recordEvent(event, recipients);
     return event;
   }
 
@@ -576,62 +530,15 @@ export class Store {
   }
 
   #saveAgent(agent: Agent): void {
-    const db = this.#db();
-    if (db === null) {
-      return;
-    }
-    db.transaction((tx) => {
-      tx.insert(aspContacts).values({
-        handle: agent.handle,
-        token: agent.token,
-        name: agent.name,
-        nickname: agent.nickname,
-        inbound_policy: agent.inbound_policy,
-        managed: agent.managed,
-      }).onConflictDoUpdate({
-        target: aspContacts.handle,
-        set: {
-          token: agent.token,
-          name: agent.name,
-          nickname: agent.nickname,
-          inbound_policy: agent.inbound_policy,
-          managed: agent.managed,
-        },
-      }).run();
-      tx.delete(aspContactAllowlist).where(eq(aspContactAllowlist.contact_handle, agent.handle)).run();
-      const allowlist = [...agent.allowlist].sort().map((allowed_handle) => ({
-        contact_handle: agent.handle,
-        allowed_handle,
-      }));
-      if (allowlist.length > 0) {
-        tx.insert(aspContactAllowlist).values(allowlist).run();
-      }
-    }, { behavior: "immediate" });
+    this.relay?.savePrincipal(agent);
   }
 
   #saveChat(chat: Chat): void {
-    const db = this.#db();
-    if (db === null) {
-      return;
-    }
-    const next_sequence = this.chatSeq.get(chat.id) ?? 0;
-    db.insert(aspChats).values({ ...chat, next_sequence })
-      .onConflictDoUpdate({ target: aspChats.id, set: { ...chat, next_sequence } })
-      .run();
+    this.relay?.saveChat(chat, this.chatSeq.get(chat.id) ?? 0);
   }
 
   #saveParticipant(chatId: string, participant: Participant): void {
-    const db = this.#db();
-    if (db === null) {
-      return;
-    }
-    db.insert(aspParticipants)
-      .values({ chat_id: chatId, ...participant })
-      .onConflictDoUpdate({
-        target: [aspParticipants.chat_id, aspParticipants.handle],
-        set: participant,
-      })
-      .run();
+    this.relay?.saveParticipant(chatId, participant);
   }
 
   #ensureUniqueToken(token: string): void {

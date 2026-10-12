@@ -10,6 +10,7 @@
     "db:generate": "drizzle-kit generate --config=db/drizzle.config.ts"
   },
   "dependencies": {
+    "@magi/bus": "*",
     "better-sqlite3": "^13.0.3",
     "drizzle-orm": "^0.45.3",
     "ws": "^8.18.3"

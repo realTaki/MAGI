@@ -18,6 +18,8 @@ import { aspEvents } from "./tables/events.ts";
 import { aspMessageKeys } from "./tables/messageKeys.ts";
 import { aspMessageRecipients } from "./tables/messageRecipients.ts";
 import { aspParticipants } from "./tables/participants.ts";
+import { relayAllowlist, relayPrincipals } from "./tables/relayPrincipals.ts";
+import { relayParticipants } from "./tables/relayParticipants.ts";
 
 /** What the operator was called before this one: `user`, then `@user`. */
 const LEGACY_HANDLES = ["user", "@user"];
@@ -31,9 +33,11 @@ export function repairLegacyOperatorHandle(db: AspDb): void {
 }
 
 function repairOperatorHandle(db: AspDb, legacy: string): void {
-  const stale = db.select({ handle: aspContacts.handle }).from(aspContacts)
+  const staleContact = db.select({ handle: aspContacts.handle }).from(aspContacts)
     .where(eq(aspContacts.handle, legacy)).get();
-  if (stale === undefined) {
+  const stalePrincipal = db.select({ handle: relayPrincipals.handle }).from(relayPrincipals)
+    .where(eq(relayPrincipals.handle, legacy)).get();
+  if (staleContact === undefined && stalePrincipal === undefined) {
     return;
   }
   db.transaction((tx) => {
@@ -44,6 +48,13 @@ function repairOperatorHandle(db: AspDb, legacy: string): void {
       .where(eq(aspContactAllowlist.allowed_handle, legacy)).run();
     tx.update(aspParticipants).set({ handle: OPERATOR_HANDLE })
       .where(eq(aspParticipants.handle, legacy)).run();
+    tx.update(relayPrincipals).set({ handle: OPERATOR_HANDLE })
+      .where(eq(relayPrincipals.handle, legacy))
+      .run();
+    tx.update(relayAllowlist).set({ allowed_handle: OPERATOR_HANDLE })
+      .where(eq(relayAllowlist.allowed_handle, legacy)).run();
+    tx.update(relayParticipants).set({ handle: OPERATOR_HANDLE })
+      .where(eq(relayParticipants.handle, legacy)).run();
     tx.update(aspMessageRecipients).set({ handle: OPERATOR_HANDLE })
       .where(eq(aspMessageRecipients.handle, legacy)).run();
     tx.update(aspEventAcks).set({ handle: OPERATOR_HANDLE })
