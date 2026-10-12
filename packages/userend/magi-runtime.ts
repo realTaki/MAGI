@@ -43,8 +43,8 @@ export function agentBranch(handle) {
 }
 
 export function magiCli(node, handle, base, token) {
-  // MAGI is compiled before launch. Run its explicit output with the desktop's
-  // Node rather than looking up an executable on PATH.
+  // Process entries are compiled before launch. Run the explicit output with the
+  // desktop's Node rather than looking up an executable on PATH.
   return [node, "dist/eva.js", handle, base, token];
 }
 

@@ -30,11 +30,10 @@ import { spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { ASP_ORIGIN } from "./asp-process.js";
 import { parseRebuildLink } from "./deeplink.js";
 import { agentBranch, createMagiRuntime } from "./magi-runtime.js";
 import { downloadShellInstaller, installerPath, shellRelease } from "./shell-update.js";
-
-const ASP_ORIGIN = new URL("http://127.0.0.1:42069");
 // A brand-new society should not be an empty room. ASP names MAGI eva-000,
 // eva-001, … as they are created; these are the nicknames of the first three.
 const DEFAULT_MAGIS = ["MELCHIOR", "BALTHASAR", "CASPER"];
@@ -186,7 +185,7 @@ function parseGitHubSlug(url) {
 }
 
 export function createLocalApi(context) {
-  const { paths, repository, tools, emit, openExternal, copy, shellUpdate, managed = false } = context;
+  const { paths, repository, tools, emit, openExternal, copy, shellUpdate, managed = false, aspProcess } = context;
   // Shell loads this backend from the User worktree, while the source checkout
   // remains the Git/worktree authority for the local runtime.
   const appCheckout = paths.appCheckout ?? paths.checkout;
@@ -194,7 +193,6 @@ export function createLocalApi(context) {
   const spawnProcess = context.spawn ?? spawn;
   const git = { binary: tools.git, env: tools.env };
   const options = { cwd: paths.checkout, env: tools.env };
-  let asp = null;
   let deviceFlowPending = false;
   let runtimeBusy = false;
   let chatStorePromise = null;
@@ -737,74 +735,6 @@ export function createLocalApi(context) {
   // Preparing this checkout and running its local service
   // ---------------------------------------------------------------------
 
-  function healthUrl() {
-    return new URL("/health", ASP_ORIGIN).href;
-  }
-
-  async function aspHealth() {
-    try {
-      const response = await fetch(healthUrl(), { signal: AbortSignal.timeout(400) });
-      if (!response.ok) return "unavailable";
-      const health = await response.json();
-      return health?.status === "ok" && health?.runtime === "typescript"
-        ? "ready"
-        : "incompatible";
-    } catch {
-      return "unavailable";
-    }
-  }
-
-  async function waitForAsp(timeoutMs = 20_000) {
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      const health = await aspHealth();
-      if (health === "ready") {
-        return;
-      }
-      if (health === "incompatible") throw new Error(`An older ASP is already listening at ${ASP_ORIGIN.href}; quit the old MAGI service before retrying.`);
-      await delay(200);
-    }
-    throw new Error(`ASP is unavailable at ${healthUrl()}`);
-  }
-
-  function aspNode() {
-    // Packaged builds pass the bundled Node 24 binary. An unpackaged shell
-    // borrows whatever `node` is on PATH, which may be too old to run the
-    // TypeScript server, so prefer the checkout's prepared runtime.
-    if (typeof tools.node === "string" && tools.node !== "node" && existsSync(tools.node)) {
-      return tools.node;
-    }
-    const bundled = path.join(
-      paths.checkout,
-      "apps",
-      "shell",
-      "runtime",
-      "bin",
-      process.platform === "win32" ? "node.exe" : "node",
-    );
-    return existsSync(bundled) ? bundled : tools.node;
-  }
-
-  function spawnAsp() {
-    const aspDir = path.join(aspCheckout, "apps", "asp");
-    const child = spawnProcess(aspNode(), ["asp.ts"], {
-      cwd: aspDir,
-      env: {
-        ...tools.env,
-        MAGI_ASP_HOST: ASP_ORIGIN.hostname,
-        MAGI_ASP_PORT: ASP_ORIGIN.port || "42069",
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    child.stderr?.on("data", (chunk) => {
-      const text = String(chunk).trim();
-      if (text) {
-        console.error("[asp]", text);
-      }
-    });
-    return child;
-  }
-
   /** Interface entry point: the dev server when one is configured, else the build. */
   function uiEntry() {
     const devUrl = (process.env.MAGI_APP_URL ?? "").trim();
@@ -868,12 +798,20 @@ export function createLocalApi(context) {
     // inside the package; npm would still run node-gyp for it (the package carries
     // a binding.gyp) and the desktop ships no C++ toolchain. Skipping lifecycle
     // scripts is therefore what makes these two installs work on a plain machine.
-    if (managed && !existsSync(path.join(aspDir, "node_modules"))) {
+    if (managed && !existsSync(path.join(aspCheckout, "node_modules", "better-sqlite3"))) {
       progress?.("Preparing local ASP…", 0.2);
       await command(tools.node, [tools.npm, "ci", "--ignore-scripts"], {
-        cwd: aspDir,
+        cwd: aspCheckout,
         env: tools.env,
         description: "Could not prepare ASP",
+      });
+    }
+    if (managed && !existsSync(path.join(aspDir, "dist", "asp.js"))) {
+      progress?.("Building local ASP…", 0.25);
+      await command(tools.node, [tools.npm, "run", "build"], {
+        cwd: aspCheckout,
+        env: tools.env,
+        description: "Could not build ASP",
       });
     }
     if (managed && !existsSync(path.join(magiDir, "node_modules"))) {
@@ -1105,41 +1043,14 @@ export function createLocalApi(context) {
   /** Brings local ASP up unless something already answers on its port. */
   async function start(progress) {
     await ensureAspWorktree();
-    progress?.("Checking local ASP…", 0.9);
-    const health = await aspHealth();
-    if (health === "incompatible") throw new Error(`An older ASP is already listening at ${ASP_ORIGIN.href}; quit the old MAGI service before retrying.`);
-    if (health === "ready") {
-      // The society comes up once here; after that it is the operator's to
-      // start and stop from each MAGI's profile.
-      await startManagedMagi();
-      await ensureDefaultMagis(progress);
-      await activateProviderSync();
-      return { origin: ASP_ORIGIN.href };
-    }
-    const aspDir = path.join(aspCheckout, "apps", "asp");
-    if (!existsSync(path.join(aspDir, "asp.ts"))) {
-      throw new Error(`ASP was not found at ${aspDir}`);
-    }
-    progress?.("Starting local ASP…", 0.94);
-    asp = spawnAsp();
     try {
-      await new Promise((resolve, reject) => {
-        asp.once("error", reject);
-        asp.once("spawn", resolve);
-      });
-      progress?.("Waiting for local ASP…", 0.97);
-      await Promise.race([
-        waitForAsp(),
-        new Promise((_, reject) => {
-          asp.once("exit", (code, signal) => {
-            reject(new Error(`ASP exited (${code ?? signal ?? "unknown"})`));
-          });
-        }),
-      ]);
+      await aspProcess.ensure(aspCheckout, progress);
     } catch (error) {
       dispose();
       throw error;
     }
+    // The society comes up once here; after that it is the operator's to
+    // start and stop from each MAGI's profile.
     await startManagedMagi();
     await ensureDefaultMagis(progress);
     await activateProviderSync();
@@ -1161,10 +1072,6 @@ export function createLocalApi(context) {
   function shutdown() {
     dispose();
     magiRuntime.stopAll();
-    if (asp && !asp.killed) {
-      asp.kill("SIGTERM");
-    }
-    asp = null;
   }
 
   async function runtimeAction(action) {
@@ -1212,7 +1119,7 @@ export function createLocalApi(context) {
    */
   async function startManagedMagi() {
     try {
-      if ((await aspHealth()) !== "ready") return { started: [], failed: [] };
+      if ((await aspProcess.probe()) !== "ready") return { started: [], failed: [] };
       return await magiRuntime.startAll(await magiRoster());
     } catch (error) {
       console.error(
@@ -1251,7 +1158,7 @@ export function createLocalApi(context) {
   }
 
   async function magiRebuild(payload) {
-    if ((await aspHealth()) !== "ready") throw new Error("Start ASP before rebuilding this MAGI.");
+    if ((await aspProcess.probe()) !== "ready") throw new Error("Start ASP before rebuilding this MAGI.");
     return await magiRuntime.rebuild(await magiAgent(payload));
   }
 
@@ -1265,7 +1172,7 @@ export function createLocalApi(context) {
    * cannot read is worse than no sweep at all.
    */
   async function magiStartAll() {
-    if ((await aspHealth()) !== "ready") throw new Error("Start ASP before starting the MAGIs.");
+    if ((await aspProcess.probe()) !== "ready") throw new Error("Start ASP before starting the MAGIs.");
     return await magiRuntime.startAll(await magiRoster());
   }
 
@@ -1274,7 +1181,7 @@ export function createLocalApi(context) {
   }
 
   async function magiRebuildAll() {
-    if ((await aspHealth()) !== "ready") throw new Error("Start ASP before rebuilding the MAGIs.");
+    if ((await aspProcess.probe()) !== "ready") throw new Error("Start ASP before rebuilding the MAGIs.");
     const rebuilt = [];
     const failed = [];
     for (const agent of await magiRoster()) {
@@ -1291,25 +1198,11 @@ export function createLocalApi(context) {
   }
 
   async function stopOwnedAsp() {
-    if ((await aspHealth()) !== "ready") return;
-    if (asp && !asp.killed) {
-      asp.kill("SIGTERM");
-    } else {
-      const { token } = await aspJson("/operator");
-      await aspJson("/runtime/asp/stop", { token, method: "POST" });
-    }
-    for (let attempt = 0; attempt < 50; attempt++) {
-      if ((await aspHealth()) === "unavailable") {
-        asp = null;
-        return;
-      }
-      await delay(200);
-    }
-    throw new Error("ASP did not stop; rebuild was cancelled.");
+    await aspProcess.stopOwned();
   }
 
   async function runtimeStatus() {
-    const health = await aspHealth();
+    const health = await aspProcess.probe();
     let magiOnline = 0;
     if (health === "ready") {
       const { token } = await aspJson("/operator");
@@ -1318,7 +1211,7 @@ export function createLocalApi(context) {
     }
     return {
       asp: health,
-      owned: Boolean(asp && !asp.killed),
+      owned: aspProcess.owned(),
       magiOnline,
       canInstallShellUpdate: shellUpdate?.packaged === true,
     };
