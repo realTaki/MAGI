@@ -110,7 +110,10 @@ export function connectHost(stdin: Readable, stdout: Writable) {
     const spawned = await rpc("spawn", spec);
     const result = isRecord(spawned) ? spawned : null;
     if (result === null || typeof result.id !== "string") throw new Error("spawn did not return an id");
-    const id = result.id;
+    return processHandle(result.id);
+  }
+
+  function processHandle(id: string): ProcessHandle {
     return {
       id,
       stop() {
@@ -139,6 +142,18 @@ export function connectHost(stdin: Readable, stdout: Writable) {
     emit: (params: { event: string; payload?: unknown }) => rpc("emit", params),
     progress: (params: { message: string; percent: number }) => rpc("progress", params),
     startProcess,
+    async restoreProcesses(): Promise<Array<{ spec: ProcessSpec; handle: ProcessHandle }>> {
+      const result = await rpc("processes");
+      if (!Array.isArray(result)) throw new Error("processes did not return a list");
+      return result.filter((entry) => entry.spec?.entry && !entry.spec.entry.endsWith("user.js"))
+        .map((entry) => ({ spec: entry.spec as ProcessSpec, handle: processHandle(entry.id as string) }));
+    },
+    close() {
+      lines.close();
+      stdin.destroy();
+      for (const waiter of pending.values()) waiter.reject(new Error("Host connection closed"));
+      pending.clear();
+    },
     serve(next: Record<string, (params: unknown) => unknown>) {
       handlers = next;
       for (const req of queued.splice(0)) void dispatch(req);

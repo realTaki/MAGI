@@ -92,11 +92,23 @@ User does, in order (the worker is `packages/webapp`):
    fail startup.
 
 Closing the window, or reloading the client, never stops User or ASP — only
-quitting the application does, which is `before-quit` SIGTERM of User in
-`apps/shell/main.mjs`.
+quitting the application does, which is `before-quit` stopping every supervised
+app in `apps/shell/main.mjs`.
 
-`apps/shell/` has no test tree, so this flow is a contract in prose rather than an
-assertion. The other flows live with the tests that hold them, named below.
+Shell handles `request_rebuild` links directly. It compiles the target's actual
+worktree, then replaces only that app using its original cwd, args, and env.
+`self` includes local source edits; `app` and `asp` merge the requesting EVA's
+branch into the registered User or ASP worktree. User rebuild includes both
+backend and UI. User retirement does not stop ASP or EVA; the replacement
+adopts their existing supervisor handles. Build errors leave the old app running;
+restart errors remain failed, without automatic rollback or retry. A ready IPC
+signal means the new app manager has initialized (ASP has bound its server);
+it does not imply an EVA has connected to ASP or passed all worker health checks.
+Shell retains the phase/result through `runtime.rebuildStatus` and emits
+`runtime.rebuild` events. The tool's OS acceptance is only a request.
+
+`apps/shell/test/` verifies process isolation, new compiled output, ready and
+failure reporting, and User retirement. The other flows live with the tests that hold them, named below.
 
 ## ASP
 

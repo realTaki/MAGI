@@ -12,7 +12,8 @@
   },
   "scripts": {
     "dev": "electron .",
-    "build": "node scripts/build.mjs"
+    "build": "node scripts/build.mjs",
+    "test": "node --test test/*.test.mjs"
   },
   "build": {
     "appId": "ai.magi.app",
@@ -27,6 +28,8 @@
     "files": [
       "main.mjs",
       "process.mjs",
+      "rebuild.mjs",
+      "app-spec.mjs",
       "preload.cjs",
       "update-script.mjs",
       "boot/**",

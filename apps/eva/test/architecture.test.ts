@@ -1,34 +1,60 @@
+import assert from "node:assert/strict";
 import { expect, test } from "./test.js";
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const modules = ["agent", "providers", "tools", "mcp", "channels/asp", "channels/cli", "channels/tasks", "channels/telegram"];
+// Tests run from apps/eva/dist/test; inspect the actual package sources.
+const packages = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..", "packages");
 
 async function sources(directory: string): Promise<string[]> {
   const files: string[] = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
+    if (["dist", "node_modules", "test"].includes(entry.name)) continue;
     const file = join(directory, entry.name);
     if (entry.isDirectory()) files.push(...await sources(file));
-    else if (entry.name.endsWith(".ts")) files.push(file);
+    else if (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx")) files.push(file);
   }
   return files;
 }
 
-function moduleName(file: string): string {
-  const parts = relative(root, file).split(sep);
-  return parts[0] === "channels" ? parts.slice(0, 2).join("/") : parts[0] ?? "";
+function permitted(owner: string, file: string, imported: string): boolean {
+  if (imported.startsWith("@magi/")) {
+    const name = imported.slice(6).split("/")[0];
+    return name === owner || name === "bus";
+  }
+  if (imported.startsWith(".")) {
+    const name = relative(packages, resolve(dirname(file), imported)).split(sep)[0];
+    return name === owner || name === "bus";
+  }
+  return true; // Platform and third-party imports do not cross worker boundaries.
 }
 
-test("runtime modules only import their own module or BUS", async () => {
-  for (const module of modules) {
-    for (const file of await sources(join(root, module))) {
+test("every worker package imports only itself or BUS", async () => {
+  const workers = (await readdir(packages, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory() && entry.name !== "bus");
+  assert.ok(workers.length > 0, "worker packages must be discovered");
+  for (const worker of workers) {
+    const files = await sources(join(packages, worker.name));
+    assert.ok(files.length > 0, `${worker.name} must contain inspected source`);
+    for (const file of files) {
       const content = await readFile(file, "utf8");
-      for (const match of content.matchAll(/\bfrom\s+["'](\.{1,2}\/[^"']+)["']/g)) {
-        const imported = resolve(dirname(file), match[1]);
-        expect([module, "bus"], `${relative(root, file)} imports ${match[1]}`).toContain(moduleName(imported));
+      for (const match of content.matchAll(/\b(?:from\s+|import\s*\(\s*|import\s+)["']([^"']+)["']/g)) {
+        assert.ok(permitted(worker.name, file, match[1]), `${relative(packages, file)} imports ${match[1]}`);
       }
     }
+    const manifest = JSON.parse(await readFile(join(packages, worker.name, "package.json"), "utf8"));
+    for (const dependency of Object.keys({ ...manifest.dependencies, ...manifest.devDependencies })) {
+      assert.ok(permitted(worker.name, files[0], dependency), `${worker.name} declares peer dependency ${dependency}`);
+    }
   }
+});
+
+test("worker boundary rejects peer imports and escapes", () => {
+  const file = join(packages, "agent", "worker.ts");
+  expect(permitted("agent", file, "@magi/bus")).toBe(true);
+  expect(permitted("agent", file, "./prompts.js")).toBe(true);
+  expect(permitted("agent", file, "@magi/providers/client.js")).toBe(false);
+  expect(permitted("agent", file, "../providers/client.js")).toBe(false);
+  expect(permitted("agent", file, "../../apps/eva/eva.js")).toBe(false);
 });

@@ -7,6 +7,7 @@
 
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { ProcessSpec } from "./host.js";
 import { Bus } from "@magi/bus";
 import { ManagerWorker } from "@magi/manager";
 import { AspProcessWorker, WebappWorker, USER_HANDLE } from "@magi/webapp";
@@ -30,6 +31,7 @@ export class User {
       env: context.tools.env,
       spawnProcess: context.spawn,
       startProcess: context.startProcess,
+      initialProcess: context.initialProcesses?.find(({ spec }: { spec: ProcessSpec }) => spec.entry.endsWith("asp.js")),
     });
     this.worker = new WebappWorker(this.bus, { ...context, aspProcess: this.aspProcess });
     this.manager = new ManagerWorker(this.bus, [this.worker, this.aspProcess], {
@@ -84,6 +86,7 @@ export function createLocalApi(context: ConstructorParameters<typeof WebappWorke
   };
   return {
     ...methods,
+    ready: () => whenReady(() => undefined),
     prepare: (progress: Parameters<typeof methods.prepare>[0]) =>
       whenReady(() => methods.prepare(progress)),
     start: (progress: Parameters<typeof methods.start>[0]) =>
@@ -103,7 +106,9 @@ async function main(): Promise<void> {
   const { connectHost } = await import("./host.js");
   const host = connectHost(process.stdin, process.stdout);
   const checkout = requireEnv("MAGI_CHECKOUT");
+  const initialProcesses = await host.restoreProcesses();
   const api = createLocalApi({
+    initialProcesses,
     paths: {
       checkout,
       appCheckout: process.env.MAGI_APP_CHECKOUT || checkout,
@@ -146,13 +151,17 @@ async function main(): Promise<void> {
       void host.progress({ message, percent });
     });
   host.serve(handlers);
+  await api.ready();
+  process.send?.({ type: "ready" });
   try {
     await new Promise<void>((resolve) => {
       process.once("SIGINT", resolve);
       process.once("SIGTERM", resolve);
     });
   } finally {
-    await api.shutdown();
+    // Shell owns sibling processes; retiring User only closes its own BUS/workers.
+    await api.dispose();
+    host.close();
   }
 }
 

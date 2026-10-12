@@ -1,6 +1,6 @@
 /**
- * The only magi:// link the desktop accepts. EVA opens it; the shell forwards
- * the raw URL here. Anything else is refused.
+ * The only magi:// link the desktop accepts. Shell owns processing; this compatibility parser is also used
+ * by older callers. Anything else is refused.
  *
  * magi://runtime/rebuild?target=self&handle=%40eva-000.magi
  */
@@ -17,7 +17,7 @@ export function parseRebuildLink(raw: string): RebuildLink | null {
   } catch {
     return null;
   }
-  if (url.protocol !== "magi:") return null;
+  if (url.protocol !== "magi:" || url.port !== "") return null;
   if (url.username !== "" || url.password !== "") return null;
   if (url.hostname !== "runtime" || url.pathname.replace(/\/+$/, "") !== "/rebuild") return null;
   if (url.hash !== "") return null;

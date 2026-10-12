@@ -105,6 +105,7 @@ async function main(): Promise<void> {
   if ((base && !token) || (!base && token)) throw new Error("ASP base and token must be supplied together");
   const magi = new Magi(handle, { workspace, asp: base && token ? { base, token } : undefined });
   await magi.start();
+  process.send?.({ type: "ready" });
   // With ASP the process is a service: it stays up until it is asked to stop.
   // Without one it is a prompt, which is how a MAGI is tried out by hand.
   if (base && token) {

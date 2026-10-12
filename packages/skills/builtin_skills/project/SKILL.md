@@ -51,7 +51,7 @@ Call `request_rebuild` only after the edit is saved, and say what changed first.
 | `target` | What the desktop does |
 | --- | --- |
 | `self` | `npm ci` and `npm run build` in this checkout, then restart only you. Uncommitted files in `MAGI/` are included. No merge. |
-| `app` | Merge this branch into `magi/user`, rebuild the operator UI, then ask before reloading the window. ASP and other MAGI keep running. Uncommitted files are not included: commit first. |
-| `asp` | Merge this branch into `magi/asp`, reinstall ASP, and start the society again. Every MAGI is restarted. Uncommitted files are not included: commit first. |
+| `app` | Merge this branch into `magi/user`, compile the User backend and UI, then restart only User. The window receives an interface update. ASP and other MAGI keep running. Uncommitted files are not included: commit first. |
+| `asp` | Merge this branch into `magi/asp`, compile and restart only ASP. User and every EVA keep their processes. Uncommitted files are not included: commit first. |
 
 `app` and `asp` adopt the whole branch, not one file. Do not use them to publish an unrelated history. One rebuild at a time. If the tool says the link was opened, do not send another until the operator says the previous one finished. A conflict aborts the merge and does not build.

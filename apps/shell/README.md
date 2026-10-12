@@ -78,15 +78,19 @@ Only seven things, none of them product-specific:
 4. Forward calls: `local:invoke` in, `local:event` out. Method names belong to
    the app, so a new capability never changes the shell.
 5. Accept a `magi://` link. The OS will only deliver it to this process, so the
-   shell keeps a single instance and forwards the raw URL to
-   `runtime.applyDeeplink`. What the link is allowed to do stays in the app.
+   shell keeps a single instance and handles the rebuild in `rebuild.mjs`.
+   The supervisor reuses the target's cwd, args, and env, waits for exit, and
+   waits for an IPC ready signal from the new process. User is not a lifecycle relay.
+   `runtime.rebuildStatus` retains the last phase/failure per target and caller;
+   `runtime.rebuild` events report requested, merging, building, restarting,
+   ready, or failed. OS link acceptance alone does not mean ready.
 6. Ask User to `prepare()` (returns the interface entry) and `start()`,
    then show that entry — a built file or a dev URL.
-7. SIGTERM User on quit. Reloads do not kill User.
+7. Stop all supervised apps on quit. Reloads do not kill User.
 
 That leaves one contract: the checkout must contain `apps/user/dist/user.js`,
 started as `node dist/user.js` with a host channel on stdio. `prepare` returns
-the interface entry. `start` brings ASP up. Quit SIGTERMs User.
+the interface entry. `start` brings ASP up. Quit stops all supervised apps. User retirement closes its own workers and BUS; a replacement User adopts existing child handles.
 
 ## GitHub connection
 
@@ -143,3 +147,8 @@ work; they are not provided by the bootstrap shell today.
 The shell's bundled tools are used for MAGI child processes only; they do not
 change the system-wide `PATH`. There is no separate deployment script for the
 desktop app.
+
+Lifecycle acceptance is in `test/rebuild.test.mjs` and runs with the root
+`npm test` after TypeScript compilation. The tests use temporary state and
+check duplicate restarts, stop timeouts, entry/branch identity, IPC readiness,
+compiled EVA/ASP startup, and User's restored ownership of running EVA handles.

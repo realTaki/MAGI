@@ -1,7 +1,7 @@
 /**
  * Electron shell. It prepares what the app needs in order to exist — bundled
  * tools and the checkout — and opens a window. User, ASP, and Eva are the same
- * kind of child: `node <entry> ...args`. The shell starts User once.
+ * kind of child: `node <entry> ...args`. Shell owns their lifecycles.
  */
 import { spawn } from "node:child_process";
 import {
@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url";
 import dugite from "dugite";
 import { app, BrowserWindow, Menu, clipboard, ipcMain, screen, shell } from "electron";
 
+import { createAppRebuilder, rebuildRequestKey } from "./rebuild.mjs";
 import { updateScript } from "./update-script.mjs";
 import { createSupervisor, prepareUserProcess } from "./process.mjs";
 
@@ -211,13 +212,14 @@ async function ensureAppWorktree(checkout, tools, progress) {
   return MAGI_APP_CHECKOUT;
 }
 
-// The shell starts User once and forwards calls. Reloads do not kill User.
+// Shell supervises User and forwards calls. Renderer reloads do not kill User.
 // The packaged shell runs `dist/user.js` from the User worktree. An unpackaged
 // developer tree remains untouched, while an explicit scratch checkout uses
 // the same isolated-runtime layout as a packaged app.
 let localApi = null;
 let localApiError = null;
 let supervisor = null;
+let rebuildFromLink = null;
 // Where the bundled runtime is, when this build has one. The app starts every
 // child process from this: Node.js and npm for the TypeScript components.
 let localTools = null;
@@ -246,6 +248,17 @@ function userProcessSpec(appCheckout) {
 async function spawnUser(runtimeRoot, appCheckout) {
   const tools = localTools ?? devTools();
   supervisor ??= createSupervisor({ node: tools.node, env: tools.env });
+  rebuildFromLink ??= createAppRebuilder({
+    supervisor, tools, command, managed: () => localCheckoutManaged,
+    pause: () => new Promise((resolve) => setTimeout(resolve, 1000)),
+    emit: (payload) => sendToWindow(mainWindow, "local:event", { event: "runtime.rebuild", payload }),
+    onUser: async (handle) => {
+      localApi = handle;
+      const { ui } = await handle.invoke("prepare");
+      await handle.invoke("resume");
+      sendToWindow(mainWindow, "local:event", { event: "app.interface-updated", payload: { ui } });
+    },
+  });
   const spec = userProcessSpec(appCheckout);
   await prepareUserProcess(spec, {
     ...tools,
@@ -507,9 +520,13 @@ function createWindow() {
 
 // One generic bridge: every local capability lives in the app backend, so the
 // shell does not change when the app grows one. A magi:// link is the exception
-// the OS forces on us: only this process can receive it, and the only thing it
-// does is hand the raw URL to runtime.applyDeeplink.
+// the OS forces on us: Shell receives it and owns its lifecycle transaction.
 ipcMain.handle("local:invoke", async (_event, method, payload) => {
+  if (method === "runtime.rebuildStatus") return rebuildFromLink?.status() ?? [];
+  if (method === "runtime.applyDeeplink") {
+    if (!rebuildFromLink) throw new Error("Shell lifecycle is not loaded yet.");
+    return await rebuildFromLink(payload?.url);
+  }
   if (localApi === null) {
     throw localApiError ?? new Error("The desktop app backend is not loaded yet.");
   }
@@ -547,6 +564,7 @@ async function installShellUpdate(installer) {
 
 const pendingDeeplinks = [];
 let deliveringDeeplink = false;
+let activeDeeplink = null;
 let appReady = false;
 let lastDeeplink = { url: "", at: 0 };
 let argvDeeplinksQueued = false;
@@ -560,6 +578,8 @@ function focusMainWindow() {
 
 function queueDeeplink(raw) {
   if (typeof raw !== "string" || !raw.startsWith("magi:")) return;
+  const requestKey = rebuildRequestKey(raw);
+  if (pendingDeeplinks.some((url) => rebuildRequestKey(url) === requestKey) || activeDeeplink === requestKey) return;
   const now = Date.now();
   if (lastDeeplink.url === raw && now - lastDeeplink.at < 2000) return;
   lastDeeplink = { url: raw, at: now };
@@ -574,13 +594,14 @@ function queueArgvDeeplinks() {
 }
 
 async function deliverDeeplinks() {
-  if (!appReady || deliveringDeeplink || localApi === null) return;
+  if (!appReady || deliveringDeeplink || rebuildFromLink === null) return;
   deliveringDeeplink = true;
   try {
     while (pendingDeeplinks.length > 0) {
       const url = pendingDeeplinks.shift();
+      activeDeeplink = rebuildRequestKey(url);
       try {
-        await localApi.invoke("runtime.applyDeeplink", { url });
+        await rebuildFromLink(url);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error(`[magi] deeplink: ${message}`);
@@ -591,6 +612,7 @@ async function deliverDeeplinks() {
       }
     }
   } finally {
+    activeDeeplink = null;
     deliveringDeeplink = false;
     if (pendingDeeplinks.length > 0) void deliverDeeplinks();
   }
@@ -638,8 +660,8 @@ if (!ownsInstance) {
 }
 
 app.on("before-quit", () => {
-  // Quit SIGTERMs User. Reloads do not. User then stops ASP and every MAGI.
-  localApi?.stop();
+  // Shell owns shutdown of every app, including when User is unavailable.
+  supervisor?.stopAll();
   localApi = null;
 });
 

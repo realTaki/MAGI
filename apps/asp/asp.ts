@@ -58,6 +58,7 @@ async function main(): Promise<void> {
     port,
   });
   await asp.start();
+  process.send?.({ type: "ready" });
   console.error(`[asp] listening on ${asp.origin}`);
   try {
     await new Promise<void>((resolve) => {

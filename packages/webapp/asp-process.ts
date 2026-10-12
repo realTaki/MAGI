@@ -47,6 +47,7 @@ export type AspProcessOptions = {
   env: NodeJS.ProcessEnv;
   spawnProcess?: SpawnAsp;
   startProcess?: StartProcess;
+  initialProcess?: { spec: ProcessSpec; handle: ProcessHandle };
 };
 
 export class AspProcessWorker extends BaseWorker {
@@ -74,6 +75,14 @@ export class AspProcessWorker extends BaseWorker {
     this.env = options.env;
     this.spawnProcess = options.spawnProcess ?? spawn;
     this.startProcess = options.startProcess;
+    if (options.initialProcess) {
+      this.handle = options.initialProcess.handle;
+      this.wanted = true;
+      this.handle.onExit((code, signal) => {
+        this.handle = null;
+        this.issue = `ASP exited (${code ?? signal ?? "unknown"})`;
+      });
+    }
   }
 
   requestShutdown(): void {

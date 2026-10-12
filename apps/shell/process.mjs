@@ -6,6 +6,7 @@
  * @typedef {(spec: ProcessSpec) => Promise<ProcessHandle>} StartProcess
  */
 
+import { describeApp } from "./app-spec.mjs";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { basename, resolve } from "node:path";
@@ -36,8 +37,10 @@ export async function prepareUserProcess(spec, { node, npm, env, managed, comman
   }
 }
 
-export function createSupervisor({ node, env }) {
+export function createSupervisor({ node, env, readyTimeoutMs = 30_000, stopTimeoutMs = 30_000 }) {
   const children = new Map();
+  const records = new Map();
+  const restarting = new Map();
   let seq = 0;
   let hostSend = null;
 
@@ -60,24 +63,62 @@ export function createSupervisor({ node, env }) {
     child.kill("SIGTERM");
   }
 
-  async function start(spec, { host } = {}) {
-    const id = String(++seq);
+  async function start(spec, { host, id: existingId, replacing = false } = {}) {
+    const identity = describeApp(spec)?.key;
+    const key = JSON.stringify([resolve(spec.cwd), resolve(spec.cwd, spec.entry), spec.args ?? []]);
+    if (!existingId) {
+      for (const [id, record] of records) {
+        if (record.identity === identity && identity && restarting.has(id)) {
+          if (record.key !== key) throw new Error(`Conflicting process specification: ${identity}`);
+          const handle = await restarting.get(id);
+          return { id: handle.id, whenReady: handle.whenReady };
+        }
+      }
+      for (const [id, entry] of children) {
+        if ((identity && entry.identity === identity) || entry.key === key) {
+          if (entry.key !== key) throw new Error(`Conflicting process specification: ${identity}`);
+          if (entry.host) throw new Error("User is already supervised");
+          return { id, whenReady: entry.whenReady };
+        }
+      }
+    }
+    const id = existingId ?? String(++seq);
     const isHost = host !== undefined;
     const child = spawn(node, [spec.entry, ...(spec.args ?? [])], {
       cwd: spec.cwd,
       env: { ...env, ...spec.env },
-      stdio: isHost ? ["pipe", "pipe", "pipe"] : ["ignore", "pipe", "pipe"],
+      stdio: isHost ? ["pipe", "pipe", "pipe", "ipc"] : ["ignore", "pipe", "pipe", "ipc"],
       detached: !isHost,
       windowsHide: true,
     });
-    children.set(id, { child, host: isHost });
+    const entry = { child, host: isHost, key, identity, replacing, ready: false };
+    children.set(id, entry);
+    records.set(id, { spec, host, identity, key, exit: null });
+    const ready = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`App did not become ready: ${spec.cwd}`)), readyTimeoutMs);
+      child.on("message", (message) => {
+        if (message?.type !== "ready") return;
+        entry.ready = true;
+        clearTimeout(timer);
+        resolve();
+      });
+      const fail = (error) => { clearTimeout(timer); reject(error); };
+      child.once("error", (error) => {
+        children.delete(id);
+        fail(error);
+      });
+      child.once("exit", (code, signal) => fail(new Error(`App exited before ready (${code ?? signal})`)));
+    });
+    void ready.catch(() => undefined);
+    entry.whenReady = () => ready;
     child.stderr?.on("data", (chunk) => {
       const text = String(chunk).trim();
       if (text) console.error(`[${basename(spec.entry)}]`, text);
     });
     child.once("exit", (code, signal) => {
+      records.get(id).exit = { code, signal };
       children.delete(id);
-      if (!isHost && hostSend !== null) {
+      if (!isHost && !entry.replacing && hostSend !== null) {
         hostSend({ type: "event", event: "process.exit", payload: { id, code, signal } });
       }
     });
@@ -85,12 +126,20 @@ export function createSupervisor({ node, env }) {
       child.once("spawn", resolve);
       child.once("error", reject);
     });
-    if (!isHost) return { id };
+    if (!isHost) return { id, whenReady: () => ready };
 
     const pending = new Map();
     let rpc = 0;
     const listeners = new Map();
-    const send = (message) => write(child.stdin, message);
+    let exited = false;
+    const send = (message) => {
+      if (exited || child.stdin.destroyed) throw new Error("User process exited");
+      write(child.stdin, message);
+    };
+    child.stdin.on("error", (error) => {
+      for (const waiter of pending.values()) waiter.reject(error);
+      pending.clear();
+    });
     hostSend = send;
 
     const lines = createInterface({ input: child.stdout });
@@ -122,6 +171,7 @@ export function createSupervisor({ node, env }) {
         try {
           let result;
           if (message.method === "spawn") result = await start(message.params);
+          else if (message.method === "processes") result = snapshots();
           else if (message.method === "stop") {
             stop(message.params?.id);
             result = {};
@@ -130,9 +180,9 @@ export function createSupervisor({ node, env }) {
           } else {
             throw new Error(`Unknown host method: ${String(message.method)}`);
           }
-          send({ type: "res", id: message.id, result });
+          if (!exited) send({ type: "res", id: message.id, result });
         } catch (error) {
-          send({
+          if (!exited) send({
             type: "err",
             id: message.id,
             error: error instanceof Error ? error.message : String(error),
@@ -142,6 +192,7 @@ export function createSupervisor({ node, env }) {
     });
 
     child.once("exit", () => {
+      exited = true;
       lines.close();
       if (hostSend === send) hostSend = null;
       for (const waiter of pending.values()) waiter.reject(new Error("User process exited"));
@@ -150,7 +201,9 @@ export function createSupervisor({ node, env }) {
 
     return {
       id,
+      whenReady: () => ready,
       invoke(method, params) {
+        if (exited) return Promise.reject(new Error("User process exited"));
         const reqId = String(++rpc);
         return new Promise((resolve, reject) => {
           pending.set(reqId, { resolve, reject });
@@ -168,5 +221,49 @@ export function createSupervisor({ node, env }) {
     };
   }
 
-  return { start, stop };
+  function snapshots() {
+    return [...children]
+      .map(([id]) => ({ id, spec: records.get(id).spec }));
+  }
+
+  async function replace(id) {
+    const record = records.get(id);
+    if (!record) throw new Error(`Unknown app process: ${id}`);
+    const entry = children.get(id);
+    if (entry) {
+      entry.replacing = true;
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          entry.replacing = false;
+          reject(new Error(`App did not stop: ${record.spec.cwd}`));
+        }, stopTimeoutMs);
+        entry.child.once("exit", () => { clearTimeout(timer); resolve(); });
+        stop(id);
+      });
+    }
+    try {
+      const handle = await start(record.spec, { host: record.host, id, replacing: true });
+      await handle.whenReady();
+      const restarted = children.get(id);
+      if (!restarted) throw new Error("App exited after announcing ready");
+      restarted.replacing = false;
+      return handle;
+    } catch (error) {
+      const failed = children.get(id);
+      if (failed) { failed.replacing = false; stop(id); }
+      else if (hostSend) hostSend({ type: "event", event: "process.exit", payload: { id, ...(records.get(id).exit ?? { code: null, signal: null }) } });
+      throw error;
+    }
+  }
+
+  function restart(id) {
+    if (restarting.has(id)) return restarting.get(id);
+    const operation = replace(id).finally(() => restarting.delete(id));
+    restarting.set(id, operation);
+    return operation;
+  }
+
+  return { start, stop, restart, snapshots,
+    stopAll: () => { for (const id of children.keys()) stop(id); },
+  };
 }

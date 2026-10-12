@@ -1,0 +1,78 @@
+name: Windows validation (no release)
+
+on:
+  push:
+    branches: ["codex/**"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows tests and unsigned installer
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Bootstrap project-owned tools
+        run: |
+          # setup-node is used only to provision the checkout dependencies.
+          npm ci
+          if ($LASTEXITCODE -ne 0) { throw "Dependency bootstrap failed" }
+          & ./node_modules/node/bin/node.exe apps/shell/scripts/prepare-runtime.mjs
+          if ($LASTEXITCODE -ne 0) { throw "Runtime preparation failed" }
+      - name: Root acceptance tests
+        run: |
+          $env:PATH = "$PWD/apps/shell/runtime/bin;$env:PATH"
+          & ./apps/shell/runtime/bin/node.exe ./apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js test
+          if ($LASTEXITCODE -ne 0) { throw "Root acceptance failed" }
+      - name: User lifecycle and CRLF regressions
+        env:
+          # Shell acceptance already boots current compiled EVA, ASP and User.
+          MAGI_SKIP_LIVE_INTEGRATION: '1'
+        run: |
+          & ./apps/shell/runtime/bin/node.exe --test apps/user/test/user-bootstrap.test.ts apps/user/test/runtime-lifecycle.test.ts apps/user/test/deeplink.test.ts apps/user/test/magi-runtime.test.ts
+          if ($LASTEXITCODE -ne 0) { throw "User lifecycle acceptance failed" }
+          # Six unrelated User baseline failures remain separately documented in
+          # docs/shell-rebuild-acceptance.md; their assertions are unchanged.
+      - name: Build User interface and backend
+        run: |
+          $env:PATH = "$PWD/apps/shell/runtime/bin;$env:PATH"
+          & ./apps/shell/runtime/bin/node.exe ./apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run build --prefix apps/user
+          if ($LASTEXITCODE -ne 0) { throw "User build failed" }
+          if (!(Test-Path apps/user/dist/user.js)) { throw "User process entry was removed by UI build" }
+      - name: Build unsigned Windows installer without publishing
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          $env:PATH = "$PWD/apps/shell/runtime/bin;$env:PATH"
+          $node = (Resolve-Path apps/shell/runtime/bin/node.exe).Path
+          Push-Location apps/shell
+          & $node scripts/build.mjs --win nsis --x64 --publish never --config.win.signExecutable=false
+          if ($LASTEXITCODE -ne 0) { throw "Windows installer build failed" }
+          Pop-Location
+          if (!(Get-ChildItem apps/shell/release/*.exe)) { throw "Installer was not produced" }
+          & ./apps/shell/release/win-unpacked/resources/runtime/bin/node.exe --version
+          if ($LASTEXITCODE -ne 0) { throw "Packaged runtime cannot run" }
+      - name: Keep unsigned validation installer as CI artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-unsigned-validation
+          path: apps/shell/release/*.exe
+          if-no-files-found: error
+          retention-days: 7

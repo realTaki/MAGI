@@ -61,10 +61,21 @@ export function createMagiRuntime({
   spawnProcess,
   startProcess,
   useWorktrees = true,
+  initialProcesses = [],
   log = (_message: string) => {},
 }) {
   const children = new Map(); // handle -> { child, root }
   const sources = new Map(); // handle -> prepared checkout root
+
+  for (const { spec, handle: child } of initialProcesses) {
+    if (!spec.entry.endsWith("eva.js")) continue;
+    const handle = spec.args?.[0];
+    if (!handle) continue;
+    const root = path.resolve(spec.cwd, "..", "..");
+    children.set(handle, { child, root });
+    sources.set(handle, root);
+    child.onExit(() => children.delete(handle));
+  }
 
   function nodeBinary() {
     const candidates = [

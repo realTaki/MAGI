@@ -6,7 +6,7 @@
   "description": "MAGI desktop app: operator interface and local backend.",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build && node scripts/postbuild.ts",
+    "build": "tsc --noEmit && vite build && node scripts/postbuild.ts && tsc -b tsconfig.process.json",
     "build:process": "tsc -b tsconfig.process.json",
     "start": "node dist/user.js",
     "preview": "vite preview",

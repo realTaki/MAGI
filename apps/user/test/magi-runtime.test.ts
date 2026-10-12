@@ -36,9 +36,10 @@ async function git(cwd, args) {
   return (await exec("git", args, { cwd })).stdout;
 }
 
-async function makeCheckout(root) {
+async function makeCheckout(root, autocrlf = false) {
   const checkout = path.join(root, "checkout");
   await git(root, ["init", "--quiet", checkout]);
+  await git(checkout, ["config", "core.autocrlf", String(autocrlf)]);
   writeFileSync(path.join(checkout, "README.md"), "one\n");
   await git(checkout, ["add", "."]);
   await git(checkout, ["-c", "user.email=a@b", "-c", "user.name=a", "commit", "--quiet", "-m", "one"]);
@@ -163,10 +164,11 @@ test("a checkout that cannot be branched falls back to the shared sources", asyn
   assert.equal(logs.some((line) => line.includes("running it from")), true);
 });
 
-test("merging the checkout branch advances a MAGI branch and restarts it", async (t) => {
+for (const autocrlf of [false, true]) {
+test(`merging advances a MAGI branch and restarts it (autocrlf=${autocrlf})`, async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-merge-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const checkout = await makeCheckout(root);
+  const checkout = await makeCheckout(root, autocrlf);
   const recorded = recorder();
   const runtime = runtimeWith(checkout, path.join(root, "home"), recorded);
   await runtime.start(agent);
@@ -179,7 +181,9 @@ test("merging the checkout branch advances a MAGI branch and restarts it", async
 
   const merged = await runtime.merge(agent);
   assert.deepEqual(merged, { handle: agent.handle, merged: true, from: branch });
-  assert.equal(readFileSync(path.join(source, "README.md"), "utf8"), "two\n");
+  assert.equal(readFileSync(path.join(source, "README.md"), "utf8").replace(/\r\n/g, "\n"), "two\n");
+  assert.equal(await git(source, ["show", "HEAD:README.md"]), "two\n", "Git blob retains the exact committed content");
+  if (autocrlf) assert.equal(readFileSync(path.join(source, "README.md"), "utf8"), "two\r\n", "fixture really exercises CRLF checkout");
   assert.equal(recorded.spawns.length, 2, "a MAGI that moved is restarted on the merged source");
 
   // Nothing new to merge: no second restart.
@@ -187,10 +191,10 @@ test("merging the checkout branch advances a MAGI branch and restarts it", async
   assert.equal(recorded.spawns.length, 2);
 });
 
-test("a conflicting merge is aborted and reported", async (t) => {
+test(`a conflicting merge is aborted and reported (autocrlf=${autocrlf})`, async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-conflict-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const checkout = await makeCheckout(root);
+  const checkout = await makeCheckout(root, autocrlf);
   const recorded = recorder();
   const runtime = runtimeWith(checkout, path.join(root, "home"), recorded);
   await runtime.start(agent);
@@ -204,9 +208,11 @@ test("a conflicting merge is aborted and reported", async (t) => {
   await git(checkout, ["-c", "user.email=a@b", "-c", "user.name=a", "commit", "--quiet", "-m", "main"]);
 
   await assert.rejects(runtime.merge(agent), /could not merge .* was aborted/);
-  assert.equal(readFileSync(path.join(source, "README.md"), "utf8"), "agent\n");
+  assert.equal(readFileSync(path.join(source, "README.md"), "utf8").replace(/\r\n/g, "\n"), "agent\n");
   assert.equal((await git(source, ["status", "--porcelain"])).trim(), "", "no half-finished merge is left behind");
 });
+
+}
 
 test("rebuilding installs and builds in the MAGI's own checkout", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-rebuild-"));

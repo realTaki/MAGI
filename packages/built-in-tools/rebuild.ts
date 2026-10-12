@@ -50,10 +50,10 @@ export function rebuildTools(handle: string, open: (url: string) => Promise<void
         const url = rebuildLink(target as RebuildTarget, handle);
         await open(url);
         if (target === "self") {
-          return `Opened ${url}. The desktop rebuilds this checkout and restarts only this MAGI. Uncommitted files under MAGI/ are included. This process will not see the build log.`;
+          return `Opened ${url}; the OS accepted the request. Shell has not confirmed build or ready. Shell will rebuild this checkout and restart only this MAGI. Uncommitted files under MAGI/ are included. This process will not see the build log.`;
         }
         const branch = target === "app" ? "magi/user" : "magi/asp";
-        return `Opened ${url}. The desktop merges this MAGI's branch into ${branch} and rebuilds that tree. Only committed changes are included. This process will not see the build log.`;
+        return `Opened ${url}; the OS accepted the request. Shell has not confirmed build or ready. Shell will merge this MAGI's branch into ${branch} and rebuilds that tree. Only committed changes are included. This process will not see the build log.`;
       },
     },
   ];
