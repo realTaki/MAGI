@@ -77,7 +77,8 @@ blob, an actual `two\r\n` checkout, merge/restart and conflict-abort behavior.
 They never alter the user's Git configuration. Native Windows also requires
 closing the legacy workspace fixture's SQLite connection and waiting for test
 children to exit before deleting their working directories; these cleanup fixes
-preserve all content and migration assertions.
+preserve all content and migration assertions. The broken-host test closes the
+actual parent pipe; closing CRT fd 0 does not close Node's Windows pipe handle.
 
 ## Known User baseline failures, kept outside the related acceptance gate
 

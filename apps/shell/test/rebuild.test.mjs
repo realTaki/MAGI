@@ -1,4 +1,5 @@
 import test from "node:test";
+import { spawn } from "node:child_process";
 import { Bus } from "@magi/bus";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
@@ -27,9 +28,9 @@ async function cleanup(supervisor, directory) {
   await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }
 
-async function fixture(t) {
+async function fixture(t, { spawnProcess } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), "magi-shell-"));
-  const supervisor = createSupervisor({ node: process.execPath, env: process.env, readyTimeoutMs: 3000, stopTimeoutMs: 3000 });
+  const supervisor = createSupervisor({ node: process.execPath, env: process.env, spawnProcess, readyTimeoutMs: 3000, stopTimeoutMs: 3000 });
   t.after(() => cleanup(supervisor, directory));
   const specs = {};
   const handles = {};
@@ -305,15 +306,21 @@ test("stop followed immediately by start waits for the old instance", async (t) 
 });
 
 test("a broken User host pipe cannot take down the Shell supervisor", { timeout: 10_000 }, async (t) => {
-  const f = await fixture(t);
+  let userChild;
+  const f = await fixture(t, { spawnProcess: (node, args, options) => {
+    const child = spawn(node, args, options);
+    if (options.stdio[0] === "pipe") userChild = child;
+    return child;
+  } });
   f.supervisor.stop(f.handles.user.id);
   while (f.supervisor.snapshots().some((p) => p.id === f.handles.user.id)) await new Promise((r) => setTimeout(r, 10));
   const cwd = path.join(f.directory, "broken", "apps", "user");
   await mkdir(path.join(cwd, "dist"), { recursive: true });
   const entry = path.join(cwd, "dist", "user.js");
-  await writeFile(entry, "import { closeSync } from 'node:fs'; process.stdin.destroy(); try { closeSync(0); } catch {} process.send({type:'ready'}); setInterval(()=>{},1000);");
+  await writeFile(entry, "process.send({type:'ready'}); setInterval(()=>{},1000);");
   const host = await f.supervisor.start({ cwd, entry }, { host: {} });
   await host.whenReady();
+  userChild.stdin.destroy(); // Close the real host write pipe on every platform.
   await assert.rejects(host.invoke("ready"), /EPIPE|closed|exited|EOF|broken pipe|write/i);
   f.supervisor.stop(f.handles.eva.id);
   while (f.supervisor.snapshots().some((p) => p.id === f.handles.eva.id)) await new Promise((r) => setTimeout(r, 10));

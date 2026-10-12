@@ -37,7 +37,7 @@ export async function prepareUserProcess(spec, { node, npm, env, managed, comman
   }
 }
 
-export function createSupervisor({ node, env, readyTimeoutMs = 30_000, stopTimeoutMs = 30_000 }) {
+export function createSupervisor({ node, env, spawnProcess = spawn, readyTimeoutMs = 30_000, stopTimeoutMs = 30_000 }) {
   const children = new Map();
   const records = new Map();
   const restarting = new Map();
@@ -102,7 +102,7 @@ export function createSupervisor({ node, env, readyTimeoutMs = 30_000, stopTimeo
     }
     const id = existingId ?? String(++seq);
     const isHost = host !== undefined;
-    const child = spawn(node, [spec.entry, ...(spec.args ?? [])], {
+    const child = spawnProcess(node, [spec.entry, ...(spec.args ?? [])], {
       cwd: spec.cwd,
       env: { ...env, ...spec.env },
       stdio: isHost ? ["pipe", "pipe", "pipe", "ipc"] : ["ignore", "pipe", "pipe", "ipc"],
@@ -221,7 +221,7 @@ export function createSupervisor({ node, env, readyTimeoutMs = 30_000, stopTimeo
       id,
       whenReady: () => ready,
       invoke(method, params) {
-        if (exited) return Promise.reject(new Error("User process exited"));
+        if (exited || child.stdin.destroyed) return Promise.reject(new Error("User process exited"));
         const reqId = String(++rpc);
         return new Promise((resolve, reject) => {
           pending.set(reqId, { resolve, reject });
