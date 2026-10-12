@@ -67,7 +67,7 @@ test("about reports the running commit and where it forked from AgenticSociety",
     openExternal: async () => {},
     copy: () => {},
   });
-  t.after(() => api.dispose());
+  t.after(async () => { await api.dispose(); });
 
   const status = await api["source.status"]();
   assert.equal(status.available, true);
@@ -106,7 +106,7 @@ test("about stays local when the checkout is not a Git repository", async (t) =>
     openExternal: async () => {},
     copy: () => {},
   });
-  t.after(() => api.dispose());
+  t.after(async () => { await api.dispose(); });
 
   const status = await api["source.status"]();
   assert.equal(status.available, false);

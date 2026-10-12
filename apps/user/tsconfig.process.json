@@ -1,0 +1,29 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo"
+  },
+  "include": [
+    "user.ts",
+    "host.ts"
+  ],
+  "exclude": [
+    "dist",
+    "src",
+    "test",
+    "main"
+  ],
+  "references": [
+    {
+      "path": "../../packages/bus"
+    },
+    {
+      "path": "../../packages/manager"
+    },
+    {
+      "path": "../../packages/webapp"
+    }
+  ]
+}

@@ -77,7 +77,8 @@ function backend({ viewer = {}, viewerStatus = 200, avatarStatus = 200, metadata
     tokenFile: () => path.join(paths.home, ".magi", "user", "github-token"),
     metadata: () => JSON.parse(readFileSync(path.join(paths.home, ".magi", "user", "github.json"), "utf8")),
     downloads: () => requests.filter((url) => url === AVATAR_URL).length,
-    dispose: () => {
+    dispose: async () => {
+      await api.dispose();
       globalThis.fetch = originalFetch;
       rmSync(root, { recursive: true, force: true });
     },

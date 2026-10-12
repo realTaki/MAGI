@@ -89,6 +89,5 @@ test("disposing the backend after opening chat storage does not throw", async (t
     emit: () => {}, openExternal: async () => {}, copy: () => {},
   });
   await api["chat.saveChats"]([]);
-  api.dispose();
-  await new Promise((resolve) => setImmediate(resolve));
+  await api.dispose();
 });

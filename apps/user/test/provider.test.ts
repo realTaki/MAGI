@@ -55,11 +55,13 @@ test("the app saves the provider key locally and only broadcasts it through ASP"
   assert.equal(JSON.parse(readFileSync(providerFile, "utf8")).api_key, "sk-local");
   assert.equal(JSON.parse(readFileSync(providerFile, "utf8")).base_url, "https://example.com/v1");
   if (process.platform !== "win32") assert.equal(statSync(providerFile).mode & 0o777, 0o600);
-  assert.equal(app(root)["provider.settings"]().api_key, "sk-local");
-  first.dispose();
+  const second = app(root);
+  assert.equal(second["provider.settings"]().api_key, "sk-local");
+  await second.dispose();
+  await first.dispose();
 });
 
-test("legacy app state moves to the user directory", (t) => {
+test("legacy app state moves to the user directory", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-user-directory-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const legacy = path.join(root, ".magi", "app");
@@ -70,7 +72,7 @@ test("legacy app state moves to the user directory", (t) => {
   assert.equal(backend["provider.settings"]().api_key, "preserved");
   assert.equal(existsSync(path.join(root, ".magi", "user", "provider.json")), true);
   assert.equal(existsSync(legacy), false);
-  backend.dispose();
+  await backend.dispose();
 });
 
 test("the app reads the curated provider catalog from pi-ai", async (t) => {
@@ -86,7 +88,7 @@ test("the app reads the curated provider catalog from pi-ai", async (t) => {
   assert.deepEqual(Object.keys(catalog), ["openai", "anthropic", "minimax-cn", "minimax-global", "deepseek"]);
   for (const models of Object.values(catalog)) assert.ok(models.length > 0);
   assert.deepEqual(catalog["minimax-cn"].map((model) => model.id), catalog["minimax-global"].map((model) => model.id));
-  backend.dispose();
+  await backend.dispose();
 });
 
 test("the app does not send the key to an older ASP that still persists it", async (t) => {
@@ -106,7 +108,7 @@ test("the app does not send the key to an older ASP that still persists it", asy
   await assert.rejects(backend["provider.save"]({ api_key: "sk-local" }), /Saved in the app, but MAGI sync failed/);
   assert.equal(backend["provider.settings"]().api_key, "sk-local");
   assert.equal(requests.includes("PUT /settings/provider"), false);
-  backend.dispose();
+  await backend.dispose();
 });
 
 test("a provider rejection keeps the app's previous key", async (t) => {
@@ -130,7 +132,7 @@ test("a provider rejection keeps the app's previous key", async (t) => {
   await backend["provider.save"]({ provider: "openai", model: "gpt", api_key: "good-key" });
   await assert.rejects(backend["provider.save"]({ provider: "openai", model: "gpt", api_key: "bad-key" }), /previous settings were kept/);
   assert.equal(backend["provider.settings"]().api_key, "good-key");
-  backend.dispose();
+  await backend.dispose();
 });
 
 test("the app copies a legacy ASP key before deleting that copy", async (t) => {
@@ -144,7 +146,9 @@ test("the app copies a legacy ASP key before deleting that copy", async (t) => {
     if (endpoint === "/operator") return Response.json({ token: "operator-token" });
     if (endpoint === "/bots") return Response.json({ bots: [{ handle: "@eva-000.magi", online: false }] });
     if (endpoint === "/settings/provider/legacy" && options.method === "DELETE") {
-      assert.equal(app(root)["provider.settings"]().api_key, "old-key");
+      const check = app(root);
+      assert.equal(check["provider.settings"]().api_key, "old-key");
+      await check.dispose();
       return Response.json({ ok: true });
     }
     if (endpoint === "/settings/provider/legacy") {
@@ -158,7 +162,7 @@ test("the app copies a legacy ASP key before deleting that copy", async (t) => {
   await backend.start();
   assert.equal(existsSync(path.join(root, ".magi", "user", "provider.json")), true);
   assert.ok(requests.includes("DELETE /settings/provider/legacy"));
-  backend.dispose();
+  await backend.dispose();
 });
 
 test("usage reads DeepSeek balance with the locally saved API key", async (t) => {
@@ -191,5 +195,5 @@ test("usage reads DeepSeek balance with the locally saved API key", async (t) =>
     balances: [{ currency: "USD", total: "12.34" }],
     message: "",
   });
-  backend.dispose();
+  await backend.dispose();
 });

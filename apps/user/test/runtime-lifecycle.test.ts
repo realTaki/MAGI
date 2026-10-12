@@ -69,10 +69,10 @@ test("retiring a reloaded client backend keeps ASP and MAGI running", async (t) 
   });
 
   await api.start();
-  api.dispose();
+  await api.dispose();
   assert.deepEqual(signals, [], "client/backend reload must not stop ASP");
 
-  api.shutdown();
+  await api.shutdown();
   assert.deepEqual(signals, ["SIGTERM"], "desktop shutdown stops its ASP child");
 });
 
@@ -102,7 +102,7 @@ test("the app refuses to attach to a running legacy Python ASP", async (t) => {
   });
   await assert.rejects(api.start(), /older ASP is already listening/);
   assert.equal(spawned, false);
-  api.dispose();
+  await api.dispose();
 });
 
 test("the User module creates and runs ASP from its own magi/asp worktree", async (t) => {
@@ -142,7 +142,7 @@ test("the User module creates and runs ASP from its own magi/asp worktree", asyn
       return child;
     },
   });
-  t.after(() => { globalThis.fetch = originalFetch; api.dispose(); rmSync(root, { recursive: true, force: true }); });
+  t.after(async () => { globalThis.fetch = originalFetch; await api.dispose(); rmSync(root, { recursive: true, force: true }); });
 
   await api.start();
   assert.equal(spawnedCwd, path.join(root, ".magi", "asp", "MAGI", "apps", "asp"));
@@ -199,5 +199,5 @@ test("a MAGI's runtime is driven from its own profile methods", async (t) => {
   await assert.rejects(api["runtime.buildAndInstallInstaller"](), /not managed/);
   assert.equal(calls.includes("POST /runtime/magi/stop"), false);
   assert.ok(calls.includes("GET /agents"));
-  api.dispose();
+  await api.dispose();
 });
