@@ -74,7 +74,10 @@ reject peer imports and escapes to apps. It no longer scans removed monolithic
 CRLF regression tests use both `core.autocrlf=false` and `true` in disposable
 Git repositories. They assert logical working-tree content, the exact LF Git
 blob, an actual `two\r\n` checkout, merge/restart and conflict-abort behavior.
-They never alter the user's Git configuration.
+They never alter the user's Git configuration. Native Windows also requires
+closing the legacy workspace fixture's SQLite connection and waiting for test
+children to exit before deleting their working directories; these cleanup fixes
+preserve all content and migration assertions.
 
 ## Known User baseline failures, kept outside the related acceptance gate
 

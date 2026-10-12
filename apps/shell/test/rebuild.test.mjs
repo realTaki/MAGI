@@ -17,10 +17,20 @@ process.on('SIGTERM', () => process.exit());
 setInterval(() => {},1000);`;
 }
 
+async function cleanup(supervisor, directory) {
+  supervisor.stopAll();
+  const deadline = Date.now() + 10_000;
+  while (supervisor.snapshots().length > 0) {
+    if (Date.now() > deadline) throw new Error("Test apps did not exit before cleanup");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+}
+
 async function fixture(t) {
   const directory = await mkdtemp(path.join(tmpdir(), "magi-shell-"));
   const supervisor = createSupervisor({ node: process.execPath, env: process.env, readyTimeoutMs: 3000, stopTimeoutMs: 3000 });
-  t.after(async () => { supervisor.stopAll(); await rm(directory, { recursive: true, force: true }); });
+  t.after(() => cleanup(supervisor, directory));
   const specs = {};
   const handles = {};
   for (const name of ["user", "asp", "eva", "other"]) {
@@ -242,7 +252,7 @@ test("fresh compiled EVA and ASP become ready with isolated persistent state", a
   const directory = await mkdtemp(path.join(tmpdir(), "magi-real-apps-"));
   const repository = path.resolve(import.meta.dirname, "../../..");
   const supervisor = createSupervisor({ node: process.execPath, env: process.env, readyTimeoutMs: 5000 });
-  t.after(async () => { supervisor.stopAll(); await rm(directory, { recursive: true, force: true }); });
+  t.after(() => cleanup(supervisor, directory));
   const aspCwd = path.join(directory, "apps", "asp");
   await mkdir(path.join(aspCwd, "dist"), { recursive: true });
   const databasePath = path.join(directory, "data", "asp.sqlite");
@@ -294,7 +304,7 @@ test("stop followed immediately by start waits for the old instance", async (t) 
   assert.equal(f.supervisor.snapshots().filter((p) => p.spec.args?.[0] === "@eva.magi").length, 1);
 });
 
-test("a broken User host pipe cannot take down the Shell supervisor", async (t) => {
+test("a broken User host pipe cannot take down the Shell supervisor", { timeout: 10_000 }, async (t) => {
   const f = await fixture(t);
   f.supervisor.stop(f.handles.user.id);
   while (f.supervisor.snapshots().some((p) => p.id === f.handles.user.id)) await new Promise((r) => setTimeout(r, 10));

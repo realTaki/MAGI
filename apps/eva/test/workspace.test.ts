@@ -153,10 +153,12 @@ test("a workspace numbered from 0 gets its contacts renumbered from 1", async ()
   // What a workspace from before the change holds: the system contact at 0, the MAGI
   // at 1, and messages pointing at both.
   const db = new Database(join(path, "memories", "books.db"));
-  db.exec("DELETE FROM books_messages");
-  db.exec("DELETE FROM books_contacts");
-  db.exec(`INSERT INTO books_contacts (id, name, role) VALUES (0, 'system', 'system'), (1, '@rebase.magi', 'magi'), (5, 'Ada', 'authorized')`);
-  db.exec(`INSERT INTO books_messages (chat_id, contact_id, content) VALUES (${chat.id}, 0, 'from the operator'), (${chat.id}, 1, 'from the magi')`);
+  try {
+    db.exec("DELETE FROM books_messages");
+    db.exec("DELETE FROM books_contacts");
+    db.exec(`INSERT INTO books_contacts (id, name, role) VALUES (0, 'system', 'system'), (1, '@rebase.magi', 'magi'), (5, 'Ada', 'authorized')`);
+    db.exec(`INSERT INTO books_messages (chat_id, contact_id, content) VALUES (${chat.id}, 0, 'from the operator'), (${chat.id}, 1, 'from the magi')`);
+  } finally { db.close(); }
   dropBookkeeping(path);
   first.close();
 
