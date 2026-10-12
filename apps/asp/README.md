@@ -1,10 +1,10 @@
 # asp
 
-Run with `node main.ts` from this directory (what the desktop app does). Node 24
+Run with `node asp.ts` from this directory (what the desktop app does). Node 24
 runs the TypeScript directly. `npm test` runs the suite.
 
-Layout: `main.ts` is the process entry. `asp.ts` is the supervisor: it starts a
-BUS and the `asp-server` worker from `@magi/asp-server`. That package owns the
+Layout: `asp.ts` is the composition root, same shape as `apps/eva/eva.ts`. It
+starts a BUS and the `asp-server` worker from `@magi/asp-server`. That package owns the
 operator HTTP, MAGI WebSocket, relay tables, and `db/`. `npm run db:generate`
 in `packages/asp-server` turns a table change into SQL under `db/drizzle/`,
 which the worker applies when it opens the database. Rows go through drizzle

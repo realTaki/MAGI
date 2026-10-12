@@ -74,7 +74,7 @@ docs: Update README with new architecture
 |-----------|---------|
 | `apps/shell/` | Electron shell: window, bundled Node 24 and npm |
 | `apps/user/` | Operator process: BUS manager (`user.ts`) and UI (`src/`) |
-| `apps/asp/` | ASP process: BUS manager (`asp.ts` + `main.ts`) |
+| `apps/asp/` | ASP process: BUS manager (`asp.ts`) |
 | `apps/eva/` + `packages/` | The runtime entry and its packages: bus, manager, asp-server, userend, agent, providers, tools, mcp, channels, tests |
 | `docs/` | Design docs + roadmap |
 

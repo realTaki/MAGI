@@ -1,15 +1,18 @@
 /**
  * One ASP process: its BUS, and the workers on it.
  *
- * Same shape as `apps/eva/eva.ts`. This file chooses the workers.
+ * This file is the only one allowed to know which workers exist.
  * ManagerWorker runs them. The relay is `@magi/asp-server`.
  */
 
+import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import { Bus } from "@magi/bus";
 import { ManagerWorker } from "@magi/manager";
 
 import { AspServer, ASP_HANDLE, defaultDatabasePath, intranetBaseUrl, type CreateAppOptions } from "@magi/asp-server";
+
+export type { CreateAppOptions };
 
 export class Asp {
   readonly bus: Bus;
@@ -20,7 +23,9 @@ export class Asp {
     const databasePath = options.databasePath ?? defaultDatabasePath();
     this.bus = new Bus(ASP_HANDLE, options.workspace ?? dirname(databasePath));
     this.server = new AspServer(this.bus, { ...options, databasePath });
-    this.manager = new ManagerWorker(this.bus, [this.server]);
+    this.manager = new ManagerWorker(this.bus, [
+      this.server,
+    ]);
   }
 
   get origin(): string { return this.server.origin; }
@@ -43,9 +48,25 @@ export class Asp {
   }
 }
 
-export type { CreateAppOptions };
-export { intranetBaseUrl };
+async function main(): Promise<void> {
+  const host = process.env.MAGI_ASP_HOST ?? "127.0.0.1";
+  const port = Number(process.env.MAGI_ASP_PORT ?? "42069");
+  const asp = new Asp({
+    aspBase: intranetBaseUrl(),
+    requestShutdown: () => process.kill(process.pid, "SIGTERM"),
+    host,
+    port,
+  });
+  await asp.start();
+  console.error(`[asp] listening on ${asp.origin}`);
+  try {
+    await new Promise<void>((resolve) => {
+      process.once("SIGINT", resolve);
+      process.once("SIGTERM", resolve);
+    });
+  } finally { await asp.stop(); }
+}
 
-export function createApp(options: CreateAppOptions = {}): Asp {
-  return new Asp(options);
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  main().catch((error) => { console.error(error); process.exitCode = 1; });
 }

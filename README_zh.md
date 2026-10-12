@@ -86,7 +86,7 @@ MAGI 应当因为持续运行而变得更好。目标是让它们观察工作、
 ## 当前已具备的能力
 
 - **桌面端**：Electron 壳把仓库克隆到 `~/.magi/MAGI`，安装 `asp/` 和 `magi/`，构建操作界面，并启动 ASP。安装包里有 Node.js 24 和 npm，没有 Python。
-- **ASP**：Node 24 运行 `asp/main.ts`，监听 `127.0.0.1:42069`。聊天和转发事件存在 `~/.magi/asp/asp.sqlite`。创建 bot 会由 App 在 `~/.magi/<名字>/MAGI` 检出分支 `magi/<名字>`，并从那里拉起对应 MAGI；创建 group 会开一个操作者可以邀请 MAGI 加入的聊天。
+- **ASP**：Node 24 运行 `apps/asp/asp.ts`，监听 `127.0.0.1:42069`。聊天和转发事件存在 `~/.magi/asp/asp.sqlite`。创建 bot 会由 App 在 `~/.magi/<名字>/MAGI` 检出分支 `magi/<名字>`，并从那里拉起对应 MAGI；创建 group 会开一个操作者可以邀请 MAGI 加入的聊天。
 - **每个 MAGI 一个进程**：Node 24 运行 `apps/eva/eva.ts`（它 import 那些运行时包），来源是这条 MAGI 自己的分支 `magi/<名字>`（检出在 `~/.magi/<名字>/MAGI`）。默认工作区是 `~/.magi/<名字>`。新路径还不存在时，仍会打开旧的 `~/.magi/ts-magi/<名字>`。
 - **每个 MAGI 内部的 BUS**：对话、消息、记忆、Skills、任务、联系人、提示词和工具都是 Book；聊天、模型调用、工具调用、投递、切换 provider、任务和 MCP 服务器变更都是 Job。
 - **操作者的数据留在桌面端**：聊天记录是 `~/.magi/user/chat.sqlite`。Provider 和 API key 在 `~/.magi/user/provider.json`。ASP 只转发更新，不另存一份 key。

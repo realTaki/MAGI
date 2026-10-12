@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import WebSocket from "ws";
 
-import { Asp, createApp, type CreateAppOptions } from "../asp.ts";
+import { Asp, type CreateAppOptions } from "../asp.ts";
 
 export function tempRoot(t: { after: (fn: () => void) => void }): string {
   const root = mkdtempSync(path.join(tmpdir(), "asp-"));
@@ -15,7 +15,7 @@ export async function withApp(
   options: CreateAppOptions,
   run: (app: Asp) => Promise<void>,
 ): Promise<void> {
-  const app = createApp({ aspBase: "http://asp.test", host: "127.0.0.1", port: 0, ...options });
+  const app = new Asp({ aspBase: "http://asp.test", host: "127.0.0.1", port: 0, ...options });
   await app.start();
   try {
     await run(app);

@@ -77,7 +77,7 @@ documented in `apps/user/main/index.ts`; the worker is `packages/userend`):
    no `node_modules` yet, run `npm install` at the root and `npm ci` in `apps/asp/`,
    and `npm ci` plus `npm run build` in `apps/user/`. It answers with the
    interface entry point.
-2. `start()` — run `apps/asp/main.ts` with Node 24 and wait for `GET /health` to
+2. `start()` — run `apps/asp/asp.ts` with Node 24 and wait for `GET /health` to
    report this runtime. `dispose()` releases reloadable resources; `shutdown()`
    stops ASP.
 3. With no MAGI registered yet, the backend creates the first three through ASP
@@ -94,7 +94,7 @@ assertion. The other flows live with the tests that hold them, named below.
 
 ## ASP
 
-`asp/main.ts` is the process entry. Node 24 runs the TypeScript directly.
+`apps/asp/asp.ts` is the process entry, the same shape as `apps/eva/eva.ts`. Node 24 runs the TypeScript directly.
 
 The operator API (`/chats`, `/bots`, `/settings/provider`) requires the
 desktop's Bearer token. The participant API (`/chats/open`,

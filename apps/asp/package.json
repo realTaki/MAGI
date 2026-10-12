@@ -5,7 +5,7 @@
   "type": "module",
   "description": "MAGI ASP process: BUS manager and asp-server worker.",
   "scripts": {
-    "start": "node main.ts",
+    "start": "node asp.ts",
     "test": "node --test test/*.test.ts"
   },
   "dependencies": {
