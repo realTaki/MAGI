@@ -23,6 +23,11 @@ export class ChatBook {
     return this.db.select().from(chats).where(eq(chats.id, id)).get() ?? null;
   }
 
+  list(channel?: string): Chat[] {
+    if (channel === undefined) return this.db.select().from(chats).orderBy(chats.id).all();
+    return this.db.select().from(chats).where(eq(chats.channel, channel)).orderBy(chats.id).all();
+  }
+
   forChannel(channel: string, address: string): Chat {
     this.db.insert(chats).values({ channel, delivery_address: address }).onConflictDoNothing().run();
     return this.db.select().from(chats)
@@ -36,6 +41,10 @@ export class ChatBook {
 
   setTopic(id: number, topic: string): void {
     this.db.update(chats).set({ topic }).where(eq(chats.id, id)).run();
+  }
+
+  setInfo(id: number, info: string): void {
+    this.db.update(chats).set({ info }).where(eq(chats.id, id)).run();
   }
 
   /**
