@@ -49,6 +49,8 @@ test('fresh bootstrap tolerates Electron precreating cache; repeat startup leave
 
 test('legacy main relocation repairs five linked app trees and preserves dirty sources, indexes, history, data and missing registrations', async (t) => {
   const f = await fixture(t); await repository(f, f.legacyShell);
+  const legacyIgnore = 'build/\ndist/\nnode_modules/\n';
+  await fs.writeFile(path.join(f.legacyShell, '.gitignore'), legacyIgnore);
   const trees = [];
   for (const name of ['user', 'asp', 'eva-000', 'eva-001', 'eva-002']) {
     const root = path.join(f.dataRoot, name, 'MAGI'); await fs.mkdir(path.dirname(root), { recursive: true });
@@ -71,6 +73,7 @@ test('legacy main relocation repairs five linked app trees and preserves dirty s
   assert.equal(await f.prepare(), f.shell);
   assert.equal(await has(f.legacyShell), false); assert.equal(await has(f.legacyCache), false);
   assert.equal(await f.run(['status', '--porcelain'], f.shell), status);
+  assert.equal(await fs.readFile(path.join(f.shell, '.gitignore'), 'utf8'), legacyIgnore, 'older source ignore bytes are preserved; generated cache is ignored locally');
   assert.deepEqual(await fs.readFile(path.join(f.shell, '.git/index')), mainIndex);
   assert.deepEqual(await fs.readFile(path.join(f.shell, '.git/logs/HEAD')), history);
   for (const item of trees) {

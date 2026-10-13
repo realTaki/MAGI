@@ -78,13 +78,14 @@ An older workspace at `~/.magi/ts-magi/<name>` is still opened when
 The shell puts Node.js 24 and npm on disk, then clones this repository to
 `~/.magi/shell`. It starts User once as `node dist/user.js` from `apps/user/`
 (unpackaged: `apps/shell/../user/dist/user.js`). Reloads do not kill User. Quit
-sends SIGTERM. User then spawns ASP and Eva through the same supervisor. What
+closes process admission, drains/stops owned apps and reaps owned commands. User
+prepares ASP and EVA source trees; Shell starts them through its supervisor. What
 User does, in order (the worker is `packages/webapp`):
 
-1. `prepare()` — check the lockfiles are there, then, in a managed checkout with
-   no `node_modules` yet, run `npm install` at the root and `npm ci` in `apps/asp/`,
-   and `npm ci` plus `npm run build` in `apps/user/`. It answers with the
-   interface entry point.
+1. `prepare()` — check the lockfiles, ask Shell to validate/repair managed
+   dependency installations against their completion markers and hidden locks,
+   then build the User interface when needed. Shell also prepares the User
+   process before its first start. It answers with the interface entry point.
 2. `start()` — run `apps/asp/dist/asp.js` with Node 24 and wait for `GET /health` to
    report this runtime.
 3. With no MAGI registered yet, the backend creates the first three through ASP
@@ -92,8 +93,8 @@ User does, in order (the worker is `packages/webapp`):
    BALTHASAR, CASPER as they come online. One that never comes online does not
    fail startup.
 
-Closing the window, or reloading the client, never stops User or ASP — only
-quitting the application does, which is `before-quit` stopping every supervised
+Closing the last window quits Shell and stops its owned runtime. Reloading the
+client keeps User and ASP running. `before-quit` stops every supervised
 app in `apps/shell/main.mjs`.
 
 Shell handles `request_rebuild` links directly. It compiles the target's actual
