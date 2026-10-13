@@ -53,7 +53,11 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
     for (const socket of sockets) socket.terminate();
     websocket?.close(); server?.close(); server?.closeAllConnections();
     if (worktreeCreated) {
-      await execute(git, ["worktree", "remove", "--force", checkout], { cwd: repository, env });
+      // Node removes junctions without traversing their targets and handles
+      // Windows long paths/retries. MinGit's recursive removal rejected this
+      // dependency/runtime tree after the real process assertions had passed.
+      await rm(checkout, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      await execute(git, ["worktree", "prune", "--expire", "now"], { cwd: repository, env });
       await execute(git, ["branch", "-D", "magi/self-loop"], { cwd: repository, env });
     }
     await rm(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });

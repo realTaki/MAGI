@@ -273,3 +273,10 @@ in-flight request after stop. It now records client fetch initiation, requires
 no new initiation after completed stop, and requires renewed `getUpdates` after
 explicit restart. This preserves the lifecycle assertion without treating an
 already-dispatched HTTP request's late arrival as a worker restart.
+
+Native Windows subsequently completed all activation, arithmetic-tool,
+reconnection and state assertions, but MinGit failed to recursively delete the
+temporary worktree containing dependency/runtime junctions (`Invalid argument`).
+The fixture now uses Node's recursive removal of its own temporary tree, with
+bounded retries, then `git worktree prune --expire now` and deletion of its own
+temporary branch. No application permission or activation guard changes.
