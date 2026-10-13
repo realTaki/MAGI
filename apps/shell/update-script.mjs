@@ -47,7 +47,7 @@ export function updateScript({ platform, pid, installer, mount, appBundle, stage
     ...waitForExit(pid),
     "cp " + shellQuote(installer) + " " + shellQuote(appBundle),
     "chmod +x " + shellQuote(appBundle),
-    shellQuote(appBundle),
+    "APPIMAGE_EXTRACT_AND_RUN=1 " + shellQuote(appBundle),
     "",
   ].join("\n");
 }

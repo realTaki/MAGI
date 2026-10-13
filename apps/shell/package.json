@@ -22,7 +22,9 @@
     "protocols": [
       {
         "name": "MAGI",
-        "schemes": ["magi"]
+        "schemes": [
+          "magi"
+        ]
       }
     ],
     "files": [
@@ -31,6 +33,7 @@
       "rebuild.mjs",
       "app-spec.mjs",
       "preload.cjs",
+      "shell-path.mjs",
       "update-script.mjs",
       "boot/**",
       "package.json"
@@ -56,6 +59,10 @@
       "target": [
         "AppImage"
       ]
+    },
+    "publish": null,
+    "appImage": {
+      "executableArgs": []
     }
   },
   "dependencies": {

@@ -1,0 +1,53 @@
+name: Linux AppImage validation (no release)
+on:
+  push:
+    branches: ["codex/**"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: linux-validation-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  linux:
+    name: Native Linux x64 AppImage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Bootstrap MAGI-owned runtime
+        run: |
+          npm ci
+          npm_execpath="$(npm root -g)/npm/bin/npm-cli.js" node_modules/node/bin/node apps/shell/scripts/prepare-runtime.mjs
+      - name: Root acceptance and User build
+        run: |
+          export PATH="$PWD/apps/shell/runtime/bin:$PATH"
+          apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js test
+          apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run build --prefix apps/user
+      - name: Build AppImage without publishing
+        run: |
+          export PATH="$PWD/apps/shell/runtime/bin:$PATH"
+          XDG_CACHE_HOME="$RUNNER_TEMP/magi-linux-cache" ELECTRON_BUILDER_CACHE="$RUNNER_TEMP/magi-linux-cache/builder" apps/shell/runtime/bin/node apps/shell/scripts/build.mjs --linux AppImage --x64 --publish never --config.artifactName=MAGI-Linux-x64.AppImage
+      - name: Verify native package and create handoff checksums
+        run: |
+          apps/shell/runtime/bin/node apps/shell/scripts/verify-linux-appimage.mjs apps/shell/release/MAGI-Linux-x64.AppImage > apps/shell/release/linux-verification.json
+          printf '%s\n' "$GITHUB_SHA" > apps/shell/release/SOURCE_COMMIT
+          cd apps/shell/release
+          sha256sum MAGI-Linux-x64.AppImage > SHA256SUMS
+      - uses: actions/upload-artifact@v6
+        with:
+          name: linux-x64-appimage
+          path: |
+            apps/shell/release/MAGI-Linux-x64.AppImage
+            apps/shell/release/SHA256SUMS
+            apps/shell/release/SOURCE_COMMIT
+            apps/shell/release/linux-verification.json
+          if-no-files-found: error
+          retention-days: 7

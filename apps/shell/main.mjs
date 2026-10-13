@@ -22,6 +22,7 @@ import dugite from "dugite";
 import { app, BrowserWindow, Menu, clipboard, ipcMain, screen, shell } from "electron";
 
 import { createAppRebuilder, rebuildRequestKey } from "./rebuild.mjs";
+import { shellArtifactPath } from "./shell-path.mjs";
 import { updateScript } from "./update-script.mjs";
 import { createSupervisor, prepareUserProcess } from "./process.mjs";
 
@@ -667,10 +668,9 @@ app.on("before-quit", () => {
 
 function armShellSwap(installer) {
   const mount = path.join(app.getPath("temp"), "magi-shell-mount");
-  const appBundle =
-    process.platform === "darwin"
-      ? path.resolve(path.dirname(process.execPath), "..", "..")
-      : process.execPath;
+  const appBundle = shellArtifactPath({
+    platform: process.platform, execPath: process.execPath, appImage: process.env.APPIMAGE,
+  });
   const scriptPath = path.join(
     app.getPath("temp"),
     process.platform === "win32" ? "magi-shell-update.cmd" : "magi-shell-update.sh",

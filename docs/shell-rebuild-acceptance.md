@@ -140,3 +140,44 @@ preserved identity/state after ASP reconnection. The current tests prove these
 components separately, not that entire OS-delivered self-modification loop.
 After that, design failure recovery with explicit test gates, rollback and
 state migration policy. No autonomous repeated self-modification is enabled.
+
+## Native Linux x64 AppImage handoff
+
+The Linux validation workflow builds `MAGI-Linux-x64.AppImage` on Ubuntu x64,
+checks the packed Shell modules and ELF executables, and runs the packaged
+Electron in Node mode plus packaged Node, npm, and dugite Git. Its
+`linux-x64-appimage` artifact includes `SOURCE_COMMIT`, `SHA256SUMS`, and
+`linux-verification.json`. This is build/runtime verification; window startup,
+OS protocol registration, deep links, and a real self-update remain desktop
+acceptance tasks.
+
+A native package probe confirmed that Electron's `process.execPath` is the
+executable inside the extracted AppDir. Linux updates now resolve the absolute
+outer `APPIMAGE` instead, reject a missing/invalid outer path, and relaunch with
+`APPIMAGE_EXTRACT_AND_RUN=1`. A disposable native shell-script regression checks
+that the inner executable remains intact and only the outer file is replaced.
+Explicit `publish: null` prevents electron-builder from auto-selecting update
+metadata publishing from ambient GitHub credentials during unsigned builds.
+The static desktop arguments no longer include `--no-sandbox`; upstream AppRun
+still has its own user-namespace detection and fallback behavior. No kernel,
+setuid, sandbox, FUSE, or desktop permission settings were changed.
+
+On the separate test cloud desktop, verify `sha256sum -c SHA256SUMS`, make the
+received file executable, then run:
+
+```sh
+./MAGI-Linux-x64.AppImage --appimage-extract-and-run
+```
+
+This official AppImage mode does not require FUSE. Use a fresh test desktop
+profile and prepare `~/.magi/MAGI` from `realTaki/MAGI` at the exact
+`SOURCE_COMMIT` before first launch. The package ships Shell and tools; its
+runtime User/ASP/EVA sources come from that checkout. Do not overwrite an
+existing operator checkout or state. The existing default source URL points to
+AgenticSocietyLab/MAGI, and setting only `MAGI_REPOSITORY_URL` would clone the
+remote default branch rather than pin this validation commit. Source preparation
+must therefore be explicit for this acceptance run. No organization repository
+was written or synchronized.
+
+References: [AppImage environment variables](https://docs.appimage.org/packaging-guide/environment-variables.html)
+and [official extract-and-run troubleshooting](https://docs.appimage.org/user-guide/troubleshooting/fuse.html).
