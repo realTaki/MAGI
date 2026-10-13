@@ -92,7 +92,12 @@ export async function prepareShellProfile({ home, repository, tools, command, as
           await fs.rmdir(shell);
         }
         progress('Migrating Shell source and Git links…', 0.04);
-        if (state.linked) await git(['worktree', 'move', legacyShell, shell], legacyShell);
+        if (state.linked) {
+          const common = (await git(['rev-parse', '--path-format=absolute', '--git-common-dir'], legacyShell)).trim();
+          // Windows cannot rename the current directory held by Git itself.
+          // Run from the profile parent with an explicit common Git directory.
+          await git(['--git-dir', common, 'worktree', 'move', legacyShell, shell], dataRoot);
+        }
         else await rename(legacyShell, shell);
       }
       if (!await exists(path.join(shell, '.git'))) throw new Error('Shell relocation is incomplete; original files and recovery journal were retained');
