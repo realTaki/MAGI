@@ -1,5 +1,5 @@
 import test from "node:test";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { Bus } from "@magi/bus";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from "node:fs/promises";
@@ -77,7 +77,7 @@ for (const [target, name] of [["self", "eva"], ["app", "user"], ["asp", "asp"]])
     }
     assert.equal(adopted, name === "user");
     assert.ok(calls.filter((c) => c.file === process.execPath).every((c) => c.cwd === path.resolve(f.specs[name].cwd, "..", "..") || (name === "user" && c.cwd === f.specs.user.cwd)));
-    assert.deepEqual(events.map((e) => e.phase), target === "self" ? ["requested", "building", "restarting", "ready"] : ["requested", "merging", "building", "restarting", "ready"]);
+    assert.deepEqual(events.map((e) => e.phase), target === "self" ? ["requested", "building", "testing", "building", "restarting", "ready"] : ["requested", "merging", "building", "testing", "building", "restarting", "ready"]);
     assert.equal((await f.supervisor.start(f.specs.other)).id, f.handles.other.id, "restored User adopts existing children");
   });
 }
@@ -339,4 +339,65 @@ test("compiled EVA starts through a directory alias instead of silently skipping
   const child = await supervisor.start({ cwd: path.join(repository, "apps", "eva"), entry: path.join(alias, "eva.js"), args: ["@alias.magi", "http://127.0.0.1:9", "test-token", "--workspace", state] });
   await child.whenReady();
   assert.ok((await readFile(path.join(state, "memories", "books.db"))).length > 0);
+});
+
+test("private rebuild IPC binds the caller identity and refuses spoofed or unowned entries", async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "magi-lifecycle-ipc-"));
+  const supervisor = createSupervisor({ node: process.execPath, env: process.env });
+  t.after(() => cleanup(supervisor, directory));
+  const received = [];
+  supervisor.setRebuildHandler((request) => received.push(request));
+  const cases = [
+    { kind: "eva", name: "owned", request: { type: "runtime.rebuild", id: "owned", target: "self" }, accepted: true },
+    { kind: "eva", name: "spoofed", request: { type: "runtime.rebuild", id: "spoofed", target: "self", handle: "@other.magi" } },
+    { kind: "user", name: "wrong-role", request: { type: "runtime.rebuild", id: "wrong-role", target: "self" } },
+    { kind: "unrelated", name: "same-name", request: { type: "runtime.rebuild", id: "same-name", target: "self" } },
+  ];
+  for (const item of cases) {
+    const cwd = path.join(directory, item.name, "apps", item.kind), result = path.join(directory, `${item.name}.json`);
+    await mkdir(path.join(cwd, "dist"), { recursive: true });
+    const entry = path.join(cwd, "dist", item.kind === "unrelated" ? "eva.js" : `${item.kind}.js`);
+    await writeFile(entry, `import {writeFileSync} from 'node:fs'; process.on('message',message=>{if(message.type==='runtime.rebuild.accepted')writeFileSync(${JSON.stringify(result)},JSON.stringify(message));}); process.send({type:'ready'}); process.send(${JSON.stringify(item.request)}); setInterval(()=>{},1000);`);
+    const child = await supervisor.start({ cwd, entry, args: [`@${item.name}.magi`] }); await child.whenReady();
+    let reply;
+    for (let attempt = 0; attempt < 100 && !reply; attempt++) { try { reply = JSON.parse(await readFile(result, "utf8")); } catch { await new Promise((resolve) => setTimeout(resolve, 20)); } }
+    assert.ok(reply, "IPC response arrived");
+    assert.equal(Boolean(reply.error), !item.accepted);
+  }
+  assert.deepEqual(received, [{ target: "self", handle: "@owned.magi" }]);
+});
+
+test("failed tests and failed compilation retain the old instance", async (t) => {
+  const f = await fixture(t), before = await f.states();
+  for (const failing of ["test", "build"]) {
+    const events = [];
+    const rebuild = createAppRebuilder({ supervisor: f.supervisor, tools: { npm: "npm-cli" }, managed: () => true, pause: async () => {}, emit: (event) => events.push(event), onUser: async () => {}, command: async (_file, args) => {
+      if ((failing === "test" && args[1] === "test") || (failing === "build" && args[2] === "build")) throw new Error(`rejected ${failing}`);
+      return "";
+    } });
+    await assert.rejects(rebuild("magi://runtime/rebuild?target=self&handle=@eva.magi"), new RegExp(`rejected ${failing}`));
+    assert.equal(events.at(-1).failedPhase, failing === "test" ? "testing" : "building");
+    assert.deepEqual(await f.states(), before);
+    assert.ok(!events.some((event) => event.phase === "restarting"));
+  }
+});
+
+test("a supervised rebuild caller without IPC fails closed", () => {
+  const repository = path.resolve(import.meta.dirname, "../../..");
+  const module = pathToFileURL(path.join(repository, "packages/built-in-tools/dist/rebuild.js")).href;
+  const program = `import {rebuildTools} from ${JSON.stringify(module)}; try {await rebuildTools('@closed.magi')[0].run({target:'self'});process.exitCode=1;}catch(error){console.log(error.message);}`;
+  const output = execFileSync(process.execPath, ["--input-type=module", "-e", program], { env: { ...process.env, MAGI_SHELL_REBUILD: "ipc" }, encoding: "utf8" });
+  assert.match(output, /Shell lifecycle IPC is disconnected/);
+});
+
+test("hand-run EVA exits its CLI without a service IPC listener", { timeout: 10_000 }, async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "magi-cli-exit-"));
+  const repository = path.resolve(import.meta.dirname, "../../..");
+  const child = spawn(process.execPath, [path.join(repository, "apps/eva/dist/eva.js"), "@cli.magi", "--workspace", directory], { stdio: ["pipe", "pipe", "pipe"] });
+  const exit = new Promise((resolve, reject) => { child.once("exit", (code) => resolve(code)); child.once("error", reject); });
+  t.after(async () => { if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL"); await exit; await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
+  let sent = false;
+  child.stdout.on("data", (data) => { if (!sent && String(data).includes("> ")) { sent = true; child.stdin.write("/exit\n"); } });
+  assert.equal(await exit, 0);
+  assert.equal(sent, true);
 });

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { Magi } from "../eva.js";
-import { SYSTEM_CONTACT_ID, type LLMMessage, type LLMRequest } from "@magi/bus";
+import { SYSTEM_CONTACT_ID, messageDelivery, type LLMMessage, type LLMRequest } from "@magi/bus";
 import { PiAiClient } from "@magi/providers/client.js";
 import { AGENT_PROMPT, COMPACTION_PROMPT, SYSTEM_PROMPT } from "@magi/agent/prompt_defaults.js";
 
@@ -22,6 +22,25 @@ afterEach(async () => { for (const path of workspaces.splice(0)) await rm(path, 
 async function workspace() { const path = await mkdtemp(join(tmpdir(), "magi-test-")); workspaces.push(path); return path; }
 
 describe("local MAGI agent", () => {
+  test("recovered messages wait for the complete startup context and tool catalog", async () => {
+    const path = await workspace();
+    const seen: LLMRequest[] = [];
+    const magi = new Magi("@recovered.magi", { workspace: path, deliver: () => {}, client: {
+      async complete(request) { seen.push(request); return { role: "assistant", content: "resumed" }; },
+    } });
+    magi.bus.memoryBook.save({ topic: "startup", detail: "memory must precede recovered work", kind: "long_term" });
+    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    const job = messageDelivery.send(magi.bus, chat.id, "already pending before startup");
+    try {
+      await magi.start();
+      for (let attempt = 0; attempt < 200 && !magi.bus.board("MessageDeliveryJob").result(job); attempt++) await sleep(10);
+      expect(magi.bus.board("MessageDeliveryJob").result(job)).toMatchObject({ status: "completed" });
+      expect(seen).toHaveLength(1);
+      expect(seen[0].messages[0].content).toContain("memory must precede recovered work");
+      expect(seen[0].tools.map((tool) => tool.name)).toContain("provider_settings");
+      expect(seen[0].tools.map((tool) => tool.name)).toContain("save_memory");
+    } finally { await magi.stop(); }
+  });
   test("seeds editable prompts once and keeps system rules outside the workspace", async () => {
     const path = await workspace();
     const magi = new Magi("@templates.magi", { workspace: path });

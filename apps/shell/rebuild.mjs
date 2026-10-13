@@ -76,6 +76,11 @@ export function createAppRebuilder({ supervisor, tools, command, managed, onUser
       await command(tools.node, [tools.npm, "ci", "--ignore-scripts"], {
         cwd: root, env: tools.env, description: "Could not install app dependencies",
       });
+      phase = "testing"; report();
+      await command(tools.node, [tools.npm, "test"], {
+        cwd: root, env: tools.env, description: "App tests failed; the running instance was kept",
+      });
+      phase = "building"; report();
       await command(tools.node, [tools.npm, "run", "build"], {
         cwd: root, env: tools.env, description: "Could not compile the app",
       });
@@ -98,5 +103,13 @@ export function createAppRebuilder({ supervisor, tools, command, managed, onUser
     } finally { busy = false; }
   };
   rebuild.status = () => [...statuses.values()];
+  supervisor.setRebuildHandler?.(({ target, handle }) => {
+    if (!managed()) throw new Error("This checkout is not managed by the app.");
+    if (busy) throw new Error("Another app rebuild is still running.");
+    const url = new URL("magi://runtime/rebuild");
+    url.searchParams.set("target", target); url.searchParams.set("handle", handle);
+    // The tool must finish recording acceptance before its process is drained.
+    void rebuild(url.href).catch(() => {}); // Failures are retained in status and emitted.
+  });
   return rebuild;
 }

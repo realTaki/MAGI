@@ -18,7 +18,7 @@ jobs:
   windows:
     name: Windows tests and unsigned installer
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     defaults:
       run:
         shell: pwsh
@@ -45,6 +45,10 @@ jobs:
           $env:PATH = "$PWD/apps/shell/runtime/bin;$env:PATH"
           & ./apps/shell/runtime/bin/node.exe ./apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js test
           if ($LASTEXITCODE -ne 0) { throw "Root acceptance failed" }
+      - name: EVA self-modification through real process IPC
+        run: |
+          apps/shell/runtime/bin/node.exe --test apps/shell/integration/self-rebuild.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw "EVA self-modification acceptance failed" }
       - name: Full User acceptance
         run: |
           & ./apps/shell/runtime/bin/node.exe --test apps/user/test/*.test.ts

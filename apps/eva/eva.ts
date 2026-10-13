@@ -105,17 +105,24 @@ async function main(): Promise<void> {
   const [base, token] = positional;
   if ((base && !token) || (!base && token)) throw new Error("ASP base and token must be supplied together");
   const magi = new Magi(handle, { workspace, asp: base && token ? { base, token } : undefined });
+  const shutdown = base && token ? new Promise<void>((resolve) => {
+    process.once("SIGINT", resolve); process.once("SIGTERM", resolve);
+    process.on("message", (message) => {
+      if ((message as { type?: string })?.type === "shutdown") resolve();
+    });
+  }) : null;
   await magi.start();
-  process.send?.({ type: "ready" });
+  process.send?.({ type: "ready", lifecycle: shutdown ? ["shutdown"] : [] });
   // With ASP the process is a service: it stays up until it is asked to stop.
   // Without one it is a prompt, which is how a MAGI is tried out by hand.
   if (base && token) {
     try {
-      await new Promise<void>((resolve) => {
-        process.once("SIGINT", resolve);
-        process.once("SIGTERM", resolve);
-      });
-    } finally { await magi.stop(); }
+      await shutdown;
+    } finally {
+      process.send?.({ type: "stopping" });
+      await magi.stop();
+      if (process.connected) process.disconnect();
+    }
     return;
   }
   const input = createInterface({ input: stdin, output: stdout });

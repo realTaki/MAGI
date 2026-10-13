@@ -181,3 +181,55 @@ was written or synchronized.
 
 References: [AppImage environment variables](https://docs.appimage.org/packaging-guide/environment-variables.html)
 and [official extract-and-run troubleshooting](https://docs.appimage.org/user-guide/troubleshooting/fuse.html).
+
+## EVA self-modification process acceptance
+
+Shell-owned EVA now sends `request_rebuild` through its private process IPC.
+Shell derives the requesting handle from the live registered process spec;
+caller-supplied handles, unknown targets, non-EVA entries and retiring/not-ready
+processes are refused. The managed-checkout check and the existing worktree,
+entry-point, publishing-branch and transaction exclusion checks still apply.
+A supervised caller with a disconnected IPC channel fails closed. Hand-run
+processes retain the OS deep-link fallback. Acceptance is not readiness; Shell
+retains/emits transaction status separately.
+
+The activation order is dependency preparation, ordinary root tests (including
+compilation), explicit build, old-process retirement, replacement readiness.
+Failed tests or compilation leave the old loaded instance running. Windows EVA
+uses the same IPC shutdown/drain path as Linux; after draining it disconnects
+IPC so its listener does not hold the retiring process alive. User has acquired
+no new lifecycle responsibility. Worker polling now starts only after all
+configured workers initialize, so a pending recovered message sees its memory,
+provider and tool context on its first turn.
+
+`apps/shell/integration/self-rebuild.test.mjs` is an explicit CI step outside
+the root test glob, so candidate `npm test` does not recursively activate a
+second acceptance test. It creates an isolated `magi/self-loop` worktree and
+workspace, uses local OpenAI-compatible SSE and ASP HTTP/WebSocket fixtures,
+and starts the real compiled EVA entry under the real Shell supervisor. The
+model fixture drives the actual BUS tool channel to write candidate source and
+a test, run tests, and request rebuild. Separate candidates intentionally fail
+a test and TypeScript compilation. The valid candidate adds only a source
+context marker; a replacement must demonstrate that marker in its actual
+provider request. The test checks duplicate rejection, old exit before new
+start, stable supervisor identity, ASP reconnection/replay position, nickname,
+settings, long-term memory, and a message durably ingested while the old agent
+is draining, then completed by the new process.
+
+The model's decisions and ASP service are simulated. File tools, bash, provider
+serialization, BUS databases, Node processes, candidate tests/build, private IPC
+and supervisor replacement are real. This is a controlled self-modification
+loop, not evidence of RSI or measured improvement. Electron GUI/OS protocol
+acceptance, process-crash recovery during side effects, atomic artifact
+activation, rollback to a known-good build, and persistent Shell transaction
+journaling remain separate work. Candidate tests and source are not an
+immutable security policy; this change does not grant new authority to change
+policy or environmental settings.
+
+During development the new IPC listener initially prevented clean exit; the
+explicit post-drain disconnect fixed that introduced failure. The process
+regression also exposed the pre-existing startup race that omitted memory from
+a recovered turn's context; the worker-start barrier fixes it. The test fixture
+removes only its inherited `NODE_TEST_CONTEXT` in its child environment copy;
+leaking the outer harness context into nested test commands had produced
+misleading exit codes during the first attempted gate verification.

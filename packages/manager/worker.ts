@@ -43,6 +43,7 @@ export class ManagerWorker extends BaseWorker {
   private readonly failures = new Map<string, number>();
   private readonly failing = new Set<string>();
   private started = false;
+  private initializing = false;
   private loop: Promise<void> | null = null;
   private lastHealthCheck = 0;
 
@@ -60,8 +61,13 @@ export class ManagerWorker extends BaseWorker {
   async start(): Promise<void> {
     if (this.started) return;
     this.started = true;
-    this.loop = this.runSupervisor();
+    this.initializing = true;
     await this.reconcile();
+    this.initializing = false;
+    // Recovered jobs must see the complete live tool/prompt catalog, including
+    // providers and memory, before any worker starts claiming them.
+    for (const [name, running] of this.running) running.loop = this.runLoop(name, running.worker);
+    this.loop = this.runSupervisor();
   }
 
   async stop(): Promise<void> {
@@ -138,7 +144,7 @@ export class ManagerWorker extends BaseWorker {
     this.running.set(name, running);
     this.health.set(name, worker.health?.() ?? null);
     this.failures.delete(name);
-    running.loop = this.runLoop(name, worker);
+    if (!this.initializing) running.loop = this.runLoop(name, worker);
   }
 
   private async stopWorker(name: string): Promise<void> {

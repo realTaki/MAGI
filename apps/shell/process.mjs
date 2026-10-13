@@ -43,6 +43,7 @@ export function createSupervisor({ node, env, spawnProcess = spawn, readyTimeout
   const restarting = new Map();
   let seq = 0;
   let hostSend = null;
+  let rebuildHandler = null;
 
   function write(stream, message) {
     stream.write(`${JSON.stringify(message)}\n`);
@@ -59,6 +60,10 @@ export function createSupervisor({ node, env, spawnProcess = spawn, readyTimeout
     if (entry === undefined) return;
     entry.stopping = true;
     const { child, host } = entry;
+    if (entry.graceful && child.connected) {
+      child.send({ type: "shutdown" }, () => {});
+      return;
+    }
     if (!host && process.platform !== "win32" && typeof child.pid === "number" && child.pid > 0) {
       try {
         process.kill(-child.pid, "SIGTERM");
@@ -104,7 +109,7 @@ export function createSupervisor({ node, env, spawnProcess = spawn, readyTimeout
     const isHost = host !== undefined;
     const child = spawnProcess(node, [spec.entry, ...(spec.args ?? [])], {
       cwd: spec.cwd,
-      env: { ...env, ...spec.env },
+      env: { ...env, ...spec.env, ...(describeApp(spec)?.kind === "eva" ? { MAGI_SHELL_REBUILD: "ipc" } : {}) },
       stdio: isHost ? ["pipe", "pipe", "pipe", "ipc"] : ["ignore", "pipe", "pipe", "ipc"],
       detached: !isHost,
       windowsHide: true,
@@ -115,7 +120,20 @@ export function createSupervisor({ node, env, spawnProcess = spawn, readyTimeout
     const ready = new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`App did not become ready: ${spec.cwd}`)), readyTimeoutMs);
       child.on("message", (message) => {
+        if (message?.type === "runtime.rebuild") {
+          let error;
+          try {
+            const app = describeApp(spec);
+            if (children.get(id) !== entry || !entry.ready || entry.stopping || entry.replacing || app?.kind !== "eva") throw new Error("Only a live Shell-owned EVA may request a rebuild");
+            if (Object.keys(message).sort().join(",") !== "id,target,type" || typeof message.id !== "string" || message.id.length > 64 || !["self", "app", "asp"].includes(message.target)) throw new Error("Invalid lifecycle request");
+            if (!rebuildHandler) throw new Error("Shell lifecycle is not loaded");
+            rebuildHandler({ target: message.target, handle: app.handle });
+          } catch (failure) { error = failure instanceof Error ? failure.message : String(failure); }
+          if (child.connected) child.send({ type: "runtime.rebuild.accepted", id: message.id, ...(error ? { error } : {}) }, () => {});
+          return;
+        }
         if (message?.type !== "ready") return;
+        entry.graceful = describeApp(spec)?.kind === "eva" && Array.isArray(message.lifecycle) && message.lifecycle.includes("shutdown");
         entry.ready = true;
         clearTimeout(timer);
         resolve();
@@ -282,6 +300,7 @@ export function createSupervisor({ node, env, spawnProcess = spawn, readyTimeout
   }
 
   return { start, stop, restart, snapshots,
+    setRebuildHandler: (handler) => { rebuildHandler = handler; },
     stopAll: () => { for (const id of children.keys()) stop(id); },
   };
 }

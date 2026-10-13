@@ -1,10 +1,10 @@
 /**
- * Ask the desktop app to rebuild. This process cannot stop or start the
- * app, ASP, or itself: the desktop is not a network service. The OS delivers
- * a magi:// link to the running MAGI app, which owns those processes.
+ * Ask Shell to rebuild. This process cannot stop or start User, ASP or itself.
+ * Shell-owned EVA uses private IPC; a hand-run caller uses an OS magi:// link.
  */
 
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import type { ExecutableTool } from "@magi/bus";
 import { stringArg } from "./args.js";
 
@@ -34,11 +34,32 @@ function openExternal(url: string): Promise<void> {
   });
 }
 
-export function rebuildTools(handle: string, open: (url: string) => Promise<void> = openExternal): ExecutableTool[] {
+/** Fail closed if a supervised caller loses its private Shell IPC channel. */
+function requestShell(target: RebuildTarget): Promise<void> {
+  if (!process.send || !process.connected) return Promise.reject(new Error("Shell lifecycle IPC is disconnected"));
+  const id = randomUUID();
+  return new Promise((resolve, reject) => {
+    const finish = (error?: Error) => {
+      clearTimeout(timer); process.off("message", receive); process.off("disconnect", disconnected);
+      if (error) reject(error); else resolve();
+    };
+    const receive = (raw: unknown) => {
+      const reply = raw as { type?: string; id?: string; error?: string };
+      if (reply?.type !== "runtime.rebuild.accepted" || reply.id !== id) return;
+      finish(reply.error ? new Error(reply.error) : undefined);
+    };
+    const disconnected = () => finish(new Error("Shell lifecycle IPC disconnected before acceptance"));
+    const timer = setTimeout(() => finish(new Error("Shell lifecycle acceptance timed out")), 5000);
+    process.on("message", receive); process.once("disconnect", disconnected);
+    process.send!({ type: "runtime.rebuild", id, target }, (error) => { if (error) finish(error); });
+  });
+}
+
+export function rebuildTools(handle: string, open?: (url: string) => Promise<void>): ExecutableTool[] {
   return [
     {
       name: "request_rebuild",
-      description: "Ask the running MAGI desktop app to rebuild this MAGI (self), the operator UI (app), or ASP (asp). Opens a magi:// link and returns once the OS accepts it. It does not build in this process and does not return the build log.",
+      description: "Ask Shell to validate and rebuild this MAGI (self), the operator UI (app), or ASP (asp). A supervised EVA requests through its private Shell IPC; a hand-run process opens a magi:// link. Returns acceptance, not build or readiness confirmation.",
       input_schema: {
         type: "object",
         properties: { target: { type: "string", enum: ["self", "app", "asp"] } },
@@ -48,7 +69,11 @@ export function rebuildTools(handle: string, open: (url: string) => Promise<void
         const target = stringArg(args, "target");
         if (!TARGETS.includes(target as RebuildTarget)) throw new Error("target must be self, app, or asp");
         const url = rebuildLink(target as RebuildTarget, handle);
-        await open(url);
+        if (!open && process.env.MAGI_SHELL_REBUILD === "ipc") {
+          await requestShell(target as RebuildTarget);
+          return `Shell accepted ${target} rebuild for ${handle}. Tests and compilation must pass before replacement; acceptance does not confirm ready. Follow-up work remains in this workspace.`;
+        }
+        await (open ?? openExternal)(url);
         if (target === "self") {
           return `Opened ${url}; the OS accepted the request. Shell has not confirmed build or ready. Shell will rebuild this checkout and restart only this MAGI. Uncommitted files under MAGI/ are included. This process will not see the build log.`;
         }

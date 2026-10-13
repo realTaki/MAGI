@@ -14,7 +14,7 @@ jobs:
   linux:
     name: Native Linux x64 AppImage
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v7
@@ -31,6 +31,8 @@ jobs:
           export PATH="$PWD/apps/shell/runtime/bin:$PATH"
           apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js test
           apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run build --prefix apps/user
+      - name: EVA self-modification through real process IPC
+        run: apps/shell/runtime/bin/node --test apps/shell/integration/self-rebuild.test.mjs
       - name: Build AppImage without publishing
         run: |
           export PATH="$PWD/apps/shell/runtime/bin:$PATH"

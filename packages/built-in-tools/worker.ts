@@ -6,7 +6,7 @@
  *   files.ts     read_file / list_files / search_files / write_file / edit_file
  *   messages.ts  search_chat_messages / search_contact_messages /
  *                send_message / set_home_chat
- *   rebuild.ts   request_rebuild — ask the desktop app, via a magi:// link
+ *   rebuild.ts   request_rebuild — ask Shell, via private IPC or an OS link
  *
  * `load_skill` is not here: it reads the SKILL.md files that `@magi/skills`
  * owns, so that package's worker registers the tool itself. The contact tools
