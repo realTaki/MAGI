@@ -153,8 +153,13 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
     assert.equal(starts.length, 1); assert.deepEqual(exits, []);
     send(`baseline ${mode} proof`); await until(() => deliveries.filter((value) => value === "baseline served").length >= (mode === "reject-tests" ? 2 : 3), "old loaded behavior did not survive failed candidate");
   }
+  const activationStart = events.length;
   send("activate");
-  await until(() => successfulRequest && heldDrain && stoppingSeen, "Shell never drained the real caller");
+  await until(() => {
+    const rejected = events.slice(activationStart).find((event) => event.phase === "failed");
+    if (rejected) throw new Error(`Valid candidate activation was rejected: ${rejected.message}`);
+    return successfulRequest && heldDrain && stoppingSeen;
+  }, "Shell never drained the real caller");
   const pendingEvent = send("pending during retirement");
   await until(() => acknowledgements.some((ack) => ack.event_id === `event-${pendingEvent}`), "pending message was not durably ingested");
   const jobs = new Database(path.join(workspace, "logs/jobs.db"), { readonly: true });
