@@ -8,24 +8,19 @@
 
 import { describeApp } from "./app-spec.mjs";
 import { dependencyState } from "./dependency-state.mjs";
+import { createProcessOwner } from "./process-owner.mjs";
+import { ensureInstalledDependencies } from "./installation.mjs";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { createInterface } from "node:readline";
 
 /** Bootstrap User before it can run its own prepare method. */
-export async function prepareUserProcess(spec, { node, npm, env, managed, command }) {
+export async function prepareUserProcess(spec, { node, npm, env, managed, command, assertOpen = () => {} }) {
+  assertOpen();
   const checkout = resolve(spec.cwd, "..", "..");
-  if (managed && !existsSync(resolve(checkout, "node_modules"))) {
-    if (!existsSync(resolve(checkout, "package-lock.json"))) {
-      throw new Error(`MAGI checkout is incomplete: ${checkout}/package-lock.json is missing`);
-    }
-    await command(node, [npm, "ci", "--ignore-scripts"], {
-      cwd: checkout,
-      env,
-      description: "Could not install the User process dependencies",
-    });
-  }
+  if (managed) await ensureInstalledDependencies(checkout, { node, npm, env, command, assertOpen });
+  assertOpen();
   if (!existsSync(spec.entry)) {
     await command(node, [npm, "run", "build:process"], {
       cwd: spec.cwd,
@@ -33,18 +28,28 @@ export async function prepareUserProcess(spec, { node, npm, env, managed, comman
       description: "Could not build the User process",
     });
   }
+  assertOpen();
   if (!existsSync(spec.entry)) {
     throw new Error(`The User process is missing: ${spec.entry}`);
   }
 }
 
-export function createSupervisor({ node, env, spawnProcess = spawn, readyTimeoutMs = 30_000, stopTimeoutMs = 30_000 }) {
+export async function prepareAndStartUser(spec, tools, supervisor, options) {
+  supervisor.assertOpen();
+  await prepareUserProcess(spec, { ...tools, assertOpen: () => supervisor.assertOpen() });
+  supervisor.assertOpen();
+  return await supervisor.start(spec, options);
+}
+
+export function createSupervisor({ node, env, spawnProcess = spawn, owner = createProcessOwner({ spawnProcess }), readyTimeoutMs = 30_000, stopTimeoutMs = 30_000 }) {
   const children = new Map();
   const records = new Map();
   const restarting = new Map();
   let seq = 0;
   let hostSend = null;
   let rebuildHandler = null;
+  let closing = false, closePromise = null;
+  const assertOpen = () => { if (closing) throw new Error("Shell supervisor is closing"); owner.assertOpen(); };
 
   function write(stream, message) {
     stream.write(`${JSON.stringify(message)}\n`);
@@ -60,23 +65,17 @@ export function createSupervisor({ node, env, spawnProcess = spawn, readyTimeout
     const entry = children.get(id);
     if (entry === undefined) return;
     entry.stopping = true;
-    const { child, host } = entry;
+    const { child } = entry;
     if (entry.graceful && child.connected) {
       child.send({ type: "shutdown" }, () => {});
       return;
     }
-    if (!host && process.platform !== "win32" && typeof child.pid === "number" && child.pid > 0) {
-      try {
-        process.kill(-child.pid, "SIGTERM");
-        return;
-      } catch {
-        // The group is already gone.
-      }
-    }
-    child.kill("SIGTERM");
+    entry.stopTask = owner.signal(child);
+    void entry.stopTask.catch((error) => console.error("App tree stop failed:", error.message));
   }
 
   async function start(spec, { host, id: existingId, replacing = false } = {}) {
+    assertOpen();
     const app = describeApp(spec);
     const identity = app?.key;
     const key = JSON.stringify([resolve(spec.cwd), resolve(spec.cwd, spec.entry), spec.args ?? []]);
@@ -110,7 +109,8 @@ export function createSupervisor({ node, env, spawnProcess = spawn, readyTimeout
     const id = existingId ?? String(++seq);
     const isHost = host !== undefined;
     const dependencies = app ? dependencyState(app.root) : null;
-    const child = spawnProcess(node, [spec.entry, ...(spec.args ?? [])], {
+    assertOpen();
+    const child = owner.spawn(node, [spec.entry, ...(spec.args ?? [])], {
       cwd: spec.cwd,
       env: { ...env, ...spec.env, ...(describeApp(spec)?.kind === "eva" ? { MAGI_SHELL_REBUILD: "ipc" } : {}) },
       stdio: isHost ? ["pipe", "pipe", "pipe", "ipc"] : ["ignore", "pipe", "pipe", "ipc"],
@@ -266,6 +266,7 @@ export function createSupervisor({ node, env, spawnProcess = spawn, readyTimeout
   }
 
   async function replace(id) {
+    assertOpen();
     const record = records.get(id);
     if (!record) throw new Error(`Unknown app process: ${id}`);
     const entry = children.get(id);
@@ -279,7 +280,10 @@ export function createSupervisor({ node, env, spawnProcess = spawn, readyTimeout
         entry.child.once("exit", () => { clearTimeout(timer); resolve(); });
         stop(id);
       });
+      await entry.stopTask;
+      await owner.reap(entry.child);
     }
+    assertOpen();
     try {
       const handle = await start(record.spec, { host: record.host, id, replacing: true });
       await handle.whenReady();
@@ -303,6 +307,9 @@ export function createSupervisor({ node, env, spawnProcess = spawn, readyTimeout
   }
 
   return { start, stop, restart, snapshots,
+    assertOpen,
+    beginClose: () => { closing = true; owner.beginClose(); },
+    close: () => closePromise ??= (async () => { closing = true; owner.beginClose(); for (const id of children.keys()) stop(id); await owner.close(); })(),
     setRebuildHandler: (handler) => { rebuildHandler = handler; },
     dependencyState: (id) => records.get(id)?.dependencies ?? null,
     stopAll: () => { for (const id of children.keys()) stop(id); },

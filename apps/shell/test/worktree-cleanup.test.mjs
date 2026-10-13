@@ -1,0 +1,32 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { mkdtemp, writeFile, mkdir, rm, readFile, symlink, realpath } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import dugite from "dugite";
+import { removeOwnedWorktree } from "../integration/worktree-cleanup.mjs";
+
+test("owned worktree cleanup preserves unrelated missing and live worktree records", async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "magi-scoped-worktree-"));
+  t.after(() => rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
+  const repository = path.join(directory, "repo"); await mkdir(repository);
+  const git = process.env.MAGI_GIT || dugite.resolveGitBinary();
+  const env = dugite.setupEnvironment({ LOCAL_GIT_DIRECTORY: path.dirname(path.dirname(git)) }).env;
+  const run = (args) => promisify(execFile)(git, args, { cwd: repository, env });
+  await run(["init", "--quiet"]); await writeFile(path.join(repository, "README.md"), "owned fixture\n");
+  await run(["add", "README.md"]); await run(["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "fixture"]);
+  const owned = path.join(directory, "owned"), missing = path.join(directory, "missing"), live = path.join(directory, "live");
+  for (const tree of [owned, missing, live]) await run(["worktree", "add", "--detach", tree, "HEAD"]);
+  const missingMarker = await readFile(path.join(missing, ".git"), "utf8");
+  const missingAdmin = await realpath(path.resolve(missing, missingMarker.trim().slice(8)));
+  const originalRegistration = await readFile(path.join(missingAdmin, "gitdir"), "utf8");
+  await rm(missing, { recursive: true, force: true });
+  await symlink(live, path.join(owned, "external-runtime"), "junction");
+  await removeOwnedWorktree({ repository, checkout: owned, git, env });
+  assert.equal(await readFile(path.join(missingAdmin, "gitdir"), "utf8"), originalRegistration, "unrelated missing registry remains byte-for-byte intact");
+  assert.equal(await readFile(path.join(live, "README.md"), "utf8"), "owned fixture\n", "junction target is intact");
+  const list = (await run(["worktree", "list", "--porcelain"])).stdout;
+  assert.ok(list.includes("missing")); assert.ok(list.includes("live")); assert.ok(!list.includes("/owned\n"));
+});

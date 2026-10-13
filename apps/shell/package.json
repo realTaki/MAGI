@@ -30,6 +30,8 @@
     "files": [
       "main.mjs",
       "process.mjs",
+      "process-owner.mjs",
+      "installation.mjs",
       "rebuild.mjs",
       "app-spec.mjs",
       "dependency-state.mjs",

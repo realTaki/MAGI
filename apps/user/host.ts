@@ -141,6 +141,8 @@ export function connectHost(stdin: Readable, stdout: Writable) {
     installShellUpdate: (params: { installer: string }) => rpc("installShellUpdate", params),
     emit: (params: { event: string; payload?: unknown }) => rpc("emit", params),
     progress: (params: { message: string; percent: number }) => rpc("progress", params),
+    command: (params: { file: string; args: string[]; options: { cwd: string; env?: NodeJS.ProcessEnv; description?: string } }) => rpc("command", params) as Promise<string>,
+    prepareDependencies: (root: string) => rpc("prepareDependencies", { root }),
     startProcess,
     async restoreProcesses(): Promise<Array<{ spec: ProcessSpec; handle: ProcessHandle }>> {
       const result = await rpc("processes");

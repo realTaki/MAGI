@@ -10,6 +10,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -25,7 +26,9 @@ import { createAppRebuilder, rebuildRequestKey } from "./rebuild.mjs";
 import { shellArtifactPath } from "./shell-path.mjs";
 import { prependRuntimePath } from "./runtime-environment.mjs";
 import { updateScript } from "./update-script.mjs";
-import { createSupervisor, prepareUserProcess } from "./process.mjs";
+import { createSupervisor, prepareAndStartUser } from "./process.mjs";
+import { createProcessOwner } from "./process-owner.mjs";
+import { ensureInstalledDependencies } from "./installation.mjs";
 
 const { resolveGitBinary, setupEnvironment } = dugite;
 const SHELL_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -73,35 +76,8 @@ app.setAppLogsPath(ELECTRON_LOGS);
 let mainWindow = null;
 let startingLocal = false;
 let runtimeRootPromise = null;
-
-function command(command, args, { cwd, env, description }) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd,
-      env,
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true,
-    });
-    let output = "";
-    const collect = (chunk) => {
-      output = `${output}${String(chunk)}`.slice(-64_000);
-    };
-    child.stdout?.on("data", collect);
-    child.stderr?.on("data", collect);
-    child.once("error", (error) => reject(new Error(`${description}: ${error.message}`)));
-    child.once("exit", (code, signal) => {
-      if (code === 0) {
-        resolve(output);
-      } else {
-        reject(
-          new Error(
-            `${description} (${code ?? signal ?? "unknown"})${output.trim() ? `: ${output.trim()}` : ""}`,
-          ),
-        );
-      }
-    });
-  });
-}
+const processOwner = createProcessOwner();
+const command = processOwner.command;
 
 function sendToWindow(win, channel, payload) {
   if (win !== null && win !== undefined && !win.isDestroyed()) {
@@ -247,7 +223,8 @@ function userProcessSpec(appCheckout) {
 
 async function spawnUser(runtimeRoot, appCheckout) {
   const tools = localTools ?? devTools();
-  supervisor ??= createSupervisor({ node: tools.node, env: tools.env });
+  processOwner.assertOpen();
+  supervisor ??= createSupervisor({ node: tools.node, env: tools.env, owner: processOwner });
   rebuildFromLink ??= createAppRebuilder({
     supervisor, tools, command, managed: () => localCheckoutManaged,
     pause: () => new Promise((resolve) => setTimeout(resolve, 1000)),
@@ -260,12 +237,15 @@ async function spawnUser(runtimeRoot, appCheckout) {
     },
   });
   const spec = userProcessSpec(appCheckout);
-  await prepareUserProcess(spec, {
-    ...tools,
-    managed: localCheckoutManaged,
-    command,
-  });
-  return await supervisor.start(
+  const ownedDirectory = (directory) => {
+    if (typeof directory !== "string") throw new Error("Command requires an owned source directory");
+    const actual = realpathSync(directory);
+    const roots = [runtimeRoot, appCheckout, MAGI_DATA_ROOT].map((root) => realpathSync(root));
+    const normalized = (value) => process.platform === "win32" ? value.toLowerCase() : value;
+    if (!roots.some((root) => normalized(actual) === normalized(root) || normalized(actual).startsWith(`${normalized(root)}${path.sep}`))) throw new Error("Command directory is outside Shell-owned source trees");
+    return actual;
+  };
+  return await prepareAndStartUser(
     {
       ...spec,
       env: {
@@ -283,8 +263,20 @@ async function spawnUser(runtimeRoot, appCheckout) {
         MAGI_NPM: tools.npm,
       },
     },
+    { ...tools, managed: localCheckoutManaged, command },
+    supervisor,
     {
       host: {
+        command: ({ file, args, options }) => {
+          processOwner.assertOpen();
+          if (![tools.node, tools.git].includes(file) || !Array.isArray(args) || !args.every((arg) => typeof arg === "string")) throw new Error("Unsupported owned command");
+          return command(file, args, { ...options, cwd: ownedDirectory(options?.cwd) });
+        },
+        prepareDependencies: ({ root }) => {
+          processOwner.assertOpen();
+          if (!localCheckoutManaged) throw new Error("This checkout is not managed by Shell");
+          return ensureInstalledDependencies(ownedDirectory(root), { ...tools, command, assertOpen: processOwner.assertOpen });
+        },
         openExternal: ({ url }) => shell.openExternal(url),
         copy: ({ text }) => clipboard.writeText(text),
         installShellUpdate: ({ installer }) => installShellUpdate(installer),
@@ -334,7 +326,7 @@ function reportStartup(win, message, percent) {
 }
 
 async function launchLocalOperator(win) {
-  if (startingLocal) {
+  if (startingLocal || processOwner.closing) {
     return;
   }
   startingLocal = true;
@@ -362,6 +354,7 @@ async function launchLocalOperator(win) {
     appReady = true;
     await deliverDeeplinks();
   } catch (error) {
+    if (processOwner.closing) return;
     if (error instanceof Error && error.message === "User process exited") {
       localApi = null;
     }
@@ -649,6 +642,7 @@ if (!ownsInstance) {
     mainWindow = createWindow();
     void loadStartup(mainWindow).then(() => launchLocalOperator(mainWindow));
     app.on("activate", () => {
+      if (processOwner.closing) return;
       if (BrowserWindow.getAllWindows().length === 0) {
         mainWindow = createWindow();
         void loadStartup(mainWindow).then(() => launchLocalOperator(mainWindow));
@@ -659,10 +653,17 @@ if (!ownsInstance) {
   });
 }
 
-app.on("before-quit", () => {
-  // Shell owns shutdown of every app, including when User is unavailable.
-  supervisor?.stopAll();
-  localApi = null;
+let quitAllowed = false, quitPromise = null;
+app.on("before-quit", (event) => {
+  if (quitAllowed) return;
+  event.preventDefault();
+  // Close admission synchronously, before a finishing prepare can spawn User.
+  processOwner.beginClose(); supervisor?.beginClose();
+  quitPromise ??= (async () => {
+    try { await (supervisor ? supervisor.close() : processOwner.close()); }
+    catch (error) { console.error("Shell shutdown cleanup failed:", error); }
+    finally { localApi = null; quitAllowed = true; app.quit(); }
+  })();
 });
 
 function armShellSwap(installer) {

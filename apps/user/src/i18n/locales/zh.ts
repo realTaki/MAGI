@@ -67,7 +67,7 @@ export default {
     navUsage: "用量",
     navAbout: "关于",
     navRuntime: "运行与构建",
-    runtimeHint: "关闭窗口时服务可能继续运行。这里可停止旧进程，并按需手动重建；源码变化不会自动重建。重建 App 后会提示重新加载。每条 MAGI 的启动、停止、重启、本地重建与「合并 main」都在它自己的资料面板里；也可以在这里对全部 MAGI 一次性启停或重建。",
+    runtimeHint: "关闭最后一个窗口会退出 MAGI，并停止本次运行的服务与安装、构建任务。再次打开会检查并修复未完成的依赖安装。源码变化不会自动重建；重建 App 后会提示重新加载。每条 MAGI 的启动、停止、重启、本地重建与「合并 main」都在它自己的资料面板里；也可以在这里对全部 MAGI 一次性启停或重建。",
     runtimeWorking: "正在操作，请稍候…",
     runtimeDone: "操作完成。",
     stopAsp: "停止 ASP",

@@ -277,6 +277,51 @@ already-dispatched HTTP request's late arrival as a worker restart.
 Native Windows subsequently completed all activation, arithmetic-tool,
 reconnection and state assertions, but MinGit failed to recursively delete the
 temporary worktree containing dependency/runtime junctions (`Invalid argument`).
-The fixture now uses Node's recursive removal of its own temporary tree, with
-bounded retries, then `git worktree prune --expire now` and deletion of its own
-temporary branch. No application permission or activation guard changes.
+At d138f449 the fixture used Node's recursive removal followed by a global
+prune. The shutdown round below replaces that global prune with a verified,
+scoped `git worktree remove` of only its own temporary registration.
+
+## Shell shutdown during preparation
+
+Shell closes process admission synchronously on `before-quit`, prevents the
+Electron quit until cleanup finishes, and uses one owner for bootstrap Git/npm,
+build/rebuild commands and supervised User/ASP/EVA roots. User's internal
+command/dependency preparation requests go through its private host channel to
+the same Shell owner. The host permits the bundled Node/Git and canonical owned
+source directories; it adds no EVA-accessible command endpoint. `prepareAndStartUser`
+checks admission both before preparation and after its final await. Dock activate
+does not create another startup while shutdown is in progress.
+
+POSIX roots have private process groups. Windows cleanup discovers process
+ancestry/creation timestamps and uses scoped `taskkill /PID ... /T /F`; no
+process-name kill is used. Roots that exit before descendants are reaped too.
+Applications receive their existing graceful stop first. Cleanup then has finite
+grace/force waits, with timeouts on native metadata/kill helpers. Errors are
+reported rather than silently attributed to success. Close is idempotent.
+The deliberately detached swap helper is spawned outside this owner and survives.
+
+Managed dependency preparation records an installing/complete marker against
+lock/dependency declarations. It checks npm's completed hidden lock plus required
+installed package files, including nested workspace dependencies. An interrupted
+marker or incomplete tree triggers npm ci on reopening; existence of node_modules
+alone is insufficient. Only the source dependency installation is repaired,
+not operator databases or workspace data. Unmanaged developer trees retain their
+prior no-auto-install behavior. EN/JA/ZH runtimeHint now describes this shutdown
+and repair behavior.
+
+`shutdown.test.mjs` uses real Node roots, children and grandchildren to verify
+command/application cleanup, exited-root orphan cleanup, unrelated same-binary
+process survival, detached-helper survival, User→Shell command cancellation,
+late prepare refusal and cold-install interruption/recovery with a preserved data
+sentinel. Installer/application fixtures are deterministic local programs; full
+User and EVA regressions cover the actual application entries. The scoped
+worktree regression checks an unrelated missing registration byte-for-byte and
+preserves a live junction target.
+
+Residual boundaries: GUI close interaction remains the separate cloud-desktop
+acceptance. Forced cleanup may interrupt active tool side effects; rollback and
+durable Shell transaction journaling remain separate work. A deliberately
+detached descendant that escapes before observation or an OS-denied/privileged
+process is outside the tested ordinary npm/app tree case; no elevation or global
+kill fallback is introduced. This is graceful application exit cleanup, not an
+OS job-object guarantee for a crashing Shell or arbitrary hostile descendants.

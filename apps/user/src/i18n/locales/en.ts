@@ -67,7 +67,7 @@ export default {
     navUsage: "Usage",
     navAbout: "About",
     navRuntime: "Runtime & build",
-    runtimeHint: "Services may continue after the window closes. Stop old processes and rebuild on demand; source changes no longer trigger automatic builds. Rebuilding the app offers a reload. Each MAGI starts, stops, restarts, rebuilds and merges main from its own profile; the buttons here sweep all of them at once.",
+    runtimeHint: "Closing the last window exits MAGI and stops its services and installation/build tasks. Reopening checks and repairs interrupted dependency installation. Source changes do not trigger automatic builds; rebuilding the app offers a reload. Each MAGI starts, stops, restarts, rebuilds and merges main from its own profile; the buttons here sweep all of them at once.",
     runtimeWorking: "Working…",
     runtimeDone: "Done.",
     stopAsp: "Stop ASP",

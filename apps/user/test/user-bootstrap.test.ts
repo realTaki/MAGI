@@ -12,7 +12,7 @@ test("a fresh managed User worktree installs dependencies before building", asyn
   const cwd = path.join(checkout, "apps", "user");
   const entry = path.join(cwd, "dist", "user.js");
   mkdirSync(cwd, { recursive: true });
-  writeFileSync(path.join(checkout, "package-lock.json"), "{}");
+  writeFileSync(path.join(checkout, "package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: {} }));
   const calls: string[][] = [];
   const tools = {
     node: process.execPath,
@@ -25,6 +25,7 @@ test("a fresh managed User worktree installs dependencies before building", asyn
       if (args[1] === "ci") {
         assert.equal(options.cwd, checkout);
         mkdirSync(path.join(checkout, "node_modules"));
+        writeFileSync(path.join(checkout, "node_modules", ".package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: {} }));
       } else {
         assert.equal(options.cwd, cwd);
         assert.equal(calls.length, 2, "install must finish before the build");

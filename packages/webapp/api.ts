@@ -57,7 +57,7 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function command(binary, args, { cwd, env, description }): Promise<string> {
+function localCommand(binary, args, { cwd, env, description }): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const child = spawn(binary, args, {
       cwd,
@@ -207,6 +207,7 @@ function parseGitHubSlug(url) {
 
 export function createLocalApi(context) {
   const { paths, repository, tools, emit, openExternal, copy, shellUpdate, managed = false, aspProcess, bus } = context;
+  const command = context.command ?? localCommand;
   // Shell loads this backend from the User worktree, while the source checkout
   // remains the Git/worktree authority for the local runtime.
   const appCheckout = paths.appCheckout ?? paths.checkout;
@@ -224,8 +225,9 @@ export function createLocalApi(context) {
   const lifetime = new AbortController();
   let providerRelayReady = false;
   const providerAttempted = new Set();
-  // ASP keeps the roll of agents; this backend owns their source trees and
-  // processes (see magi-runtime.ts). A developer's own checkout is never
+  // ASP keeps the roll of agents; this backend prepares their source trees,
+  // while Shell owns processes and commands through the host (see magi-runtime.ts).
+  // A developer's own checkout is never
   // rewired, so MAGI then share it exactly as before.
   const magiRuntime = createMagiRuntime({
     checkout: paths.checkout,
@@ -235,6 +237,7 @@ export function createLocalApi(context) {
     run: command,
     spawnProcess,
     startProcess: context.startProcess,
+    prepareDependencies: context.prepareDependencies,
     useWorktrees: managed,
     initialProcesses: context.initialProcesses,
     log: (message) => console.error(message),
@@ -251,9 +254,8 @@ export function createLocalApi(context) {
   }
 
   /**
-   * ASP is a local runtime owned by the User module, not by the Electron shell. The
-   * shell has already made the User worktree so it can load this module; from
-   * here on the User module owns this separate `magi/asp` worktree.
+   * User prepares this separate `magi/asp` source worktree. Shell remains the
+   * process and command owner; creating a worktree grants no lifecycle authority.
    */
   async function ensureAspWorktree() {
     if (!managed) return aspCheckout;
@@ -816,7 +818,8 @@ export function createLocalApi(context) {
     } catch (error) {
       // A pulled commit can bring a new lockfile: install once, then try again.
       try {
-        await command(tools.node, [tools.npm, "ci", "--ignore-scripts"], {
+        if (context.prepareDependencies) await context.prepareDependencies(appCheckout);
+        else await command(tools.node, [tools.npm, "ci", "--ignore-scripts"], {
           cwd: appDir,
           env: tools.env,
           description: "Could not install the app dependencies",
@@ -855,7 +858,12 @@ export function createLocalApi(context) {
     // inside the package; npm would still run node-gyp for it (the package carries
     // a binding.gyp) and the desktop ships no C++ toolchain. Skipping lifecycle
     // scripts is therefore what makes these two installs work on a plain machine.
-    if (managed && !existsSync(path.join(aspCheckout, "node_modules", "better-sqlite3"))) {
+    if (managed && context.prepareDependencies) {
+      progress?.("Checking local ASP dependencies…", 0.2);
+      await context.prepareDependencies(aspCheckout);
+      await context.prepareDependencies(magiDir);
+    }
+    if (managed && !context.prepareDependencies && !existsSync(path.join(aspCheckout, "node_modules", "better-sqlite3"))) {
       progress?.("Preparing local ASP…", 0.2);
       await command(tools.node, [tools.npm, "ci", "--ignore-scripts"], {
         cwd: aspCheckout,
@@ -871,7 +879,7 @@ export function createLocalApi(context) {
         description: "Could not build ASP",
       });
     }
-    if (managed && !existsSync(path.join(magiDir, "node_modules"))) {
+    if (managed && !context.prepareDependencies && !existsSync(path.join(magiDir, "node_modules"))) {
       progress?.("Preparing MAGI…", 0.4);
       await command(tools.node, [tools.npm, "ci", "--ignore-scripts"], {
         cwd: magiDir,
@@ -879,7 +887,7 @@ export function createLocalApi(context) {
         description: "Could not prepare MAGI",
       });
     }
-    if (managed && !existsSync(path.join(appDir, "node_modules"))) {
+    if (managed && !context.prepareDependencies && !existsSync(path.join(appDir, "node_modules"))) {
       progress?.("Installing app dependencies…", 0.6);
       await command(tools.node, [tools.npm, "ci", "--ignore-scripts"], {
         cwd: appDir,

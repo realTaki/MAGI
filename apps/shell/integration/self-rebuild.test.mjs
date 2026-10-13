@@ -13,6 +13,8 @@ import { Bus, MAGI_CONTACT_ID } from "@magi/bus";
 import { createSupervisor } from "../process.mjs";
 import { createAppRebuilder } from "../rebuild.mjs";
 import { prependRuntimePath } from "../runtime-environment.mjs";
+import { removeOwnedWorktree } from "./worktree-cleanup.mjs";
+import { createProcessOwner } from "../process-owner.mjs";
 
 const execute = promisify(execFile);
 const repository = path.resolve(import.meta.dirname, "../../..");
@@ -34,30 +36,33 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
   await mkdir(workspace);
   const handle = "@self-loop.magi";
   const gitEnvironment = dugite.setupEnvironment({}).env;
-  const env = { ...prependRuntimePath(gitEnvironment, [path.dirname(node)]), npm_config_cache: path.join(temporary, "npm-cache") };
+  const env = { ...prependRuntimePath(gitEnvironment, [path.dirname(node)]), MAGI_GIT: git, npm_config_cache: path.join(temporary, "npm-cache") };
   // Node's outer test-runner context is not an application environment. Leaking
   // it into nested node --test can report failures without a failing exit code.
   delete env.NODE_TEST_CONTEXT;
   const commandLog = [], events = [], starts = [], exits = [], processEvents = [], sockets = [], deliveries = [], acknowledgements = [], modelRequests = [];
+  const owner = createProcessOwner({ spawnProcess: (file, args, options) => {
+    const child = spawn(file, args, options);
+    if (args[0]?.endsWith("apps/eva/dist/eva.js") || args[0]?.endsWith("apps\\eva\\dist\\eva.js")) {
+      starts.push(child.pid); processEvents.push(["spawn", child.pid]);
+      child.once("exit", () => { exits.push(child.pid); processEvents.push(["exit", child.pid]); });
+      child.on("message", (message) => { if (message?.type === "stopping") stoppingSeen = true; });
+    }
+    return child;
+  } });
   const command = async (file, args, options) => {
     commandLog.push({ file, args, cwd: options.cwd });
-    try { return (await execute(file, args, { cwd: options.cwd, env: options.env ?? env, maxBuffer: 4 * 1024 * 1024, timeout: 600_000 })).stdout; }
-    catch (error) { throw new Error(`${options.description ?? "command failed"}: ${String(error.stdout ?? "").slice(-3000)} ${String(error.stderr ?? error.message).slice(-1000)}`); }
+    return await owner.command(file, args, { ...options, env: options.env ?? env });
   };
   let releaseDrain = null, heldDrain = false, successfulRequest = false, stoppingSeen = false;
   let server, websocket, supervisor, worktreeCreated = false;
   t.after(async () => {
     releaseDrain?.();
-    supervisor?.stopAll();
-    if (supervisor) await until(() => supervisor.snapshots().length === 0, "children did not retire", 40_000);
+    if (supervisor) await supervisor.close(); else await owner.close();
     for (const socket of sockets) socket.terminate();
     websocket?.close(); server?.close(); server?.closeAllConnections();
     if (worktreeCreated) {
-      // Node removes junctions without traversing their targets and handles
-      // Windows long paths/retries. MinGit's recursive removal rejected this
-      // dependency/runtime tree after the real process assertions had passed.
-      await rm(checkout, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-      await execute(git, ["worktree", "prune", "--expire", "now"], { cwd: repository, env });
+      await removeOwnedWorktree({ repository, checkout, git, env });
       await execute(git, ["branch", "-D", "magi/self-loop"], { cwd: repository, env });
     }
     await rm(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
@@ -69,7 +74,7 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
   worktreeCreated = true;
   // Overlay this round's source while running before its commit. CI uses the
   // identical tracked files. No original checkout output is overwritten.
-  for (const file of ["apps/eva/eva.ts", "packages/built-in-tools/rebuild.ts", "packages/manager/worker.ts", "apps/eva/test/agent.test.ts", "apps/eva/test/manager.test.ts", "apps/shell/process.mjs", "apps/shell/rebuild.mjs", "apps/shell/dependency-state.mjs", "apps/shell/runtime-environment.mjs", "apps/shell/test/rebuild.test.mjs", "apps/shell/test/runtime-environment.test.mjs"]) {
+  for (const file of ["apps/eva/eva.ts", "apps/user/user.ts", "apps/user/host.ts", "packages/webapp/api.ts", "packages/webapp/magi-runtime.ts", "packages/built-in-tools/rebuild.ts", "packages/manager/worker.ts", "apps/eva/test/agent.test.ts", "apps/eva/test/manager.test.ts", "apps/shell/process.mjs", "apps/shell/process-owner.mjs", "apps/shell/installation.mjs", "apps/shell/rebuild.mjs", "apps/shell/dependency-state.mjs", "apps/shell/runtime-environment.mjs", "apps/shell/integration/worktree-cleanup.mjs", "apps/shell/test/rebuild.test.mjs", "apps/shell/test/runtime-environment.test.mjs", "apps/shell/test/shutdown.test.mjs", "apps/shell/test/worktree-cleanup.test.mjs"]) {
     await cp(path.join(repository, file), path.join(checkout, file));
   }
   await symlink(path.join(repository, "apps/shell/runtime"), path.join(checkout, "apps/shell/runtime"), "junction");
@@ -152,12 +157,7 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
   persisted.settings.setMany({ "provider.name": "custom", "provider.model": "fixture", "provider.api_key": "local-fixture-only", "provider.base_url": `${base}/v1`, "self-loop.state": "preserved" });
   persisted.memoryBook.save({ topic: "restart evidence", detail: "durable self-loop memory", kind: "long_term" });
   persisted.contacts.update(MAGI_CONTACT_ID, { nickname: "durable nickname" }); persisted.close();
-  supervisor = createSupervisor({ node, env, readyTimeoutMs: 30_000, stopTimeoutMs: 30_000, spawnProcess: (file, args, options) => {
-    const child = spawn(file, args, options); starts.push(child.pid); processEvents.push(["spawn", child.pid]);
-    child.once("exit", () => { exits.push(child.pid); processEvents.push(["exit", child.pid]); });
-    child.on("message", (message) => { if (message?.type === "stopping") stoppingSeen = true; });
-    return child;
-  } });
+  supervisor = createSupervisor({ node, env, owner, readyTimeoutMs: 30_000, stopTimeoutMs: 30_000 });
   let managed = true;
   const rebuild = createAppRebuilder({ supervisor, tools: { node, npm, git, env }, command, managed: () => managed, pause: () => sleep(100), emit: (event) => { events.push(event); console.log(`lifecycle: ${event.phase}${event.failedPhase ? ` (${event.failedPhase})` : ""}`); if (event.phase === "restarting") successfulRequest = true; }, onUser: async () => { throw new Error("User must not be replaced"); } });
   const child = await supervisor.start({ entry: path.join(checkout, "apps/eva/dist/eva.js"), cwd: path.join(checkout, "apps/eva"), args: [handle, base, "local-asp-only", "--workspace", workspace] });

@@ -152,6 +152,8 @@ async function main(): Promise<void> {
         void host.copy({ text });
       },
       startProcess: host.startProcess,
+      command: (file: string, args: string[], options: { cwd: string; env?: NodeJS.ProcessEnv; description?: string }) => host.command({ file, args, options }),
+      prepareDependencies: process.env.MAGI_MANAGED === "1" ? (root: string) => host.prepareDependencies(root) : undefined,
     });
     retire = () => api.dispose();
     const handlers: Record<string, (params: unknown) => unknown> = {};
