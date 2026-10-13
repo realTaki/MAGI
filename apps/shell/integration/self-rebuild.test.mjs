@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { WebSocketServer } from "ws";
 import Database from "better-sqlite3";
+import dugite from "dugite";
 import { Bus, MAGI_CONTACT_ID } from "@magi/bus";
 import { createSupervisor } from "../process.mjs";
 import { createAppRebuilder } from "../rebuild.mjs";
@@ -16,7 +17,7 @@ const execute = promisify(execFile);
 const repository = path.resolve(import.meta.dirname, "../../..");
 const node = process.execPath;
 const npm = path.join(repository, "apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js");
-const git = path.join(repository, "node_modules/dugite/git/bin", process.platform === "win32" ? "git.exe" : "git");
+const git = dugite.resolveGitBinary();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function until(check, message, timeout = 300_000) {
   const deadline = Date.now() + timeout;
@@ -31,7 +32,8 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
   const checkout = path.join(workspace, "MAGI");
   await mkdir(workspace);
   const handle = "@self-loop.magi";
-  const env = { ...process.env, PATH: `${path.dirname(node)}${path.delimiter}${process.env.PATH}`, npm_config_cache: path.join(temporary, "npm-cache") };
+  const gitEnvironment = dugite.setupEnvironment({}).env;
+  const env = { ...gitEnvironment, PATH: `${path.dirname(node)}${path.delimiter}${gitEnvironment.PATH}`, npm_config_cache: path.join(temporary, "npm-cache") };
   // Node's outer test-runner context is not an application environment. Leaking
   // it into nested node --test can report failures without a failing exit code.
   delete env.NODE_TEST_CONTEXT;
@@ -50,8 +52,8 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
     for (const socket of sockets) socket.terminate();
     websocket?.close(); server?.close(); server?.closeAllConnections();
     if (worktreeCreated) {
-      await execute(git, ["worktree", "remove", "--force", checkout], { cwd: repository });
-      await execute(git, ["branch", "-D", "magi/self-loop"], { cwd: repository });
+      await execute(git, ["worktree", "remove", "--force", checkout], { cwd: repository, env });
+      await execute(git, ["branch", "-D", "magi/self-loop"], { cwd: repository, env });
     }
     await rm(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
