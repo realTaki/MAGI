@@ -78,7 +78,7 @@ export async function prepareShellProfile({ home, repository, tools, command, as
       const common = (await git(['rev-parse', '--path-format=absolute', '--git-common-dir'], legacyShell)).trim();
       for (const name of ['index.lock', 'config.lock', 'HEAD.lock', 'packed-refs.lock']) if (await exists(path.join(common, name))) throw new Error(`Git is locked (${name}); retry migration after the Git operation finishes`);
       if (await exists(cacheHold)) throw new Error('Unjournaled Shell cache holding directory exists; preserve it for inspection');
-      state = { version: 1, kind: 'move', linked };
+      state = { version: 1, kind: 'move', linked, legacyCommon: common };
       await save(journal, state); // durable intent precedes directory relocation
     }
     if (state?.kind === 'move') {
@@ -132,6 +132,21 @@ export async function prepareShellProfile({ home, repository, tools, command, as
       }
       await git(['rev-parse', '--show-toplevel'], shell);
       await fs.rm(staging, { recursive: true, force: true });
+    }
+    // Older Shell versions renamed app/ to user/ before opening the runtime.
+    // Repair that moved User tree only when its pointer belongs to this actual
+    // common repository; never attach an unrelated checkout by basename.
+    const user = path.join(dataRoot, 'user', 'MAGI'), userMarker = path.join(user, '.git');
+    if (await exists(userMarker) && (await fs.lstat(userMarker)).isFile()) {
+      const pointer = /^gitdir: (.+)$/m.exec((await fs.readFile(userMarker, 'utf8')).trim());
+      if (pointer) {
+        const common = (await git(['rev-parse', '--path-format=absolute', '--git-common-dir'], shell)).trim();
+        const admin = path.resolve(user, pointer[1]);
+        const equal = (left, right) => process.platform === 'win32' ? left.toLowerCase() === right.toLowerCase() : left === right;
+        const allowed = [path.join(common, 'worktrees'), path.join(legacyShell, '.git', 'worktrees')];
+        if (typeof state?.legacyCommon === 'string' && path.isAbsolute(state.legacyCommon)) allowed.push(path.join(state.legacyCommon, 'worktrees'));
+        if (allowed.some((root) => equal(path.dirname(admin), root)) && await exists(path.join(common, 'worktrees', path.basename(admin)))) await git(['worktree', 'repair', user], shell);
+      }
     }
     assertOpen();
     // Older source revisions do not yet have /cache/ in their .gitignore.

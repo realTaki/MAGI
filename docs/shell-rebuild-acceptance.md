@@ -330,7 +330,9 @@ OS job-object guarantee for a crashing Shell or arbitrary hostile descendants.
 
 Shell's profile Git authority is now `~/.magi/shell`; generated caches are in
 `~/.magi/shell/cache` (npm, Chromium HTTP cache, Electron downloads and builder).
-User/ASP/EVA retain their existing worktree and business-data paths. Shell local
+User/ASP/EVA retain their existing worktree and business-data paths. A User tree
+previously moved from `app/` to `user/` is repaired only after its pointer is
+verified against this common Git repository. Shell local
 installer build/replacement uses `paths.checkout/apps/shell`, rather than the
 User branch. Unpackaged root resolution returns the repository root, two levels
 above `apps/shell`.

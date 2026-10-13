@@ -53,13 +53,14 @@ test('legacy main relocation repairs five linked app trees and preserves dirty s
   await fs.writeFile(path.join(f.legacyShell, '.gitignore'), legacyIgnore);
   const trees = [];
   for (const name of ['user', 'asp', 'eva-000', 'eva-001', 'eva-002']) {
-    const root = path.join(f.dataRoot, name, 'MAGI'); await fs.mkdir(path.dirname(root), { recursive: true });
+    const root = path.join(f.dataRoot, name === 'user' ? 'app' : name, 'MAGI'); await fs.mkdir(path.dirname(root), { recursive: true });
     await f.run(['worktree', 'add', '-b', `magi/${name}`, root], f.legacyShell);
     await fs.writeFile(path.join(path.dirname(root), 'state.json'), `${name} durable state`);
     await fs.writeFile(path.join(root, 'source.ts'), `${name} dirty source`);
     const index = (await f.run(['rev-parse', '--path-format=absolute', '--git-path', 'index'], root)).trim();
-    trees.push({ root, name, index: await fs.readFile(index), head: await f.run(['rev-parse', 'HEAD'], root), status: await f.run(['status', '--porcelain'], root) });
+    trees.push({ root: name === 'user' ? path.join(f.dataRoot, 'user', 'MAGI') : root, name, index: await fs.readFile(index), head: await f.run(['rev-parse', 'HEAD'], root), status: await f.run(['status', '--porcelain'], root) });
   }
+  await fs.rename(path.join(f.dataRoot, 'app'), path.join(f.dataRoot, 'user'));
   const missing = path.join(f.home, 'unrelated-missing');
   await f.run(['worktree', 'add', '--detach', missing], f.legacyShell);
   const registration = (await f.run(['rev-parse', '--path-format=absolute', '--git-dir'], missing)).trim();
