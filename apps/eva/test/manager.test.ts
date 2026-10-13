@@ -37,6 +37,13 @@ function idleClient() {
 test("a channel whose credentials arrive later comes up without a restart", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-manager-"));
   const telegram = await telegramServer(() => ({ ok: true, result: [] }));
+  const dispatched: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (input, init) => {
+    const url = input instanceof Request ? input.url : String(input);
+    if (url.startsWith(telegram.base)) dispatched.push(new URL(url).pathname.split("/").pop() ?? "");
+    return originalFetch(input, init);
+  };
   const magi = new Magi("@manager.magi", { workspace, client: idleClient() });
   try {
     await magi.start();
@@ -54,17 +61,19 @@ test("a channel whose credentials arrive later comes up without a restart", asyn
     // Stopping is a decision, not a pause: the token is still there and it stays down.
     await manage(magi, "tg", "stop");
     expect(magi.bus.settings.get("worker.tg.enabled")).toBe("false");
-    const settled = telegram.calls.length;
+    // Count client dispatch, not arrival at the HTTP server: an already-aborted
+    // in-flight request may reach that server after stop finishes on Windows.
+    const settled = dispatched.length;
     await sleep(150);
-    expect(telegram.calls.length).toBe(settled);
+    expect(dispatched.length).toBe(settled);
 
     const restarted = await manage(magi, "tg", "restart");
     expect(restarted.output?.running).toContain("tg");
     expect(magi.bus.settings.get("worker.tg.enabled")).toBe("true");
-    for (let i = 0; i < 200 && telegram.calls.length === settled; i++) await sleep(10);
-    expect(telegram.calls.length).toBeGreaterThan(settled);
+    for (let i = 0; i < 200 && !dispatched.slice(settled).includes("getUpdates"); i++) await sleep(10);
+    expect(dispatched.slice(settled)).toContain("getUpdates");
   } finally {
-    await magi.stop();
+    try { await magi.stop(); } finally { globalThis.fetch = originalFetch; }
     await telegram.server.close();
     await rm(workspace, { recursive: true, force: true });
   }

@@ -260,3 +260,16 @@ path builder that preserves the inherited value and emits one canonical PATH
 key. A deterministic Windows-key test and a real native PowerShell preflight
 cover it. Only individual child environments change, never persistent settings.
 See [Node child-process environment semantics](https://nodejs.org/api/child_process.html).
+
+Candidate behavior verification also adds a pure square-calculation tool only
+inside the temporary candidate worktree. The restarted EVA must expose it in
+its real model catalog, process a native model tool call through BUS, and return
+`7 ** 2 === 49` from that new compiled tool before the simulated model can finish
+the resumed reply. The tool is not added to the product's permanent catalog.
+
+After restoring Windows shell lookup, candidate validation exposed a pre-existing
+Telegram stop test that counted server arrivals and occasionally saw one late
+in-flight request after stop. It now records client fetch initiation, requires
+no new initiation after completed stop, and requires renewed `getUpdates` after
+explicit restart. This preserves the lifecycle assertion without treating an
+already-dispatched HTTP request's late arrival as a worker restart.

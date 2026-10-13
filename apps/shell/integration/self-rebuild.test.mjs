@@ -65,7 +65,7 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
   worktreeCreated = true;
   // Overlay this round's source while running before its commit. CI uses the
   // identical tracked files. No original checkout output is overwritten.
-  for (const file of ["apps/eva/eva.ts", "packages/built-in-tools/rebuild.ts", "packages/manager/worker.ts", "apps/eva/test/agent.test.ts", "apps/shell/process.mjs", "apps/shell/rebuild.mjs", "apps/shell/dependency-state.mjs", "apps/shell/runtime-environment.mjs", "apps/shell/test/rebuild.test.mjs", "apps/shell/test/runtime-environment.test.mjs"]) {
+  for (const file of ["apps/eva/eva.ts", "packages/built-in-tools/rebuild.ts", "packages/manager/worker.ts", "apps/eva/test/agent.test.ts", "apps/eva/test/manager.test.ts", "apps/shell/process.mjs", "apps/shell/rebuild.mjs", "apps/shell/dependency-state.mjs", "apps/shell/runtime-environment.mjs", "apps/shell/test/rebuild.test.mjs", "apps/shell/test/runtime-environment.test.mjs"]) {
     await cp(path.join(repository, file), path.join(checkout, file));
   }
   await symlink(path.join(repository, "apps/shell/runtime"), path.join(checkout, "apps/shell/runtime"), "junction");
@@ -74,7 +74,11 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
   const original = await readFile(path.join(checkout, "packages/agent/checkout.ts"), "utf8");
   const changed = original.replace("This is the only tree you may edit.", "This is the only tree you may edit.\\nloaded-self-version: candidate-v2");
   assert.notEqual(changed, original);
-  const passingTest = `import test from 'node:test'; import assert from 'node:assert/strict'; import path from 'node:path'; import {sourceCheckout} from '@magi/agent/checkout.js'; test('candidate source contributes its new behavior',()=>assert.match(sourceCheckout('@self-loop.magi',path.dirname(process.cwd())),/candidate-v2/));`;
+  const originalTools = await readFile(path.join(checkout, "packages/built-in-tools/worker.ts"), "utf8");
+  const changedTools = originalTools.replace("...rebuildTools(bus.handle),", `...rebuildTools(bus.handle),
+    { name: "self_version_probe", description: "Return the candidate code's square calculation", input_schema: { type: "object", properties: { value: { type: "number" } }, required: ["value"] }, async run(args) { return JSON.stringify({ version: "candidate-v2", result: Number(args.value) ** 2 }); } },`);
+  assert.notEqual(changedTools, originalTools);
+  const passingTest = `import test from 'node:test'; import assert from 'node:assert/strict'; import path from 'node:path'; import {mkdtemp,rm} from 'node:fs/promises'; import {tmpdir} from 'node:os'; import {Bus} from '@magi/bus'; import {builtinTools} from '@magi/built-in-tools/worker.js'; import {sourceCheckout} from '@magi/agent/checkout.js'; test('candidate source contributes its new behavior',async()=>{assert.match(sourceCheckout('@self-loop.magi',path.dirname(process.cwd())),/candidate-v2/);const workspace=await mkdtemp(path.join(tmpdir(),'candidate-tool-'));const bus=new Bus('@candidate.magi',workspace);try{const tool=builtinTools(bus).find(tool=>tool.name==='self_version_probe');assert.ok(tool);assert.deepEqual(JSON.parse(await tool.run({value:7})),{version:'candidate-v2',result:49});}finally{bus.close();await rm(workspace,{recursive:true,force:true});}});`;
   const quotedNode = `'${node.replaceAll("'", process.platform === "win32" ? "''" : "'\\''")}'`;
   const quotedNpm = `'${npm.replaceAll("'", process.platform === "win32" ? "''" : "'\\''")}'`;
   const candidateTestCommand = process.platform === "win32"
@@ -86,9 +90,10 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
     "reject-managed": [{ name: "request_rebuild", arguments: { target: "self" } }],
     "reject-tests": [{ name: "write_file", arguments: { path: "MAGI/apps/eva/test/self-loop.test.ts", content: "import test from 'node:test'; import assert from 'node:assert/strict'; test('intentional gate failure',()=>assert.fail('candidate rejected by tests'));" } }, { name: "request_rebuild", arguments: { target: "self" } }],
     "reject-compile": [{ name: "write_file", arguments: { path: "MAGI/apps/eva/test/self-loop.test.ts", content: "export {};" } }, { name: "write_file", arguments: { path: "MAGI/packages/agent/checkout.ts", content: "export function invalid(: syntax" } }, { name: "request_rebuild", arguments: { target: "self" } }],
-    "activate": [{ name: "write_file", arguments: { path: "MAGI/packages/agent/checkout.ts", content: changed } }, { name: "write_file", arguments: { path: "MAGI/apps/eva/test/self-loop.test.ts", content: passingTest } }, { name: "bash", arguments: { command: candidateTestCommand, timeout: 600 } }, { name: "request_rebuild", arguments: { target: "self" } }, { name: "request_rebuild", arguments: { target: "self" } }],
+    "activate": [{ name: "write_file", arguments: { path: "MAGI/packages/agent/checkout.ts", content: changed } }, { name: "write_file", arguments: { path: "MAGI/packages/built-in-tools/worker.ts", content: changedTools } }, { name: "write_file", arguments: { path: "MAGI/apps/eva/test/self-loop.test.ts", content: passingTest } }, { name: "bash", arguments: { command: candidateTestCommand, timeout: 600 } }, { name: "request_rebuild", arguments: { target: "self" } }, { name: "request_rebuild", arguments: { target: "self" } }],
   };
   const steps = new Map();
+  const probes = new Set();
   function complete(response, delta, finish = "stop") {
     response.writeHead(200, { "Content-Type": "text/event-stream" });
     response.end(`data: ${JSON.stringify({ id: "local-fixture", object: "chat.completion.chunk", created: 1, model: "fixture", choices: [{ index: 0, delta: { role: "assistant", ...delta }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ id: "local-fixture", object: "chat.completion.chunk", created: 1, model: "fixture", choices: [{ index: 0, delta: {}, finish_reason: finish }] })}\n\ndata: [DONE]\n\n`);
@@ -105,7 +110,20 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
       const mode = Object.keys(plans).find((name) => latest.endsWith(name));
       const system = body.messages.filter((message) => ["system", "developer"].includes(message.role)).map((message) => text(message.content)).join("\n");
       assert.match(system, /@self-loop.magi/); assert.match(system, /durable self-loop memory/);
-      if (!mode) { complete(response, { content: system.includes("candidate-v2") ? "candidate-v2 served" : "baseline served" }); return; }
+      if (!mode) {
+        const hasProbe = body.tools?.some((tool) => tool.function?.name === "self_version_probe");
+        if (!hasProbe) { complete(response, { content: "baseline served" }); return; }
+        assert.match(system, /candidate-v2/, "the new source module also loaded");
+        if (!probes.has(latest)) {
+          probes.add(latest);
+          complete(response, { tool_calls: [{ index: 0, id: `probe-${modelRequests.length}`, type: "function", function: { name: "self_version_probe", arguments: '{"value":7}' } }] }, "tool_calls");
+        } else {
+          const result = [...body.messages].reverse().find((message) => message.role === "tool");
+          assert.deepEqual(JSON.parse(text(result?.content)), { version: "candidate-v2", result: 49 }, "the real new BUS tool executed candidate arithmetic code");
+          complete(response, { content: "candidate-v2 served" });
+        }
+        return;
+      }
       const step = steps.get(mode) ?? 0; steps.set(mode, step + 1);
       const tool = plans[mode][step];
       if (tool) {
