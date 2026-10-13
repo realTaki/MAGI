@@ -23,10 +23,11 @@ test("owned worktree cleanup preserves unrelated missing and live worktree recor
   const missingAdmin = await realpath(path.resolve(missing, missingMarker.trim().slice(8)));
   const originalRegistration = await readFile(path.join(missingAdmin, "gitdir"), "utf8");
   await rm(missing, { recursive: true, force: true });
+  const liveContents = await readFile(path.join(live, "README.md"));
   await symlink(live, path.join(owned, "external-runtime"), "junction");
   await removeOwnedWorktree({ repository, checkout: owned, git, env });
   assert.equal(await readFile(path.join(missingAdmin, "gitdir"), "utf8"), originalRegistration, "unrelated missing registry remains byte-for-byte intact");
-  assert.equal(await readFile(path.join(live, "README.md"), "utf8"), "owned fixture\n", "junction target is intact");
+  assert.deepEqual(await readFile(path.join(live, "README.md")), liveContents, "junction target remains byte-for-byte intact");
   const list = (await run(["worktree", "list", "--porcelain"])).stdout;
   assert.ok(list.includes("missing")); assert.ok(list.includes("live")); assert.ok(!list.includes("/owned\n"));
 });
