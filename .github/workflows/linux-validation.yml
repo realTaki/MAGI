@@ -40,7 +40,7 @@ jobs:
           apps/shell/runtime/bin/node apps/shell/scripts/verify-linux-appimage.mjs apps/shell/release/MAGI-Linux-x64.AppImage > apps/shell/release/linux-verification.json
           printf '%s\n' "$GITHUB_SHA" > apps/shell/release/SOURCE_COMMIT
           cd apps/shell/release
-          sha256sum MAGI-Linux-x64.AppImage > SHA256SUMS
+          sha256sum MAGI-Linux-x64.AppImage | tee SHA256SUMS
       - uses: actions/upload-artifact@v6
         with:
           name: linux-x64-appimage
