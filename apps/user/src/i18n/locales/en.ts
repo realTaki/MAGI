@@ -53,7 +53,7 @@ export default {
     signIn: "Sign in with GitHub",
     signInHint: "MAGI opens github.com and shows a one-time code here; the token stays on this machine.",
     connect: "Fork and connect",
-    connectHint: "Create your fork and point ~/.magi/MAGI at it.",
+    connectHint: "Create your fork and point ~/.magi/shell at it.",
     later: "Later",
     unavailable: "This build has no local checkout to connect.",
   },

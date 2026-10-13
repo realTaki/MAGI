@@ -170,7 +170,7 @@ received file executable, then run:
 ```
 
 This official AppImage mode does not require FUSE. Use a fresh test desktop
-profile and prepare `~/.magi/MAGI` from `realTaki/MAGI` at the exact
+profile and prepare `~/.magi/shell` from `realTaki/MAGI` at the exact
 `SOURCE_COMMIT` before first launch. The package ships Shell and tools; its
 runtime User/ASP/EVA sources come from that checkout. Do not overwrite an
 existing operator checkout or state. The existing default source URL points to
@@ -325,3 +325,51 @@ detached descendant that escapes before observation or an OS-denied/privileged
 process is outside the tested ordinary npm/app tree case; no elevation or global
 kill fallback is introduced. This is graceful application exit cleanup, not an
 OS job-object guarantee for a crashing Shell or arbitrary hostile descendants.
+
+## Shell source/profile layout and Darwin process query
+
+Shell's profile Git authority is now `~/.magi/shell`; generated caches are in
+`~/.magi/shell/cache` (npm, Chromium HTTP cache, Electron downloads and builder).
+User/ASP/EVA retain their existing worktree and business-data paths. Shell local
+installer build/replacement uses `paths.checkout/apps/shell`, rather than the
+User branch. Unpackaged root resolution returns the repository root, two levels
+above `apps/shell`.
+
+`profile-layout.mjs` owns serialized, journaled profile preparation. Moving a
+main checkout is followed by Git's documented `worktree repair`; moving a linked
+Shell uses `worktree move` and respects its lock. Bootstrap installs a staged clone
+with `.git` last and journals per-entry continuation. Migration and cache merging
+never reset/checkout dirty source, rewrite indexes/history, overwrite a second
+checkout, or prune missing unrelated registrations. Interrupted operations retain
+the journal and files for a forward retry after locks/permissions are resolved.
+Cache collisions retain both copies under `cache/legacy-profile`. Old revisions
+receive `/cache/` in local Git excludes, without changing their source ignore file.
+`build/` and `dist/` were already ignored; `/cache/` is now tracked in `.gitignore`.
+The tracked-file audit found no generated build/dist/cache files to untrack.
+
+Darwin's BSD ps has no Linux numeric `sid` field. It now queries `pid/ppid/pgid`,
+never substitutes the opaque `sess` kernel pointer, and uses private detached
+process groups plus observed ancestry for ownership. Linux keeps numeric SID;
+Windows keeps its creation-time/PID checks and scoped taskkill trees. No process
+name matching or global kill is added. Descendants that deliberately escape all
+observed ancestry/groups before observation remain outside the guarantee; this
+is not an OS Job Object or crash-survival guarantee.
+
+Focused tests exercise real Git main/linked relocation, five app worktrees,
+dirty bytes/index/reflog/HEAD, unrelated missing registration, fresh and repeated
+startup, interrupted clone/repair, collision retention, live/dead profile locks,
+Git locks and injected permission failures. Permission injection is deterministic
+failure coverage, not proof of every native filesystem ACL failure. The full EVA
+integration now migrates a disposable main repository, repairs its linked EVA
+source, then performs real self-edit/test/build/IPC replacement and verifies the
+Shell authority's Git status remains clean before and after runtime startup.
+Model/ASP endpoints are simulated, as in the previous acceptance round.
+
+Native macOS lifecycle/profile CI is added without packaging or publishing. Its
+result, and final Linux/Windows full acceptance, must be read at the exact final
+SHA. Linux adapter tests alone are not native macOS verification. Electron GUI,
+OS deeplink and installed artifact swap remain separate parent-side acceptance.
+The first packaged profile preparation runs before any BrowserWindow opens cache
+files; this can delay the first startup window while cloning/migrating. No app is
+started before it completes. Browser cookies/localStorage remain in the existing
+User Electron profile; the Chromium HTTP cache uses an explicit disk-cache-dir.

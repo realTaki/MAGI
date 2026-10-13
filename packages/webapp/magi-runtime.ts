@@ -149,8 +149,8 @@ export function createMagiRuntime({
     if (ready !== undefined) return ready;
     const root = agentSource(home, handle);
     if (!existsSync(path.join(root, ".git"))) {
-      // A directory deleted by hand leaves a stale worktree registration.
-      await git(["worktree", "prune"], "Could not prune stale MAGI worktrees");
+      // Preserve unrelated registrations. Git will report an existing/missing
+      // target registration instead of pruning the whole repository.
       const branch = agentBranch(handle);
       const args = (await hasBranch(branch))
         ? ["worktree", "add", root, branch]

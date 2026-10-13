@@ -268,10 +268,6 @@ export function createLocalApi(context) {
       throw new Error(`MAGI ASP worktree path is not a Git checkout: ${destination}`);
     }
     mkdirSync(path.dirname(destination), { recursive: true });
-    await command(git.binary, ["worktree", "prune"], {
-      ...options,
-      description: "Could not prune stale MAGI worktrees",
-    });
     let branchExists = true;
     try {
       await command(git.binary, ["show-ref", "--verify", "--quiet", "refs/heads/magi/asp"], {
@@ -1426,9 +1422,9 @@ export function createLocalApi(context) {
     return process.platform === "darwin" ? ".dmg" : process.platform === "win32" ? ".exe" : ".AppImage";
   }
 
-  /** Build from the User worktree without touching the live shell or services. */
+  /** Build Shell from its source authority, independently of the User branch. */
   async function buildInstallerFiles() {
-    const shellDir = path.join(appCheckout, "apps", "shell");
+    const shellDir = path.join(paths.checkout, "apps", "shell");
     if (!existsSync(path.join(shellDir, "package-lock.json"))) {
       throw new Error(`MAGI shell was not found at ${shellDir}`);
     }

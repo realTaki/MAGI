@@ -8,21 +8,23 @@ prepares the checkout, starts local ASP on `127.0.0.1:42069`, runs every MAGI
 from its own branch (`magi/eva-000`, checked out at `~/.magi/eva-000/MAGI`) and
 reports which interface entry the shell should show. The app
 module keeps its own files in `~/.magi/user/`; Electron's own profile moves under
-the same tree (`~/.magi/user/electron`, with the Chromium cache, logs and crash
-dumps beside it), so removing `~/.magi` removes everything MAGI-owned.
+the same profile (`~/.magi/user/electron`, logs and crash dumps in `user/`,
+and Chromium/download/build caches in `~/.magi/shell/cache/`), so removing `~/.magi` removes everything MAGI-owned.
 
 The project directory stays the Electron app directory (`build.directories.app`
 in `package.json`, which electron-builder would otherwise move to `apps/user/` — its
 two-package.json layout), so the packaged entry point stays `apps/shell/main.mjs`.
 
-The app is also the machine-local layer of the system. `~/.magi/MAGI` is the
+The app is also the machine-local layer of the system. `~/.magi/shell` is the
 source-of-truth checkout connected to the operator's GitHub fork; it owns the
-Git remotes and worktree registry, but does not receive local builds. The shell
+Git remotes and worktree registry. Shell installer builds run from
+`~/.magi/shell/apps/shell`, independently of the User branch. The shell
 creates the User worktree so it can load the backend; the User module then creates and
 owns the ASP worktree:
 
 ```
-~/.magi/MAGI       source checkout only
+~/.magi/shell       Shell source checkout and Git authority
+~/.magi/shell/cache generated npm/Electron/electron-builder caches
 ~/.magi/user/MAGI  User worktree; `~/.magi/user/` also holds its credentials, UI profile and logs
 ~/.magi/asp/MAGI   ASP worktree; `~/.magi/asp/` holds its relay database and logs
 ```
@@ -50,7 +52,7 @@ permissions). ASP forwards a provider update to MAGI without storing the key;
 the app retries delivery as MAGI come online.
 
 On first launch the packaged shell clones the complete repository into
-`~/.magi/MAGI` with its bundled Git, creates the `magi/user` worktree at
+`~/.magi/shell` with its bundled Git, creates the `magi/user` worktree at
 `~/.magi/user/MAGI`, then hands the app bundled Node.js and npm. The User module
 creates the `magi/asp` worktree at `~/.magi/asp/MAGI` and uses the tools to install
 dependencies and build only inside those worktrees before starting ASP. The
@@ -70,7 +72,7 @@ packaged launch.
 
 Only seven things, none of them product-specific:
 
-1. Clone `~/.magi/MAGI` when it is missing, then create the `magi/user`
+1. Clone `~/.magi/shell` when it is missing, then create the `magi/user`
    worktree (packaged builds).
 2. Load its packaged startup/recovery page.
 3. Spawn `apps/user/dist/user.js` and give it native pieces over a host channel:
@@ -128,7 +130,7 @@ user tokens are short-lived and installed per repository.
 
 ## What local edits affect
 
-| Source in `~/.magi/MAGI` | How the change takes effect |
+| Source in `~/.magi/shell` | How the change takes effect |
 | --- | --- |
 | `magi/` | Restart the affected MAGI process. |
 | `asp/` | Restart local ASP. |
@@ -152,3 +154,22 @@ Lifecycle acceptance is in `test/rebuild.test.mjs` and runs with the root
 `npm test` after TypeScript compilation. The tests use temporary state and
 check duplicate restarts, stop timeouts, entry/branch identity, IPC readiness,
 compiled EVA/ASP startup, and User's restored ownership of running EVA handles.
+
+## Profile layout migration
+
+Startup migrates the former `~/.magi/MAGI` checkout to `~/.magi/shell` and
+`~/.magi/cache` to `~/.magi/shell/cache`. This is a local profile change, not a
+GitHub repository rename. Main repositories are relocated with a recovery
+journal and `git worktree repair`; linked Shell checkouts use `git worktree move`
+without forcing a lock. User/ASP/EVA worktrees and their data stay in place.
+Dirty files, indexes, branches and history are retained. Missing unrelated
+worktree registrations are not pruned.
+
+The profile lock excludes concurrent migrations. A journal written before
+relocation lets startup resume an interrupted move, Git repair or initial clone.
+Permission/lock failures leave files and the journal available for Retry after
+the underlying problem is resolved. Two existing source checkouts are a conflict
+and are never overwritten. Colliding cache files are retained under
+`shell/cache/legacy-profile`; older source revisions get a local Git exclude for
+`/cache/` without rewriting their `.gitignore`. New source revisions ignore that
+cache and generated build/dist outputs in the tracked `.gitignore`.

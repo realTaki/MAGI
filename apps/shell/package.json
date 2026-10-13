@@ -31,6 +31,7 @@
       "main.mjs",
       "process.mjs",
       "process-owner.mjs",
+      "profile-layout.mjs",
       "installation.mjs",
       "rebuild.mjs",
       "app-spec.mjs",

@@ -15,6 +15,7 @@ import { createAppRebuilder } from "../rebuild.mjs";
 import { prependRuntimePath } from "../runtime-environment.mjs";
 import { removeOwnedWorktree } from "./worktree-cleanup.mjs";
 import { createProcessOwner } from "../process-owner.mjs";
+import { prepareShellProfile, profilePaths } from "../profile-layout.mjs";
 
 const execute = promisify(execFile);
 const repository = path.resolve(import.meta.dirname, "../../..");
@@ -31,16 +32,18 @@ async function until(check, message, timeout = 300_000) {
 // the ordinary root suite, without recursively running its own activation test.
 test("EVA self-edits through model tools, asks Shell over IPC, and serves durable work after replacement", { timeout: 1_500_000 }, async (t) => {
   const temporary = await mkdtemp(path.join(tmpdir(), "magi-self-loop-"));
-  const workspace = path.join(temporary, "eva");
+  const home = path.join(temporary, "home");
+  const layout = profilePaths(home);
+  const workspace = path.join(layout.dataRoot, "eva");
   const checkout = path.join(workspace, "MAGI");
-  await mkdir(workspace);
+  await mkdir(workspace, { recursive: true });
   const handle = "@self-loop.magi";
   const gitEnvironment = dugite.setupEnvironment({}).env;
   const env = { ...prependRuntimePath(gitEnvironment, [path.dirname(node)]), MAGI_GIT: git, npm_config_cache: path.join(temporary, "npm-cache") };
   // Node's outer test-runner context is not an application environment. Leaking
   // it into nested node --test can report failures without a failing exit code.
   delete env.NODE_TEST_CONTEXT;
-  const commandLog = [], events = [], starts = [], exits = [], processEvents = [], sockets = [], deliveries = [], acknowledgements = [], modelRequests = [];
+  const commandLog = [], events = [], starts = [], exits = [], processEvents = [], sockets = [], deliveries = [], acknowledgements = [], modelRequests = [], modelFailures = [];
   const owner = createProcessOwner({ spawnProcess: (file, args, options) => {
     const child = spawn(file, args, options);
     if (args[0]?.endsWith("apps/eva/dist/eva.js") || args[0]?.endsWith("apps\\eva\\dist\\eva.js")) {
@@ -56,25 +59,32 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
   };
   let releaseDrain = null, heldDrain = false, successfulRequest = false, stoppingSeen = false;
   let server, websocket, supervisor, worktreeCreated = false;
+  let runtimeRepository = layout.legacyShell;
   t.after(async () => {
     releaseDrain?.();
     if (supervisor) await supervisor.close(); else await owner.close();
     for (const socket of sockets) socket.terminate();
     websocket?.close(); server?.close(); server?.closeAllConnections();
     if (worktreeCreated) {
-      await removeOwnedWorktree({ repository, checkout, git, env });
-      await execute(git, ["branch", "-D", "magi/self-loop"], { cwd: repository, env });
+      await removeOwnedWorktree({ repository: runtimeRepository, checkout, git, env });
+      await execute(git, ["branch", "-D", "magi/self-loop"], { cwd: runtimeRepository, env });
     }
     await rm(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
   if (process.platform === "win32") {
     assert.match(await command("powershell.exe", ["-NoProfile", "-Command", "Write-Output 'lifecycle-shell-ready'"], { cwd: repository }), /lifecycle-shell-ready/, "the real child's environment retains the OS shell search path");
   }
-  await command(git, ["worktree", "add", "-b", "magi/self-loop", checkout, "HEAD"], { cwd: repository });
+  await command(git, ["clone", "--shared", repository, runtimeRepository], { cwd: temporary });
+  await command(git, ["worktree", "add", "-b", "magi/self-loop", checkout, "HEAD"], { cwd: runtimeRepository });
   worktreeCreated = true;
+  const beforeMigration = await command(git, ["status", "--porcelain"], { cwd: checkout });
+  runtimeRepository = await prepareShellProfile({ home, repository, tools: { git, env }, command, assertOpen: owner.assertOpen });
+  assert.equal(runtimeRepository, layout.shell);
+  assert.equal(await command(git, ["status", "--porcelain"], { cwd: checkout }), beforeMigration, "profile migration preserves the live EVA tree status");
+  assert.equal((await command(git, ["status", "--porcelain"], { cwd: runtimeRepository })).trim(), "", "generated profile cache is ignored before build");
   // Overlay this round's source while running before its commit. CI uses the
   // identical tracked files. No original checkout output is overwritten.
-  for (const file of ["apps/eva/eva.ts", "apps/user/user.ts", "apps/user/host.ts", "packages/webapp/api.ts", "packages/webapp/magi-runtime.ts", "packages/built-in-tools/rebuild.ts", "packages/manager/worker.ts", "apps/eva/test/agent.test.ts", "apps/eva/test/manager.test.ts", "apps/shell/process.mjs", "apps/shell/process-owner.mjs", "apps/shell/installation.mjs", "apps/shell/rebuild.mjs", "apps/shell/dependency-state.mjs", "apps/shell/runtime-environment.mjs", "apps/shell/integration/worktree-cleanup.mjs", "apps/shell/test/rebuild.test.mjs", "apps/shell/test/runtime-environment.test.mjs", "apps/shell/test/shutdown.test.mjs", "apps/shell/test/worktree-cleanup.test.mjs"]) {
+  for (const file of ["apps/eva/eva.ts", "apps/user/user.ts", "apps/user/host.ts", "packages/webapp/api.ts", "packages/webapp/magi-runtime.ts", "packages/built-in-tools/rebuild.ts", "packages/manager/worker.ts", "apps/eva/test/agent.test.ts", "apps/eva/test/manager.test.ts", "apps/shell/process.mjs", "apps/shell/process-owner.mjs", "apps/shell/profile-layout.mjs", "apps/shell/test/profile-layout.test.mjs", "apps/shell/test/process-table.test.mjs", "apps/shell/installation.mjs", "apps/shell/rebuild.mjs", "apps/shell/dependency-state.mjs", "apps/shell/runtime-environment.mjs", "apps/shell/integration/worktree-cleanup.mjs", "apps/shell/test/rebuild.test.mjs", "apps/shell/test/runtime-environment.test.mjs", "apps/shell/test/shutdown.test.mjs", "apps/shell/test/worktree-cleanup.test.mjs"]) {
     await cp(path.join(repository, file), path.join(checkout, file));
   }
   await symlink(path.join(repository, "apps/shell/runtime"), path.join(checkout, "apps/shell/runtime"), "junction");
@@ -147,7 +157,7 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
         if (mode === "reject-managed") assert.ok(body.messages.some((message) => message.role === "tool" && text(message.content).includes("not managed")));
         complete(response, { content: `${mode} proposal submitted` });
       }
-    } catch (error) { response.writeHead(500); response.end(String(error)); }
+    } catch (error) { modelFailures.push(String(error)); response.writeHead(500); response.end(String(error)); }
   });
   websocket = new WebSocketServer({ server, path: "/connect" });
   websocket.on("connection", (socket) => { sockets.push(socket); socket.on("message", (message) => acknowledgements.push(JSON.parse(String(message)))); });
@@ -182,10 +192,11 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
   const activationStart = events.length;
   send("activate");
   await until(() => {
+    if (modelFailures.length) throw new Error(`Model fixture assertion failed: ${modelFailures.join("; ")}`);
     const rejected = events.slice(activationStart).find((event) => event.phase === "failed");
     if (rejected) throw new Error(`Valid candidate activation was rejected: ${rejected.message}`);
     return successfulRequest && heldDrain && stoppingSeen;
-  }, "Shell never drained the real caller");
+  }, "Shell never drained the real caller (see fixture activation flags)").catch((error) => { throw new Error(`${error.message}: ${JSON.stringify({ successfulRequest, heldDrain, stoppingSeen, starts, exits, activationRequests: modelRequests.filter((body) => JSON.stringify(body.messages).includes("activate")).length, modelFailures })}`, { cause: error }); });
   const pendingEvent = send("pending during retirement");
   await until(() => acknowledgements.some((ack) => ack.event_id === `event-${pendingEvent}`), "pending message was not durably ingested");
   const jobs = new Database(path.join(workspace, "logs/jobs.db"), { readonly: true });
@@ -208,5 +219,6 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
   assert.ok(commandLog.some((call) => call.args[1] === "test" && call.cwd === checkout));
   assert.ok(commandLog.some((call) => call.args[1] === "run" && call.args[2] === "build" && call.cwd === checkout));
   assert.equal(commandLog.filter((call) => call.args[1] === "ci").length, 1, "only the initial preparation installs dependencies; live rebuilds preserve native modules");
-  t.diagnostic(JSON.stringify({ simulated: "loopback OpenAI SSE responses and ASP HTTP/WebSocket", real: "EVA CLI entry, BUS, file/bash/rebuild tools, own worktree npm tests/compilation, private Shell IPC, supervisor child replacement and reconnection", starts, processEvents, pendingJob: pending.id, phases: events.map((event) => event.phase), modelCalls: modelRequests.length, unverified: "Electron window/OS deep-link, crash rollback and improvement quality" }));
+  assert.equal((await command(git, ["status", "--porcelain"], { cwd: runtimeRepository })).trim(), "", "Shell authority remains clean after migration and runtime build/start");
+  t.diagnostic(JSON.stringify({ profile: "legacy main tree moved to shell, linked EVA repaired before real startup", simulated: "loopback OpenAI SSE responses and ASP HTTP/WebSocket", real: "EVA CLI entry, BUS, file/bash/rebuild tools, own worktree npm tests/compilation, private Shell IPC, supervisor child replacement and reconnection", starts, processEvents, pendingJob: pending.id, phases: events.map((event) => event.phase), modelCalls: modelRequests.length, unverified: "Electron window/OS deep-link, crash rollback and improvement quality" }));
 });

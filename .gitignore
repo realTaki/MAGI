@@ -288,3 +288,6 @@ deploy/k8s/secrets/*.yaml
 .workbuddy/memory/MEMORY.md
 **/.magi-install-state.json
 **/.magi-install-state.json.*.tmp
+
+# Shell profile caches and generated packaging outputs (never source).
+/cache/

@@ -8,11 +8,9 @@ import {
   chmodSync,
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   realpathSync,
   renameSync,
-  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -29,22 +27,23 @@ import { updateScript } from "./update-script.mjs";
 import { createSupervisor, prepareAndStartUser } from "./process.mjs";
 import { createProcessOwner } from "./process-owner.mjs";
 import { ensureInstalledDependencies } from "./installation.mjs";
+import { profilePaths, prepareShellProfile } from "./profile-layout.mjs";
 
 const { resolveGitBinary, setupEnvironment } = dugite;
 const SHELL_DIR = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(SHELL_DIR, "..");
+const REPO_ROOT = path.resolve(SHELL_DIR, "..", "..");
 const MAGI_REPOSITORY =
   process.env.MAGI_REPOSITORY_URL ?? "https://github.com/AgenticSocietyLab/MAGI.git";
 
 // Keep every MAGI-owned Electron path beneath ~/.magi so removing that one
 // directory also removes Chromium storage, caches, logs, and crash dumps.
-const MAGI_DATA_ROOT = path.join(app.getPath("home"), ".magi");
-const MAGI_CHECKOUT_ROOT = path.join(MAGI_DATA_ROOT, "MAGI");
+const PROFILE_PATHS = profilePaths(app.getPath("home"));
+const MAGI_DATA_ROOT = PROFILE_PATHS.dataRoot;
 const LEGACY_MAGI_APP_DATA = path.join(MAGI_DATA_ROOT, "app");
 const MAGI_USER_DATA = path.join(MAGI_DATA_ROOT, "user");
 const MAGI_APP_CHECKOUT = path.join(MAGI_USER_DATA, "MAGI");
 const ELECTRON_USER_DATA = path.join(MAGI_USER_DATA, "electron");
-const ELECTRON_CACHE = path.join(MAGI_DATA_ROOT, "cache", "electron");
+const ELECTRON_CACHE = path.join(PROFILE_PATHS.cache, "electron");
 const ELECTRON_LOGS = path.join(MAGI_USER_DATA, "logs");
 const ELECTRON_CRASH_DUMPS = path.join(MAGI_USER_DATA, "crash-dumps");
 const WINDOW_STATE_FILE = path.join(MAGI_USER_DATA, "window-state.json");
@@ -70,6 +69,7 @@ for (const directory of [
 app.setPath("userData", ELECTRON_USER_DATA);
 app.setPath("sessionData", ELECTRON_USER_DATA);
 app.setPath("cache", ELECTRON_CACHE);
+app.commandLine.appendSwitch("disk-cache-dir", ELECTRON_CACHE);
 app.setPath("crashDumps", ELECTRON_CRASH_DUMPS);
 app.setAppLogsPath(ELECTRON_LOGS);
 
@@ -107,47 +107,14 @@ function toolsForRuntime(runtime) {
     ]),
     NODE: node,
     npm_node_execpath: node,
-    npm_config_cache: path.join(MAGI_DATA_ROOT, "cache", "npm"),
+    npm_config_cache: path.join(PROFILE_PATHS.cache, "npm"),
+    ELECTRON_CACHE: path.join(PROFILE_PATHS.cache, "electron-downloads"),
+    ELECTRON_BUILDER_CACHE: path.join(PROFILE_PATHS.cache, "electron-builder"),
+    XDG_CACHE_HOME: PROFILE_PATHS.cache,
   };
   return { env, git, node, npm };
 }
 
-async function cloneMagiSource(tools, progress) {
-  const destination = MAGI_CHECKOUT_ROOT;
-  if (existsSync(destination)) {
-    if (!statSync(destination).isDirectory()) {
-      throw new Error(`MAGI source path is not a directory: ${destination}`);
-    }
-    if (!existsSync(path.join(destination, ".git"))) {
-      throw new Error(`MAGI source path is not a Git repository: ${destination}`);
-    }
-    return destination;
-  }
-
-  progress("Cloning MAGI source…", 0.06);
-  const parent = path.dirname(destination);
-  mkdirSync(parent, { recursive: true });
-  const staging = mkdtempSync(path.join(parent, ".MAGI-"));
-  const checkout = path.join(staging, "MAGI");
-  try {
-    await command(tools.git, ["clone", MAGI_REPOSITORY, checkout], {
-      cwd: staging,
-      env: tools.env,
-      description: "Could not clone MAGI from GitHub",
-    });
-    try {
-      renameSync(checkout, destination);
-    } catch (error) {
-      // Two app launches can race on first install. Keep the winner's tree.
-      if (!existsSync(destination)) {
-        throw error;
-      }
-    }
-    return destination;
-  } finally {
-    rmSync(staging, { recursive: true, force: true });
-  }
-}
 
 /**
  * The shell needs a User worktree before it can spawn `dist/user.js`. All
@@ -162,11 +129,6 @@ async function ensureAppWorktree(checkout, tools, progress) {
     throw new Error(`MAGI User worktree path is not a Git checkout: ${MAGI_APP_CHECKOUT}`);
   }
   mkdirSync(path.dirname(MAGI_APP_CHECKOUT), { recursive: true });
-  await command(tools.git, ["worktree", "prune"], {
-    cwd: checkout,
-    env: tools.env,
-    description: "Could not prune stale MAGI worktrees",
-  });
   let branchExists = true;
   try {
     await command(tools.git, ["show-ref", "--verify", "--quiet", "refs/heads/magi/user"], {
@@ -310,7 +272,10 @@ async function resolveRuntimeRoot(progress) {
   if (runtimeRootPromise === null) {
     runtimeRootPromise = (async () => {
       localTools = packagedTools();
-      const checkout = await cloneMagiSource(localTools, progress);
+      const checkout = await prepareShellProfile({
+        home: app.getPath("home"), repository: MAGI_REPOSITORY, tools: localTools,
+        command, assertOpen: processOwner.assertOpen, progress,
+      });
       localCheckoutManaged = true;
       return checkout;
     })().catch((error) => {
@@ -637,7 +602,14 @@ if (!ownsInstance) {
   registerMagiProtocol();
   queueArgvDeeplinks();
 
-  app.whenReady().then(() => {
+  // Relocate profile cache before any BrowserWindow can open Chromium files
+  // inside it (Windows refuses renaming directories with those files open).
+  const profilePreparation = app.isPackaged
+    ? resolveRuntimeRoot(() => {}).then(() => null, (error) => error)
+    : Promise.resolve(null);
+  app.whenReady().then(async () => {
+    await profilePreparation;
+    if (processOwner.closing) return;
     Menu.setApplicationMenu(null);
     mainWindow = createWindow();
     void loadStartup(mainWindow).then(() => launchLocalOperator(mainWindow));

@@ -6,20 +6,25 @@ const execute = promisify(execFile);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const windowsTool = (name) => path.join(process.env.SystemRoot ?? process.env.SYSTEMROOT ?? "C:\\Windows", "System32", name);
 
-async function processTable() {
-  if (process.platform !== "win32") {
-    const { stdout } = await execute("/bin/ps", ["-eo", "pid=,ppid=,pgid=,sid="], { timeout: 2000, maxBuffer: 4 * 1024 * 1024 });
+export async function readProcessTable({ platform = process.platform, run = execute } = {}) {
+  if (platform !== "win32") {
+    // Darwin BSD ps exposes pgid, but neither a numeric sid nor Linux's sid
+    // keyword. sess is an opaque kernel pointer, not a session ID. Private
+    // detached process groups retain ordinary descendants after reparenting.
+    const fields = platform === "darwin" ? "pid=,ppid=,pgid=" : "pid=,ppid=,pgid=,sid=";
+    const { stdout } = await run("/bin/ps", ["-axo", fields], { timeout: 2000, maxBuffer: 4 * 1024 * 1024 });
     return stdout.trim().split(/\r?\n/).filter(Boolean).map((line) => {
       const [pid, parent, group, session] = line.trim().split(/\s+/).map(Number);
-      return { pid, parent, group, session, birth: null };
+      return { pid, parent, group, session: session ?? null, birth: null };
     });
   }
   const shell = windowsTool("WindowsPowerShell/v1.0/powershell.exe");
   const script = "Get-CimInstance Win32_Process | ForEach-Object { [pscustomobject]@{pid=[int]$_.ProcessId;parent=[int]$_.ParentProcessId;birth=([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds()} } | ConvertTo-Json -Compress";
-  const { stdout } = await execute(shell, ["-NoProfile", "-NonInteractive", "-Command", script], { timeout: 5000, maxBuffer: 4 * 1024 * 1024 });
+  const { stdout } = await run(shell, ["-NoProfile", "-NonInteractive", "-Command", script], { timeout: 5000, maxBuffer: 4 * 1024 * 1024 });
   const value = JSON.parse(stdout || "[]");
   return Array.isArray(value) ? value : [value];
 }
+const processTable = () => readProcessTable();
 let tableInFlight = null;
 function sharedProcessTable() {
   tableInFlight ??= processTable().finally(() => { tableInFlight = null; });
