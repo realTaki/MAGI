@@ -12,6 +12,7 @@ import dugite from "dugite";
 import { Bus, MAGI_CONTACT_ID } from "@magi/bus";
 import { createSupervisor } from "../process.mjs";
 import { createAppRebuilder } from "../rebuild.mjs";
+import { prependRuntimePath } from "../runtime-environment.mjs";
 
 const execute = promisify(execFile);
 const repository = path.resolve(import.meta.dirname, "../../..");
@@ -33,7 +34,7 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
   await mkdir(workspace);
   const handle = "@self-loop.magi";
   const gitEnvironment = dugite.setupEnvironment({}).env;
-  const env = { ...gitEnvironment, PATH: `${path.dirname(node)}${path.delimiter}${gitEnvironment.PATH}`, npm_config_cache: path.join(temporary, "npm-cache") };
+  const env = { ...prependRuntimePath(gitEnvironment, [path.dirname(node)]), npm_config_cache: path.join(temporary, "npm-cache") };
   // Node's outer test-runner context is not an application environment. Leaking
   // it into nested node --test can report failures without a failing exit code.
   delete env.NODE_TEST_CONTEXT;
@@ -57,11 +58,14 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
     }
     await rm(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
+  if (process.platform === "win32") {
+    assert.match(await command("powershell.exe", ["-NoProfile", "-Command", "Write-Output 'lifecycle-shell-ready'"], { cwd: repository }), /lifecycle-shell-ready/, "the real child's environment retains the OS shell search path");
+  }
   await command(git, ["worktree", "add", "-b", "magi/self-loop", checkout, "HEAD"], { cwd: repository });
   worktreeCreated = true;
   // Overlay this round's source while running before its commit. CI uses the
   // identical tracked files. No original checkout output is overwritten.
-  for (const file of ["apps/eva/eva.ts", "packages/built-in-tools/rebuild.ts", "packages/manager/worker.ts", "apps/eva/test/agent.test.ts", "apps/shell/process.mjs", "apps/shell/rebuild.mjs", "apps/shell/dependency-state.mjs", "apps/shell/test/rebuild.test.mjs"]) {
+  for (const file of ["apps/eva/eva.ts", "packages/built-in-tools/rebuild.ts", "packages/manager/worker.ts", "apps/eva/test/agent.test.ts", "apps/shell/process.mjs", "apps/shell/rebuild.mjs", "apps/shell/dependency-state.mjs", "apps/shell/runtime-environment.mjs", "apps/shell/test/rebuild.test.mjs", "apps/shell/test/runtime-environment.test.mjs"]) {
     await cp(path.join(repository, file), path.join(checkout, file));
   }
   await symlink(path.join(repository, "apps/shell/runtime"), path.join(checkout, "apps/shell/runtime"), "junction");

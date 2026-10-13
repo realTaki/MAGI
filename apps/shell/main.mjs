@@ -23,6 +23,7 @@ import { app, BrowserWindow, Menu, clipboard, ipcMain, screen, shell } from "ele
 
 import { createAppRebuilder, rebuildRequestKey } from "./rebuild.mjs";
 import { shellArtifactPath } from "./shell-path.mjs";
+import { prependRuntimePath } from "./runtime-environment.mjs";
 import { updateScript } from "./update-script.mjs";
 import { createSupervisor, prepareUserProcess } from "./process.mjs";
 
@@ -122,14 +123,12 @@ function toolsForRuntime(runtime) {
   const git = resolveGitBinary();
   const gitEnvironment = setupEnvironment({}).env;
   const env = {
-    ...gitEnvironment,
-    PATH: [
+    ...prependRuntimePath(gitEnvironment, [
       path.dirname(git),
       path.dirname(node),
       path.dirname(npm),
       path.join(runtime, "bin"),
-      gitEnvironment.PATH ?? "",
-    ].join(path.delimiter),
+    ]),
     NODE: node,
     npm_node_execpath: node,
     npm_config_cache: path.join(MAGI_DATA_ROOT, "cache", "npm"),

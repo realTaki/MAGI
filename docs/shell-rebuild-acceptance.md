@@ -250,3 +250,13 @@ manifest or missing installation is refused while retaining the old process.
 Dependency upgrades need separately prepared activation; this is not an atomic
 dependency updater or a guarantee against tampering with installed files.
 The end-to-end test asserts exactly one install, before the first EVA starts.
+
+The next Windows run rejected the valid candidate in the ordinary shell tool
+suite. Review found that dugite preserves the OS variable spelling `Path`,
+while the old environment builder read `.PATH` on a plain object and emitted
+a second key. Node selects one case-insensitive variant for Windows children;
+this could discard the system search path. Shell and the fixture now share a
+path builder that preserves the inherited value and emits one canonical PATH
+key. A deterministic Windows-key test and a real native PowerShell preflight
+cover it. Only individual child environments change, never persistent settings.
+See [Node child-process environment semantics](https://nodejs.org/api/child_process.html).
