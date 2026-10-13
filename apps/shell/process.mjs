@@ -7,6 +7,7 @@
  */
 
 import { describeApp } from "./app-spec.mjs";
+import { dependencyState } from "./dependency-state.mjs";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { basename, resolve } from "node:path";
@@ -76,7 +77,8 @@ export function createSupervisor({ node, env, spawnProcess = spawn, readyTimeout
   }
 
   async function start(spec, { host, id: existingId, replacing = false } = {}) {
-    const identity = describeApp(spec)?.key;
+    const app = describeApp(spec);
+    const identity = app?.key;
     const key = JSON.stringify([resolve(spec.cwd), resolve(spec.cwd, spec.entry), spec.args ?? []]);
     if (!existingId) {
       for (const [id, record] of records) {
@@ -107,6 +109,7 @@ export function createSupervisor({ node, env, spawnProcess = spawn, readyTimeout
     }
     const id = existingId ?? String(++seq);
     const isHost = host !== undefined;
+    const dependencies = app ? dependencyState(app.root) : null;
     const child = spawnProcess(node, [spec.entry, ...(spec.args ?? [])], {
       cwd: spec.cwd,
       env: { ...env, ...spec.env, ...(describeApp(spec)?.kind === "eva" ? { MAGI_SHELL_REBUILD: "ipc" } : {}) },
@@ -116,7 +119,7 @@ export function createSupervisor({ node, env, spawnProcess = spawn, readyTimeout
     });
     const entry = { child, host: isHost, key, identity, replacing, ready: false };
     children.set(id, entry);
-    records.set(id, { spec, host, identity, key, exit: null });
+    records.set(id, { spec, host, identity, key, dependencies, exit: null });
     const ready = new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`App did not become ready: ${spec.cwd}`)), readyTimeoutMs);
       child.on("message", (message) => {
@@ -301,6 +304,7 @@ export function createSupervisor({ node, env, spawnProcess = spawn, readyTimeout
 
   return { start, stop, restart, snapshots,
     setRebuildHandler: (handler) => { rebuildHandler = handler; },
+    dependencyState: (id) => records.get(id)?.dependencies ?? null,
     stopAll: () => { for (const id of children.keys()) stop(id); },
   };
 }

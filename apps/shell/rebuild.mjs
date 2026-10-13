@@ -1,4 +1,7 @@
 import { describeApp } from "./app-spec.mjs";
+import { dependencyState } from "./dependency-state.mjs";
+import { existsSync } from "node:fs";
+import path from "node:path";
 
 export function parseRebuildLink(raw) {
   let url;
@@ -73,7 +76,17 @@ export function createAppRebuilder({ supervisor, tools, command, managed, onUser
         }
       }
       phase = "building"; report();
-      await command(tools.node, [tools.npm, "ci", "--ignore-scripts"], {
+      const runningDependencies = supervisor.dependencyState?.(target.id) ?? null;
+      const checkDependencies = () => {
+        if (runningDependencies !== null && (dependencyState(root) !== runningDependencies || !existsSync(path.join(root, "node_modules")))) {
+          throw new Error("Dependencies changed while the app is running; activation was refused and the old instance was kept. Dependency upgrades require a separately prepared activation.");
+        }
+      };
+      checkDependencies();
+      // Windows locks a loaded native module. Never npm ci over a live app's
+      // installed tree. Source-only rebuilds use the exact declared dependencies
+      // recorded by Shell when that instance started.
+      if (runningDependencies === null) await command(tools.node, [tools.npm, "ci", "--ignore-scripts"], {
         cwd: root, env: tools.env, description: "Could not install app dependencies",
       });
       phase = "testing"; report();
@@ -85,13 +98,14 @@ export function createAppRebuilder({ supervisor, tools, command, managed, onUser
         cwd: root, env: tools.env, description: "Could not compile the app",
       });
       if (target.app.kind === "user") {
-        await command(tools.node, [tools.npm, "ci", "--ignore-scripts"], {
+        if (runningDependencies === null) await command(tools.node, [tools.npm, "ci", "--ignore-scripts"], {
           cwd: target.spec.cwd, env: tools.env, description: "Could not install User interface dependencies",
         });
         await command(tools.node, [tools.npm, "run", "build"], {
           cwd: target.spec.cwd, env: tools.env, description: "Could not compile User interface",
         });
       }
+      checkDependencies();
       phase = "restarting"; report();
       const handle = await supervisor.restart(target.id);
       if (target.app.kind === "user") await onUser(handle);

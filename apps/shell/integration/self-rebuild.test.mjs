@@ -61,7 +61,7 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
   worktreeCreated = true;
   // Overlay this round's source while running before its commit. CI uses the
   // identical tracked files. No original checkout output is overwritten.
-  for (const file of ["apps/eva/eva.ts", "packages/built-in-tools/rebuild.ts", "packages/manager/worker.ts", "apps/eva/test/agent.test.ts", "apps/shell/process.mjs", "apps/shell/rebuild.mjs", "apps/shell/test/rebuild.test.mjs"]) {
+  for (const file of ["apps/eva/eva.ts", "packages/built-in-tools/rebuild.ts", "packages/manager/worker.ts", "apps/eva/test/agent.test.ts", "apps/shell/process.mjs", "apps/shell/rebuild.mjs", "apps/shell/dependency-state.mjs", "apps/shell/test/rebuild.test.mjs"]) {
     await cp(path.join(repository, file), path.join(checkout, file));
   }
   await symlink(path.join(repository, "apps/shell/runtime"), path.join(checkout, "apps/shell/runtime"), "junction");
@@ -133,7 +133,7 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
     return child;
   } });
   let managed = true;
-  const rebuild = createAppRebuilder({ supervisor, tools: { node, npm, git, env }, command, managed: () => managed, pause: () => sleep(100), emit: (event) => { events.push(event); console.log(`lifecycle: ${event.phase}${event.failedPhase ? ` (${event.failedPhase}) ${event.message}` : ""}`); if (event.phase === "restarting") successfulRequest = true; }, onUser: async () => { throw new Error("User must not be replaced"); } });
+  const rebuild = createAppRebuilder({ supervisor, tools: { node, npm, git, env }, command, managed: () => managed, pause: () => sleep(100), emit: (event) => { events.push(event); console.log(`lifecycle: ${event.phase}${event.failedPhase ? ` (${event.failedPhase})` : ""}`); if (event.phase === "restarting") successfulRequest = true; }, onUser: async () => { throw new Error("User must not be replaced"); } });
   const child = await supervisor.start({ entry: path.join(checkout, "apps/eva/dist/eva.js"), cwd: path.join(checkout, "apps/eva"), args: [handle, base, "local-asp-only", "--workspace", workspace] });
   await child.whenReady(); await until(() => sockets.length === 1, "initial ASP connection missing");
   let sequence = 0;
@@ -149,6 +149,7 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
     send(mode);
     await until(() => events.filter((event) => event.phase === "failed").length > failures, `${mode} did not fail validation`);
     assert.equal(events.at(-1).failedPhase, "testing");
+    assert.match(events.at(-1).message, mode === "reject-tests" ? /candidate rejected by tests/ : /TS1138|TS1005/, "the expected real candidate validation failure was observed");
     assert.equal(starts.length, 1); assert.deepEqual(exits, []);
     send(`baseline ${mode} proof`); await until(() => deliveries.filter((value) => value === "baseline served").length >= (mode === "reject-tests" ? 2 : 3), "old loaded behavior did not survive failed candidate");
   }
@@ -175,5 +176,6 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
   assert.equal(restored.chats.read("asp", "self-loop"), sequence); restored.close();
   assert.ok(commandLog.some((call) => call.args[1] === "test" && call.cwd === checkout));
   assert.ok(commandLog.some((call) => call.args[1] === "run" && call.args[2] === "build" && call.cwd === checkout));
+  assert.equal(commandLog.filter((call) => call.args[1] === "ci").length, 1, "only the initial preparation installs dependencies; live rebuilds preserve native modules");
   t.diagnostic(JSON.stringify({ simulated: "loopback OpenAI SSE responses and ASP HTTP/WebSocket", real: "EVA CLI entry, BUS, file/bash/rebuild tools, own worktree npm tests/compilation, private Shell IPC, supervisor child replacement and reconnection", starts, processEvents, pendingJob: pending.id, phases: events.map((event) => event.phase), modelCalls: modelRequests.length, unverified: "Electron window/OS deep-link, crash rollback and improvement quality" }));
 });

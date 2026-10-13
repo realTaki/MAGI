@@ -32,6 +32,7 @@
       "process.mjs",
       "rebuild.mjs",
       "app-spec.mjs",
+      "dependency-state.mjs",
       "preload.cjs",
       "shell-path.mjs",
       "update-script.mjs",

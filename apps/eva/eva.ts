@@ -105,13 +105,17 @@ async function main(): Promise<void> {
   const [base, token] = positional;
   if ((base && !token) || (!base && token)) throw new Error("ASP base and token must be supplied together");
   const magi = new Magi(handle, { workspace, asp: base && token ? { base, token } : undefined });
+  let stopService: (() => void) | undefined;
   const shutdown = base && token ? new Promise<void>((resolve) => {
-    process.once("SIGINT", resolve); process.once("SIGTERM", resolve);
+    stopService = resolve;
     process.on("message", (message) => {
       if ((message as { type?: string })?.type === "shutdown") resolve();
     });
   }) : null;
   await magi.start();
+  // Until startup finishes, keep default signal termination: a stalled start
+  // cannot drain workers and must still be stoppable by Shell's ready timeout.
+  if (stopService) { process.once("SIGINT", stopService); process.once("SIGTERM", stopService); }
   process.send?.({ type: "ready", lifecycle: shutdown ? ["shutdown"] : [] });
   // With ASP the process is a service: it stays up until it is asked to stop.
   // Without one it is a prompt, which is how a MAGI is tried out by hand.

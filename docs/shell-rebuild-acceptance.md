@@ -233,3 +233,20 @@ a recovered turn's context; the worker-start barrier fixes it. The test fixture
 removes only its inherited `NODE_TEST_CONTEXT` in its child environment copy;
 leaking the outer harness context into nested test commands had produced
 misleading exit codes during the first attempted gate verification.
+
+The added `EVA that stalls before ready can still be retired` regression uses
+an actual compiled EVA entry with only its startup await deliberately stalled.
+It failed against this round's early signal handlers (one child remained after
+stop). Signal handlers are now installed after startup completes: a not-ready
+process retains normal signal termination, while a ready service drains over
+IPC. This is bounded retirement, not startup rollback.
+
+Native Windows acceptance exposed the previous unconditional `npm ci` over a
+live EVA: it could not unlink the loaded SQLite `win32-x64.node` (EPERM).
+Shell now records the lockfile and workspace dependency declarations at spawn,
+reuses the live installation for source-only validation/build, and checks the
+same declaration fingerprint before activation. A changed lock/dependency
+manifest or missing installation is refused while retaining the old process.
+Dependency upgrades need separately prepared activation; this is not an atomic
+dependency updater or a guarantee against tampering with installed files.
+The end-to-end test asserts exactly one install, before the first EVA starts.

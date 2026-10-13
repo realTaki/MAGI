@@ -401,3 +401,49 @@ test("hand-run EVA exits its CLI without a service IPC listener", { timeout: 10_
   assert.equal(await exit, 0);
   assert.equal(sent, true);
 });
+
+test("EVA that stalls before ready can still be retired", { timeout: 15_000 }, async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "magi-startup-stop-"));
+  const repository = path.resolve(import.meta.dirname, "../../..");
+  const cwd = path.join(directory, "apps/eva"), marker = path.join(directory, "starting");
+  await mkdir(path.join(cwd, "dist"), { recursive: true });
+  await symlink(path.join(repository, "node_modules"), path.join(directory, "node_modules"), "junction");
+  const original = await readFile(path.join(repository, "apps/eva/dist/eva.js"), "utf8");
+  const stalled = original.replace("await magi.start();", `realpathSync(${JSON.stringify(directory)}); (await import('node:fs')).writeFileSync(${JSON.stringify(marker)},'starting'); await new Promise(()=>{});`);
+  assert.notEqual(stalled, original);
+  const entry = path.join(cwd, "dist/eva.js"); await writeFile(entry, stalled);
+  let child;
+  const supervisor = createSupervisor({ node: process.execPath, env: process.env, readyTimeoutMs: 2000, spawnProcess: (...args) => { child = spawn(...args); return child; } });
+  t.after(async () => { if (child?.exitCode === null && child.signalCode === null) child.kill("SIGKILL"); await cleanup(supervisor, directory); });
+  const handle = await supervisor.start({ cwd, entry, args: ["@stalled.magi", "http://127.0.0.1:9", "local-only", "--workspace", path.join(directory, "state")] });
+  for (let attempt = 0; attempt < 300; attempt++) { try { await readFile(marker); break; } catch { await new Promise((resolve) => setTimeout(resolve, 20)); } }
+  assert.equal(await readFile(marker, "utf8"), "starting");
+  await assert.rejects(handle.whenReady(), /did not become ready/);
+  supervisor.stop(handle.id);
+  for (let attempt = 0; attempt < 100 && supervisor.snapshots().length; attempt++) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(supervisor.snapshots().length, 0, "a not-ready process must not swallow its stop signal");
+});
+
+test("source rebuild reuses live dependencies and rejects changed declarations", async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "magi-dependency-gate-"));
+  const root = path.join(directory, "MAGI"), cwd = path.join(root, "apps/eva"), state = path.join(directory, "state.json");
+  await mkdir(path.join(cwd, "dist"), { recursive: true }); await mkdir(path.join(root, "node_modules"));
+  await writeFile(path.join(root, "package-lock.json"), "{}"); await writeFile(path.join(root, "package.json"), JSON.stringify({ dependencies: { example: "1" } }));
+  const entry = path.join(cwd, "dist/eva.js"); await writeFile(entry, program("old"));
+  const supervisor = createSupervisor({ node: process.execPath, env: process.env }); t.after(() => cleanup(supervisor, directory));
+  const handle = await supervisor.start({ cwd, entry, args: ["@dependencies.magi"], env: { STATE: state } }); await handle.whenReady();
+  const calls = [];
+  const rebuild = createAppRebuilder({ supervisor, tools: { npm: "npm-cli" }, managed: () => true, pause: async () => {}, emit: () => {}, onUser: async () => {}, command: async (_file, args) => { calls.push(args); if (args[2] === "build") await writeFile(entry, program("new")); return ""; } });
+  await rebuild("magi://runtime/rebuild?target=self&handle=@dependencies.magi");
+  assert.ok(!calls.some((args) => args.includes("ci")), "loaded native modules are never removed for source-only edits");
+  const before = JSON.parse(await readFile(state, "utf8"));
+  for (const file of ["package.json", "package-lock.json"]) {
+    const saved = await readFile(path.join(root, file));
+    await writeFile(path.join(root, file), file === "package.json" ? JSON.stringify({ dependencies: { example: "2" } }) : '{"changed":true}');
+    const count = calls.length;
+    await assert.rejects(rebuild("magi://runtime/rebuild?target=self&handle=@dependencies.magi"), /Dependencies changed/);
+    assert.equal(calls.length, count); assert.deepEqual(JSON.parse(await readFile(state, "utf8")), before);
+    await writeFile(path.join(root, file), saved);
+  }
+  assert.equal(supervisor.snapshots().length, 1);
+});
