@@ -34,7 +34,12 @@ async function repository(f, root) {
 async function has(file) { try { await fs.lstat(file); return true; } catch (e) { if (e.code === 'ENOENT') return false; throw e; } }
 
 test('profile naming handles native Windows paths without renaming per-app workspaces', () => {
-  assert.deepEqual(profilePaths('C:\\Users\\Someone', path.win32), { dataRoot: 'C:\\Users\\Someone\\.magi', shell: 'C:\\Users\\Someone\\.magi\\shell', cache: 'C:\\Users\\Someone\\.magi\\shell\\cache' });
+  assert.deepEqual(profilePaths('C:\\Users\\Someone', path.win32), {
+    dataRoot: 'C:\\Users\\Someone\\.magi',
+    shellHome: 'C:\\Users\\Someone\\.magi\\shell',
+    shell: 'C:\\Users\\Someone\\.magi\\shell\\MAGI',
+    cache: 'C:\\Users\\Someone\\.magi\\shell\\cache',
+  });
 });
 
 test('fresh bootstrap tolerates Electron precreating cache; repeat startup leaves source and records unchanged', async (t) => {
@@ -42,6 +47,12 @@ test('fresh bootstrap tolerates Electron precreating cache; repeat startup leave
   await fs.mkdir(path.join(f.cache, 'electron'), { recursive: true });
   await fs.writeFile(path.join(f.cache, 'electron', 'receipt'), 'existing browser cache');
   assert.equal(await f.prepare(), f.shell);
+  assert.equal(path.join(f.shellHome, 'MAGI'), f.shell);
+  assert.equal(path.join(f.shellHome, 'cache'), f.cache);
+  assert.equal(await has(path.join(f.shell, '.git')), true);
+  assert.equal(await has(path.join(f.shellHome, '.git')), false);
+  assert.match((await f.run(['rev-parse', '--show-toplevel'], f.shell)).trim(), /[/\\]shell[/\\]MAGI$/);
+  assert.equal((await f.run(['rev-parse', '--abbrev-ref', 'HEAD'], f.shell)).trim(), 'magi/shell');
   const head = await f.run(['rev-parse', 'HEAD'], f.shell);
   assert.equal((await f.run(['status', '--porcelain'], f.shell)).trim(), '');
   await fs.writeFile(path.join(f.shell, 'source.ts'), 'dirty shell source');
@@ -51,12 +62,15 @@ test('fresh bootstrap tolerates Electron precreating cache; repeat startup leave
   assert.equal(await fs.readFile(path.join(f.shell, 'source.ts'), 'utf8'), 'dirty shell source');
 });
 
-test('partial fresh clone resumes per-entry installation', async (t) => {
+test('partial fresh clone resumes by renaming the staged checkout into MAGI', async (t) => {
   const f = await fixture(t); await repository(f, path.join(f.home, 'origin'));
-  let interrupted = false;
-  await assert.rejects(f.prepare({ rename: async (source, target) => { if (path.basename(source) === 'source.ts' && !interrupted) { interrupted = true; throw new Error('simulated bootstrap interruption'); } return fs.rename(source, target); } }), /bootstrap interruption/);
+  await assert.rejects(f.prepare({ rename: async () => { throw new Error('simulated bootstrap interruption'); } }), /bootstrap interruption/);
   assert.equal(await has(path.join(f.dataRoot, '.shell-layout.json')), true);
-  await f.prepare(); assert.equal((await f.run(['status', '--porcelain'], f.shell)).trim(), '');
+  assert.equal(await has(path.join(f.shell, '.git')), false);
+  await f.prepare();
+  assert.equal((await f.run(['status', '--porcelain'], f.shell)).trim(), '');
+  assert.equal((await f.run(['rev-parse', '--abbrev-ref', 'HEAD'], f.shell)).trim(), 'magi/shell');
+  assert.equal(await has(path.join(f.dataRoot, '.shell-layout.json')), false);
 });
 
 test('a live preparation lock stops without replacing files', async (t) => {

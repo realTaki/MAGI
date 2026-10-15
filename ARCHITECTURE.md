@@ -18,7 +18,7 @@ packages/              The runtime's packages: bus, manager, asp-server, webapp,
 
 The installed package contains the shell plus Node.js 24 and npm. It
 does not contain a Python runtime. On first launch the shell clones this
-repository to `~/.magi/shell`. Later launches keep that checkout.
+repository to `~/.magi/shell/MAGI`. Later launches keep that checkout.
 
 Before starting User in a fresh managed clone, the shell installs the root
 lockfile with `npm ci --ignore-scripts`, then runs `build:process` in `apps/user`
@@ -63,8 +63,8 @@ participant operations use `/chats/:chat_id/...`.
 
 | Path | Owner | What it is |
 | --- | --- | --- |
-| `~/.magi/shell` | Shell | Shell clone; installer source. |
-| `~/.magi/shell/cache` | Shell | Generated npm, Chromium, Electron download and builder caches. |
+| `~/.magi/shell/MAGI` | Shell | Shell clone on branch `magi/shell`; installer source. |
+| `~/.magi/shell/cache` | Shell | Generated npm, Chromium, Electron download and builder caches. Sibling of MAGI. |
 | `~/.magi/user/MAGI` | desktop | User clone on branch `magi/user`. |
 | `~/.magi/user/chat.sqlite` | desktop | The operator's transcript. |
 | `~/.magi/user/memories/books.db` | desktop | Provider, model, and API key (SettingsBook). |
@@ -76,7 +76,7 @@ participant operations use `/chats/:chat_id/...`.
 ## Desktop startup
 
 The shell puts Node.js 24 and npm on disk, then clones this repository to
-`~/.magi/shell`. It starts User once as `node dist/user.js` from `apps/user/`
+`~/.magi/shell/MAGI`. It starts User once as `node dist/user.js` from `apps/user/`
 (unpackaged: `apps/shell/../user/dist/user.js`). Reloads do not kill User. Quit
 closes process admission, drains/stops owned apps and reaps owned commands. User
 prepares ASP and EVA source trees; Shell starts them through its supervisor. What

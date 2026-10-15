@@ -7,7 +7,7 @@ import { createLocalApi } from '../main/index.ts';
 
 test('Shell build and replacement use the Shell source tree while the User branch remains independent', async (t) => {
   const home = await mkdtemp(path.join(tmpdir(), 'magi-shell-source-'));
-  const checkout = path.join(home, '.magi/shell'), appCheckout = path.join(home, '.magi/user/MAGI');
+  const checkout = path.join(home, '.magi/shell/MAGI'), appCheckout = path.join(home, '.magi/user/MAGI');
   const shellDir = path.join(checkout, 'apps/shell');
   await mkdir(path.join(shellDir, 'release'), { recursive: true });
   await mkdir(path.join(appCheckout, 'apps/shell'), { recursive: true });

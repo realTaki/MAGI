@@ -1,10 +1,11 @@
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
+import { ensureManagedClone } from './clone.mjs';
 
 export function profilePaths(home, paths = path) {
   const dataRoot = paths.join(home, '.magi');
-  const shell = paths.join(dataRoot, 'shell');
-  return { dataRoot, shell, cache: paths.join(shell, 'cache') };
+  const shellHome = paths.join(dataRoot, 'shell');
+  return { dataRoot, shellHome, shell: paths.join(shellHome, 'MAGI'), cache: paths.join(shellHome, 'cache') };
 }
 async function exists(file) { try { await fs.lstat(file); return true; } catch (error) { if (error.code === 'ENOENT') return false; throw error; } }
 async function json(file) { return JSON.parse(await fs.readFile(file, 'utf8')); }
@@ -21,7 +22,7 @@ async function cacheOnly(directory) {
 
 /** Prepare the profile before services run; all Git work uses Shell's owner. */
 export async function prepareShellProfile({ home, repository, tools, command, assertOpen = () => {}, progress = () => {}, rename = fs.rename }) {
-  const paths = profilePaths(home), { dataRoot, shell, cache } = paths;
+  const { dataRoot, shellHome, shell, cache } = profilePaths(home);
   await fs.mkdir(dataRoot, { recursive: true });
   const lock = path.join(dataRoot, '.shell-layout.lock'), journal = path.join(dataRoot, '.shell-layout.json');
   let handle;
@@ -38,7 +39,7 @@ export async function prepareShellProfile({ home, repository, tools, command, as
     handle = await fs.open(lock, 'wx');
   }
   await handle.writeFile(JSON.stringify({ pid: process.pid }));
-  const git = (args, cwd) => { assertOpen(); return command(tools.git, args, { cwd, env: tools.env, description: 'Could not prepare Shell source' }); };
+  const git = (args, options) => { assertOpen(); return command(tools.git, args, { env: tools.env, description: 'Could not prepare Shell source', ...options }); };
   const staging = path.join(dataRoot, '.shell-bootstrap');
   try {
     assertOpen();
@@ -49,32 +50,29 @@ export async function prepareShellProfile({ home, repository, tools, command, as
     let state = await exists(journal) ? await json(journal) : null;
     if (state && (state.version !== 1 || state.kind !== 'clone')) throw new Error('Unknown Shell profile journal; no files were replaced');
     if (!state && !await exists(path.join(shell, '.git'))) {
-      await cacheOnly(shell);
+      await cacheOnly(shellHome);
       if (await exists(staging)) throw new Error('Unjournaled Shell bootstrap directory exists; preserve it for inspection');
       await fs.mkdir(staging);
       progress('Cloning Shell source…', 0.06);
-      try { await git(['clone', '--no-local', repository, path.join(staging, 'checkout')], staging); }
+      try { await git(['clone', '--no-local', repository, path.join(staging, 'checkout')], { cwd: staging }); }
       catch (error) { await fs.rm(staging, { recursive: true, force: true }); throw error; }
-      const entries = await fs.readdir(path.join(staging, 'checkout'));
-      if (entries.includes('cache')) throw new Error('Repository contains a tracked root cache directory');
-      state = { version: 1, kind: 'clone', entries: [...entries.filter((name) => name !== '.git'), '.git'] };
+      state = { version: 1, kind: 'clone' };
       await save(journal, state);
     }
     if (state?.kind === 'clone') {
-      if (!Array.isArray(state.entries) || state.entries.some((name) => typeof name !== 'string' || name === '.' || name === '..' || path.basename(name) !== name || name === 'cache')) throw new Error('Invalid Shell bootstrap journal');
-      await fs.mkdir(shell, { recursive: true });
-      for (const name of state.entries) {
-        assertOpen();
-        const source = path.join(staging, 'checkout', name), destination = path.join(shell, name);
-        if (await exists(source)) {
-          if (await exists(destination)) throw new Error(`Shell bootstrap destination already exists: ${destination}`);
-          await rename(source, destination);
-        } else if (!await exists(destination)) throw new Error(`Shell bootstrap entry is missing: ${name}`);
-      }
-      await git(['rev-parse', '--show-toplevel'], shell);
+      const source = path.join(staging, 'checkout');
+      if (await exists(source)) {
+        if (await exists(shell)) throw new Error(`Shell bootstrap destination already exists: ${shell}`);
+        await fs.mkdir(shellHome, { recursive: true });
+        await rename(source, shell);
+      } else if (!await exists(path.join(shell, '.git'))) throw new Error('Shell bootstrap checkout is missing');
+      await git(['rev-parse', '--show-toplevel'], { cwd: shell });
       await fs.rm(staging, { recursive: true, force: true });
     }
     assertOpen();
+    await ensureManagedClone({
+      run: git, env: tools.env, url: repository, destination: shell, branch: 'magi/shell',
+    });
     await fs.mkdir(cache, { recursive: true });
     if (state) await fs.unlink(journal);
     return shell;

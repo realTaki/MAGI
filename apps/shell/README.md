@@ -15,19 +15,19 @@ The project directory stays the Electron app directory (`build.directories.app`
 in `package.json`, which electron-builder would otherwise move to `apps/user/` — its
 two-package.json layout), so the packaged entry point stays `apps/shell/main.mjs`.
 
-The app is also the machine-local layer of the system. `~/.magi/shell` is the
+The app is also the machine-local layer of the system. `~/.magi/shell/MAGI` is the
 Shell clone used for installer builds. Each app is an independent Git clone of
 the GitHub remote; they share history only by push and fetch. Shell installer
-builds run from `~/.magi/shell/apps/shell`, independently of the User branch.
+builds run from `~/.magi/shell/MAGI/apps/shell`, independently of the User branch.
 The shell clones User so it can load the backend; the User module then clones
 ASP:
 
 ```
-~/.magi/shell       Shell clone (installer source)
-~/.magi/shell/cache generated npm/Electron/electron-builder caches
-~/.magi/user/MAGI  User clone on magi/user; `~/.magi/user/` also holds credentials, UI profile and logs
-~/.magi/asp/MAGI   ASP clone on magi/asp; `~/.magi/asp/` holds its relay database and logs
-~/.magi/<name>/MAGI that MAGI's clone on magi/<name>
+~/.magi/shell/MAGI     Shell clone on branch magi/shell (installer source)
+~/.magi/shell/cache    generated caches (SIBLING of MAGI, not inside the clone)
+~/.magi/user/MAGI      User clone on magi/user
+~/.magi/asp/MAGI       ASP clone on magi/asp
+~/.magi/<name>/MAGI    that MAGI's clone on magi/<name>
 ```
 
 The app keeps the operator's GitHub credentials in `~/.magi/user/`.
@@ -53,7 +53,7 @@ The app stores provider credentials in the User BUS SettingsBook
 without storing the key; the app retries delivery as MAGI come online.
 
 On first launch the packaged shell clones the complete repository into
-`~/.magi/shell` with its bundled Git, clones `magi/user` at
+`~/.magi/shell/MAGI` with its bundled Git, clones `magi/user` at
 `~/.magi/user/MAGI`, then hands the app bundled Node.js and npm. The User module
 clones `magi/asp` at `~/.magi/asp/MAGI` and uses the tools to install
 dependencies and build only inside those clones before starting ASP. The
@@ -73,7 +73,7 @@ packaged launch.
 
 Only seven things, none of them product-specific:
 
-1. Clone `~/.magi/shell` when it is missing, then clone `magi/user` at
+1. Clone `~/.magi/shell/MAGI` when it is missing, then clone `magi/user` at
    `~/.magi/user/MAGI` (packaged builds).
 2. Load its packaged startup/recovery page.
 3. Spawn `apps/user/dist/user.js` and give it native pieces over a host channel:
@@ -131,7 +131,7 @@ user tokens are short-lived and installed per repository.
 
 ## What local edits affect
 
-| Source in `~/.magi/shell` | How the change takes effect |
+| Source in `~/.magi/shell/MAGI` | How the change takes effect |
 | --- | --- |
 | `magi/` | Restart the affected MAGI process. |
 | `asp/` | Restart local ASP. |
@@ -158,6 +158,7 @@ compiled EVA/ASP startup, and User's restored ownership of running EVA handles.
 
 ## Profile bootstrap
 
-Startup clones `~/.magi/shell` when it is missing. A journal lets a crashed
-clone resume entry by entry. A live owner's lock is never stolen. Permission
-or lock failures leave files and the journal available for Retry.
+Startup clones `~/.magi/shell/MAGI` when it is missing. A journal lets a crashed
+clone resume by renaming the staged checkout into MAGI. A live owner's lock is
+never stolen. Permission or lock failures leave files and the journal available
+for Retry.

@@ -53,7 +53,7 @@ export default {
     signIn: "使用 GitHub 登录",
     signInHint: "MAGI 会打开 github.com 并在这里显示一次性验证码，凭据只保存在本机。",
     connect: "创建 fork 并连接",
-    connectHint: "在你的账号下创建 fork，并把 ~/.magi/shell 指向它。",
+    connectHint: "在你的账号下创建 fork，并把 ~/.magi/shell/MAGI 指向它。",
     later: "稍后再说",
     unavailable: "这个版本没有可连接的本地源码树。",
   },

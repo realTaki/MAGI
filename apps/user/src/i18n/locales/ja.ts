@@ -53,7 +53,7 @@ export default {
     signIn: "GitHub でサインイン",
     signInHint: "MAGI が github.com を開き、ワンタイムコードをここに表示します。トークンはこのマシンにのみ保存されます。",
     connect: "fork して接続",
-    connectHint: "アカウントに fork を作成し、~/.magi/shell をそこに向けます。",
+    connectHint: "アカウントに fork を作成し、~/.magi/shell/MAGI をそこに向けます。",
     later: "後で",
     unavailable: "このビルドには接続できるローカルチェックアウトがありません。",
   },

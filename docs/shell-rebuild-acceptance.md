@@ -163,7 +163,7 @@ received file executable, then run:
 ```
 
 This official AppImage mode does not require FUSE. Use a fresh test desktop
-profile and prepare `~/.magi/shell` from `realTaki/MAGI` at the exact
+profile and prepare `~/.magi/shell/MAGI` from `realTaki/MAGI` at the exact
 `SOURCE_COMMIT` before first launch. The package ships Shell and tools; its
 runtime User/ASP/EVA sources come from that checkout. Do not overwrite an
 existing operator checkout or state. The existing default source URL points to
@@ -318,7 +318,7 @@ OS job-object guarantee for a crashing Shell or arbitrary hostile descendants.
 
 ## Shell source/profile layout and Darwin process query
 
-Shell's profile Git authority is `~/.magi/shell`; generated caches are in
+Shell's profile Git authority is `~/.magi/shell/MAGI`; generated caches are in
 `~/.magi/shell/cache` (npm, Chromium HTTP cache, Electron downloads and builder).
 User, ASP, and each EVA are independent clones under their own workspaces
 (`~/.magi/user/MAGI`, `~/.magi/asp/MAGI`, `~/.magi/<name>/MAGI`). They share
@@ -327,12 +327,12 @@ history only by push and fetch. Shell local installer build/replacement uses
 resolution returns the repository root, two levels above `apps/shell`.
 
 `profile-layout.mjs` owns serialized, journaled profile preparation. Bootstrap
-clones into a staging directory, installs entries with `.git` last, and journals
-per-entry continuation. Interrupted operations retain the journal and files for
-a forward retry after locks or permissions are resolved. There is no checkout
-relocation, worktree repair, or cache merge. Existing `~/.magi` trees from
-earlier layouts are discarded and redeployed. `build/`, `dist/`, and `/cache/`
-are ignored in the tracked `.gitignore`.
+clones into a staging directory, then renames the whole checkout into
+`~/.magi/shell/MAGI` and checks out branch `magi/shell`. Interrupted operations
+retain the journal and files for a forward retry after locks or permissions
+are resolved. There is no checkout relocation, worktree repair, or cache merge.
+Existing `~/.magi` trees from earlier layouts are discarded and redeployed.
+`build/`, `dist/`, and `/cache/` are ignored in the tracked `.gitignore`.
 
 Darwin's BSD ps has no Linux numeric `sid` field. It now queries `pid/ppid/pgid`,
 never substitutes the opaque `sess` kernel pointer, and uses private detached

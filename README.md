@@ -85,7 +85,8 @@ On disk after a packaged install, each app is its own Git clone from the GitHub
 remote. They share history only by push and fetch. There is no shared base repo.
 
 ```text
-~/.magi/shell            Shell clone (installer source) and cache/
+~/.magi/shell/MAGI       Shell clone on branch magi/shell (installer source)
+~/.magi/shell/cache      generated caches (sibling of MAGI)
 ~/.magi/user/            operator workspace: chat.sqlite, memories/books.db, github credentials
 ~/.magi/user/MAGI        User clone on branch magi/user
 ~/.magi/asp/             ASP workspace and asp.sqlite
@@ -128,7 +129,7 @@ should say, and it never starts a process.
 
 ## What exists today
 
-- **Desktop** — an Electron shell clones this repository to `~/.magi/shell`,
+- **Desktop** — an Electron shell clones this repository to `~/.magi/shell/MAGI`,
   installs the workspace (`packages/`, `apps/`), builds the operator UI, and starts ASP. The
   package carries Node.js 24 and npm. It does not carry a Python runtime.
 - **ASP** — Node 24, `apps/asp/dist/asp.js`, bound to `127.0.0.1:42069`. It stores
@@ -158,7 +159,7 @@ no root `deploy/` tree.
 | Shell | [`apps/shell/`](apps/shell/) | Open the Electron app. It starts local ASP and runs every MAGI. |
 
 **Desktop:** on first launch, the app clones the complete repository into
-`~/.magi/shell`, prepares local dependencies, builds the WebUI, and starts ASP
+`~/.magi/shell/MAGI`, prepares local dependencies, builds the WebUI, and starts ASP
 on [http://127.0.0.1:42069](http://127.0.0.1:42069). A startup page shows
 the preparation stages before opening the WebUI. When no MAGI exists yet, the
 backend seeds the first three, **MELCHIOR**, **BALTHASAR**, and **CASPER**.
@@ -228,7 +229,7 @@ WebUI is built and loaded from the local checkout.
 
 The packaged app supplies an Electron bootstrap shell and private Git,
 Node.js and npm tools. On first launch it clones the complete repository
-to `~/.magi/shell`. Later launches keep that Git working tree and use its
+to `~/.magi/shell/MAGI`. Later launches keep that Git working tree and use its
 `apps/eva/`, `packages/`, `apps/asp/` and `apps/user/` sources. Local changes are not
 overwritten or pulled automatically. A user or coding agent can edit the
 checkout, rebuild the interface, and merge future upstream changes using Git.

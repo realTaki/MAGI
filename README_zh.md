@@ -86,7 +86,8 @@ MAGI 应当因为持续运行而变得更好。目标是让它们观察工作、
 打包安装后，每个应用都是从 GitHub 远程独立克隆的仓库，只通过 push/fetch 同步，没有共享的底仓。
 
 ```text
-~/.magi/shell            Shell 克隆（安装包源码）和 cache/
+~/.magi/shell/MAGI       Shell 克隆，分支 magi/shell（安装包源码）
+~/.magi/shell/cache      生成缓存（与 MAGI 同级）
 ~/.magi/user/            操作者工作区：chat.sqlite、memories/books.db、GitHub 凭证
 ~/.magi/user/MAGI        User 克隆，分支 magi/user
 ~/.magi/asp/             ASP 工作区和 asp.sqlite
@@ -97,7 +98,7 @@ MAGI 应当因为持续运行而变得更好。目标是让它们观察工作、
 
 ## 当前已具备的能力
 
-- **桌面端**：Electron 壳把仓库克隆到 `~/.magi/shell`，安装 `packages/` 和 `apps/`，构建操作界面，并启动 ASP。安装包里有 Node.js 24 和 npm，没有 Python。
+- **桌面端**：Electron 壳把仓库克隆到 `~/.magi/shell/MAGI`，安装 `packages/` 和 `apps/`，构建操作界面，并启动 ASP。安装包里有 Node.js 24 和 npm，没有 Python。
 - **ASP**：Node 24 运行 `apps/asp/dist/asp.js`，监听 `127.0.0.1:42069`。聊天和转发事件存在 `~/.magi/asp/asp.sqlite`。创建 bot 会由 App 把仓库克隆到 `~/.magi/<名字>/MAGI` 并检出分支 `magi/<名字>`，再从那里拉起对应 MAGI；创建 group 会开一个操作者可以邀请 MAGI 加入的聊天。
 - **每个 MAGI 一个进程**：Node 24 运行 `apps/eva/eva.ts`（它 import 那些运行时包），来源是这条 MAGI 自己的独立克隆（`~/.magi/<名字>/MAGI`，分支 `magi/<名字>`）。默认工作区是 `~/.magi/<名字>`。
 - **每个 MAGI 内部的 BUS**：对话、消息、记忆、Skills、任务、联系人、提示词和工具都是 Book；聊天、模型调用、工具调用、投递、切换 provider、任务和 MCP 服务器变更都是 Job。
@@ -112,7 +113,7 @@ MAGI 应当因为持续运行而变得更好。目标是让它们观察工作、
 | --- | --- | --- |
 | 壳 | [`apps/shell/`](apps/shell/) | 打开 Electron App；它启动本地 ASP，并运行每条 MAGI。 |
 
-**桌面端：**首次打开时，App 将完整仓库克隆到 `~/.magi/shell`，准备本地依赖并构建
+**桌面端：**首次打开时，App 将完整仓库克隆到 `~/.magi/shell/MAGI`，准备本地依赖并构建
 WebUI。启动页显示各阶段进度；本地 ASP 就绪后自动进入 WebUI。如果还没有任何
 MAGI，本地后端会先把前三个建出来：**MELCHIOR**、**BALTHASAR**、**CASPER**
 （ASP 分配 `eva-000/001/002`）。以后启动会保留这份 Git 工作树，不自动覆盖本地修改
@@ -162,7 +163,7 @@ Electron App 启动本地 ASP，并运行本机的每条 MAGI 进程。ASP 负�
 ### 本地源码与 RSI 方向
 
 安装包提供 Electron 启动壳及仅供 MAGI 使用的 Git、Node.js、npm 工具。首次启动
-会将完整仓库克隆到 `~/.magi/shell`；之后从其中的 `magi/`、`asp/`、
+会将完整仓库克隆到 `~/.magi/shell/MAGI`；之后从其中的 `magi/`、`asp/`、
 `apps/` 与 `packages/` 运行。用户或 coding agent 可以在这份普通 Git 仓库中修改源码、
 重新构建界面，并用 Git 合并上游更新。`apps/user/dist/index.html` 变化后，
 桌面端会询问是否重新加载，不会擅自刷新界面。
