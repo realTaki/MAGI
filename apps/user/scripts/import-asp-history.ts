@@ -2,9 +2,8 @@
 import path from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { Bus } from "@magi/bus";
+import { Bus, SHELL_MAGI_HANDLE } from "@magi/bus";
 import { openChatStore } from "@magi/webapp/chat-store.js";
-import { USER_HANDLE } from "@magi/webapp";
 
 export async function importAspHistory({
   asp = "http://127.0.0.1:42069",
@@ -30,7 +29,7 @@ export async function importAspHistory({
     return { chat, events };
   }));
 
-  const bus = new Bus(USER_HANDLE, path.dirname(database));
+  const bus = new Bus(SHELL_MAGI_HANDLE, path.dirname(database));
   try {
     const store = await openChatStore(database, bus);
     try {

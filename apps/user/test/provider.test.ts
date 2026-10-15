@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
-import { Bus } from "@magi/bus";
+import { Bus, SHELL_MAGI_HANDLE } from "@magi/bus";
 import { createLocalApi } from "../main/index.ts";
 
 /*
@@ -107,7 +107,7 @@ test("a provider rejection keeps the app's previous key", async (t) => {
 test("usage reads DeepSeek balance with the locally saved API key", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-provider-usage-"));
   const appData = path.join(root, ".magi", "user");
-  const bus = new Bus("@user.magi", appData);
+  const bus = new Bus(SHELL_MAGI_HANDLE, appData);
   try {
     bus.settings.setMany({
       "provider.name": "deepseek",

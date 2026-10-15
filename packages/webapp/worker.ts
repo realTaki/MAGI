@@ -4,7 +4,7 @@ import { BaseWorker, type Bus } from "@magi/bus";
 
 import { createLocalApi } from "./api.js";
 
-export const USER_HANDLE = "@user.magi";
+export { USER_HANDLE } from "@magi/bus";
 export { AspProcessWorker, ASP_ORIGIN } from "./asp-process.js";
 export type { AspHealth, AspProcessOptions, AspProgress } from "./asp-process.js";
 

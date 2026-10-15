@@ -23,7 +23,13 @@
   "dependencies": {
     "@magi/bus": "*",
     "@magi/asp-server": "*",
-    "@magi/manager": "*"
+    "@magi/manager": "*",
+    "@magi/agent": "*",
+    "@magi/providers": "*",
+    "@magi/built-in-tools": "*",
+    "@magi/contacts": "*",
+    "@magi/memory": "*",
+    "@magi/skills": "*"
   },
   "devDependencies": {
     "@types/node": "^24.13.6",

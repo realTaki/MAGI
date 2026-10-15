@@ -17,6 +17,12 @@
   "dependencies": {
     "@magi/bus": "*",
     "@magi/manager": "*",
+    "@magi/agent": "*",
+    "@magi/providers": "*",
+    "@magi/built-in-tools": "*",
+    "@magi/contacts": "*",
+    "@magi/memory": "*",
+    "@magi/skills": "*",
     "@magi/webapp": "*",
     "@tanstack/react-query": "^5.103.2",
     "react": "^19.3.0",

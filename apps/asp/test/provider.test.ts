@@ -56,6 +56,7 @@ test("rejected provider is reported to the app", async (t) => {
       assert.deepEqual(result.synced, []);
       assert.deepEqual(result.failed, [
         { handle: "@eva-000.magi", detail: "MAGI rejected provider configuration" },
+        { handle: "@eva-001.magi", detail: "MAGI rejected provider configuration" },
       ]);
     },
   );

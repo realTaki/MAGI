@@ -1,12 +1,13 @@
 /**
- * The desktop app owns the source tree and the process of every MAGI it runs.
+ * The desktop app owns the source tree and the process of every spawned MAGI.
  *
  * ASP is a relay: it registers handlers and holds their tokens, but it never
- * starts a process (see apps/asp/README.md). Here each MAGI gets its own branch
- * (`magi/eva-000`) cloned from the GitHub remote into its own workspace
- * (`~/.magi/eva-000/MAGI`), with that checkout's dependencies installed, and the
- * agent is started from it. A `main` someone broke therefore cannot take a
- * running MAGI down with it, and an agent can evolve its own branch.
+ * starts a process (see apps/asp/README.md). Balthasar (`@eva-000.magi`) lives
+ * in the operator process and Casper (`@eva-001.magi`) lives in ASP; this
+ * module does not spawn `eva.js` for those handles. Each spawned MAGI gets its
+ * own branch (`magi/eva-002`) cloned from the GitHub remote into its own
+ * workspace (`~/.magi/eva-002/MAGI`), with that checkout's dependencies
+ * installed, and the agent is started from it.
  *
  * Nothing is retried behind the operator's back: a MAGI that stopped stays
  * stopped until it is started again (the left panel shows who is offline, and
@@ -20,6 +21,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { isInProcessMagiHandle } from "@magi/bus";
 import { ensureManagedClone } from "./clone.js";
 
 /** Branch per MAGI: `magi/eva-000`. */
@@ -234,6 +236,7 @@ export function createMagiRuntime({
   /** Start one MAGI. Starting one that already runs does nothing. */
   async function start(agent) {
     const { handle, token } = require(agent);
+    if (isInProcessMagiHandle(handle)) return { handle, started: false };
     if (isRunning(handle)) return { handle, started: false };
     const root = await rootFor(handle);
     await launch(handle, token, root);
@@ -258,6 +261,7 @@ export function createMagiRuntime({
 
   /** Stop one MAGI. Returns false when it was not running. */
   function stop(handle) {
+    if (isInProcessMagiHandle(handle)) return false;
     const entry = children.get(handle);
     if (entry === undefined) return false;
     children.delete(handle);
@@ -303,6 +307,7 @@ export function createMagiRuntime({
 
   async function restart(agent) {
     const { handle } = require(agent);
+    if (isInProcessMagiHandle(handle)) return { handle, started: false };
     stop(handle);
     return await start(agent);
   }
@@ -310,6 +315,7 @@ export function createMagiRuntime({
   /** Install and build on this MAGI's own checkout, then start it again. */
   async function rebuild(agent) {
     const { handle, token } = require(agent);
+    if (isInProcessMagiHandle(handle)) return { handle, rebuilt: false, started: false };
     stop(handle);
     const root = await rootFor(handle);
     // The whole workspace is rebuilt: `npm run build` at the root fans out through
@@ -338,6 +344,9 @@ export function createMagiRuntime({
    */
   async function merge(agent) {
     const { handle, token } = require(agent);
+    if (isInProcessMagiHandle(handle)) {
+      throw new Error(`${handle} runs in Shell or ASP, so there is no EVA clone to merge.`);
+    }
     if (!managed) {
       throw new Error("This checkout is not managed by the app, so its MAGI share it and there is nothing to merge.");
     }

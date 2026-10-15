@@ -4,14 +4,24 @@ import { realpathSync } from "node:fs";
  *
  * This file is the only one allowed to know which workers exist.
  * ManagerWorker runs them. The relay is `@magi/asp-server`.
+ *
+ * The BUS is owned by the host MAGI (`@eva-001.magi`, Casper). Shell still
+ * keys this process as `@asp.magi` for rebuild. Channels that let Casper
+ * speak on ASP as a participant are not on this list yet.
  */
 
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
-import { Bus } from "@magi/bus";
+import { ASP_MAGI_HANDLE, Bus } from "@magi/bus";
 import { ManagerWorker } from "@magi/manager";
+import { AgentWorker } from "@magi/agent/worker.js";
+import { ToolsWorker } from "@magi/built-in-tools/worker.js";
+import { ContactsWorker } from "@magi/contacts/worker.js";
+import { MemoryWorker } from "@magi/memory/worker.js";
+import { ProvidersWorker } from "@magi/providers/worker.js";
+import { SkillWorker } from "@magi/skills/worker.js";
 
-import { AspServer, ASP_HANDLE, defaultDatabasePath, intranetBaseUrl, type CreateAppOptions } from "@magi/asp-server";
+import { AspServer, defaultDatabasePath, intranetBaseUrl, type CreateAppOptions } from "@magi/asp-server";
 
 export type { CreateAppOptions };
 
@@ -22,11 +32,21 @@ export class Asp {
 
   constructor(options: CreateAppOptions = {}) {
     const databasePath = options.databasePath ?? defaultDatabasePath();
-    this.bus = new Bus(ASP_HANDLE, options.workspace ?? dirname(databasePath));
+    this.bus = new Bus(ASP_MAGI_HANDLE, options.workspace ?? dirname(databasePath));
     this.server = new AspServer(this.bus, { ...options, databasePath });
     this.manager = new ManagerWorker(this.bus, [
+      new ContactsWorker(this.bus),
+      new SkillWorker(this.bus),
+      new AgentWorker(this.bus),
+      new ToolsWorker(this.bus),
+      new MemoryWorker(this.bus),
+      new ProvidersWorker(this.bus),
       this.server,
-    ]);
+      // TODO: attach host channels (CLI, tasks, MCP, Telegram). Casper is the
+      // relay; it does not connect to itself over AspWorker.
+    ], {
+      drain: ["agent"],
+    });
   }
 
   get origin(): string { return this.server.origin; }

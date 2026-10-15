@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import Database from "better-sqlite3";
-import { Bus } from "@magi/bus";
+import { Bus, SHELL_MAGI_HANDLE } from "@magi/bus";
 import { createLocalApi } from "../main/index.ts";
 
 function fixture(t) {
@@ -21,7 +21,7 @@ function fixture(t) {
 const keys = { "provider.name": "openai", "provider.model": "gpt", "provider.api_key": "preserved", "provider.base_url": "" };
 
 function seedSettings(directory, settings) {
-  const bus = new Bus("@user.magi", directory);
+  const bus = new Bus(SHELL_MAGI_HANDLE, directory);
   try { bus.settings.setMany(settings); } finally { bus.close(); }
 }
 
@@ -61,7 +61,20 @@ test("disposing User aborts an in-flight provider poll without rescheduling", as
     const endpoint = new URL(url).pathname;
     if (endpoint === "/health") return Response.json({ status: "ok", runtime: "typescript" });
     if (endpoint === "/operator") return Response.json({ token: "test" });
-    if (endpoint === "/agents") return Response.json({ agents: [] });
+    if (endpoint === "/agents") {
+      return Response.json({
+        agents: [
+          { handle: "@eva-000.magi", token: "tok-0", name: "eva-000", managed: true },
+          { handle: "@eva-001.magi", token: "tok-1", name: "CASPER", managed: true },
+        ],
+      });
+    }
+    if (endpoint === "/chats") {
+      return Response.json({
+        chat_id: "sess_002",
+        agents: ["@eva-002.magi"],
+      });
+    }
     if (endpoint === "/bots") {
       if (++bots === 1) return Response.json({ bots: [{ handle: "@eva.magi", online: false }] });
       began();

@@ -53,12 +53,15 @@ test("the agent roster is operator only and carries the runner credentials", asy
     const listed = await request(app, "GET", "/agents", { token });
     assert.equal(listed.status, 200);
     const agents = isRecord(listed.data) ? listed.data.agents : null;
-    // The operator itself is not a managed MAGI.
+    const rows = agents as Array<Record<string, unknown>>;
+    // The operator itself is not a managed MAGI. Casper is the ASP host MAGI.
     assert.deepEqual(
-      (agents as Array<Record<string, unknown>>).map((agent) => agent.handle),
-      ["@user.magi"],
+      rows.map((agent) => agent.handle),
+      ["@user.magi", "@eva-001.magi"],
     );
-    assert.equal((agents as Array<Record<string, unknown>>)[0]?.managed, false);
+    assert.equal(rows[0]?.managed, false);
+    assert.equal(rows[1]?.managed, true);
+    assert.equal(rows[1]?.nickname, "CASPER");
   });
 });
 

@@ -48,6 +48,22 @@ test("retiring a reloaded client backend keeps ASP and MAGI running", async (t) 
         : Response.json({ status: "starting" }, { status: 503 });
     }
     if (endpoint === "/operator") return Response.json({ token: "operator-token" });
+    if (endpoint === "/agents") {
+      return Response.json({
+        agents: [
+          { handle: "@eva-000.magi", token: "tok-0", name: "eva-000", managed: true, online: true },
+          { handle: "@eva-001.magi", token: "tok-1", name: "CASPER", managed: true, online: false },
+        ],
+      });
+    }
+    if (endpoint === "/chats") {
+      return Response.json({
+        chat_id: "sess_002",
+        kind: "bot",
+        agents: ["@eva-002.magi"],
+        magi: { handle: "@eva-002.magi", name: "eva-002", token: "tok-2" },
+      });
+    }
     if (endpoint === "/bots") {
       return Response.json({ bots: [{ handle: "@eva-000.magi", online: true }] });
     }
@@ -139,7 +155,22 @@ test("the User module creates and runs ASP from its own magi/asp clone", async (
     }
     if (new URL(url).pathname === "/operator") return Response.json({ token: "operator-token" });
     if (new URL(url).pathname === "/bots") return Response.json({ bots: [{ handle: "@eva-000.magi", online: true }] });
-    if (new URL(url).pathname === "/agents") return Response.json({ agents: [] });
+    if (new URL(url).pathname === "/agents") {
+      return Response.json({
+        agents: [
+          { handle: "@eva-000.magi", token: "tok-0", name: "eva-000", managed: true, online: true },
+          { handle: "@eva-001.magi", token: "tok-1", name: "CASPER", managed: true, online: false },
+        ],
+      });
+    }
+    if (new URL(url).pathname === "/chats") {
+      return Response.json({
+        chat_id: "sess_002",
+        kind: "bot",
+        agents: ["@eva-002.magi"],
+        magi: { handle: "@eva-002.magi", name: "eva-002", token: "tok-2" },
+      });
+    }
     throw new Error(`unexpected request: ${url}`);
   };
   const child = new EventEmitter();

@@ -2,10 +2,11 @@
 
 import type { IncomingMessage } from "node:http";
 import type { WebSocket } from "ws";
-import { BaseWorker, type Bus } from "@magi/bus";
+import { ASP_MAGI_HANDLE, ASP_MAGI_NICKNAME, BaseWorker, type Bus } from "@magi/bus";
 
 import { LocalDatabase, defaultDatabasePath } from "./db/database.js";
 import { bearerHandle, HttpError, listen, optionalInt, optionalString, requireContent, requireObject, Router, type RunningServer } from "./http.js";
+import { loadOrCreateAspMagi } from "./hostMagi.js";
 import { loadOrCreateOperator, OPERATOR_HANDLE } from "./operator.js";
 import { OperatorService } from "./operator-service.js";
 import { RelayWorker } from "./relayWorker.js";
@@ -78,6 +79,16 @@ export class AspServer extends BaseWorker {
       this.operatorHandle = handle;
       this.operatorToken = token;
       this.store.registerAgent({ handle, token });
+    }
+    const aspMagi = this.store.getAgent(ASP_MAGI_HANDLE);
+    if (aspMagi === undefined) {
+      const [handle, token] = loadOrCreateAspMagi(this.database);
+      this.store.registerAgent({ handle, token, name: "eva-001", managed: true });
+    }
+    const casper = this.store.getAgent(ASP_MAGI_HANDLE);
+    if (casper !== undefined && casper.nickname !== ASP_MAGI_NICKNAME) {
+      casper.nickname = ASP_MAGI_NICKNAME;
+      this.store.updateAgent(casper);
     }
     const router = new Router();
     registerRoutes(router, this);

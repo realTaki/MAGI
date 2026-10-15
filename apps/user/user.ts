@@ -4,14 +4,24 @@ import { realpathSync } from "node:fs";
  *
  * Same shape as `apps/eva/eva.ts`. This file chooses the workers.
  * ManagerWorker runs them. The backend is `@magi/webapp`.
+ *
+ * The BUS is owned by the host MAGI (`@eva-000.magi`, Balthasar). The webapp
+ * still speaks as `@user.magi`. Channels that attach that MAGI to ASP are not
+ * on this list yet.
  */
 
 import { fileURLToPath } from "node:url";
 import { prepareUserWorkspace, secureUserDatabases } from "./workspace.ts";
 import type { ProcessSpec } from "./host.js";
-import { Bus } from "@magi/bus";
+import { Bus, SHELL_MAGI_HANDLE } from "@magi/bus";
 import { ManagerWorker } from "@magi/manager";
-import { AspProcessWorker, WebappWorker, USER_HANDLE } from "@magi/webapp";
+import { AgentWorker } from "@magi/agent/worker.js";
+import { ToolsWorker } from "@magi/built-in-tools/worker.js";
+import { ContactsWorker } from "@magi/contacts/worker.js";
+import { MemoryWorker } from "@magi/memory/worker.js";
+import { ProvidersWorker } from "@magi/providers/worker.js";
+import { SkillWorker } from "@magi/skills/worker.js";
+import { AspProcessWorker, WebappWorker } from "@magi/webapp";
 
 type UserContext = ConstructorParameters<typeof WebappWorker>[1];
 
@@ -26,7 +36,7 @@ export class User {
   constructor(context: UserContext) {
     const workspace = prepareUserWorkspace(context.paths.home);
     secureUserDatabases(workspace);
-    this.bus = new Bus(USER_HANDLE, workspace);
+    this.bus = new Bus(SHELL_MAGI_HANDLE, workspace);
     try {
       secureUserDatabases(workspace);
       this.aspProcess = new AspProcessWorker(this.bus, {
@@ -38,8 +48,19 @@ export class User {
         initialProcess: context.initialProcesses?.find(({ spec }: { spec: ProcessSpec }) => spec.entry.endsWith("asp.js")),
       });
       this.worker = new WebappWorker(this.bus, { ...context, aspProcess: this.aspProcess });
-      this.manager = new ManagerWorker(this.bus, [this.worker, this.aspProcess], {
-        drain: ["webapp"],
+      this.manager = new ManagerWorker(this.bus, [
+        // Contacts first: Identity leads the system context, same order as Magi.
+        new ContactsWorker(this.bus),
+        new SkillWorker(this.bus),
+        new AgentWorker(this.bus),
+        new ToolsWorker(this.bus),
+        new MemoryWorker(this.bus),
+        new ProvidersWorker(this.bus),
+        this.worker,
+        this.aspProcess,
+        // TODO: attach host channels (ASP, CLI, tasks, MCP, Telegram).
+      ], {
+        drain: ["agent", "webapp"],
       });
     } catch (error) {
       this.bus.close();

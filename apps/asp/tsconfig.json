@@ -21,6 +21,24 @@
     },
     {
       "path": "../../packages/asp-server"
+    },
+    {
+      "path": "../../packages/skills"
+    },
+    {
+      "path": "../../packages/agent"
+    },
+    {
+      "path": "../../packages/providers"
+    },
+    {
+      "path": "../../packages/built-in-tools"
+    },
+    {
+      "path": "../../packages/contacts"
+    },
+    {
+      "path": "../../packages/memory"
     }
   ]
 }

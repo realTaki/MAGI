@@ -12,7 +12,7 @@ import { agentBranch, agentSource, createMagiRuntime } from "../main/magi-runtim
 
 const exec = promisify(execFile);
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
-const agent = { handle: "@eva-000.magi", token: "tok" };
+const agent = { handle: "@eva-002.magi", token: "tok" };
 
 /** Resolve an explicit MAGI-owned Node/npm pair, never a system executable. */
 function projectRuntime() {
@@ -110,11 +110,11 @@ test("every MAGI gets its own branch checked out inside its workspace", async (t
   assert.deepEqual(await runtime.startAll([agent]), { started: [agent.handle], failed: [] });
 
   const source = agentSource(home, agent.handle);
-  assert.equal(source, path.join(home, ".magi", "eva-000", "MAGI"));
+  assert.equal(source, path.join(home, ".magi", "eva-002", "MAGI"));
   assert.equal(existsSync(path.join(source, ".git")), true, "the clone has its own .git directory");
   assert.equal((await git(source, ["rev-parse", "--abbrev-ref", "HEAD"])).trim(), agentBranch(agent.handle));
   assert.equal((await git(source, ["rev-parse", "--is-inside-work-tree"])).trim(), "true");
-  assert.equal((await git(origin, ["branch", "--list", "magi/eva-000"])).trim(), "");
+  assert.equal((await git(origin, ["branch", "--list", "magi/eva-002"])).trim(), "");
 
   // Dependencies belong to that checkout, and the process runs from it.
   assert.deepEqual(recorded.npm, [
@@ -145,6 +145,35 @@ test("every MAGI gets its own branch checked out inside its workspace", async (t
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.equal(recorded.spawns.length, 3, "a MAGI that exited stays down");
   assert.deepEqual(runtime.running(), []);
+});
+
+test("in-process hosts are not spawned as eva.js children", async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-host-skip-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const { origin } = await makeOrigin(root);
+  const home = path.join(root, "home");
+  const recorded = recorder();
+  const runtime = runtimeWith(origin, home, recorded);
+
+  assert.deepEqual(
+    await runtime.startAll([
+      { handle: "@eva-000.magi", token: "tok-0" },
+      { handle: "@eva-001.magi", token: "tok-1" },
+      { handle: "@eva-002.magi", token: "tok-2" },
+    ]),
+    { started: ["@eva-002.magi"], failed: [] },
+  );
+  assert.equal(recorded.spawns.length, 1);
+  assert.deepEqual(recorded.spawns[0].args, [
+    "dist/eva.js", "@eva-002.magi", "http://127.0.0.1:42069", "tok-2",
+  ]);
+  assert.deepEqual(runtime.running(), ["@eva-002.magi"]);
+  assert.deepEqual(await runtime.start({ handle: "@eva-000.magi", token: "tok-0" }), {
+    handle: "@eva-000.magi",
+    started: false,
+  });
+  assert.equal(runtime.stop("@eva-001.magi"), false);
+  assert.equal(recorded.spawns.length, 1);
 });
 
 test("a checkout that cannot be cloned fails instead of sharing another tree", async (t) => {
@@ -301,7 +330,7 @@ test("a real MAGI boots from its own checkout", { timeout: 300_000 }, async (t) 
     // A real process: this test is about a MAGI actually booting.
     spawnProcess: (binary, args, options) => {
       console.error(`[live integration] starting compiled EVA in ${options.cwd}`);
-      const child = spawn(binary, [...args, "--workspace", path.join(home, ".magi", "eva-000")], {
+      const child = spawn(binary, [...args, "--workspace", path.join(home, ".magi", "eva-002")], {
         cwd: options.cwd, env: options.env,
         stdio: ["ignore", "ignore", "pipe"], detached: true, windowsHide: true,
       });
@@ -315,7 +344,7 @@ test("a real MAGI boots from its own checkout", { timeout: 300_000 }, async (t) 
   assert.deepEqual(await runtime.start(agent), { handle: agent.handle, started: true });
   const source = agentSource(home, agent.handle);
   assert.equal(existsSync(path.join(source, "node_modules")), true, `own checkout was not prepared: ${childLogs.join(" | ")}`);
-  const workspace = path.join(home, ".magi", "eva-000", "memories", "books.db");
+  const workspace = path.join(home, ".magi", "eva-002", "memories", "books.db");
   const deadline = Date.now() + 30_000;
   while (!existsSync(workspace) && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 200));

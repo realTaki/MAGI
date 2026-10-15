@@ -19,6 +19,7 @@ import { PromptBook } from "./books/promptBook.js";
 import { ToolBook } from "./books/toolBook.js";
 import { JobBoard, jobs, type JobInput, type JobType } from "./jobs/jobBoard.js";
 import { AgentTurnCache } from "./jobs/agentTurnCache.js";
+import { USER_HANDLE } from "./identity.js";
 
 /**
  * One MAGI's shared bus: Books for durable state, Jobs for coordination.
@@ -96,14 +97,14 @@ export class Bus {
     this.mcpServers = new McpServerBook(this.db);
     this.prompts = new PromptBook(this.workspace);
     this.agentTurns = new AgentTurnCache(this.jobs);
-    // The system contact stands for the operator: "@user.magi" is the handle ASP gives them,
-    // so their messages arrive already known. The MAGI is the other fixed contact, and
-    // both record the identity they speak with — anyone else becomes a contact of their
-    // own the first time they are heard from.
-    // asp_handle is UNIQUE. Bus("@user.magi") would collide with SYSTEM if both used
-    // that handle; SQLite UNIQUE allows multiple NULLs, so the operator workspace
-    // leaves SYSTEM unnamed on ASP.
-    const systemHandle = handle === "@user.magi" ? null : "@user.magi";
+    // The system contact stands for the operator: USER_HANDLE is the handle ASP
+    // gives them, so their messages arrive already known. The MAGI is the other
+    // fixed contact. asp_handle is UNIQUE. Bus(USER_HANDLE) would collide with
+    // SYSTEM if both used that handle; SQLite UNIQUE allows multiple NULLs, so a
+    // workspace whose own handle is USER_HANDLE leaves SYSTEM unnamed on ASP.
+    // The desktop operator process owns SHELL_MAGI_HANDLE instead, so SYSTEM
+    // keeps USER_HANDLE there.
+    const systemHandle = handle === USER_HANDLE ? null : USER_HANDLE;
     this.db.insert(contacts).values({ id: SYSTEM_CONTACT_ID, name: "system", role: "system", asp_handle: systemHandle })
       .onConflictDoUpdate({ target: contacts.id, set: { asp_handle: systemHandle } })
       .run();

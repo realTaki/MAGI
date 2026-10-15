@@ -29,13 +29,25 @@ import { spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  ASP_MAGI_HANDLE,
+  ASP_MAGI_NICKNAME,
+  EVA_MAGI_HANDLE,
+  EVA_MAGI_NICKNAME,
+  SHELL_MAGI_HANDLE,
+  SHELL_MAGI_NICKNAME,
+} from "@magi/bus";
 import { ASP_ORIGIN } from "./asp-process.js";
 import { ensureManagedClone } from "./clone.js";
 import { agentBranch, agentSource, createMagiRuntime } from "./magi-runtime.js";
 import { downloadShellInstaller, installerPath, shellRelease } from "./shell-update.js";
-// A brand-new society should not be an empty room. ASP names MAGI eva-000,
-// eva-001, … as they are created; these are the nicknames of the first three.
-const DEFAULT_MAGIS = ["MELCHIOR", "BALTHASAR", "CASPER"];
+// Host MAGIs live in Shell (@eva-000 Balthasar) and ASP (@eva-001 Casper).
+// Only Melchior (@eva-002) is a spawned eva.js child.
+const DEFAULT_SOCIETY = [
+  { handle: SHELL_MAGI_HANDLE, nickname: SHELL_MAGI_NICKNAME },
+  { handle: ASP_MAGI_HANDLE, nickname: ASP_MAGI_NICKNAME },
+  { handle: EVA_MAGI_HANDLE, nickname: EVA_MAGI_NICKNAME },
+];
 const MAGI_ONLINE_TIMEOUT_MS = 30_000;
 const GITHUB_API = "https://api.github.com";
 const GITHUB_WEB = "https://github.com";
@@ -1014,19 +1026,24 @@ export function createLocalApi(context) {
   }
 
   /**
-   * Seeds the three MAGI the operator meets first, but only while the society is
-   * still empty. Best effort on purpose: an unnamed MAGI is a cosmetic problem,
-   * failing startup over it would not be.
+   * Seeds Balthasar, Casper, and Melchior. Shell and ASP already host the first
+   * two; this only registers missing handles and spawns Melchior. Naming is
+   * best effort: an unnamed MAGI is cosmetic, and failing startup over it
+   * would not be.
    */
   async function ensureDefaultMagis(progress) {
     const { token } = await aspJson("/operator");
-    const listed = (await aspJson("/bots", { token }))?.bots ?? [];
-    if (listed.length > 0) {
+    const agents = (await aspJson("/agents", { token }))?.agents ?? [];
+    const have = new Set(
+      agents.map((row) => row?.handle).filter((handle) => typeof handle === "string"),
+    );
+    const missing = DEFAULT_SOCIETY.filter((member) => !have.has(member.handle));
+    if (missing.length === 0) {
       return;
     }
     progress?.("Creating default MAGIs…", 0.98);
     const created = [];
-    for (const nickname of DEFAULT_MAGIS) {
+    for (const member of missing) {
       const chat = await aspJson("/chats", {
         token,
         method: "POST",
@@ -1035,10 +1052,10 @@ export function createLocalApi(context) {
       const handle = chat?.agents?.[0];
       const chatId = chat?.chat_id;
       if (typeof handle === "string" && handle !== "" && typeof chatId === "string") {
-        created.push({ handle, nickname, chatId });
+        created.push({ handle, nickname: member.nickname, chatId });
       }
     }
-    // This backend runs them, not ASP: start the new ones right away.
+    // Spawn only classic EVA children. Shell and ASP hosts are skipped in magi-runtime.
     await startManagedMagi();
     await Promise.all(
       created.map(async ({ handle, nickname, chatId }) => {

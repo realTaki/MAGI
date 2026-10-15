@@ -1,4 +1,14 @@
 export { Bus } from "./bus.js";
+export {
+  USER_HANDLE,
+  SHELL_MAGI_HANDLE,
+  SHELL_MAGI_NICKNAME,
+  ASP_MAGI_HANDLE,
+  ASP_MAGI_NICKNAME,
+  EVA_MAGI_HANDLE,
+  EVA_MAGI_NICKNAME,
+  isInProcessMagiHandle,
+} from "./identity.js";
 export { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "./books/contactBook.js";
 export { BaseWorker } from "./baseWorker.js";
 export type { Chat } from "./books/chatBook.js";

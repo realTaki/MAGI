@@ -121,9 +121,10 @@ test("a registered magi outlives an asp restart", async (t) => {
     const roster = recordList(
       record((await request(app, "GET", "/agents", { token })).data).agents,
     ).filter((agent) => agent.managed === true);
-    assert.deepEqual(roster.map((agent) => agent.handle), [handle]);
-    assert.equal(roster[0]?.managed, true);
-    assert.equal(typeof roster[0]?.token, "string");
+    assert.equal(roster.some((agent) => agent.handle === handle), true);
+    const created = roster.find((agent) => agent.handle === handle);
+    assert.equal(created?.managed, true);
+    assert.equal(typeof created?.token, "string");
   });
 });
 
