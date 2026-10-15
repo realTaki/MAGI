@@ -21,15 +21,13 @@ export type MessageDeliveryJob = {
 /** Record the message, then hand it to whoever must act on it. Returns the job id. */
 function send(bus: Bus, chat_id: number, text: string, contact_id = SYSTEM_CONTACT_ID, publisher = "channel"): number {
   if (!bus.chats.get(chat_id)) throw new Error(`chat ${chat_id} does not exist`);
-  const llm_role = contact_id === MAGI_CONTACT_ID ? "assistant" : "user";
-  const message_id = bus.messages.add(chat_id, contact_id, text, llm_role);
+  const message_id = bus.messages.add(chat_id, contact_id, text);
   return bus.board("MessageDeliveryJob").publish({ message_id }, publisher);
 }
 
 /** Keep it as history only: it was asked of someone else, so nobody delivers it. */
 function record(bus: Bus, chat_id: number, text: string, contact_id?: number): void {
-  const author = contact_id ?? SYSTEM_CONTACT_ID;
-  bus.messages.add(chat_id, author, text, author === MAGI_CONTACT_ID ? "assistant" : "user");
+  bus.messages.add(chat_id, contact_id ?? SYSTEM_CONTACT_ID, text);
 }
 
 /** The chat the operator chose for notices, or null before they have spoken. */

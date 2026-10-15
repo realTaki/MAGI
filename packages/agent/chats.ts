@@ -1,4 +1,4 @@
-import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, messageDelivery, type Bus, type LLMMessage } from "@magi/bus";
+import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, messageDelivery, type Bus, type LLMMessage, type Message } from "@magi/bus";
 import { COMPACTION_INVARIANT, SYSTEM_PROMPT } from "./prompt_defaults.js";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const COMPACT_KEEP_RECENT = 20;
@@ -7,6 +7,11 @@ const COMPACT_CONTEXT_WINDOW = 200_000;
 const SUGGESTED_STEPS = 20;
 /** How the model ends a turn in a room without posting anything. */
 const NO_REPLY = "NO_REPLY";
+
+export function toLLMMessage(message: Message): LLMMessage {
+  if (message.contact_id === MAGI_CONTACT_ID) return { role: "assistant", content: message.content };
+  return { role: "user", content: `[contact id ${message.contact_id} | ${message.created_at}]\n${message.content}` };
+}
 
 export class Chat {
   constructor(
@@ -52,10 +57,7 @@ export class Chat {
       const tools = this.bus.tools.catalog();
       const summary = await this.compact(jobId, record.summary, [agentPrompt, SYSTEM_PROMPT, beforeSummary, chat].filter(Boolean).join("\n\n"), tools);
       const system = [agentPrompt, SYSTEM_PROMPT, beforeSummary, this.context([["Prior chat summary", summary]]), chat].filter(Boolean).join("\n\n");
-      // Message rows are already LLM messages: roles and the user identity envelope are
-      // assigned when a message is recorded, not rebuilt for every agent turn.
-      const history: LLMMessage[] = this.bus.messages.list(this.chat_id, COMPACT_KEEP_RECENT)
-        .map(({ llm_role: role, content }) => ({ role, content }));
+      const history: LLMMessage[] = this.bus.messages.list(this.chat_id, COMPACT_KEEP_RECENT).map(toLLMMessage);
       // Keep the cacheable instruction/context prefix byte-for-byte stable through a
       // tool loop.  Step metadata is a separate trailing system message.
       this.bus.agentTurns.ensure(jobId, { messages: [{ role: "system", content: system }, { role: "system", content: "" }, ...history], tools });
@@ -121,7 +123,10 @@ export class Chat {
     if (estimatedTokens <= Math.floor(contextWindow / 2)) return previousSummary;
     const old = active.slice(0, -COMPACT_KEEP_RECENT);
     if (!old.length) return previousSummary;
-    const content = old.map((message) => `[${message.llm_role}]\n${message.content}`).join("\n\n");
+    const content = old.map((message) => {
+      const llm = toLLMMessage(message);
+      return `[${llm.role}]\n${llm.content}`;
+    }).join("\n\n");
     this.bus.agentTurns.ensure(turnId, { messages: [
         { role: "system", content: `${this.bus.prompts.get("agent/compaction") ?? "Summarize the chat."}\n\n${COMPACTION_INVARIANT}` },
         { role: "user", content: `${previousSummary ? `Previous summary:\n${previousSummary}\n\n` : ""}Transcript:\n${content}\n\n请仅总结上面的对话历史，并遵循 system 指令。` },
