@@ -1,7 +1,5 @@
--- `content` is the original message text. The LLM contact envelope is assembled
--- in the agent module. Rebuild instead of DROP COLUMN so a workspace that
--- replays its migrations keeps foreign keys, and so stored user envelopes
--- can be stripped from the start of `content`.
+-- `content` is the original message text; the LLM contact envelope is assembled
+-- in the agent module. Rebuild books_messages without llm_role, keeping FKs.
 CREATE TABLE IF NOT EXISTS `books_messages_new` (
 	`id` integer PRIMARY KEY NOT NULL,
 	`chat_id` integer NOT NULL,
@@ -14,13 +12,7 @@ CREATE TABLE IF NOT EXISTS `books_messages_new` (
 );
 --> statement-breakpoint
 INSERT INTO `books_messages_new` (`id`, `chat_id`, `contact_id`, `content`, `created_at`, `archived`)
-SELECT `id`, `chat_id`, `contact_id`,
-	CASE
-		WHEN `content` LIKE '[contact id % | %]' || char(10) || '%'
-		THEN substr(`content`, instr(`content`, char(10)) + 1)
-		ELSE `content`
-	END,
-	`created_at`, `archived` FROM `books_messages`;
+SELECT `id`, `chat_id`, `contact_id`, `content`, `created_at`, `archived` FROM `books_messages`;
 --> statement-breakpoint
 DROP TABLE `books_messages`;
 --> statement-breakpoint
