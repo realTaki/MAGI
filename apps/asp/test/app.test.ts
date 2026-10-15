@@ -33,38 +33,6 @@ test("operator bootstrap is stable across restarts", async (t) => {
   });
 });
 
-test("a previous bare user identity migrates to @user.magi without losing its chats", async (t) => {
-  const databasePath = path.join(tempRoot(t), "asp.sqlite");
-  let token = "";
-  let chatId = "";
-  await withApp({ databasePath }, async (app) => {
-    token = app.operatorToken;
-    const created = await request(app, "POST", "/chats", { token, body: { kind: "group" } });
-    chatId = String((created.data as { chat_id?: unknown }).chat_id);
-    await request(app, "POST", `/chats/${chatId}/messages`, { token, body: { content: "hello" } });
-    const connection = app.database.connection!;
-    connection.prepare("UPDATE asp_contacts SET handle = 'user' WHERE handle = '@user.magi'").run();
-    connection.prepare("UPDATE asp_participants SET handle = 'user' WHERE handle = '@user.magi'").run();
-    connection.prepare("UPDATE relay_principals SET handle = 'user' WHERE handle = '@user.magi'").run();
-    connection.prepare("UPDATE relay_participants SET handle = 'user' WHERE handle = '@user.magi'").run();
-    connection.prepare("UPDATE asp_events SET payload_json = replace(payload_json, '\"@user.magi\"', '\"user\"')").run();
-    connection.prepare("UPDATE asp_settings SET value_json = ? WHERE key = 'operator'")
-      .run(JSON.stringify({ handle: "user", token }));
-    // No migration bookkeeping to unpick: the relay repairs a database that still
-    // names the operator `user` whenever it opens one.
-  });
-  await withApp({ databasePath }, async (app) => {
-    assert.equal(app.operatorHandle, "@user.magi");
-    assert.equal(app.operatorToken, token);
-    const view = await request(app, "GET", `/chats/${chatId}`, { token });
-    const participants = isRecord(view.data) && Array.isArray(view.data.participants) ? view.data.participants : [];
-    assert.equal(participants.some((row) => isRecord(row) && row.handle === "@user.magi"), true);
-    const events = await request(app, "GET", `/chats/${chatId}/events`, { token });
-    const messages = isRecord(events.data) && Array.isArray(events.data.events) ? events.data.events : [];
-    assert.equal(messages.some((row) => isRecord(row) && isRecord(row.payload) && row.payload.sender === "@user.magi"), true);
-  });
-});
-
 test("ASP never starts a MAGI process of its own", async (t) => {
   await withApp({ databasePath: path.join(tempRoot(t), "asp.sqlite") }, async (app) => {
     const token = app.operatorToken;

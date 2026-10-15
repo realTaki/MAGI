@@ -33,7 +33,6 @@ export function openChatStore(file: string, bus: Bus) {
     connection.pragma("foreign_keys = ON");
     connection.pragma("journal_mode = WAL");
     connection.pragma("busy_timeout = 5000");
-    adoptDirectory(connection, bus);
     migrate(db, { migrationsFolder: migrationsFolder() });
   } catch (error) {
     connection.close();
@@ -104,48 +103,6 @@ export function openChatStore(file: string, bus: Bus) {
 function lastSequence(db: AppDb, chatId: string): number {
   return db.select({ sequence: max(appEvents.sequence) }).from(appEvents)
     .where(eq(appEvents.chat_id, chatId)).get()?.sequence ?? -1;
-}
-
-function adoptDirectory(connection: SQLiteDatabase, bus: Bus): void {
-  const chats = tableExists(connection, "chats");
-  const acks = tableExists(connection, "acknowledgements");
-  if (!chats && !acks) return;
-  if (chats) {
-    const rows = connection.prepare("SELECT record_json FROM chats").all();
-    const records = rows.map((row) => parseJson(jsonText(row, "record_json")));
-    if (records.some((record) => !record || typeof record !== "object" || !("chat_id" in record)
-        || typeof record.chat_id !== "string" || record.chat_id === "")) {
-      throw new Error("Legacy chat directory contains an invalid record; retained without migration");
-    }
-    saveDirectory(bus, records);
-  }
-  if (acks) {
-    const rows = connection.prepare("SELECT chat_id, through_sequence FROM acknowledgements").all();
-    for (const row of rows) {
-      const chatId = jsonText(row, "chat_id");
-      const sequence = typeof row === "object" && row !== null && "through_sequence" in row ? row.through_sequence : null;
-      if (typeof chatId === "string" && typeof sequence === "number") ackChat(bus, chatId, sequence);
-    }
-  }
-}
-
-function tableExists(connection: SQLiteDatabase, name: string): boolean {
-  return connection.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !== undefined;
-}
-
-function jsonText(row: unknown, key: string): string {
-  if (typeof row !== "object" || row === null || !(key in row)) return "";
-  const value: unknown = row[key];
-  return typeof value === "string" ? value : "";
-}
-
-function parseJson(text: string): unknown {
-  if (text === "") return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
 }
 
 function isEvent(value: unknown): value is { sequence: number } {

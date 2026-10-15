@@ -1,17 +1,8 @@
-import { existsSync, renameSync, chmodSync } from "node:fs";
+import { existsSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 
-/** Resolve legacy state before BUS or any worker creates the new directory. */
 export function prepareUserWorkspace(home: string): string {
-  const current = join(home, ".magi", "user");
-  const legacy = join(home, ".magi", "app");
-  if (existsSync(legacy)) {
-    if (existsSync(current)) {
-      throw new Error(`Both User state directories exist; retained without merging: ${legacy} and ${current}`);
-    }
-    renameSync(legacy, current);
-  }
-  return current;
+  return join(home, ".magi", "user");
 }
 
 /** Keep provider credentials in the User database as private as the old key file. */

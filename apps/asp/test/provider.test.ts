@@ -29,8 +29,6 @@ test("provider update is transient", async (t) => {
       synced: [],
       failed: [],
     });
-    const legacy = await request(app, "GET", "/settings/provider/legacy", { token });
-    assert.equal(legacy.data, null);
   });
   const database = new LocalDatabase(databasePath);
   database.open();
@@ -39,23 +37,6 @@ test("provider update is transient", async (t) => {
   } finally {
     database.close();
   }
-});
-
-test("app can migrate and delete a legacy provider", async (t) => {
-  const databasePath = path.join(tempRoot(t), "asp.sqlite");
-  const database = new LocalDatabase(databasePath);
-  database.open();
-  database.setSetting("provider", { provider: "openai", api_key: "old-key" });
-  database.close();
-  await withApp({ databasePath }, async (app) => {
-    assert.equal((await request(app, "GET", "/settings/provider/legacy")).status, 401);
-    const token = operatorToken(await request(app, "GET", "/operator"));
-    const legacy = await request(app, "GET", "/settings/provider/legacy", { token });
-    assert.deepEqual(legacy.data, { provider: "openai", api_key: "old-key" });
-    const removed = await request(app, "DELETE", "/settings/provider/legacy", { token });
-    assert.deepEqual(removed.data, { ok: true });
-    assert.equal((await request(app, "GET", "/settings/provider/legacy", { token })).data, null);
-  });
 });
 
 test("rejected provider is reported to the app", async (t) => {

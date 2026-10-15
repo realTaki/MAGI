@@ -25,10 +25,11 @@ npm start --workspace eva -- @alice.magi http://127.0.0.1:42069 TOKEN
 
 Without ASP arguments, the command opens a terminal chat. With ASP arguments,
 it listens for chat events and sends replies through ASP. State lives in
-`~/.magi/alice`, derived from the handle; an existing `~/.magi/ts-magi/alice`
-workspace is still opened, and a caller can point at another directory with the
-`workspace` option. The handle comes from the command line and everything else
-from that workspace — the process reads no environment variables.
+`~/.magi/alice`, derived from the handle. A caller can point at another
+directory with the `workspace` option. The source checkout, when present, is
+`~/.magi/alice/MAGI` on branch `magi/alice`. The handle comes from the command
+line and everything else from that workspace — the process reads no environment
+variables.
 
 Provider settings live in that workspace and the operator's app writes them
 through ASP (`provider.name`, `provider.api_key`, `provider.model`,

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -46,9 +46,6 @@ test("the app saves the provider key locally and only broadcasts it through ASP"
     if (new URL(url).pathname === "/operator") {
       return Response.json({ token: "operator-token" });
     }
-    if (new URL(url).pathname === "/settings/provider/legacy") {
-      return Response.json(null);
-    }
     if (new URL(url).pathname === "/settings/provider") {
       return Response.json({ ...JSON.parse(options.body), synced: ["@eva-000.magi"], failed: [] });
     }
@@ -61,8 +58,7 @@ test("the app saves the provider key locally and only broadcasts it through ASP"
   assert.deepEqual(saved.synced, ["@eva-000.magi"]);
   assert.ok(requests.some((request) => request.method === "PUT" && request.path === "/settings/provider"));
   assert.equal(JSON.parse(requests.find((request) => request.method === "PUT" && request.path === "/settings/provider").body).base_url, "https://example.com/v1");
-  const providerFile = path.join(root, ".magi", "user", "provider.json");
-  assert.equal(existsSync(providerFile), false, "credentials live in SettingsBook");
+  assert.equal(existsSync(path.join(root, ".magi", "user", "provider.json")), false, "credentials live in SettingsBook");
   const books = path.join(root, ".magi", "user", "memories", "books.db");
   if (process.platform !== "win32") assert.equal(statSync(books).mode & 0o777, 0o600);
   await first.dispose();
@@ -71,20 +67,6 @@ test("the app saves the provider key locally and only broadcasts it through ASP"
   assert.equal(second["provider.settings"]().base_url, "https://example.com/v1");
   await second.dispose();
   await first.dispose();
-});
-
-test("legacy app state moves to the user directory", async (t) => {
-  const root = mkdtempSync(path.join(tmpdir(), "magi-user-directory-"));
-  t.after(async () => { await closeApps(root); rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
-  const legacy = path.join(root, ".magi", "app");
-  mkdirSync(legacy, { recursive: true });
-  writeFileSync(path.join(legacy, "provider.json"), JSON.stringify({ api_key: "preserved" }));
-
-  const backend = app(root);
-  assert.equal(backend["provider.settings"]().api_key, "preserved");
-  assert.equal(existsSync(path.join(root, ".magi", "user", "provider.json")), false);
-  assert.equal(existsSync(legacy), false);
-  await backend.dispose();
 });
 
 test("the app reads the curated provider catalog from pi-ai", async (t) => {
@@ -99,33 +81,12 @@ test("the app reads the curated provider catalog from pi-ai", async (t) => {
   await backend.dispose();
 });
 
-test("the app does not send the key to an older ASP that still persists it", async (t) => {
-  const root = mkdtempSync(path.join(tmpdir(), "magi-provider-old-asp-"));
-  const originalFetch = globalThis.fetch;
-  const requests = [];
-  globalThis.fetch = async (url, options = {}) => {
-    const endpoint = new URL(url).pathname;
-    requests.push(`${options.method ?? "GET"} ${endpoint}`);
-    if (endpoint === "/operator") return Response.json({ token: "operator-token" });
-    if (endpoint === "/settings/provider/legacy") return Response.json({ detail: "not found" }, { status: 404 });
-    throw new Error(`unexpected request: ${url}`);
-  };
-  t.after(async () => { await closeApps(root); globalThis.fetch = originalFetch; rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
-
-  const backend = app(root);
-  await assert.rejects(backend["provider.save"]({ api_key: "sk-local" }), /Saved in the app, but MAGI sync failed/);
-  assert.equal(backend["provider.settings"]().api_key, "sk-local");
-  assert.equal(requests.includes("PUT /settings/provider"), false);
-  await backend.dispose();
-});
-
 test("a provider rejection keeps the app's previous key", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-provider-reject-"));
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, options = {}) => {
     const endpoint = new URL(url).pathname;
     if (endpoint === "/operator") return Response.json({ token: "operator-token" });
-    if (endpoint === "/settings/provider/legacy") return Response.json(null);
     if (endpoint === "/settings/provider") {
       const input = JSON.parse(options.body);
       return Response.json(input.api_key === "bad-key"
@@ -143,45 +104,17 @@ test("a provider rejection keeps the app's previous key", async (t) => {
   await backend.dispose();
 });
 
-test("the app copies a legacy ASP key before deleting that copy", async (t) => {
-  const root = mkdtempSync(path.join(tmpdir(), "magi-provider-migrate-"));
-  const originalFetch = globalThis.fetch;
-  const requests = [];
-  globalThis.fetch = async (url, options = {}) => {
-    const endpoint = new URL(url).pathname;
-    requests.push(`${options.method ?? "GET"} ${endpoint}`);
-    if (endpoint === "/health") return Response.json({ status: "ok", runtime: "typescript" });
-    if (endpoint === "/operator") return Response.json({ token: "operator-token" });
-    if (endpoint === "/bots") return Response.json({ bots: [{ handle: "@eva-000.magi", online: false }] });
-    if (endpoint === "/settings/provider/legacy" && options.method === "DELETE") {
-      const check = new Bus("@user.magi", path.join(root, ".magi", "user"));
-      try { assert.equal(check.settings.get("provider.api_key"), "old-key"); }
-      finally { check.close(); }
-      return Response.json({ ok: true });
-    }
-    if (endpoint === "/settings/provider/legacy") {
-      return Response.json({ provider: "openai", model: "gpt", api_key: "old-key" });
-    }
-    throw new Error(`unexpected request: ${url}`);
-  };
-  t.after(async () => { await closeApps(root); globalThis.fetch = originalFetch; rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
-
-  const backend = app(root);
-  await backend.start();
-  assert.equal(existsSync(path.join(root, ".magi", "user", "provider.json")), false);
-  assert.equal(backend["provider.settings"]().api_key, "old-key");
-  assert.ok(requests.includes("DELETE /settings/provider/legacy"));
-  await backend.dispose();
-});
-
 test("usage reads DeepSeek balance with the locally saved API key", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-provider-usage-"));
   const appData = path.join(root, ".magi", "user");
-  mkdirSync(appData, { recursive: true });
-  writeFileSync(
-    path.join(appData, "provider.json"),
-    JSON.stringify({ provider: "deepseek", model: "deepseek-v4-pro", api_key: "local-key" }),
-  );
+  const bus = new Bus("@user.magi", appData);
+  try {
+    bus.settings.setMany({
+      "provider.name": "deepseek",
+      "provider.model": "deepseek-v4-pro",
+      "provider.api_key": "local-key",
+    });
+  } finally { bus.close(); }
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, options = {}) => {
     assert.equal(String(url), "https://api.deepseek.com/user/balance");

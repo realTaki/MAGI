@@ -26,9 +26,6 @@ export async function ensureInstalledDependencies(root, { node, npm, env, comman
   if (fingerprint === null) throw new Error(`MAGI checkout is incomplete: ${root}/package-lock.json is missing`);
   const previous = read(path.join(root, markerName));
   if (previous?.phase === "complete" && previous.fingerprint === fingerprint && installedTree(root)) return;
-  // Adopt a legacy installation only if npm's completed hidden lock and every
-  // required installed package agree. An interrupted marker always forces repair.
-  if (!previous && installedTree(root)) { mark(root, { phase: "complete", fingerprint }); return; }
   mark(root, { phase: "installing", fingerprint });
   await command(node, [npm, "ci", "--ignore-scripts"], { cwd: root, env, description: "Could not install app dependencies" });
   assertOpen();

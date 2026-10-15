@@ -53,7 +53,8 @@ export function createAppRebuilder({ supervisor, tools, command, managed, onUser
       await pause(); // Allow the request tool to record OS acceptance before retiring its caller.
       if (request.target !== "self") {
         phase = "merging"; report();
-        // Source branch is read from the actual registered worktree, never guessed.
+        // Independent clones share history only through origin. Push the MAGI
+        // branch, then fetch and merge it in the target clone.
         const from = (await command(tools.git, ["rev-parse", "--abbrev-ref", "HEAD"], {
           cwd: source.app.root, env: tools.env, description: "Could not read the requesting branch",
         })).trim();
@@ -63,11 +64,18 @@ export function createAppRebuilder({ supervisor, tools, command, managed, onUser
         })).trim();
         if (targetBranch !== `magi/${target.app.kind}`) throw new Error("The target app is not on its own managed branch.");
         const status = await command(tools.git, ["status", "--porcelain"], {
-          cwd: root, env: tools.env, description: "Could not inspect target worktree",
+          cwd: root, env: tools.env, description: "Could not inspect the target checkout",
         });
-        if (status.trim()) throw new Error("The target worktree has local changes; merge was cancelled.");
+        if (status.trim()) throw new Error("The target checkout has local changes; merge was cancelled.");
+        const gitEnv = { ...tools.env, GIT_TERMINAL_PROMPT: "0" };
+        await command(tools.git, ["push", "origin", `HEAD:${from}`], {
+          cwd: source.app.root, env: gitEnv, description: "Could not push the requesting branch",
+        });
+        await command(tools.git, ["fetch", "origin", from], {
+          cwd: root, env: gitEnv, description: "Could not fetch the requesting branch",
+        });
         try {
-          await command(tools.git, ["merge", "--no-edit", from], { cwd: root, env: tools.env, description: "Could not merge the requesting branch" });
+          await command(tools.git, ["merge", "--no-edit", `origin/${from}`], { cwd: root, env: tools.env, description: "Could not merge the requesting branch" });
         } catch (error) {
           try {
             await command(tools.git, ["merge", "--abort"], { cwd: root, env: tools.env, description: "Could not abort failed merge" });

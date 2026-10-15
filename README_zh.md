@@ -83,13 +83,25 @@ MAGI 应当因为持续运行而变得更好。目标是让它们观察工作、
 
 桌面 App 是本机的生命周期边界：它拥有每条 MAGI 的分支、检出和进程。ASP 只转发聊天，不决定 MAGI 说什么，也不启动任何进程。
 
+打包安装后，每个应用都是从 GitHub 远程独立克隆的仓库，只通过 push/fetch 同步，没有共享的底仓。
+
+```text
+~/.magi/shell            Shell 克隆（安装包源码）和 cache/
+~/.magi/user/            操作者工作区：chat.sqlite、memories/books.db、GitHub 凭证
+~/.magi/user/MAGI        User 克隆，分支 magi/user
+~/.magi/asp/             ASP 工作区和 asp.sqlite
+~/.magi/asp/MAGI         ASP 克隆，分支 magi/asp
+~/.magi/<名字>/          该 MAGI 的工作区（Books、Jobs、skills、prompts）
+~/.magi/<名字>/MAGI      该 MAGI 的克隆，分支 magi/<名字>
+```
+
 ## 当前已具备的能力
 
-- **桌面端**：Electron 壳把仓库克隆到 `~/.magi/shell`，安装 `asp/` 和 `magi/`，构建操作界面，并启动 ASP。安装包里有 Node.js 24 和 npm，没有 Python。
-- **ASP**：Node 24 运行 `apps/asp/dist/asp.js`，监听 `127.0.0.1:42069`。聊天和转发事件存在 `~/.magi/asp/asp.sqlite`。创建 bot 会由 App 在 `~/.magi/<名字>/MAGI` 检出分支 `magi/<名字>`，并从那里拉起对应 MAGI；创建 group 会开一个操作者可以邀请 MAGI 加入的聊天。
-- **每个 MAGI 一个进程**：Node 24 运行 `apps/eva/eva.ts`（它 import 那些运行时包），来源是这条 MAGI 自己的分支 `magi/<名字>`（检出在 `~/.magi/<名字>/MAGI`）。默认工作区是 `~/.magi/<名字>`。新路径还不存在时，仍会打开旧的 `~/.magi/ts-magi/<名字>`。
+- **桌面端**：Electron 壳把仓库克隆到 `~/.magi/shell`，安装 `packages/` 和 `apps/`，构建操作界面，并启动 ASP。安装包里有 Node.js 24 和 npm，没有 Python。
+- **ASP**：Node 24 运行 `apps/asp/dist/asp.js`，监听 `127.0.0.1:42069`。聊天和转发事件存在 `~/.magi/asp/asp.sqlite`。创建 bot 会由 App 把仓库克隆到 `~/.magi/<名字>/MAGI` 并检出分支 `magi/<名字>`，再从那里拉起对应 MAGI；创建 group 会开一个操作者可以邀请 MAGI 加入的聊天。
+- **每个 MAGI 一个进程**：Node 24 运行 `apps/eva/eva.ts`（它 import 那些运行时包），来源是这条 MAGI 自己的独立克隆（`~/.magi/<名字>/MAGI`，分支 `magi/<名字>`）。默认工作区是 `~/.magi/<名字>`。
 - **每个 MAGI 内部的 BUS**：对话、消息、记忆、Skills、任务、联系人、提示词和工具都是 Book；聊天、模型调用、工具调用、投递、切换 provider、任务和 MCP 服务器变更都是 Job。
-- **操作者的数据留在桌面端**：聊天记录是 `~/.magi/user/chat.sqlite`。Provider 和 API key 在 `~/.magi/user/provider.json`。ASP 只转发更新，不另存一份 key。
+- **操作者的数据留在桌面端**：聊天记录是 `~/.magi/user/chat.sqlite`。Provider 和 API key 在 User BUS 的 SettingsBook（`~/.magi/user/memories/books.db`）。ASP 只转发更新，不另存一份 key。
 - **其他通道**：MAGI 进程自己还能走终端、Telegram 和已配置的 MCP 服务器。这些不属于 ASP。
 
 ## 快速开始
@@ -114,7 +126,7 @@ MAGI，本地后端会先把前三个建出来：**MELCHIOR**、**BALTHASAR**、
 1. **打开桌面应用。** 壳克隆仓库、安装依赖、构建界面，并等到 ASP 在 42069 端口应答。
 2. **见到前三个 MAGI。** 一个都没有时，应用会创建 `eva-000`、`eva-001`、`eva-002`，并尝试把它们叫做 **MELCHIOR**、**BALTHASAR**、**CASPER**。一直没上线的 MAGI 就保持没有昵称。
 3. **对话。** 桌面端先把记录写到本机，再经 ASP 发出去。MAGI 从自己的 WebSocket 回复，桌面端再把回复存下来。
-4. **设置模型。** 设置页写入 `~/.magi/user/provider.json`。ASP 把同一组值交给每个已经连上的 MAGI，由 MAGI 写进自己的 BUS。
+4. **设置模型。** 设置页写入 User BUS 的 SettingsBook。ASP 把同一组值交给每个已经连上的 MAGI，由 MAGI 写进自己的 BUS。
 5. **邀请。** 群聊可以加入一个 App 已经启动的 MAGI。对方收到 `chat.invited` 后加入。
 
 ## 架构
@@ -123,14 +135,14 @@ MAGI，本地后端会先把前三个建出来：**MELCHIOR**、**BALTHASAR**、
 操作者
    │
    ▼
-shell/            Electron 窗口
+apps/shell/       Electron 窗口
    │  加载
-app/              操作界面和本地后端
+apps/user/        操作界面和本地后端
    │  启动 Node 24
    ▼
-asp/              127.0.0.1:42069   只做聊天与转发，从不拉起进程
+apps/asp/         127.0.0.1:42069   只做聊天与转发，从不拉起进程
    ▲
-app/              也运行 Node 24：每条 MAGI 一个进程，各在自己的分支上
+apps/user/        也运行 Node 24：每条 MAGI 一个进程，各在自己的独立克隆上
    ├── magi  eva-000   分支 magi/eva-000   ~/.magi/eva-000/MAGI
    ├── magi  eva-001   分支 magi/eva-001   ~/.magi/eva-001/MAGI
    └── magi  eva-002   分支 magi/eva-002   ~/.magi/eva-002/MAGI

@@ -1,4 +1,4 @@
-/** Copy a running legacy ASP's visible events into desktop history without acknowledging them. */
+/** Copy a running ASP's visible events into desktop history without acknowledging them. */
 import path from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";

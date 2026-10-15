@@ -11,5 +11,5 @@ export function sourceCheckout(handle: string, workspace: string): string {
   const present = existsSync(join(workspace, "MAGI", ".git"));
   return present
     ? `handle: ${handle}\ncheckout: MAGI/\nbranch: magi/${name}\nThis is the only tree you may edit.`
-    : `handle: ${handle}\ncheckout: none\nThis process has no source worktree. Do not edit product source and do not request a rebuild.`;
+    : `handle: ${handle}\ncheckout: none\nThis process has no source checkout. Do not edit product source and do not request a rebuild.`;
 }

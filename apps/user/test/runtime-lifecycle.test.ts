@@ -13,6 +13,24 @@ function git(cwd, args) {
   return execFileSync("git", args, { cwd, encoding: "utf8" });
 }
 
+function makeOrigin(root) {
+  const origin = path.join(root, "origin.git");
+  git(root, ["init", "--quiet", "--bare", origin]);
+  const seed = path.join(root, "seed");
+  git(root, ["clone", "--quiet", origin, seed]);
+  mkdirSync(path.join(seed, "apps", "asp", "dist"), { recursive: true });
+  writeFileSync(path.join(seed, "apps", "asp", "package-lock.json"), "{}");
+  writeFileSync(path.join(seed, "apps", "asp", "dist", "asp.js"), "");
+  git(seed, ["config", "user.email", "test@example.invalid"]);
+  git(seed, ["config", "user.name", "MAGI test"]);
+  git(seed, ["add", "."]);
+  git(seed, ["commit", "--quiet", "-m", "initial"]);
+  git(seed, ["branch", "-M", "main"]);
+  git(seed, ["push", "--quiet", "-u", "origin", "HEAD:main"]);
+  git(origin, ["symbolic-ref", "HEAD", "refs/heads/main"]);
+  return { origin, seed };
+}
+
 test("retiring a reloaded client backend keeps ASP and MAGI running", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-runtime-lifecycle-"));
   let api;
@@ -33,7 +51,6 @@ test("retiring a reloaded client backend keeps ASP and MAGI running", async (t) 
     if (endpoint === "/bots") {
       return Response.json({ bots: [{ handle: "@eva-000.magi", online: true }] });
     }
-    if (endpoint === "/settings/provider/legacy") return Response.json(null);
     throw new Error(`unexpected request: ${options.method ?? "GET"} ${url}`);
   };
 
@@ -78,8 +95,8 @@ test("retiring a reloaded client backend keeps ASP and MAGI running", async (t) 
   assert.deepEqual(signals, ["SIGTERM"], "desktop shutdown stops its ASP child");
 });
 
-test("the app refuses to attach to a running legacy Python ASP", async (t) => {
-  const root = mkdtempSync(path.join(tmpdir(), "magi-legacy-asp-"));
+test("the app refuses to attach to a running Python ASP", async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-python-asp-"));
   let api;
   const checkout = path.join(root, "checkout");
   mkdirSync(path.join(checkout, "apps", "asp", "dist"), { recursive: true });
@@ -109,16 +126,10 @@ test("the app refuses to attach to a running legacy Python ASP", async (t) => {
   await api.dispose();
 });
 
-test("the User module creates and runs ASP from its own magi/asp worktree", async (t) => {
-  const root = mkdtempSync(path.join(tmpdir(), "magi-runtime-worktrees-"));
+test("the User module creates and runs ASP from its own magi/asp clone", async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-runtime-clones-"));
   let api;
-  const checkout = path.join(root, "source", "MAGI");
-  mkdirSync(path.join(checkout, "apps", "asp", "dist"), { recursive: true });
-  writeFileSync(path.join(checkout, "apps", "asp", "package-lock.json"), "{}");
-  writeFileSync(path.join(checkout, "apps", "asp", "dist", "asp.js"), "");
-  git(root, ["init", "--quiet", checkout]);
-  git(checkout, ["add", "."]);
-  git(checkout, ["-c", "user.email=test@example.invalid", "-c", "user.name=MAGI test", "commit", "--quiet", "-m", "initial"]);
+  const { origin, seed } = makeOrigin(root);
 
   const originalFetch = globalThis.fetch;
   let healthy = false;
@@ -129,7 +140,6 @@ test("the User module creates and runs ASP from its own magi/asp worktree", asyn
     if (new URL(url).pathname === "/operator") return Response.json({ token: "operator-token" });
     if (new URL(url).pathname === "/bots") return Response.json({ bots: [{ handle: "@eva-000.magi", online: true }] });
     if (new URL(url).pathname === "/agents") return Response.json({ agents: [] });
-    if (new URL(url).pathname === "/settings/provider/legacy") return Response.json(null);
     throw new Error(`unexpected request: ${url}`);
   };
   const child = new EventEmitter();
@@ -137,8 +147,8 @@ test("the User module creates and runs ASP from its own magi/asp worktree", asyn
   child.kill = () => true;
   let spawnedCwd = "";
   api = createLocalApi({
-    paths: { home: root, userData: path.join(root, "userData"), checkout },
-    repository: "https://github.com/AgenticSocietyLab/MAGI.git",
+    paths: { home: root, userData: path.join(root, "userData"), checkout: seed },
+    repository: origin,
     tools: { git: "git", env: process.env }, emit: () => {}, openExternal: async () => {}, copy: () => {},
     managed: true,
     spawn(_binary, _args, options) {
@@ -150,9 +160,10 @@ test("the User module creates and runs ASP from its own magi/asp worktree", asyn
   t.after(async () => { await api?.dispose(); globalThis.fetch = originalFetch; rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
 
   await api.start();
-  assert.equal(spawnedCwd, path.join(root, ".magi", "asp", "MAGI", "apps", "asp"));
-  assert.notEqual(spawnedCwd, path.join(checkout, "apps", "asp"));
-  assert.match(git(checkout, ["branch", "--list", "magi/asp"]), /magi\/asp/);
+  const aspClone = path.join(root, ".magi", "asp", "MAGI");
+  assert.equal(spawnedCwd, path.join(aspClone, "apps", "asp"));
+  assert.notEqual(spawnedCwd, path.join(seed, "apps", "asp"));
+  assert.equal(git(aspClone, ["rev-parse", "--abbrev-ref", "HEAD"]).trim(), "magi/asp");
 });
 
 test("a MAGI's runtime is driven from its own profile methods", async (t) => {
@@ -181,7 +192,6 @@ test("a MAGI's runtime is driven from its own profile methods", async (t) => {
     globalThis.fetch = originalFetch;
     rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
-  // An unmanaged checkout: this test is about the bridge, not about worktrees.
   api = createLocalApi({
     paths: { home: root, userData: path.join(root, "userData"), checkout: root },
     repository: "https://github.com/AgenticSocietyLab/MAGI.git",
@@ -198,7 +208,6 @@ test("a MAGI's runtime is driven from its own profile methods", async (t) => {
     branch: "",
     source: root,
   });
-  // Starting and stopping MAGI is this backend's job, not ASP's API.
   assert.deepEqual(await api["magi.stop"]({ handle: "@eva-000.magi" }), { handle: "@eva-000.magi", stopped: false });
   await assert.rejects(api["magi.start"]({ handle: "@nobody.magi" }), /Unknown MAGI/);
   await assert.rejects(api["magi.start"]({}), /handle is required/);

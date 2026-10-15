@@ -12,7 +12,7 @@ request spawn/stop over its existing host channel; it does not implement the
 self-rebuild transaction. Its retirement closes its own BUS, workers and host
 pipe without stopping its peers. A broken User host pipe cannot crash Shell when a
 peer exits; a replacement User restores the supervisor snapshot. Shell terminates all supervised apps on quit.
-User's worker still holds roster/worktree policy and proxies to supervised
+User's worker still holds roster/clone policy and proxies to supervised
 handles; moving those product policies is outside this change.
 
 Targets must have a canonical `apps/<kind>/dist/<kind>.js` entry. Publishing an
@@ -75,9 +75,9 @@ CRLF regression tests use both `core.autocrlf=false` and `true` in disposable
 Git repositories. They assert logical working-tree content, the exact LF Git
 blob, an actual `two\r\n` checkout, merge/restart and conflict-abort behavior.
 They never alter the user's Git configuration. Native Windows also requires
-closing the legacy workspace fixture's SQLite connection and waiting for test
+closing the workspace fixture's SQLite connection and waiting for test
 children to exit before deleting their working directories; these cleanup fixes
-preserve all content and migration assertions. The broken-host test closes the
+preserve all content assertions. The broken-host test closes the
 actual parent pipe; closing CRT fd 0 does not close Node's Windows pipe handle.
 
 ## Historical User baseline failures and their fixes
@@ -102,30 +102,23 @@ apps/shell/runtime/bin/node --test apps/user/test/chat-store.test.ts apps/user/t
 | Test | Historical failure | Fix applied |
 | --- | --- | --- |
 | desktop chat history and pending receipts survive a restart | `bus` is undefined in directory `saveChats` | Supplied/reopened a real BUS alongside chat storage in the fixture |
-| versioned baseline adopts existing desktop cache | Same missing BUS parameter | Retained migration assertions with the new directory owner |
-| legacy ASP import preserves events without acknowledging | Missing BUS in `listChats` | Provided BUS and retained exact event/ack assertions |
+| ASP import preserves events without acknowledging | Missing BUS in `listChats` | Provided BUS and retained exact event/ack assertions |
 | app saves provider key locally and broadcasts through ASP | Expected `provider.json` is absent | Asserted SettingsBook persistence and unchanged transient ASP broadcast |
-| legacy app state moves to user directory | Expected preserved key is null | Moved directory preparation before BUS creates `user` |
-| app copies legacy ASP key before deleting that copy | Old file-based migration assertion fails | Asserted stored SettingsBook key before deleting the ASP copy |
 
 Every provider fixture now disposes its API in `t.after`, including failed
-assertions, so an assertion failure cannot leak its relay timer. The fixes provide/reopen BUS in storage fixtures, verify SettingsBook rather
-than the retired provider JSON file, and close resources before deleting test
-directories. Import owns/closes both BUS and cache. Webapp initialization is
-awaited before ready; disposal aborts its ASP requests, cancels polling, awaits
-cache closure, and only then allows User to close BUS.
+assertions, so an assertion failure cannot leak its relay timer. The fixtures
+provide/reopen BUS in storage, verify SettingsBook rather than a provider JSON
+file, and close resources before deleting test directories. Import owns/closes
+both BUS and cache. Webapp initialization is awaited before ready; disposal
+aborts its ASP requests, cancels polling, awaits cache closure, and only then
+allows User to close BUS.
 
-`apps/user/workspace.ts` migrates the old directory before BUS creation. Both
-old/new directories present is a visible conflict: neither is merged, deleted
-or overwritten. Provider files are removed only after an atomic SettingsBook
-write; matching retry is idempotent, differing/invalid files stay recoverable.
-User credential databases/WAL/SHM keep the old key file's POSIX 0600 privacy.
-`user-state.test.ts` covers history/receipts/queued messages across rename and
-restart, directory/provider conflicts, malformed migration data, atomic write
-failure, ready failure and disposal during an active provider poll. A first
-provider save adopts/persists the old ASP key before deleting the relay copy,
-then tries the new settings; a rejected change restores that durable old key.
-Offline save still retains the operator's requested configuration locally.
+Operator state lives at `~/.magi/user`. There is no directory rename or
+provider-file copy on startup. User credential databases/WAL/SHM keep POSIX
+0600 privacy. `user-state.test.ts` covers atomic SettingsBook write failure,
+ready failure, and disposal during an active provider poll. Offline save still
+retains the operator's requested configuration locally. Existing `~/.magi`
+trees from earlier layouts are discarded and redeployed.
 
 ## Evidence and remaining end-to-end work
 
@@ -134,7 +127,7 @@ with no skips (including real checkout startup), root and User builds passed. Na
 pushed commit; producing an EXE does not prove installation or runtime boot.
 
 Still queued: run one real EVA turn that edits its
-own worktree, writes/runs a meaningful test, compiles, invokes the actual tool
+own clone, writes/runs a meaningful test, compiles, invokes the actual tool
 and OS link, is restarted by Shell, then verifies the changed behavior and
 preserved identity/state after ASP reconnection. The current tests prove these
 components separately, not that entire OS-delivered self-modification loop.
@@ -187,7 +180,7 @@ and [official extract-and-run troubleshooting](https://docs.appimage.org/user-gu
 Shell-owned EVA now sends `request_rebuild` through its private process IPC.
 Shell derives the requesting handle from the live registered process spec;
 caller-supplied handles, unknown targets, non-EVA entries and retiring/not-ready
-processes are refused. The managed-checkout check and the existing worktree,
+processes are refused. The managed-checkout check and the existing clone,
 entry-point, publishing-branch and transaction exclusion checks still apply.
 A supervised caller with a disconnected IPC channel fails closed. Hand-run
 processes retain the OS deep-link fallback. Acceptance is not readiness; Shell
@@ -204,7 +197,7 @@ provider and tool context on its first turn.
 
 `apps/shell/integration/self-rebuild.test.mjs` is an explicit CI step outside
 the root test glob, so candidate `npm test` does not recursively activate a
-second acceptance test. It creates an isolated `magi/self-loop` worktree and
+second acceptance test. It creates an isolated `magi/self-loop` clone and
 workspace, uses local OpenAI-compatible SSE and ASP HTTP/WebSocket fixtures,
 and starts the real compiled EVA entry under the real Shell supervisor. The
 model fixture drives the actual BUS tool channel to write candidate source and
@@ -262,7 +255,7 @@ cover it. Only individual child environments change, never persistent settings.
 See [Node child-process environment semantics](https://nodejs.org/api/child_process.html).
 
 Candidate behavior verification also adds a pure square-calculation tool only
-inside the temporary candidate worktree. The restarted EVA must expose it in
+inside the temporary candidate clone. The restarted EVA must expose it in
 its real model catalog, process a native model tool call through BUS, and return
 `7 ** 2 === 49` from that new compiled tool before the simulated model can finish
 the resumed reply. The tool is not added to the product's permanent catalog.
@@ -275,11 +268,10 @@ explicit restart. This preserves the lifecycle assertion without treating an
 already-dispatched HTTP request's late arrival as a worker restart.
 
 Native Windows subsequently completed all activation, arithmetic-tool,
-reconnection and state assertions, but MinGit failed to recursively delete the
-temporary worktree containing dependency/runtime junctions (`Invalid argument`).
-At d138f449 the fixture used Node's recursive removal followed by a global
-prune. The shutdown round below replaces that global prune with a verified,
-scoped `git worktree remove` of only its own temporary registration.
+reconnection and state assertions. The fixture now clones `magi/self-loop`
+independently (`git clone --no-local`) and deletes that temporary tree with
+Node's recursive removal. There is no shared object store and no `git worktree`
+registration to prune.
 
 ## Shell shutdown during preparation
 
@@ -314,9 +306,7 @@ command/application cleanup, exited-root orphan cleanup, unrelated same-binary
 process survival, detached-helper survival, User→Shell command cancellation,
 late prepare refusal and cold-install interruption/recovery with a preserved data
 sentinel. Installer/application fixtures are deterministic local programs; full
-User and EVA regressions cover the actual application entries. The scoped
-worktree regression checks an unrelated missing registration byte-for-byte and
-preserves a live junction target.
+User and EVA regressions cover the actual application entries.
 
 Residual boundaries: GUI close interaction remains the separate cloud-desktop
 acceptance. Forced cleanup may interrupt active tool side effects; rollback and
@@ -328,26 +318,21 @@ OS job-object guarantee for a crashing Shell or arbitrary hostile descendants.
 
 ## Shell source/profile layout and Darwin process query
 
-Shell's profile Git authority is now `~/.magi/shell`; generated caches are in
+Shell's profile Git authority is `~/.magi/shell`; generated caches are in
 `~/.magi/shell/cache` (npm, Chromium HTTP cache, Electron downloads and builder).
-User/ASP/EVA retain their existing worktree and business-data paths. A User tree
-previously moved from `app/` to `user/` is repaired only after its pointer is
-verified against this common Git repository. Shell local
-installer build/replacement uses `paths.checkout/apps/shell`, rather than the
-User branch. Unpackaged root resolution returns the repository root, two levels
-above `apps/shell`.
+User, ASP, and each EVA are independent clones under their own workspaces
+(`~/.magi/user/MAGI`, `~/.magi/asp/MAGI`, `~/.magi/<name>/MAGI`). They share
+history only by push and fetch. Shell local installer build/replacement uses
+`paths.checkout/apps/shell`, rather than the User branch. Unpackaged root
+resolution returns the repository root, two levels above `apps/shell`.
 
-`profile-layout.mjs` owns serialized, journaled profile preparation. Moving a
-main checkout is followed by Git's documented `worktree repair`; moving a linked
-Shell uses `worktree move` and respects its lock. Bootstrap installs a staged clone
-with `.git` last and journals per-entry continuation. Migration and cache merging
-never reset/checkout dirty source, rewrite indexes/history, overwrite a second
-checkout, or prune missing unrelated registrations. Interrupted operations retain
-the journal and files for a forward retry after locks/permissions are resolved.
-Cache collisions retain both copies under `cache/legacy-profile`. Old revisions
-receive `/cache/` in local Git excludes, without changing their source ignore file.
-`build/` and `dist/` were already ignored; `/cache/` is now tracked in `.gitignore`.
-The tracked-file audit found no generated build/dist/cache files to untrack.
+`profile-layout.mjs` owns serialized, journaled profile preparation. Bootstrap
+clones into a staging directory, installs entries with `.git` last, and journals
+per-entry continuation. Interrupted operations retain the journal and files for
+a forward retry after locks or permissions are resolved. There is no checkout
+relocation, worktree repair, or cache merge. Existing `~/.magi` trees from
+earlier layouts are discarded and redeployed. `build/`, `dist/`, and `/cache/`
+are ignored in the tracked `.gitignore`.
 
 Darwin's BSD ps has no Linux numeric `sid` field. It now queries `pid/ppid/pgid`,
 never substitutes the opaque `sess` kernel pointer, and uses private detached
@@ -357,21 +342,17 @@ name matching or global kill is added. Descendants that deliberately escape all
 observed ancestry/groups before observation remain outside the guarantee; this
 is not an OS Job Object or crash-survival guarantee.
 
-Focused tests exercise real Git main/linked relocation, five app worktrees,
-dirty bytes/index/reflog/HEAD, unrelated missing registration, fresh and repeated
-startup, interrupted clone/repair, collision retention, live/dead profile locks,
-Git locks and injected permission failures. Permission injection is deterministic
-failure coverage, not proof of every native filesystem ACL failure. The full EVA
-integration now migrates a disposable main repository, repairs its linked EVA
-source, then performs real self-edit/test/build/IPC replacement and verifies the
-Shell authority's Git status remains clean before and after runtime startup.
-Model/ASP endpoints are simulated, as in the previous acceptance round.
+Focused tests exercise a fresh clone, a resumed interrupted clone, a live
+preparation lock, and recovery of a dead owner's lock. The full EVA integration
+clones `magi/self-loop` independently, then performs real
+self-edit/test/build/IPC replacement. Model/ASP endpoints are simulated, as in
+the previous acceptance round.
 
 Native macOS lifecycle/profile CI is added without packaging or publishing. Its
 result, and final Linux/Windows full acceptance, must be read at the exact final
 SHA. Linux adapter tests alone are not native macOS verification. Electron GUI,
 OS deeplink and installed artifact swap remain separate parent-side acceptance.
 The first packaged profile preparation runs before any BrowserWindow opens cache
-files; this can delay the first startup window while cloning/migrating. No app is
+files; this can delay the first startup window while cloning. No app is
 started before it completes. Browser cookies/localStorage remain in the existing
 User Electron profile; the Chromium HTTP cache uses an explicit disk-cache-dir.

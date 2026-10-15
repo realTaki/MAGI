@@ -20,7 +20,7 @@ The installed package contains the shell plus Node.js 24 and npm. It
 does not contain a Python runtime. On first launch the shell clones this
 repository to `~/.magi/shell`. Later launches keep that checkout.
 
-Before starting User in a fresh managed worktree, the shell installs the root
+Before starting User in a fresh managed clone, the shell installs the root
 lockfile with `npm ci --ignore-scripts`, then runs `build:process` in `apps/user`
 when `dist/user.js` is missing. This bootstrap happens before User can prepare
 the remaining desktop components.
@@ -57,21 +57,21 @@ participant operations use `/chats/:chat_id/...`.
 | **Job** | A durable `publish -> claim -> result` item. Chat, model calls, tool calls, and delivery are Jobs. |
 | **EVA** | The handle naming pattern. ASP assigns `eva-000`, then `eva-001`; its address is `@eva-000.magi`. |
 | **Workspace** | One MAGI's directory, normally `~/.magi/<name>`, containing that MAGI's `MAGI/` source checkout. |
-| **Agent branch** | `magi/<name>` — the branch a MAGI runs from. The Desktop creates its Git worktree and merges changes into it on demand. |
+| **Agent branch** | `magi/<name>` — the branch a MAGI runs from. The Desktop clones the GitHub remote into that MAGI's workspace and merges remote changes into it on demand. |
 
 ## Who owns which files
 
 | Path | Owner | What it is |
 | --- | --- | --- |
-| `~/.magi/shell` | Shell | Source checkout and Git/worktree authority; Shell installer source. |
+| `~/.magi/shell` | Shell | Shell clone; installer source. |
 | `~/.magi/shell/cache` | Shell | Generated npm, Chromium, Electron download and builder caches. |
+| `~/.magi/user/MAGI` | desktop | User clone on branch `magi/user`. |
 | `~/.magi/user/chat.sqlite` | desktop | The operator's transcript. |
-| `~/.magi/user/provider.json` | desktop | Provider, model, and API key. |
+| `~/.magi/user/memories/books.db` | desktop | Provider, model, and API key (SettingsBook). |
+| `~/.magi/asp/MAGI` | ASP | ASP clone on branch `magi/asp`. |
 | `~/.magi/asp/asp.sqlite` | ASP | Chats, participants, and relay events. |
 | `~/.magi/<name>` | that MAGI | Workspace. Books and Job history. |
-
-An older workspace at `~/.magi/ts-magi/<name>` is still opened when
-`~/.magi/<name>` does not exist yet.
+| `~/.magi/<name>/MAGI` | that MAGI | Independent clone on branch `magi/<name>`. |
 
 ## Desktop startup
 
@@ -98,9 +98,9 @@ client keeps User and ASP running. `before-quit` stops every supervised
 app in `apps/shell/main.mjs`.
 
 Shell handles `request_rebuild` links directly. It compiles the target's actual
-worktree, then replaces only that app using its original cwd, args, and env.
-`self` includes local source edits; `app` and `asp` merge the requesting EVA's
-branch into the registered User or ASP worktree. User rebuild includes both
+clone, then replaces only that app using its original cwd, args, and env.
+`self` includes local source edits; `app` and `asp` push the requesting EVA's
+branch and merge it in the User or ASP clone. User rebuild includes both
 backend and UI. User retirement does not stop ASP or EVA; the replacement
 adopts their existing supervisor handles. Build errors leave the old app running;
 restart errors remain failed, without automatic rollback or retry. A ready IPC

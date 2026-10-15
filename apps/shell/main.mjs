@@ -28,6 +28,7 @@ import { createSupervisor, prepareAndStartUser } from "./process.mjs";
 import { createProcessOwner } from "./process-owner.mjs";
 import { ensureInstalledDependencies } from "./installation.mjs";
 import { profilePaths, prepareShellProfile } from "./profile-layout.mjs";
+import { ensureManagedClone } from "./clone.mjs";
 
 const { resolveGitBinary, setupEnvironment } = dugite;
 const SHELL_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -39,7 +40,6 @@ const MAGI_REPOSITORY =
 // directory also removes Chromium storage, caches, logs, and crash dumps.
 const PROFILE_PATHS = profilePaths(app.getPath("home"));
 const MAGI_DATA_ROOT = PROFILE_PATHS.dataRoot;
-const LEGACY_MAGI_APP_DATA = path.join(MAGI_DATA_ROOT, "app");
 const MAGI_USER_DATA = path.join(MAGI_DATA_ROOT, "user");
 const MAGI_APP_CHECKOUT = path.join(MAGI_USER_DATA, "MAGI");
 const ELECTRON_USER_DATA = path.join(MAGI_USER_DATA, "electron");
@@ -50,12 +50,6 @@ const WINDOW_STATE_FILE = path.join(MAGI_USER_DATA, "window-state.json");
 const DEFAULT_WINDOW_SIZE = { width: 1040, height: 760 };
 const MINIMUM_WINDOW_SIZE = { width: 720, height: 560 };
 const WINDOW_EDGE_MARGIN = 24;
-
-// `apps/user` is the desktop module. Keep existing operator state intact while
-// moving its former generic `app` directory to the matching runtime role.
-if (!existsSync(MAGI_USER_DATA) && existsSync(LEGACY_MAGI_APP_DATA)) {
-  renameSync(LEGACY_MAGI_APP_DATA, MAGI_USER_DATA);
-}
 
 for (const directory of [
   ELECTRON_USER_DATA,
@@ -117,41 +111,26 @@ function toolsForRuntime(runtime) {
 
 
 /**
- * The shell needs a User worktree before it can spawn `dist/user.js`. All
- * other runtime worktrees, including ASP, are the User module's responsibility.
+ * The shell needs a User clone before it can spawn `dist/user.js`. All
+ * other runtime clones, including ASP, are the User module's responsibility.
  */
-async function ensureAppWorktree(checkout, tools, progress) {
+async function ensureAppCheckout(checkout, tools, progress) {
   if (!app.isPackaged && !localCheckoutManaged) {
     return checkout;
   }
-  if (existsSync(path.join(MAGI_APP_CHECKOUT, ".git"))) return MAGI_APP_CHECKOUT;
-  if (existsSync(MAGI_APP_CHECKOUT)) {
-    throw new Error(`MAGI User worktree path is not a Git checkout: ${MAGI_APP_CHECKOUT}`);
-  }
-  mkdirSync(path.dirname(MAGI_APP_CHECKOUT), { recursive: true });
-  let branchExists = true;
-  try {
-    await command(tools.git, ["show-ref", "--verify", "--quiet", "refs/heads/magi/user"], {
-      cwd: checkout,
-      env: tools.env,
-      description: "Could not look up the User worktree branch",
-    });
-  } catch {
-    branchExists = false;
-  }
-  await command(
-    tools.git,
-    branchExists
-      ? ["worktree", "add", MAGI_APP_CHECKOUT, "magi/user"]
-      : ["worktree", "add", "-b", "magi/user", MAGI_APP_CHECKOUT, "HEAD"],
-    { cwd: checkout, env: tools.env, description: "Could not create the User worktree" },
-  );
+  await ensureManagedClone({
+    run: (args, options) => command(tools.git, args, options),
+    env: tools.env,
+    url: MAGI_REPOSITORY,
+    destination: MAGI_APP_CHECKOUT,
+    branch: "magi/user",
+  });
   progress("Prepared User source…", 0.14);
   return MAGI_APP_CHECKOUT;
 }
 
 // Shell supervises User and forwards calls. Renderer reloads do not kill User.
-// The packaged shell runs `dist/user.js` from the User worktree. An unpackaged
+// The packaged shell runs `dist/user.js` from the User clone. An unpackaged
 // developer tree remains untouched, while an explicit scratch checkout uses
 // the same isolated-runtime layout as a packaged app.
 let localApi = null;
@@ -299,7 +278,7 @@ async function launchLocalOperator(win) {
     const progress = (message, percent) => reportStartup(win, message, percent);
     progress("Checking local MAGI…", 0.02);
     const runtimeRoot = await resolveRuntimeRoot(progress);
-    const appCheckout = await ensureAppWorktree(runtimeRoot, localTools ?? devTools(), progress);
+    const appCheckout = await ensureAppCheckout(runtimeRoot, localTools ?? devTools(), progress);
     progress("Loading the app…", 0.15);
     if (localApi === null) {
       try {

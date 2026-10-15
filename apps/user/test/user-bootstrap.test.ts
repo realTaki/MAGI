@@ -6,7 +6,7 @@ import { test } from "node:test";
 
 import { prepareUserProcess } from "../../shell/process.mjs";
 
-test("a fresh managed User worktree installs dependencies before building", async (t) => {
+test("a fresh managed User checkout installs dependencies before building", async (t) => {
   const checkout = mkdtempSync(path.join(tmpdir(), "magi-user-bootstrap-"));
   t.after(() => rmSync(checkout, { recursive: true, force: true }));
   const cwd = path.join(checkout, "apps", "user");
@@ -41,7 +41,7 @@ test("a fresh managed User worktree installs dependencies before building", asyn
     [tools.npm, "run", "build:process"],
   ]);
   await prepareUserProcess({ cwd, entry }, tools);
-  assert.equal(calls.length, 2, "a prepared worktree does not reinstall or rebuild");
+  assert.equal(calls.length, 2, "a prepared checkout does not reinstall or rebuild");
 });
 
 test("an unmanaged checkout never installs dependencies during User bootstrap", async (t) => {

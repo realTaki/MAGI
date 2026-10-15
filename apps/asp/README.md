@@ -27,22 +27,21 @@ history store.
 ASP is **intranet by default**: it binds `127.0.0.1:42069`. MAGI attach with a Bearer for this origin. When a MAGI receives `chat.invited`, it joins immediately — no public-network approval and no config wizard.
 
 ASP never starts a process. It keeps the roll of agents and their tokens; the
-desktop app on this machine owns each MAGI's branch, checkout and process.
+desktop app on this machine owns each MAGI's branch, clone and process.
 
-`POST /chats` `{ "kind": "bot" | "group" }` does not take a MAGI name, model, or settings. For `bot`, ASP assigns `name` `eva-000`, then `eva-001`, …, registers it as a managed agent, and returns `name`, the handle and the agent token on the create response — that is what the caller runs the agent with (the app checks out branch `magi/<name>` at `~/.magi/<name>/MAGI`). `GET /agents` lists the same credentials for every registered agent, so a restarted app can pick the society back up. `group` opens a chat with the operator only.
+`POST /chats` `{ "kind": "bot" | "group" }` does not take a MAGI name, model, or settings. For `bot`, ASP assigns `name` `eva-000`, then `eva-001`, …, registers it as a managed agent, and returns `name`, the handle and the agent token on the create response — that is what the caller runs the agent with (the app clones the repository at `~/.magi/<name>/MAGI` on branch `magi/<name>`). `GET /agents` lists the same credentials for every registered agent, so a restarted app can pick the society back up. `group` opens a chat with the operator only.
 
 Group profile **invite** uses:
 
 - `GET /bots` — MAGI this operator can add
 - `POST /chats/{chat_id}/members` `{ "handle" }` — invite that MAGI; it joins on receipt
 
-The desktop user module owns provider settings and the API key in `~/.magi/user/provider.json`.
+The desktop user module owns provider settings and the API key in the User BUS
+SettingsBook (`~/.magi/user/memories/books.db`).
 ASP only forwards a complete update to MAGI; it never saves a new copy:
 
 - `PUT /settings/provider` — transiently hands `agent.provider.update` to
   connected MAGI and reports `synced` / `failed`. The app retries when a MAGI
   comes online.
-- `GET` and `DELETE /settings/provider/legacy` let the app copy an older
-  `asp_settings.provider` value into its own file before removing that value.
 - The MAGI side answers with `agent.provider.updated` after publishing the change
   into its own bus (persisted settings + live provider reconfiguration).

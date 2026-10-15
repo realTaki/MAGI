@@ -16,8 +16,6 @@ import { ConnectionError, TimeoutError, Transport } from "./transport.js";
 export { defaultDatabasePath };
 export { ASP_HANDLE } from "./relayWorker.js";
 
-const PROVIDER_SETTING_KEY = "provider";
-
 export type AspSeed = Record<string, string | AgentSeed>;
 
 export type CreateAppOptions = {
@@ -279,15 +277,6 @@ function registerRoutes(router: Router, app: AspServer): void {
     agent.nickname = nickname;
     app.store.updateAgent(agent);
     return { body: { handle, nickname } };
-  });
-  router.add("GET", "/settings/provider/legacy", (context) => {
-    operatorOnly(context.headers);
-    return { body: app.database.getSetting(PROVIDER_SETTING_KEY) };
-  });
-  router.add("DELETE", "/settings/provider/legacy", (context) => {
-    operatorOnly(context.headers);
-    app.database.deleteSetting(PROVIDER_SETTING_KEY);
-    return { body: { ok: true } };
   });
   router.add("PUT", "/settings/provider", async (context) => {
     operatorOnly(context.headers);

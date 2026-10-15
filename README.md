@@ -81,6 +81,19 @@ apps/eva/         MAGI runtime: one process per MAGI — its entry and superviso
 packages/          The runtime's own packages: bus, manager, asp-server, webapp, agent, providers, tools, mcp, channel-*
 ```
 
+On disk after a packaged install, each app is its own Git clone from the GitHub
+remote. They share history only by push and fetch. There is no shared base repo.
+
+```text
+~/.magi/shell            Shell clone (installer source) and cache/
+~/.magi/user/            operator workspace: chat.sqlite, memories/books.db, github credentials
+~/.magi/user/MAGI        User clone on branch magi/user
+~/.magi/asp/             ASP workspace and asp.sqlite
+~/.magi/asp/MAGI         ASP clone on branch magi/asp
+~/.magi/<name>/          that MAGI's workspace (Books, Jobs, skills, prompts)
+~/.magi/<name>/MAGI      that MAGI's clone on branch magi/<name>
+```
+
 ## Toward recursive self-improvement
 
 MAGI should become better because they have existed. The intended loop is to
@@ -123,15 +136,15 @@ should say, and it never starts a process.
   that MAGI; creating a group opens a chat the operator can invite
   MAGI into.
 - **One process per MAGI** — Node 24 runs `apps/eva/eva.ts`, which imports the runtime packages. The default workspace is
-  `~/.magi/<name>`. An older `~/.magi/ts-magi/<name>` directory is still
-  opened when the new path does not exist.
+  `~/.magi/<name>`. Each MAGI is an independent Git clone at
+  `~/.magi/<name>/MAGI` on branch `magi/<name>`.
 - **BUS inside each MAGI** — Books for chats, messages, memory, skills,
   tasks, contacts, prompts, and tools; Jobs for chat, model calls, tool calls,
   delivery, provider changes, tasks, and MCP server changes.
 - **Operator data stays on the desktop** — chat history is
-  `~/.magi/user/chat.sqlite`. Provider settings and the API key are
-  `~/.magi/user/provider.json`. ASP forwards a provider update and does not
-  keep a new copy of the key.
+  `~/.magi/user/chat.sqlite`. Provider settings and the API key live in the
+  User BUS SettingsBook (`~/.magi/user/memories/books.db`). ASP forwards a
+  provider update and does not keep a new copy of the key.
 - **Other channels** — a MAGI can also talk on the terminal, Telegram, and
   configured MCP servers. Those are part of the MAGI process, not of ASP.
 
@@ -153,8 +166,8 @@ The app is also the
 machine-local layer: connecting the checkout to the operator's GitHub account
 (fork plus `origin`) happens in the WebUI after startup, not while booting.
 Creating a bot is `POST /chats { "kind": "bot" }` — ASP assigns
-`eva-000`; the app then checks out branch `magi/eva-000` at
-`~/.magi/eva-000/MAGI` and runs that MAGI from there.
+`eva-000`; the app then clones the repository into `~/.magi/eva-000/MAGI`
+on branch `magi/eva-000` and runs that MAGI from there.
 
 **One MAGI:** `npm start -- <handle> <base> <token>` in that MAGI's own checkout. The app launches it with the bundled Node 24 runtime.
 
@@ -170,7 +183,7 @@ Creating a bot is `POST /chats { "kind": "bot" }` — ASP assigns
 3. **Talk.** The desktop writes the transcript locally, then sends the message
    through ASP. The MAGI answers on its WebSocket and the desktop stores that
    too.
-4. **Set a provider.** Settings writes `~/.magi/user/provider.json`. ASP hands
+4. **Set a provider.** Settings writes the User BUS SettingsBook. ASP hands
    the same values to each connected MAGI, which stores them in its own BUS.
 5. **Invite.** A group chat can add a MAGI the app already started.
    That MAGI joins when it receives `chat.invited`.
@@ -188,7 +201,7 @@ apps/user/         operator process (BUS + webapp) and UI
    ▼
 apps/asp/         127.0.0.1:42069   chats and relay, never a process
    ▲
-apps/user/         also runs Node 24: apps/eva + packages, one process per MAGI, each on its own branch
+apps/user/         also runs Node 24: apps/eva + packages, one process per MAGI, each on its own clone
    ├── magi  eva-000   branch magi/eva-000   ~/.magi/eva-000/MAGI
    ├── magi  eva-001   branch magi/eva-001   ~/.magi/eva-001/MAGI
    └── magi  eva-002   branch magi/eva-002   ~/.magi/eva-002/MAGI

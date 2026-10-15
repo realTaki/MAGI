@@ -1,6 +1,6 @@
 /** The durable SQLite connection owned by a running ASP server process. */
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -10,7 +10,6 @@ import { eq } from "drizzle-orm";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
-import { repairLegacyOperatorHandle } from "./legacyOperator.js";
 import { aspSettings } from "./tables/settings.js";
 
 /** The relay's drizzle client over a better-sqlite3 connection. */
@@ -38,15 +37,11 @@ export class LocalDatabase {
       return;
     }
     mkdirSync(path.dirname(this.path), { recursive: true });
-    this.#copyLegacyFile();
     const connection = new Database(this.path);
     connection.exec("PRAGMA foreign_keys = ON");
     connection.exec("PRAGMA journal_mode = WAL");
     const db = drizzle(connection);
-    // The baseline is idempotent, so a database from the hand-written migration
-    // era is adopted here: nothing is created twice, and the run is recorded.
     migrate(db, { migrationsFolder: migrationsFolder() });
-    repairLegacyOperatorHandle(db);
     this.connection = connection;
     this.db = db;
   }
@@ -83,23 +78,6 @@ export class LocalDatabase {
       throw new Error("LocalDatabase is not open");
     }
     return this.db;
-  }
-
-  #copyLegacyFile(): void {
-    const legacy = path.join(homedir(), ".magi", "asp.sqlite");
-    if (
-      path.resolve(this.path) !== path.resolve(defaultDatabasePath()) ||
-      existsSync(this.path) ||
-      !existsSync(legacy)
-    ) {
-      return;
-    }
-    const source = new Database(legacy, { readonly: true });
-    try {
-      writeFileSync(this.path, source.serialize());
-    } finally {
-      source.close();
-    }
   }
 }
 

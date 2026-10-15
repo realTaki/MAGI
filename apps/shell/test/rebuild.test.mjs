@@ -158,7 +158,7 @@ test("real User retires without stopping EVA and restores supervisor handles", a
 });
 
 for (const name of ["user", "asp"]) {
-  test(`${name} self rebuild uses its registered worktree without a merge`, async (t) => {
+  test(`${name} self rebuild uses its registered checkout without a merge`, async (t) => {
     const f = await fixture(t), calls = [];
     const rebuild = createAppRebuilder({ supervisor: f.supervisor, tools: {}, managed: () => true, pause: async () => {}, emit: () => {}, onUser: async () => {}, command: async (_file, args, options) => {
       calls.push({ args, cwd: options.cwd });
@@ -271,7 +271,7 @@ test("fresh compiled EVA and ASP become ready with isolated persistent state", a
   assert.equal(supervisor.snapshots().length, 2);
 });
 
-test("Windows app paths retain independent worktrees and reject same-name scripts", () => {
+test("Windows app paths retain independent checkouts and reject same-name scripts", () => {
   const cwd = String.raw`C:\Users\tester\.magi\eva-000\MAGI\apps\eva`;
   const app = describeApp({ cwd, entry: String.raw`dist\eva.js`, args: ["@eva-000.magi"] }, path.win32);
   assert.equal(app.root, String.raw`C:\Users\tester\.magi\eva-000\MAGI`);

@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { spawn, execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { mkdtemp, mkdir, readFile, writeFile, cp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -13,11 +12,9 @@ import { Bus, MAGI_CONTACT_ID } from "@magi/bus";
 import { createSupervisor } from "../process.mjs";
 import { createAppRebuilder } from "../rebuild.mjs";
 import { prependRuntimePath } from "../runtime-environment.mjs";
-import { removeOwnedWorktree } from "./worktree-cleanup.mjs";
 import { createProcessOwner } from "../process-owner.mjs";
-import { prepareShellProfile, profilePaths } from "../profile-layout.mjs";
+import { profilePaths } from "../profile-layout.mjs";
 
-const execute = promisify(execFile);
 const repository = path.resolve(import.meta.dirname, "../../..");
 const node = process.execPath;
 const npm = path.join(repository, "apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js");
@@ -58,33 +55,22 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
     return await owner.command(file, args, { ...options, env: options.env ?? env });
   };
   let releaseDrain = null, heldDrain = false, successfulRequest = false, stoppingSeen = false;
-  let server, websocket, supervisor, worktreeCreated = false;
-  let runtimeRepository = layout.legacyShell;
+  let server, websocket, supervisor;
   t.after(async () => {
     releaseDrain?.();
     if (supervisor) await supervisor.close(); else await owner.close();
     for (const socket of sockets) socket.terminate();
     websocket?.close(); server?.close(); server?.closeAllConnections();
-    if (worktreeCreated) {
-      await removeOwnedWorktree({ repository: runtimeRepository, checkout, git, env });
-      await execute(git, ["branch", "-D", "magi/self-loop"], { cwd: runtimeRepository, env });
-    }
     await rm(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
   if (process.platform === "win32") {
     assert.match(await command("powershell.exe", ["-NoProfile", "-Command", "Write-Output 'lifecycle-shell-ready'"], { cwd: repository }), /lifecycle-shell-ready/, "the real child's environment retains the OS shell search path");
   }
-  await command(git, ["clone", "--shared", repository, runtimeRepository], { cwd: temporary });
-  await command(git, ["worktree", "add", "-b", "magi/self-loop", checkout, "HEAD"], { cwd: runtimeRepository });
-  worktreeCreated = true;
-  const beforeMigration = await command(git, ["status", "--porcelain"], { cwd: checkout });
-  runtimeRepository = await prepareShellProfile({ home, repository, tools: { git, env }, command, assertOpen: owner.assertOpen });
-  assert.equal(runtimeRepository, layout.shell);
-  assert.equal(await command(git, ["status", "--porcelain"], { cwd: checkout }), beforeMigration, "profile migration preserves the live EVA tree status");
-  assert.equal((await command(git, ["status", "--porcelain"], { cwd: runtimeRepository })).trim(), "", "generated profile cache is ignored before build");
+  await command(git, ["clone", "--no-local", repository, checkout], { cwd: temporary });
+  await command(git, ["checkout", "-B", "magi/self-loop"], { cwd: checkout });
   // Overlay this round's source while running before its commit. CI uses the
   // identical tracked files. No original checkout output is overwritten.
-  for (const file of ["apps/eva/eva.ts", "apps/user/user.ts", "apps/user/host.ts", "packages/webapp/api.ts", "packages/webapp/magi-runtime.ts", "packages/built-in-tools/rebuild.ts", "packages/manager/worker.ts", "apps/eva/test/agent.test.ts", "apps/eva/test/manager.test.ts", "apps/shell/process.mjs", "apps/shell/process-owner.mjs", "apps/shell/profile-layout.mjs", "apps/shell/test/profile-layout.test.mjs", "apps/shell/test/process-table.test.mjs", "apps/shell/installation.mjs", "apps/shell/rebuild.mjs", "apps/shell/dependency-state.mjs", "apps/shell/runtime-environment.mjs", "apps/shell/integration/worktree-cleanup.mjs", "apps/shell/test/rebuild.test.mjs", "apps/shell/test/runtime-environment.test.mjs", "apps/shell/test/shutdown.test.mjs", "apps/shell/test/worktree-cleanup.test.mjs"]) {
+  for (const file of ["apps/eva/eva.ts", "apps/user/user.ts", "apps/user/host.ts", "packages/webapp/api.ts", "packages/webapp/magi-runtime.ts", "packages/webapp/clone.ts", "packages/built-in-tools/rebuild.ts", "packages/manager/worker.ts", "apps/eva/test/agent.test.ts", "apps/eva/test/manager.test.ts", "apps/shell/process.mjs", "apps/shell/process-owner.mjs", "apps/shell/profile-layout.mjs", "apps/shell/clone.mjs", "apps/shell/test/profile-layout.test.mjs", "apps/shell/test/process-table.test.mjs", "apps/shell/installation.mjs", "apps/shell/rebuild.mjs", "apps/shell/dependency-state.mjs", "apps/shell/runtime-environment.mjs", "apps/shell/test/rebuild.test.mjs", "apps/shell/test/runtime-environment.test.mjs", "apps/shell/test/shutdown.test.mjs"]) {
     await cp(path.join(repository, file), path.join(checkout, file));
   }
   await symlink(path.join(repository, "apps/shell/runtime"), path.join(checkout, "apps/shell/runtime"), "junction");
@@ -219,6 +205,5 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
   assert.ok(commandLog.some((call) => call.args[1] === "test" && call.cwd === checkout));
   assert.ok(commandLog.some((call) => call.args[1] === "run" && call.args[2] === "build" && call.cwd === checkout));
   assert.equal(commandLog.filter((call) => call.args[1] === "ci").length, 1, "only the initial preparation installs dependencies; live rebuilds preserve native modules");
-  assert.equal((await command(git, ["status", "--porcelain"], { cwd: runtimeRepository })).trim(), "", "Shell authority remains clean after migration and runtime build/start");
-  t.diagnostic(JSON.stringify({ profile: "legacy main tree moved to shell, linked EVA repaired before real startup", simulated: "loopback OpenAI SSE responses and ASP HTTP/WebSocket", real: "EVA CLI entry, BUS, file/bash/rebuild tools, own worktree npm tests/compilation, private Shell IPC, supervisor child replacement and reconnection", starts, processEvents, pendingJob: pending.id, phases: events.map((event) => event.phase), modelCalls: modelRequests.length, unverified: "Electron window/OS deep-link, crash rollback and improvement quality" }));
+  t.diagnostic(JSON.stringify({ profile: "independent magi/self-loop clone", simulated: "loopback OpenAI SSE responses and ASP HTTP/WebSocket", real: "EVA CLI entry, BUS, file/bash/rebuild tools, own clone npm tests/compilation, private Shell IPC, supervisor child replacement and reconnection", starts, processEvents, pendingJob: pending.id, phases: events.map((event) => event.phase), modelCalls: modelRequests.length, unverified: "Electron window/OS deep-link, crash rollback and improvement quality" }));
 });

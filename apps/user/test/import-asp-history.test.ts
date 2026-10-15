@@ -7,7 +7,7 @@ import { Bus } from "@magi/bus";
 import { openChatStore } from "../main/chat-store.ts";
 import { importAspHistory } from "../scripts/import-asp-history.ts";
 
-test("legacy ASP import preserves events without acknowledging them", async (t) => {
+test("ASP import preserves events without acknowledging them", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-history-import-"));
   t.after(() => rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
   const database = path.join(root, "chat.sqlite");

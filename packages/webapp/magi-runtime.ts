@@ -3,7 +3,7 @@
  *
  * ASP is a relay: it registers handlers and holds their tokens, but it never
  * starts a process (see apps/asp/README.md). Here each MAGI gets its own branch
- * (`magi/eva-000`) checked out as a Git worktree inside its own workspace
+ * (`magi/eva-000`) cloned from the GitHub remote into its own workspace
  * (`~/.magi/eva-000/MAGI`), with that checkout's dependencies installed, and the
  * agent is started from it. A `main` someone broke therefore cannot take a
  * running MAGI down with it, and an agent can evolve its own branch.
@@ -20,6 +20,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { ensureManagedClone } from "./clone.js";
 
 /** Branch per MAGI: `magi/eva-000`. */
 export const AGENT_BRANCH_PREFIX = "magi/";
@@ -61,7 +62,9 @@ export function createMagiRuntime({
   spawnProcess,
   startProcess,
   prepareDependencies = undefined,
-  useWorktrees = true,
+  managed = true,
+  repository,
+  configureGit,
   initialProcesses = [],
   log = (_message: string) => {},
 }) {
@@ -104,17 +107,12 @@ export function createMagiRuntime({
     await run(nodeBinary(), [npmCli(), ...args], options);
   }
 
-  function git(args, description, cwd = checkout) {
-    return run(tools.git, args, { cwd, env: tools.env, description });
+  function git(args, description, cwd = checkout, env = tools.env) {
+    return run(tools.git, args, { cwd, env, description });
   }
 
-  async function hasBranch(branch) {
-    try {
-      await git(["show-ref", "--verify", "--quiet", `refs/heads/${branch}`], `Could not look up ${branch}`);
-      return true;
-    } catch {
-      return false;
-    }
+  function gitRun(args, options) {
+    return run(tools.git, args, options);
   }
 
   async function install(root) {
@@ -148,14 +146,18 @@ export function createMagiRuntime({
     const ready = sources.get(handle);
     if (ready !== undefined) return ready;
     const root = agentSource(home, handle);
-    if (!existsSync(path.join(root, ".git"))) {
-      // Preserve unrelated registrations. Git will report an existing/missing
-      // target registration instead of pruning the whole repository.
-      const branch = agentBranch(handle);
-      const args = (await hasBranch(branch))
-        ? ["worktree", "add", root, branch]
-        : ["worktree", "add", "-b", branch, root, "HEAD"];
-      await git(args, `Could not check out ${branch} at ${root}`);
+    if (managed) {
+      if (typeof repository !== "string" || repository === "") {
+        throw new Error("A managed MAGI clone needs MAGI_REPOSITORY_URL");
+      }
+      await ensureManagedClone({
+        run: gitRun,
+        env: tools.env,
+        url: repository,
+        destination: root,
+        branch: agentBranch(handle),
+      });
+      if (configureGit) await configureGit(root);
     }
     await install(root);
     sources.set(handle, root);
@@ -166,7 +168,7 @@ export function createMagiRuntime({
   function sourceOf(handle) {
     const ready = sources.get(handle);
     if (ready !== undefined) return ready;
-    if (!useWorktrees) return checkout;
+    if (!managed) return checkout;
     return agentSource(home, handle);
   }
 
@@ -193,15 +195,9 @@ export function createMagiRuntime({
     return agent;
   }
 
-  /** The root this MAGI should run from, falling back to the shared checkout. */
   async function rootFor(handle) {
-    if (!useWorktrees) return checkout;
-    try {
-      return await ensureSource(handle);
-    } catch (error) {
-      log(`[magi] ${handle}: ${describe(error)}; running it from ${checkout} instead`);
-      return checkout;
-    }
+    if (!managed) return checkout;
+    return await ensureSource(handle);
   }
 
   function launch(handle, token, root) {
@@ -335,27 +331,24 @@ export function createMagiRuntime({
     return { handle, rebuilt: true, started: started.started };
   }
 
-  /** The ref a MAGI branch is brought up to date with. */
-  async function checkoutRef() {
-    const branch = (
-      await git(["rev-parse", "--abbrev-ref", "HEAD"], "Could not read the checkout branch")
-    ).trim();
-    if (branch !== "" && branch !== "HEAD") return branch;
-    return (await git(["rev-parse", "HEAD"], "Could not read the checkout commit")).trim();
-  }
-
   /**
-   * Merge the checkout's current branch into this MAGI's branch. A branch that
-   * actually moved is restarted so the MAGI runs the merged source; a conflict
-   * is aborted and reported instead of leaving a half-merged worktree behind.
+   * Fetch origin and merge its default branch into this MAGI's branch. A branch
+   * that actually moved is restarted so the MAGI runs the merged source; a
+   * conflict is aborted and reported instead of leaving a half-merged clone.
    */
   async function merge(agent) {
     const { handle, token } = require(agent);
-    if (!useWorktrees) {
+    if (!managed) {
       throw new Error("This checkout is not managed by the app, so its MAGI share it and there is nothing to merge.");
     }
     const root = await ensureSource(handle);
-    const from = await checkoutRef();
+    const fetchEnv = { ...tools.env, GIT_TERMINAL_PROMPT: "0" };
+    await git(["fetch", "--prune", "origin"], "Could not fetch from origin", root, fetchEnv);
+    const from = (await git(
+      ["rev-parse", "--abbrev-ref", "origin/HEAD"],
+      "Could not read the origin default branch",
+      root,
+    )).trim();
     let moved = false;
     try {
       const output = await git(

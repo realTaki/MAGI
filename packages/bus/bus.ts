@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, renameSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { and, eq, inArray, ne } from "drizzle-orm";
@@ -50,22 +50,14 @@ export class Bus {
 
   constructor(readonly handle: string, workspace?: string) {
     const localName = handle.replace(/^@/, "").replace(/\.magi$/, "");
-    // A MAGI workspace is a sibling of app/, asp/, and the MAGI checkout.
+    // A MAGI workspace is a sibling of user/, asp/, and the MAGI checkout.
     // Do not put it under ".magi/magi": macOS normally has a case-insensitive
-    // filesystem, so that path aliases the ".magi/MAGI" source checkout.
-    const current = join(homedir(), ".magi", localName);
-    // Workspaces that an earlier release created under ".magi/ts-magi/<name>" are
-    // opened where they are: agents already have data there.
-    const previous = join(homedir(), ".magi", "ts-magi", localName);
-    this.workspace = resolve(
-      workspace ?? (existsSync(current) || !existsSync(previous) ? current : previous),
-    );
+    // filesystem, so that path aliases a ".magi/MAGI" source checkout.
+    this.workspace = resolve(workspace ?? join(homedir(), ".magi", localName));
     const memoriesPath = join(this.workspace, "memories", "books.db");
     const jobsPath = join(this.workspace, "logs", "jobs.db");
     mkdirSync(join(this.workspace, "memories"), { recursive: true });
     mkdirSync(join(this.workspace, "logs"), { recursive: true });
-    adoptLegacyDatabase(join(this.workspace, "memories", "magi.db"), memoriesPath);
-    adoptLegacyDatabase(join(this.workspace, "jobs", "magi.db"), jobsPath);
     const memories = new Database(memoriesPath);
     const jobDb = new Database(jobsPath);
     for (const client of [memories, jobDb]) {
@@ -134,15 +126,6 @@ export class Bus {
     this.db.$client.close();
   }
 
-}
-
-/** Move a pre-layout-change SQLite database (and its WAL sidecars) without losing history. */
-function adoptLegacyDatabase(legacyPath: string, path: string): void {
-  if (existsSync(path) || !existsSync(legacyPath)) return;
-  for (const suffix of ["-wal", "-shm", ""]) {
-    const legacyFile = `${legacyPath}${suffix}`;
-    if (existsSync(legacyFile)) renameSync(legacyFile, `${path}${suffix}`);
-  }
 }
 
 export type { JobInput };

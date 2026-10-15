@@ -140,7 +140,6 @@ export class Store {
     this.chatSeq.clear();
     this.idempotency.clear();
     this.chatIdempotency.clear();
-    this.relay?.adoptLegacy();
     const directory = this.relay?.loadDirectory();
     if (directory) {
       for (const agent of directory.agents) {

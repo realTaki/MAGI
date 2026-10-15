@@ -80,7 +80,7 @@ jobs:
           npm version "$version" --no-git-tag-version --allow-same-version
 
       - name: Test app
-        # `magi-runtime.test.ts` covers worktree creation, failure fallback,
+        # `magi-runtime.test.ts` covers clone creation, failure fallback,
         # merge/restart and rebuild flows — none of which run elsewhere today
         # (this repo has no PR workflow that re-executes them). The single test
         # that's expensive on the Windows runner is the live "a real MAGI boots

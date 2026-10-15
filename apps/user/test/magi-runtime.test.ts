@@ -36,14 +36,21 @@ async function git(cwd, args) {
   return (await exec("git", args, { cwd })).stdout;
 }
 
-async function makeCheckout(root, autocrlf = false) {
-  const checkout = path.join(root, "checkout");
-  await git(root, ["init", "--quiet", checkout]);
-  await git(checkout, ["config", "core.autocrlf", String(autocrlf)]);
-  writeFileSync(path.join(checkout, "README.md"), "one\n");
-  await git(checkout, ["add", "."]);
-  await git(checkout, ["-c", "user.email=a@b", "-c", "user.name=a", "commit", "--quiet", "-m", "one"]);
-  return checkout;
+async function makeOrigin(root, autocrlf = false) {
+  const origin = path.join(root, "origin.git");
+  await git(root, ["init", "--quiet", "--bare", origin]);
+  const seed = path.join(root, "seed");
+  await git(root, ["clone", "--quiet", origin, seed]);
+  await git(seed, ["config", "core.autocrlf", String(autocrlf)]);
+  await git(seed, ["config", "user.email", "a@b"]);
+  await git(seed, ["config", "user.name", "a"]);
+  writeFileSync(path.join(seed, "README.md"), "one\n");
+  await git(seed, ["add", "."]);
+  await git(seed, ["commit", "--quiet", "-m", "one"]);
+  await git(seed, ["branch", "-M", "main"]);
+  await git(seed, ["push", "--quiet", "-u", "origin", "HEAD:main"]);
+  await git(origin, ["symbolic-ref", "HEAD", "refs/heads/main"]);
+  return { origin, seed };
 }
 
 /** Records managed Node/npm calls while letting Git use the real executable. */
@@ -78,15 +85,16 @@ function recorder() {
   return { run, spawnProcess, npm, spawns };
 }
 
-function runtimeWith(checkout, home, recorded, log = () => {}) {
+function runtimeWith(origin, home, recorded, log = () => {}) {
   return createMagiRuntime({
-    checkout,
+    checkout: origin,
+    repository: origin,
     home,
     base: "http://127.0.0.1:42069",
     tools: { git: "git", env: process.env, ...testRuntime },
     run: recorded.run,
     spawnProcess: recorded.spawnProcess,
-    useWorktrees: true,
+    managed: true,
     log,
   });
 }
@@ -94,18 +102,19 @@ function runtimeWith(checkout, home, recorded, log = () => {}) {
 test("every MAGI gets its own branch checked out inside its workspace", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-source-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const checkout = await makeCheckout(root);
+  const { origin } = await makeOrigin(root);
   const home = path.join(root, "home");
   const recorded = recorder();
-  const runtime = runtimeWith(checkout, home, recorded);
+  const runtime = runtimeWith(origin, home, recorded);
 
   assert.deepEqual(await runtime.startAll([agent]), { started: [agent.handle], failed: [] });
 
   const source = agentSource(home, agent.handle);
   assert.equal(source, path.join(home, ".magi", "eva-000", "MAGI"));
-  assert.equal(existsSync(path.join(source, ".git")), true, "the worktree has its own .git pointer");
+  assert.equal(existsSync(path.join(source, ".git")), true, "the clone has its own .git directory");
   assert.equal((await git(source, ["rev-parse", "--abbrev-ref", "HEAD"])).trim(), agentBranch(agent.handle));
-  assert.equal((await git(checkout, ["branch", "--list", "magi/eva-000"])).trim().length > 0, true);
+  assert.equal((await git(source, ["rev-parse", "--is-inside-work-tree"])).trim(), "true");
+  assert.equal((await git(origin, ["branch", "--list", "magi/eva-000"])).trim(), "");
 
   // Dependencies belong to that checkout, and the process runs from it.
   assert.deepEqual(recorded.npm, [
@@ -138,74 +147,69 @@ test("every MAGI gets its own branch checked out inside its workspace", async (t
   assert.deepEqual(runtime.running(), []);
 });
 
-test("a checkout that cannot be branched falls back to the shared sources", async (t) => {
-  const root = mkdtempSync(path.join(tmpdir(), "magi-fallback-"));
+test("a checkout that cannot be cloned fails instead of sharing another tree", async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-clone-fail-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const checkout = await makeCheckout(root);
-  const logs = [];
   const recorded = recorder();
   const runtime = createMagiRuntime({
-    checkout,
+    checkout: path.join(root, "checkout"),
+    repository: path.join(root, "missing.git"),
     home: path.join(root, "home"),
     base: "http://127.0.0.1:42069",
     tools: { git: "git", env: process.env, ...testRuntime },
-    run: async (binary) => {
-      if (binary === testRuntime.node) return "";
-      throw new Error("git is unavailable");
-    },
+    run: recorded.run,
     spawnProcess: recorded.spawnProcess,
-    useWorktrees: true,
-    log: (line) => logs.push(line),
+    managed: true,
+    log: () => {},
   });
 
-  assert.deepEqual(await runtime.start(agent), { handle: agent.handle, started: true });
-  assert.equal(recorded.spawns[0].options.cwd, path.join(checkout, "apps", "eva"));
-  assert.equal(existsSync(agentSource(path.join(root, "home"), agent.handle)), false);
-  assert.equal(logs.some((line) => line.includes("running it from")), true);
+  await assert.rejects(runtime.start(agent), /Could not clone/);
+  assert.equal(recorded.spawns.length, 0);
 });
 
 for (const autocrlf of [false, true]) {
 test(`merging advances a MAGI branch and restarts it (autocrlf=${autocrlf})`, async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-merge-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const checkout = await makeCheckout(root, autocrlf);
+  const { origin, seed } = await makeOrigin(root, autocrlf);
   const recorded = recorder();
-  const runtime = runtimeWith(checkout, path.join(root, "home"), recorded);
+  const runtime = runtimeWith(origin, path.join(root, "home"), recorded);
   await runtime.start(agent);
   const source = agentSource(path.join(root, "home"), agent.handle);
+  if (autocrlf) await git(source, ["config", "core.autocrlf", "true"]);
 
-  const branch = (await git(checkout, ["rev-parse", "--abbrev-ref", "HEAD"])).trim();
-  writeFileSync(path.join(checkout, "README.md"), "two\n");
-  await git(checkout, ["add", "."]);
-  await git(checkout, ["-c", "user.email=a@b", "-c", "user.name=a", "commit", "--quiet", "-m", "two"]);
+  writeFileSync(path.join(seed, "README.md"), "two\n");
+  await git(seed, ["add", "."]);
+  await git(seed, ["commit", "--quiet", "-m", "two"]);
+  await git(seed, ["push", "--quiet", "origin", "main"]);
 
   const merged = await runtime.merge(agent);
-  assert.deepEqual(merged, { handle: agent.handle, merged: true, from: branch });
+  assert.deepEqual(merged, { handle: agent.handle, merged: true, from: "origin/main" });
   assert.equal(readFileSync(path.join(source, "README.md"), "utf8").replace(/\r\n/g, "\n"), "two\n");
   assert.equal(await git(source, ["show", "HEAD:README.md"]), "two\n", "Git blob retains the exact committed content");
   if (autocrlf) assert.equal(readFileSync(path.join(source, "README.md"), "utf8"), "two\r\n", "fixture really exercises CRLF checkout");
   assert.equal(recorded.spawns.length, 2, "a MAGI that moved is restarted on the merged source");
 
   // Nothing new to merge: no second restart.
-  assert.deepEqual(await runtime.merge(agent), { handle: agent.handle, merged: false, from: branch });
+  assert.deepEqual(await runtime.merge(agent), { handle: agent.handle, merged: false, from: "origin/main" });
   assert.equal(recorded.spawns.length, 2);
 });
 
 test(`a conflicting merge is aborted and reported (autocrlf=${autocrlf})`, async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-conflict-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const checkout = await makeCheckout(root, autocrlf);
+  const { origin, seed } = await makeOrigin(root, autocrlf);
   const recorded = recorder();
-  const runtime = runtimeWith(checkout, path.join(root, "home"), recorded);
+  const runtime = runtimeWith(origin, path.join(root, "home"), recorded);
   await runtime.start(agent);
   const source = agentSource(path.join(root, "home"), agent.handle);
 
-  // The agent evolves its own branch, the checkout moves the same file.
   writeFileSync(path.join(source, "README.md"), "agent\n");
   await git(source, ["-c", "user.email=a@b", "-c", "user.name=a", "commit", "--quiet", "-am", "agent"]);
-  writeFileSync(path.join(checkout, "README.md"), "main\n");
-  await git(checkout, ["add", "."]);
-  await git(checkout, ["-c", "user.email=a@b", "-c", "user.name=a", "commit", "--quiet", "-m", "main"]);
+  writeFileSync(path.join(seed, "README.md"), "main\n");
+  await git(seed, ["add", "."]);
+  await git(seed, ["commit", "--quiet", "-m", "main"]);
+  await git(seed, ["push", "--quiet", "origin", "main"]);
 
   await assert.rejects(runtime.merge(agent), /could not merge .* was aborted/);
   assert.equal(readFileSync(path.join(source, "README.md"), "utf8").replace(/\r\n/g, "\n"), "agent\n");
@@ -217,9 +221,9 @@ test(`a conflicting merge is aborted and reported (autocrlf=${autocrlf})`, async
 test("rebuilding installs and builds in the MAGI's own checkout", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-rebuild-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const checkout = await makeCheckout(root);
+  const { origin } = await makeOrigin(root);
   const recorded = recorder();
-  const runtime = runtimeWith(checkout, path.join(root, "home"), recorded);
+  const runtime = runtimeWith(origin, path.join(root, "home"), recorded);
   await runtime.start(agent);
   const source = agentSource(path.join(root, "home"), agent.handle);
 
@@ -264,10 +268,6 @@ test("a real MAGI boots from its own checkout", { timeout: 300_000 }, async (t) 
     await Promise.all(stopped);
     rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
-  const checkout = path.join(root, "checkout");
-  // `--local` hard-links Git objects, which macOS sandboxed temp directories
-  // reject. `--no-local` still tests a real clone without that filesystem tie.
-  await git(root, ["clone", "--quiet", "--no-local", repository, checkout]);
   const home = path.join(root, "home");
   const childLogs: string[] = [];
   const runtimeEnv = {
@@ -277,7 +277,8 @@ test("a real MAGI boots from its own checkout", { timeout: 300_000 }, async (t) 
     PATH: [path.dirname(installedRuntime.node), process.env.PATH ?? ""].join(path.delimiter),
   };
   runtime = createMagiRuntime({
-    checkout,
+    checkout: repository,
+    repository,
     home,
     // Nothing listens there: this test only checks that the agent boots.
     base: "http://127.0.0.1:9",
@@ -307,7 +308,7 @@ test("a real MAGI boots from its own checkout", { timeout: 300_000 }, async (t) 
       children.push(child);
       return child;
     },
-    useWorktrees: true,
+    managed: true,
     log: (line) => childLogs.push(line),
   });
 

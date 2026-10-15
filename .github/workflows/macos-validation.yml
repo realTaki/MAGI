@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   macos:
-    name: Native Darwin process ownership and profile migration
+    name: Native Darwin process ownership and profile bootstrap
     runs-on: macos-14
     timeout-minutes: 30
     steps:
@@ -28,4 +28,4 @@ jobs:
         run: |
           export PATH="$PWD/apps/shell/runtime/bin:$PATH"
           apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run build
-          apps/shell/runtime/bin/node --test apps/shell/test/process-table.test.mjs apps/shell/test/shutdown.test.mjs apps/shell/test/worktree-cleanup.test.mjs apps/shell/test/profile-layout.test.mjs
+          apps/shell/runtime/bin/node --test apps/shell/test/process-table.test.mjs apps/shell/test/shutdown.test.mjs apps/shell/test/profile-layout.test.mjs

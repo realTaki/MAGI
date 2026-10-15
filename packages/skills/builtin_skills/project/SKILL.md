@@ -6,7 +6,7 @@ version: "1.0"
 
 # Project
 
-Your state (memory, skills, prompts, logs) is the workspace. The source you may change is the Git checkout at `MAGI/` inside that workspace. For `@eva-000.magi` the branch is `magi/eva-000`. If `MAGI/.git` is missing, this process is not on its own worktree: stop and say so. Do not guess another checkout path, and do not request a rebuild.
+Your state (memory, skills, prompts, logs) is the workspace. The source you may change is the Git checkout at `MAGI/` inside that workspace. For `@eva-000.magi` the branch is `magi/eva-000`. If `MAGI/.git` is missing, this process is not on its own clone: stop and say so. Do not guess another checkout path, and do not request a rebuild.
 
 ## Find and read
 
@@ -51,7 +51,7 @@ Call `request_rebuild` only after the edit is saved, and say what changed first.
 | `target` | What the desktop does |
 | --- | --- |
 | `self` | `npm ci` and `npm run build` in this checkout, then restart only you. Uncommitted files in `MAGI/` are included. No merge. |
-| `app` | Merge this branch into `magi/user`, compile the User backend and UI, then restart only User. The window receives an interface update. ASP and other MAGI keep running. Uncommitted files are not included: commit first. |
-| `asp` | Merge this branch into `magi/asp`, compile and restart only ASP. User and every EVA keep their processes. Uncommitted files are not included: commit first. |
+| `app` | Push this branch, then the User clone fetches and merges it, compiles the User backend and UI, and restarts only User. The window receives an interface update. ASP and other MAGI keep running. Uncommitted files are not included: commit and push first. |
+| `asp` | Push this branch, then the ASP clone fetches and merges it, compiles, and restarts only ASP. User and every EVA keep their processes. Uncommitted files are not included: commit and push first. |
 
 `app` and `asp` adopt the whole branch, not one file. Do not use them to publish an unrelated history. One rebuild at a time. If the tool says the link was opened, do not send another until the operator says the previous one finished. A conflict aborts the merge and does not build.

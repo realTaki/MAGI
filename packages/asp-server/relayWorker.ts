@@ -4,11 +4,8 @@ import { eq } from "drizzle-orm";
 import { BaseWorker, Bus, SYSTEM_CONTACT_ID } from "@magi/bus";
 
 import { LocalDatabase } from "./db/database.js";
-import { aspContactAllowlist, aspContacts } from "./db/tables/contacts.js";
-import { aspChats } from "./db/tables/chats.js";
 import { aspEvents } from "./db/tables/events.js";
 import { aspMessageRecipients } from "./db/tables/messageRecipients.js";
-import { aspParticipants } from "./db/tables/participants.js";
 import { relayAllowlist, relayPrincipals } from "./db/tables/relayPrincipals.js";
 import { relayChats } from "./db/tables/relayChats.js";
 import { relayParticipants } from "./db/tables/relayParticipants.js";
@@ -27,53 +24,6 @@ export class RelayWorker extends BaseWorker {
 
   async poll(): Promise<boolean> {
     return false;
-  }
-
-  adoptLegacy(): void {
-    const db = this.#db();
-    if (db.select({ handle: relayPrincipals.handle }).from(relayPrincipals).limit(1).get()) {
-      return;
-    }
-    if (db.select({ handle: aspContacts.handle }).from(aspContacts).limit(1).get() === undefined) {
-      return;
-    }
-    for (const row of db.select().from(aspContacts).all()) {
-      const allowlist = new Set(
-        db.select().from(aspContactAllowlist)
-          .where(eq(aspContactAllowlist.contact_handle, row.handle))
-          .all()
-          .map((entry) => entry.allowed_handle),
-      );
-      this.savePrincipal({
-        handle: row.handle,
-        token: row.token,
-        name: row.name,
-        nickname: row.nickname,
-        inbound_policy: row.inbound_policy,
-        allowlist,
-        managed: row.managed,
-      });
-    }
-    for (const row of db.select().from(aspChats).all()) {
-      this.saveChat({
-        id: row.id,
-        creator: row.creator,
-        state: row.state,
-        topic: row.topic,
-        created_at: row.created_at,
-        ended_at: row.ended_at,
-        description: row.description,
-        kind: row.kind,
-      }, row.next_sequence);
-    }
-    for (const row of db.select().from(aspParticipants).all()) {
-      this.saveParticipant(row.chat_id, {
-        handle: row.handle,
-        status: row.status,
-        joined_at: row.joined_at,
-        left_at: row.left_at,
-      });
-    }
   }
 
   loadDirectory(): {

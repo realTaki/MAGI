@@ -20,8 +20,7 @@
  *   provider.settings/save   — keep the key on SettingsBook and sync through ASP.
  *   source.status            — branch, commit, and how this checkout sits
  *                              against the AgenticSociety remote.
- *   source.update            — fetch the remote and merge it into this checkout,
- *                              which is where every worktree syncs from.
+ *   source.update            — fetch the remote and merge it into this checkout.
  *
  * ``progress`` is ``(message, percent)`` with an absolute 0..1 percentage.
  */
@@ -31,7 +30,8 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ASP_ORIGIN } from "./asp-process.js";
-import { agentBranch, createMagiRuntime } from "./magi-runtime.js";
+import { ensureManagedClone } from "./clone.js";
+import { agentBranch, agentSource, createMagiRuntime } from "./magi-runtime.js";
 import { downloadShellInstaller, installerPath, shellRelease } from "./shell-update.js";
 // A brand-new society should not be an empty room. ASP names MAGI eva-000,
 // eva-001, … as they are created; these are the nicknames of the first three.
@@ -208,13 +208,14 @@ function parseGitHubSlug(url) {
 export function createLocalApi(context) {
   const { paths, repository, tools, emit, openExternal, copy, shellUpdate, managed = false, aspProcess, bus } = context;
   const command = context.command ?? localCommand;
-  // Shell loads this backend from the User worktree, while the source checkout
-  // remains the Git/worktree authority for the local runtime.
+  // Shell loads this backend from the User clone. Each app has its own clone
+  // of MAGI_REPOSITORY_URL on branch magi/<name>.
   const appCheckout = paths.appCheckout ?? paths.checkout;
   let aspCheckout = paths.checkout;
   const spawnProcess = context.spawn ?? spawn;
   const git = { binary: tools.git, env: tools.env };
   const options = { cwd: paths.checkout, env: tools.env };
+  const gitAt = (cwd) => ({ cwd, env: tools.env });
   let deviceFlowPending = false;
   let runtimeBusy = false;
   let chatStorePromise = null;
@@ -223,7 +224,6 @@ export function createLocalApi(context) {
   let disposal = null;
   let initialization = null;
   const lifetime = new AbortController();
-  let providerRelayReady = false;
   const providerAttempted = new Set();
   // ASP keeps the roll of agents; this backend prepares their source trees,
   // while Shell owns processes and commands through the host (see magi-runtime.ts).
@@ -238,7 +238,9 @@ export function createLocalApi(context) {
     spawnProcess,
     startProcess: context.startProcess,
     prepareDependencies: context.prepareDependencies,
-    useWorktrees: managed,
+    managed,
+    repository,
+    configureGit: (root) => configureClone(root),
     initialProcesses: context.initialProcesses,
     log: (message) => console.error(message),
   });
@@ -254,36 +256,20 @@ export function createLocalApi(context) {
   }
 
   /**
-   * User prepares this separate `magi/asp` source worktree. Shell remains the
-   * process and command owner; creating a worktree grants no lifecycle authority.
+   * User prepares this separate `magi/asp` clone. Shell remains the
+   * process and command owner; creating a clone grants no lifecycle authority.
    */
-  async function ensureAspWorktree() {
+  async function ensureAspCheckout() {
     if (!managed) return aspCheckout;
     const destination = path.join(paths.home, ".magi", "asp", "MAGI");
-    if (existsSync(path.join(destination, ".git"))) {
-      aspCheckout = destination;
-      return aspCheckout;
-    }
-    if (existsSync(destination)) {
-      throw new Error(`MAGI ASP worktree path is not a Git checkout: ${destination}`);
-    }
-    mkdirSync(path.dirname(destination), { recursive: true });
-    let branchExists = true;
-    try {
-      await command(git.binary, ["show-ref", "--verify", "--quiet", "refs/heads/magi/asp"], {
-        ...options,
-        description: "Could not look up the ASP worktree branch",
-      });
-    } catch {
-      branchExists = false;
-    }
-    await command(
-      git.binary,
-      branchExists
-        ? ["worktree", "add", destination, "magi/asp"]
-        : ["worktree", "add", "-b", "magi/asp", destination, "HEAD"],
-      { ...options, description: "Could not create the ASP worktree" },
-    );
+    await ensureManagedClone({
+      run: (args, gitOptions) => command(git.binary, args, gitOptions),
+      env: tools.env,
+      url: repository,
+      destination,
+      branch: "magi/asp",
+    });
+    await configureClone(destination);
     aspCheckout = destination;
     return aspCheckout;
   }
@@ -300,7 +286,6 @@ export function createLocalApi(context) {
   const tokenPath = path.join(appData, "github-token");
   const metadataPath = path.join(appData, "github.json");
   const avatarPath = path.join(appData, "github-avatar");
-  const providerPath = path.join(appData, "provider.json");
   if (existsSync(tokenPath)) chmodSync(tokenPath, 0o600);
   const tokenFile = () => tokenPath;
   const metadataFile = () => metadataPath;
@@ -433,27 +418,6 @@ export function createLocalApi(context) {
     });
   }
 
-  function adoptProvider() {
-    if (!existsSync(providerPath)) return;
-    let legacy;
-    try { legacy = JSON.parse(readFileSync(providerPath, "utf8")); }
-    catch { throw new Error(`Invalid legacy provider settings; retained at ${providerPath}`); }
-    const fields = ["provider", "model", "api_key", "base_url"];
-    if (!legacy || typeof legacy !== "object" || Array.isArray(legacy)
-        || !fields.some((field) => field in legacy)
-        || fields.some((field) => legacy[field] !== undefined && legacy[field] !== null && typeof legacy[field] !== "string")) {
-      throw new Error(`Invalid legacy provider settings; retained at ${providerPath}`);
-    }
-    const settings = normalizeProvider(legacy);
-    const existing = readProvider();
-    if (existing !== null && JSON.stringify(existing) !== JSON.stringify(settings)) {
-      throw new Error(`Legacy provider settings conflict with SettingsBook; retained at ${providerPath}`);
-    }
-    if (existing === null) writeProvider(settings);
-    rmSync(providerPath, { force: true });
-  }
-  adoptProvider();
-
   async function providerUsage() {
     const settings = readProvider();
     const provider = settings?.provider ?? null;
@@ -566,10 +530,10 @@ export function createLocalApi(context) {
     }
   }
 
-  async function gitConfigValue(key) {
+  async function gitConfigValue(key, cwd = paths.checkout) {
     try {
       return (await command(git.binary, ["config", "--local", "--get", key], {
-        ...options,
+        ...gitAt(cwd),
         description: `Could not read the Git setting ${key}`,
       })).trim();
     } catch {
@@ -577,10 +541,10 @@ export function createLocalApi(context) {
     }
   }
 
-  async function remoteUrl(name) {
+  async function remoteUrl(name, cwd = paths.checkout) {
     try {
       return (await command(git.binary, ["remote", "get-url", name], {
-        ...options,
+        ...gitAt(cwd),
         description: `Could not read the ${name} remote`,
       })).trim();
     } catch {
@@ -597,7 +561,7 @@ export function createLocalApi(context) {
     return `!f() { read -r MAGI_GITHUB_TOKEN < "${file}"; echo username=x-access-token; echo "password=$MAGI_GITHUB_TOKEN"; }; f`;
   }
 
-  async function assignGitIdentity(viewer) {
+  async function assignGitIdentity(viewer, cwd = paths.checkout) {
     if (typeof viewer?.login !== "string" || viewer.login === "") {
       return;
     }
@@ -606,15 +570,15 @@ export function createLocalApi(context) {
     const email = Number.isInteger(viewer.id)
       ? `${viewer.id}+${viewer.login}@users.noreply.github.com`
       : "";
-    if ((await gitConfigValue("user.name")) === "") {
+    if ((await gitConfigValue("user.name", cwd)) === "") {
       await command(git.binary, ["config", "--local", "user.name", name], {
-        ...options,
+        ...gitAt(cwd),
         description: "Could not set the Git commit identity",
       });
     }
-    if (email !== "" && (await gitConfigValue("user.email")) === "") {
+    if (email !== "" && (await gitConfigValue("user.email", cwd)) === "") {
       await command(git.binary, ["config", "--local", "user.email", email], {
-        ...options,
+        ...gitAt(cwd),
         description: "Could not set the Git commit identity",
       });
     }
@@ -666,36 +630,65 @@ export function createLocalApi(context) {
 
   // Points the checkout at the operator's fork and keeps upstream available for
   // merges: origin is the fork, upstream is the repository it was cloned from.
-  async function pointCheckoutAtFork(fork, upstream, viewer) {
+  async function pointCheckoutAtFork(fork, upstream, viewer, cwd = paths.checkout) {
     const forkUrl = `https://github.com/${fork.full_name}.git`;
     const upstreamUrl = `https://github.com/${upstream.owner}/${upstream.name}.git`;
 
-    emit("github.remote", { remote: forkUrl });
-    const originUrl = await remoteUrl("origin");
+    if (cwd === paths.checkout) emit("github.remote", { remote: forkUrl });
+    const originUrl = await remoteUrl("origin", cwd);
     await command(
       git.binary,
       originUrl === ""
         ? ["remote", "add", "origin", forkUrl]
         : ["remote", "set-url", "origin", forkUrl],
-      { ...options, description: "Could not point origin at your fork" },
+      { ...gitAt(cwd), description: "Could not point origin at your fork" },
     );
-    const trackedUpstream = await remoteUrl("upstream");
+    const trackedUpstream = await remoteUrl("upstream", cwd);
     await command(
       git.binary,
       trackedUpstream === ""
         ? ["remote", "add", "upstream", upstreamUrl]
         : ["remote", "set-url", "upstream", upstreamUrl],
-      { ...options, description: "Could not configure the upstream remote" },
+      { ...gitAt(cwd), description: "Could not configure the upstream remote" },
     );
     await command(git.binary, ["config", "--local", "--replace-all", "credential.helper", ""], {
-      ...options,
+      ...gitAt(cwd),
       description: "Could not reset the local Git credential helper",
     });
     await command(git.binary, ["config", "--local", "--add", "credential.helper", credentialHelperValue()], {
-      ...options,
+      ...gitAt(cwd),
       description: "Could not store the Git credential helper",
     });
-    await assignGitIdentity(viewer);
+    await assignGitIdentity(viewer, cwd);
+  }
+
+  async function configureClone(root) {
+    if (!existsSync(path.join(root, ".git"))) return;
+    const token = readToken();
+    const metadata = readMetadata();
+    if (token === null || typeof metadata.fork !== "string" || metadata.fork === "") return;
+    const upstream = upstreamSlug();
+    if (upstream === null) return;
+    await pointCheckoutAtFork({ full_name: metadata.fork }, upstream, {
+      login: metadata.login,
+      name: metadata.name,
+    }, root);
+  }
+
+  async function configureManagedClones(fork, upstream, viewer) {
+    const roots = new Set([paths.checkout, appCheckout]);
+    if (existsSync(path.join(aspCheckout, ".git"))) roots.add(aspCheckout);
+    const aspDestination = path.join(paths.home, ".magi", "asp", "MAGI");
+    if (existsSync(path.join(aspDestination, ".git"))) roots.add(aspDestination);
+    try {
+      for (const agent of await magiRoster()) {
+        const root = agentSource(paths.home, agent.handle);
+        if (existsSync(path.join(root, ".git"))) roots.add(root);
+      }
+    } catch {
+      // ASP may not be up yet; existing MAGI clones are still retargeted below.
+    }
+    for (const root of roots) await pointCheckoutAtFork(fork, upstream, viewer, root);
   }
 
   async function currentState() {
@@ -780,7 +773,7 @@ export function createLocalApi(context) {
     }
     const viewer = await githubApi("/user", { token });
     const fork = await ensureFork(token, viewer.login, upstream);
-    await pointCheckoutAtFork(fork, upstream, viewer);
+    await configureManagedClones(fork, upstream, viewer);
     await rememberViewer(viewer, { fork: fork.full_name, connectedAt: Date.now() });
     emit("github.connected", { login: viewer.login, fork: fork.full_name });
     return await currentState();
@@ -832,12 +825,12 @@ export function createLocalApi(context) {
    * is prepared: a developer's own tree is already theirs to prepare.
    */
   async function prepare(progress?: (message: string, percent: number) => void) {
-    await ensureAspWorktree();
+    await ensureAspCheckout();
     const aspDir = path.join(aspCheckout, "apps", "asp");
     const appDir = path.join(appCheckout, "apps", "user");
     // The MAGI runtime is a workspace now: its packages hang off the checkout root,
-    // so the root carries their lockfile and their node_modules — the User worktree
-    // installs them for itself, while each MAGI's own worktree installs its own.
+    // so the root carries their lockfile and their node_modules — the User clone
+    // installs them for itself, while each MAGI's own clone installs its own.
     const magiDir = appCheckout;
     const required = [
       path.join(aspDir, "package-lock.json"),
@@ -932,19 +925,6 @@ export function createLocalApi(context) {
     return data;
   }
 
-  async function migrateLegacyProvider(token) {
-    const legacy = await aspJson("/settings/provider/legacy", { token });
-    if (legacy === null) return;
-    if (readProvider() === null) writeProvider(normalizeProvider(legacy));
-    await aspJson("/settings/provider/legacy", { token, method: "DELETE" });
-  }
-
-  async function ensureProviderRelay(token) {
-    if (providerRelayReady) return;
-    await migrateLegacyProvider(token);
-    providerRelayReady = true;
-  }
-
   async function syncProvider(settings, handles, token) {
     return await aspJson("/settings/provider", {
       token,
@@ -959,8 +939,6 @@ export function createLocalApi(context) {
     let token;
     try {
       token = (await aspJson("/operator")).token;
-      // Adopt durable legacy state before the requested change can replace it.
-      await ensureProviderRelay(token);
     } catch (error) {
       writeProvider(settings); // Preserve the existing offline-save contract.
       throw new Error(`Saved in the app, but MAGI sync failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -1094,16 +1072,15 @@ export function createLocalApi(context) {
   async function activateProviderSync() {
     const { token } = await aspJson("/operator");
     try {
-      await ensureProviderRelay(token);
       watchProviderRecipients(token);
     } catch (error) {
-      console.error(`[magi-app] provider migration: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`[magi-app] provider sync: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
   /** Brings local ASP up unless something already answers on its port. */
   async function start(progress?: (message: string, percent: number) => void) {
-    await ensureAspWorktree();
+    await ensureAspCheckout();
     try {
       await aspProcess.ensure(aspCheckout, progress);
     } catch (error) {
@@ -1297,19 +1274,27 @@ export function createLocalApi(context) {
     return await runtimeAction(rebuildAspBody);
   }
 
-  /**
-   * The branch every worktree syncs from. The source checkout stays source-only,
-   * so a module's tree only learns about a new commit when it is merged into.
-   */
-  async function sourceBranch() {
-    const branch = await gitText(
-      ["rev-parse", "--abbrev-ref", "HEAD"],
-      "Could not read the source checkout branch",
-    );
+  async function sourceBranch(cwd = paths.checkout) {
+    const branch = (
+      await command(git.binary, ["rev-parse", "--abbrev-ref", "HEAD"], {
+        ...gitAt(cwd),
+        description: "Could not read the checkout branch",
+      })
+    ).trim();
     if (branch === "HEAD") {
-      throw new Error("The source checkout is on a detached HEAD; check out a branch first.");
+      throw new Error("The checkout is on a detached HEAD; check out a branch first.");
     }
     return branch;
+  }
+
+  async function originDefault(cwd) {
+    return (
+      await command(git.binary, ["rev-parse", "--abbrev-ref", "origin/HEAD"], {
+        ...gitAt(cwd),
+        env: { ...tools.env, GIT_TERMINAL_PROMPT: "0" },
+        description: "Could not read the origin default branch",
+      })
+    ).trim();
   }
 
   /** Merge one ref into a checkout; a conflict is aborted, never left half-merged. */
@@ -1331,16 +1316,20 @@ export function createLocalApi(context) {
     }
   }
 
-  /** Merge the source branch into one module's worktree. */
-  async function syncWorktree(root, branch) {
-    const from = await sourceBranch();
+  /** Fetch origin and merge its default branch into this clone. */
+  async function syncCheckout(root, branch) {
+    await command(git.binary, ["fetch", "--prune", "origin"], {
+      ...gitAt(root),
+      env: { ...tools.env, GIT_TERMINAL_PROMPT: "0" },
+      description: "Could not fetch from origin",
+    });
+    const from = await originDefault(root);
     return { branch, from, merged: await mergeInto(root, branch, from) };
   }
 
   /**
-   * Update the source checkout itself from its remote. Every worktree syncs from
-   * this checkout, so this is the outermost step of the chain the build page
-   * offers: origin → source checkout → each module's worktree → rebuild.
+   * Update the source checkout itself from its remote. Each module clone
+   * fetches the same remote independently.
    */
   async function updateSource() {
     const branch = await sourceBranch();
@@ -1371,31 +1360,31 @@ export function createLocalApi(context) {
   }
 
   /**
-   * Sync one module's worktree from the source checkout. Each module is synced by
+   * Sync one module's clone from its origin. Each module is synced by
    * its own button: the operator decides what to move, and a conflict is answered
    * here instead of being buried in a sweep.
    */
   async function syncModule(module, root, branch) {
     try {
-      const { merged } = await syncWorktree(root, branch);
+      const { merged } = await syncCheckout(root, branch);
       return { synced: [{ module, merged }], failed: [] };
     } catch (error) {
       return { synced: [], failed: [{ module, detail: describe(error) }] };
     }
   }
 
-  /** The App's worktree, on the branch the shell checks out for it. */
+  /** The App's clone, on the branch the shell checks out for it. */
   function syncApp() {
     return syncModule("user", appCheckout, "magi/user");
   }
 
-  /** The ASP worktree, created here if this is the first time it is needed. */
+  /** The ASP clone, created here if this is the first time it is needed. */
   async function syncAsp() {
-    await ensureAspWorktree();
+    await ensureAspCheckout();
     return await syncModule("asp", aspCheckout, "magi/asp");
   }
 
-  /** Every MAGI's own worktree; `merge` restarts one whose branch actually moved. */
+  /** Every MAGI's own clone; `merge` restarts one whose branch actually moved. */
   async function syncMagis() {
     const synced = [];
     const failed = [];
