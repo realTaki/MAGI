@@ -185,8 +185,7 @@ describe("local MAGI agent", () => {
     const jobs = new Database(join(path, "logs/jobs.db"), { readonly: true });
     const stored = (memories.prepare("SELECT content FROM books_messages ORDER BY id").all() as Array<{ content: string }>).map((row) => row.content);
     expect(stored).toHaveLength(2);
-    expect(stored[0]).toStartWith(`[contact id ${SYSTEM_CONTACT_ID} | `);
-    expect(stored[0]).toContain("]\nsave a note");
+    expect(stored[0]).toBe("save a note");
     expect(stored[1]).toBe("Done.");
     expect((jobs.prepare("SELECT type, status FROM jobs ORDER BY id").all() as Array<{ type: string; status: string }>)).toEqual([
       { type: "MessageDeliveryJob", status: "completed" },

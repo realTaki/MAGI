@@ -87,8 +87,7 @@ test("Telegram text reaches Agent and its reply is delivered", async () => {
     // The speaker is a contact of their own, and a member of the chat.
     const speaker = magi.bus.contacts.forTg("42");
     const stored = magi.bus.messages.list(chat.id);
-    expect(stored[0]?.content).toStartWith(`[contact id ${speaker.id} | `);
-    expect(stored[0]?.content).toContain("]\nhi");
+    expect(stored[0]?.content).toBe("hi");
     expect(stored[1]?.content).toBe("hello");
     expect(magi.bus.chatMembers.list(chat.id).map((member) => member.id)).toContain(speaker.id);
   } finally {
@@ -130,8 +129,7 @@ test("a reply to the MAGI in a group counts as a mention", async () => {
     const speaker = magi.bus.contacts.forTg("7");
     const stored = magi.bus.messages.list(chat.id);
     expect(stored[0]?.contact_id).toBe(speaker.id);
-    expect(stored[0]?.content).toStartWith(`[contact id ${speaker.id} | `);
-    expect(stored[0]?.content).toContain("]\nand this?");
+    expect(stored[0]?.content).toBe("and this?");
     expect(stored[1]?.content).toBe("hello");
     const members = magi.bus.chatMembers.list(chat.id).map((member) => member.id);
     expect(members).toContain(speaker.id);

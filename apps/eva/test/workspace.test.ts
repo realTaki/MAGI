@@ -74,19 +74,17 @@ test("one message job records both directions and carries only the message id", 
     // author the chat does not name is the operator.
     messageDelivery.send(bus, chat.id, "hello");
     const received = bus.messages.list(chat.id).at(-1)!;
-    expect(received).toMatchObject({ contact_id: SYSTEM_CONTACT_ID, llm_role: "user" });
-    expect(received.content).toStartWith(`[contact id ${SYSTEM_CONTACT_ID} | `);
-    expect(received.content).toContain("]\nhello");
+    expect(received).toMatchObject({ contact_id: SYSTEM_CONTACT_ID, content: "hello" });
     expect(bus.board("MessageDeliveryJob").claim("test")?.input)
       .toEqual({ message_id: received.id });
     // A message asked of someone else is kept as history, and nobody delivers it.
     messageDelivery.record(bus, chat.id, "not for me");
-    expect(bus.messages.list(chat.id).at(-1)?.llm_role).toBe("user");
+    expect(bus.messages.list(chat.id).at(-1)?.content).toBe("not for me");
     expect(bus.board("MessageDeliveryJob").claim("test")).toBeNull();
     // Sent: this MAGI's own words, so a channel is the one that acts on it.
     messageDelivery.send(bus, chat.id, "reply", MAGI_CONTACT_ID, "test");
     const sent = bus.messages.list(chat.id).at(-1)!;
-    expect(sent).toMatchObject({ contact_id: MAGI_CONTACT_ID, llm_role: "assistant", content: "reply" });
+    expect(sent).toMatchObject({ contact_id: MAGI_CONTACT_ID, content: "reply" });
     expect(bus.board("MessageDeliveryJob").claim("test")?.input)
       .toEqual({ message_id: sent.id });
   } finally {
@@ -122,8 +120,7 @@ test("adopts a workspace an earlier release created, keeping its data", async ()
     expect(reopened.settings.get("provider.name")).toBe("openai");
     expect(reopened.contacts.list().map((contact) => contact.name)).toContain("Ada");
     const restored = reopened.messages.list(reopened.chats.forChannel("cli", "legacy").id)[0]?.content;
-    expect(restored).toStartWith(`[contact id ${SYSTEM_CONTACT_ID} | `);
-    expect(restored).toContain("]\nhello");
+    expect(restored).toBe("hello");
     expect(tables(path, "memories/books.db")).toContain("__drizzle_migrations");
   } finally { reopened.close(); }
 });
@@ -167,8 +164,7 @@ test("a workspace numbered from 0 gets its contacts renumbered from 1", async ()
     expect(migrated.contacts.list().map((contact) => `${contact.id}:${contact.name}`)).toEqual(["1:system", "2:@rebase.magi", "5:Ada"]);
     const migratedMessages = migrated.messages.list(chat.id);
     expect(migratedMessages[0]?.contact_id).toBe(SYSTEM_CONTACT_ID);
-    expect(migratedMessages[0]?.content).toStartWith(`[contact id ${SYSTEM_CONTACT_ID} | `);
-    expect(migratedMessages[0]?.content).toContain("]\nfrom the operator");
+    expect(migratedMessages[0]?.content).toBe("from the operator");
     expect(migratedMessages[1]).toMatchObject({ contact_id: MAGI_CONTACT_ID, content: "from the magi" });
   } finally { migrated.close(); }
 
