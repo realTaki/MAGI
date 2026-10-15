@@ -74,10 +74,10 @@ improvement **within explicit, inspectable constraints**.
 ## Repository layout
 
 ```text
-apps/shell/        Electron shell: window, checkout, and bundled Node 24 and npm
-apps/user/          Operator process (BUS + webapp worker) and UI
-apps/asp/          ASP process (node dist/asp.js): BUS manager; worker in packages/asp-server
-apps/eva/         MAGI runtime: one process per MAGI — its entry and supervisor
+apps/shell/        Electron shell: window, checkout, and bundled Node 24 and npm. App dir stays shell.
+apps/user/          Operator process: Webapp plus host MAGI Balthasar (`@eva-000.magi`)
+apps/asp/          ASP process plus host MAGI Casper (`@eva-001.magi`)
+apps/eva/         Spawned MAGI runtime (Melchior `@eva-002.magi`, and later eva-NNN)
 packages/          The runtime's own packages: bus, manager, asp-server, webapp, agent, providers, tools, mcp, channel-*
 ```
 
@@ -121,11 +121,10 @@ observe work, propose a change, evaluate it, and retain what proves useful:
 | Term | Meaning |
 | --- | --- |
 | **MAGI** | One autonomous, governable agent. Also the Node 24 runtime in `apps/eva/` and `packages/`. |
-| **EVA** | A naming pattern for handles. ASP assigns `eva-000`, `eva-001`, and so on. The address is `@eva-000.magi`. |
+| **EVA** | A naming pattern for handles. Default society: Balthasar `@eva-000.magi` in Shell, Casper `@eva-001.magi` in ASP, Melchior `@eva-002.magi` as the spawned EVA. |
 
-The desktop app is the local lifecycle boundary: it owns each MAGI's branch,
-checkout and process. ASP relays their chats; it does not decide what a MAGI
-should say, and it never starts a process.
+The desktop app is the local lifecycle boundary: it owns spawned MAGI branches,
+checkouts, and processes. ASP relays chats and never starts a process.
 
 ## What exists today
 
@@ -133,12 +132,14 @@ should say, and it never starts a process.
   installs the workspace (`packages/`, `apps/`), builds the operator UI, and starts ASP. The
   package carries Node.js 24 and npm. It does not carry a Python runtime.
 - **ASP** — Node 24, `apps/asp/dist/asp.js`, bound to `127.0.0.1:42069`. It stores
-  chats and relay events in `~/.magi/asp/asp.sqlite`. Creating a bot spawns
-  that MAGI; creating a group opens a chat the operator can invite
-  MAGI into.
-- **One process per MAGI** — Node 24 runs `apps/eva/eva.ts`, which imports the runtime packages. The default workspace is
-  `~/.magi/<name>`. Each MAGI is an independent Git clone at
-  `~/.magi/<name>/MAGI` on branch `magi/<name>`.
+  chats and relay events in `~/.magi/asp/asp.sqlite`. The same process is Casper
+  (`@eva-001.magi`). Creating a bot registers a MAGI; only spawned handles
+  (`@eva-002` and later) start `eva.js`. Creating a group opens a chat the
+  operator can invite MAGI into.
+- **Host MAGIs and one spawned EVA** — Balthasar (`@eva-000.magi`) runs in the
+  operator process with the webapp. Casper runs in ASP. Melchior
+  (`@eva-002.magi`) runs `apps/eva/eva.ts` from `~/.magi/eva-002/MAGI`. Extra
+  MAGIs created later are spawned the same way.
 - **BUS inside each MAGI** — Books for chats, messages, memory, skills,
   tasks, contacts, prompts, and tools; Jobs for chat, model calls, tool calls,
   delivery, provider changes, tasks, and MCP server changes.
@@ -161,14 +162,15 @@ no root `deploy/` tree.
 **Desktop:** on first launch, the app clones the complete repository into
 `~/.magi/shell/MAGI`, prepares local dependencies, builds the WebUI, and starts ASP
 on [http://127.0.0.1:42069](http://127.0.0.1:42069). A startup page shows
-the preparation stages before opening the WebUI. When no MAGI exists yet, the
-backend seeds the first three, **MELCHIOR**, **BALTHASAR**, and **CASPER**.
+the preparation stages before opening the WebUI. The default society is
+**Balthasar** (`@eva-000.magi`, in the operator process), **Casper**
+(`@eva-001.magi`, in ASP), and **Melchior** (`@eva-002.magi`, the spawned EVA).
 The app is also the
 machine-local layer: connecting the checkout to the operator's GitHub account
 (fork plus `origin`) happens in the WebUI after startup, not while booting.
-Creating a bot is `POST /chats { "kind": "bot" }` — ASP assigns
-`eva-000`; the app then clones the repository into `~/.magi/eva-000/MAGI`
-on branch `magi/eva-000` and runs that MAGI from there.
+Creating a further bot is `POST /chats { "kind": "bot" }` — ASP assigns the
+next free `eva-NNN`; the app clones that MAGI into `~/.magi/<name>/MAGI`
+on branch `magi/<name>` and runs it from there.
 
 **One MAGI:** `npm start -- <handle> <base> <token>` in that MAGI's own checkout. The app launches it with the bundled Node 24 runtime.
 
@@ -177,10 +179,10 @@ on branch `magi/eva-000` and runs that MAGI from there.
 
 1. **Open the desktop app.** The shell clones the repository, installs
    dependencies, builds the UI, and waits until ASP answers on port 42069.
-2. **Meet the first three MAGI.** While none exist, the app creates
-   `eva-000`, `eva-001`, and `eva-002`, and tries to nickname them
-   **MELCHIOR**, **BALTHASAR**, and **CASPER**. A MAGI that never comes online
-   stays unnamed.
+2. **Meet the default society.** Balthasar is the operator process
+   (`@eva-000.magi` plus `@user.magi` for your own speech). Casper is ASP
+   (`@eva-001.magi`). Melchior is the spawned EVA (`@eva-002.magi`). A MAGI
+   that never comes online stays unnamed.
 3. **Talk.** The desktop writes the transcript locally, then sends the message
    through ASP. The MAGI answers on its WebSocket and the desktop stores that
    too.
@@ -195,21 +197,18 @@ on branch `magi/eva-000` and runs that MAGI from there.
 Operator
    │
    ▼
-apps/shell/       Electron window
+apps/shell/       Electron window (thin shell; rebuild still Shell-owned)
    │  loads
-apps/user/         operator process (BUS + webapp) and UI
+apps/user/         operator process: @user.magi speech + Balthasar @eva-000.magi
    │  starts Node 24
    ▼
-apps/asp/         127.0.0.1:42069   chats and relay, never a process
+apps/asp/         127.0.0.1:42069   relay + Casper @eva-001.magi
    ▲
-apps/user/         also runs Node 24: apps/eva + packages, one process per MAGI, each on its own clone
-   ├── magi  eva-000   branch magi/eva-000   ~/.magi/eva-000/MAGI
-   ├── magi  eva-001   branch magi/eva-001   ~/.magi/eva-001/MAGI
-   └── magi  eva-002   branch magi/eva-002   ~/.magi/eva-002/MAGI
+apps/eva/         Melchior @eva-002.magi   branch magi/eva-002   ~/.magi/eva-002/MAGI
 ```
 
-The app starts every process; ASP relays chat events and is not the place a
-MAGI reasons. Each MAGI keeps its own SQLite workspace next to its checkout, so
+The app starts every process. ASP relays chat events and also hosts Casper.
+Each spawned MAGI keeps its own SQLite workspace next to its checkout, so
 a `main` someone broke cannot take a running MAGI down. The desktop keeps the
 operator's transcript and provider key.
 

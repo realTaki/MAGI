@@ -1,11 +1,13 @@
 # Desktop app
 
 The Electron shell is a bootstrap for a local MAGI installation: it clones the
-checkout and loads the app from it. The app itself lives in `apps/user/` — operator
-interface (`apps/user/src/`) plus the operator process (`user.ts` starts a BUS and the
-`webapp` worker in `packages/webapp`) — and the backend
-prepares the checkout, starts local ASP on `127.0.0.1:42069`, runs every MAGI
-from its own branch (`magi/eva-000`, checked out at `~/.magi/eva-000/MAGI`) and
+checkout and loads the app from it. The app directory stays `apps/shell`. The
+operator process lives in `apps/user/` — interface (`apps/user/src/`) plus
+`user.ts`, which starts a BUS owned by Balthasar (`@eva-000.magi`) together
+with the `webapp` worker and the same agent workers as a MAGI. The human
+speaks as `@user.magi`. The backend prepares the checkout, starts local ASP
+on `127.0.0.1:42069` (Casper, `@eva-001.magi`), spawns Melchior
+(`@eva-002.magi` at `~/.magi/eva-002/MAGI`), and
 reports which interface entry the shell should show. The app
 module keeps its own files in `~/.magi/user/`; Electron's own profile moves under
 the same profile (`~/.magi/user/electron`, logs and crash dumps in `user/`,
@@ -61,10 +63,12 @@ startup page shows the current stage and offers Retry if preparation fails. It
 is always the small page packaged with the shell, so first-install and recovery
 behavior do not depend on an editable checkout. The packaged shell does not
 carry `apps/user/dist` — the checkout builds and supplies the product interface.
-Once ASP answers, the backend makes sure the society is not empty: while no MAGI
-exists it creates the first three (ASP names them `eva-000`, `eva-001`, …) and
-nicknames them **MELCHIOR**, **BALTHASAR** and **CASPER**. Naming is best effort
-— a MAGI that never comes online stays unnamed rather than failing startup.
+Once ASP answers, the backend makes sure the default society exists:
+**Balthasar** (`@eva-000.magi`) in this operator process, **Casper**
+(`@eva-001.magi`) in ASP, and **Melchior** (`@eva-002.magi`) as the spawned
+EVA. Naming is best effort — a MAGI that never comes online stays unnamed
+rather than failing startup. `request_rebuild` stays Shell-owned; process
+keys are still `@user.magi` and `@asp.magi`.
 Later launches reuse the same Git working tree; they do not overwrite local
 changes or automatically pull upstream. Preparation currently runs again on each
 packaged launch.

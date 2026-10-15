@@ -78,7 +78,7 @@ docs: Update README with new architecture
 | `apps/eva/` + `packages/` | The runtime entry and its packages: bus, manager, asp-server, webapp, agent, providers, tools, mcp, channels, tests |
 | `docs/` | Design docs + roadmap |
 
-**Package names follow one rule: a role in the society stays bare, everything else carries the `@magi/` scope.** `user` (the operator's app) and `eva` (the agent runtime behind each `eva-000`) are roles; `@magi/asp`, `@magi/shell` and every library under `packages/` are the machinery around them. The scope is not part of the module name, so `apps/asp` ↔ `@magi/asp` is aligned — what has to match is the *module*: `apps/user/`, `apps/eva/`, `apps/eva/eva.ts`.
+**Package names follow one rule: a role in the society stays bare, everything else carries the `@magi/` scope.** `user` (the operator's app) and `eva` (the agent runtime behind spawned `eva-NNN`) are roles; `@magi/asp`, `@magi/shell` and every library under `packages/` are the machinery around them. The scope is not part of the module name, so `apps/asp` ↔ `@magi/asp` is aligned — what has to match is the *module*: `apps/user/`, `apps/eva/`, `apps/eva/eva.ts`. The app directory stays `shell`; do not rename it to `user`.
 
 ## Questions?
 
