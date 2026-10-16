@@ -238,9 +238,44 @@ test("the next start records a replace the shell could not restore", async () =>
     const chat = first.bus.chats.forChannel("cli", "operator");
     messageDelivery.setHomeChat(first.bus, chat.id);
     const id = first.bus.board("ReplaceSelfJob").publish({ checkout: path.join(root, "absent"), swap: true }, "test");
+    assert.ok(first.bus.board("ReplaceSelfJob").claimId("replace", id));
     await first.stop();
     mkdirSync(markerDir, { recursive: true });
     writeFileSync(marker, JSON.stringify({ job: id, error: "old process did not start" }));
+    magi = new Magi(handle, { workspace, client });
+    await magi.start();
+    await until("replace marker was not applied", () => magi!.bus.board("ReplaceSelfJob").result(id) !== null);
+    const result = magi.bus.board("ReplaceSelfJob").result(id);
+    assert.equal(result?.status, "failed");
+    assert.equal(result?.error, "old process did not start");
+    assert.equal(existsSync(marker), false);
+    const notes = magi.bus.messages.list(chat.id).map((message) => message.content);
+    assert.ok(notes.some((text) => text.startsWith("[replace] old process did not start")));
+  } finally {
+    await magi?.stop();
+    rmSync(markerDir, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a replace marker without a job fails the open replace", async () => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-replace-marker-null-"));
+  const handle = "@eva-replace-marker-null-188d.magi";
+  const markerDir = path.join(homedir(), ".magi", "eva-replace-marker-null-188d");
+  const marker = path.join(markerDir, "replace-failed.json");
+  const workspace = path.join(root, "workspace");
+  const client = { async complete() { return { role: "assistant" as const, content: "NO_REPLY" }; } };
+  let magi: Magi | null = null;
+  try {
+    const first = new Magi(handle, { workspace, client });
+    first.bus.secrets.set("provider.api_key", "present");
+    const chat = first.bus.chats.forChannel("cli", "operator");
+    messageDelivery.setHomeChat(first.bus, chat.id);
+    const id = first.bus.board("ReplaceSelfJob").publish({ checkout: path.join(root, "absent"), swap: true }, "test");
+    assert.ok(first.bus.board("ReplaceSelfJob").claimId("replace", id));
+    await first.stop();
+    mkdirSync(markerDir, { recursive: true });
+    writeFileSync(marker, JSON.stringify({ job: null, error: "old process did not start" }));
     magi = new Magi(handle, { workspace, client });
     await magi.start();
     await until("replace marker was not applied", () => magi!.bus.board("ReplaceSelfJob").result(id) !== null);

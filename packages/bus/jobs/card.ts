@@ -26,6 +26,9 @@ export type CardResult = { fields: Record<string, string> };
 
 export const PROVIDER_CHOICES = ["openai", "anthropic", "minimax-cn", "minimax-global", "deepseek", "custom"] as const;
 
+/** A card was still open when the process exited. That is not the user rejecting it. */
+export const CARD_RESTART_ERROR = "MAGI restarted before this card was filled";
+
 /** The provider form. Startup shows this before any model turn; the skill uses the same fields later. */
 export function providerCard(handle: string): CardSpec {
   return {

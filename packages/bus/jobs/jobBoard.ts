@@ -119,6 +119,16 @@ export class JobBoard<K extends JobType> {
     }, { behavior: "immediate" });
   }
 
+  /** Fail a job that is still open. A claimed job has no claim left to take. */
+  fail(id: number, error: string): boolean {
+    const failed = this.db.update(jobs)
+      .set({ status: "failed", output: null, error, updated_at: sql`(CURRENT_TIMESTAMP)` })
+      .where(and(eq(jobs.id, id), eq(jobs.type, this.type), inArray(jobs.status, ["pending", "claimed"])))
+      .returning({ id: jobs.id })
+      .get();
+    return failed !== undefined;
+  }
+
   /** A failure that was only going to be logged. It is a JobResult, and it is not claimable. */
   seal(publisher: string, input: JobInput[K], error: string): number {
     return this.db.insert(jobs).values({

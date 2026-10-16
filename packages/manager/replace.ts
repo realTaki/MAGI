@@ -10,9 +10,9 @@
 
 import { execFile, fork, spawn } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { BaseWorker, messageDelivery, type Bus } from "@magi/bus";
+import { BaseWorker, messageDelivery, replaceFailedPath, type Bus } from "@magi/bus";
 
 export type AppBuild = {
   app: "eva" | "asp" | "shell";
@@ -163,7 +163,7 @@ export class ReplaceWorker extends BaseWorker {
     this.bus.settings.set("replace.pending", "");
   }
 
-  /** The shell could not start the old process. Fail that job and drop the marker. */
+  /** The shell could not start the old process. Fail that job, then drop the marker. */
   private consumeReplaceMarker(): boolean {
     const marker = replaceFailedPath(this.bus.handle);
     if (!existsSync(marker)) return false;
@@ -174,16 +174,11 @@ export class ReplaceWorker extends BaseWorker {
       if (typeof body.error === "string" && body.error !== "") error = body.error;
       if (typeof body.job === "number" && Number.isInteger(body.job)) jobId = body.job;
     } catch {
-      error = "replace failed";
+      return false;
     }
-    if (jobId !== null) {
-      const board = this.bus.board("ReplaceSelfJob");
-      const done = board.result(jobId);
-      if (!done) {
-        const job = board.claimId(this.worker_name, jobId);
-        if (job) board.submit(this.worker_name, job.id, { error });
-      }
-    }
+    const board = this.bus.board("ReplaceSelfJob");
+    if (jobId !== null && !board.result(jobId)) board.fail(jobId, error);
+    if (jobId !== null && !board.result(jobId)) return false;
     tell(this.bus, `[replace] ${error}`);
     rmSync(marker, { force: true });
     return true;
@@ -312,11 +307,6 @@ function askSupervisor(id: number): Promise<string | null> {
     };
     process.on("message", onMessage);
   });
-}
-
-function replaceFailedPath(handle: string): string {
-  const localName = handle.replace(/^@/, "").replace(/\.magi$/, "");
-  return join(homedir(), ".magi", localName, "replace-failed.json");
 }
 
 function message(error: unknown): string {

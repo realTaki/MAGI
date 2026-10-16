@@ -8,6 +8,7 @@
 
 import {
   BaseWorker,
+  CARD_RESTART_ERROR,
   decryptWith,
   MAGI_CONTACT_ID,
   messageDelivery,
@@ -64,11 +65,12 @@ export class ConfigWorker extends BaseWorker {
   /** No provider key means this node cannot think. Show the card from here. */
   private async providerSetup(): Promise<void> {
     if (this.bus.secrets.get("provider.api_key")) {
-      if (this.offers !== 0 || this.cardStopped || this.rejections() !== 0) {
+      if (this.offers !== 0 || this.cardStopped || this.rejections() !== 0 || this.bus.settings.get("provider.card.resent") === "1") {
         this.offers = 0;
         this.cardStopped = false;
         this.bus.settings.set("provider.card.offers", "0");
         this.bus.settings.set("provider.card.rejections", "0");
+        this.bus.settings.set("provider.card.resent", "");
         this.bus.settings.set("provider.card.stopped", "");
       }
       return;
@@ -86,9 +88,9 @@ export class ConfigWorker extends BaseWorker {
         return;
       }
       // The bus fails a card that was still open when the process exited. That is not the user.
-      if (result.error !== "MAGI restarted before this card was filled" && this.noteRejection(result.error ?? "provider card failed")) return;
+      if (result.error !== CARD_RESTART_ERROR && this.noteRejection(result.error ?? "provider card failed")) return;
     }
-    if (this.rejections() >= 1 && this.bus.settings.get("provider.card.resent") === "1" && this.offers >= 2) return;
+    if (this.bus.settings.get("provider.card.resent") === "1") return;
     const chatId = this.ensureOwnerChat();
     if (chatId === null) return;
     const recovering = this.offers > 0 && this.cardJob === null && this.rejections() === 0;

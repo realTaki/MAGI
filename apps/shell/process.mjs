@@ -11,9 +11,9 @@ import { dependencyState } from "./dependency-state.mjs";
 import { createProcessOwner } from "./process-owner.mjs";
 import { ensureInstalledDependencies } from "./installation.mjs";
 import { spawn } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { cpSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, resolve } from "node:path";
+import { replaceFailedPath } from "@magi/bus/replaceMarker.js";
 import { createInterface } from "node:readline";
 
 /** Bootstrap Shell before it can run its own prepare method. */
@@ -67,24 +67,28 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
     return app.handle;
   }
 
-  function replaceFailedPath(handle) {
-    const localName = handle.replace(/^@/, "").replace(/\.magi$/, "");
-    return join(homedir(), ".magi", localName, "replace-failed.json");
-  }
-
   /**
-   * The old process did not start. Leave the app database alone and record the
-   * failure where the next successful start can claim that ReplaceSelfJob.
+   * The old process did not start. Leave the app database alone. Tell the
+   * operator either way, and record the failure where the next start can fail that job.
    */
   function recordReplaceFailure(spec, jobId, text) {
+    const payload = { error: text };
     const handle = markerHandle(spec);
     if (handle) {
       const file = replaceFailedPath(handle);
-      mkdirSync(dirname(file), { recursive: true });
-      const job = Number(jobId);
-      writeFileSync(file, JSON.stringify({ job: Number.isInteger(job) ? job : null, error: text }));
+      const temporary = `${file}.${process.pid}.tmp`;
+      try {
+        mkdirSync(dirname(file), { recursive: true });
+        const job = Number(jobId);
+        writeFileSync(temporary, JSON.stringify({ job: Number.isInteger(job) ? job : null, error: text }));
+        renameSync(temporary, file);
+      } catch (error) {
+        payload.writeError = error instanceof Error ? error.message : String(error);
+        try { rmSync(temporary, { force: true }); }
+        catch { /* The notice below is the record of this failure. */ }
+      }
     }
-    notifyHost({ type: "event", event: "process.replace", payload: { error: text } });
+    notifyHost({ type: "event", event: "process.replace", payload });
   }
 
   function restoreDist(spec) {

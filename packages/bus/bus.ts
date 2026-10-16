@@ -1,7 +1,7 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq, inArray, ne, or } from "drizzle-orm";
 import Database from "better-sqlite3";
 import { workspaceDatabase, migrateBooks, migrateJobs, type BusDb } from "./drizzle/database.js";
 import { contacts, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "./books/contactBook.js";
@@ -22,6 +22,8 @@ import { AgentTurnCache } from "./jobs/agentTurnCache.js";
 import { USER_HANDLE } from "./identity.js";
 import { loadOrCreateIdentity, type Identity } from "./identityKeys.js";
 import { SecretStore } from "./secrets.js";
+import { CARD_RESTART_ERROR } from "./jobs/card.js";
+import { replaceFailedPath } from "./replaceMarker.js";
 
 /**
  * One MAGI's shared bus: Books for durable state, Jobs for coordination.
@@ -82,24 +84,41 @@ export class Bus {
     this.jobs = workspaceDatabase(jobDb);
     migrateJobs(this.jobs);
     jobDb.pragma("foreign_keys = ON");
+    // A marker names the replace the shell could not restore. Leave that claimed
+    // job alone so this start can record the marker's error on it. A marker with
+    // no job id fails every open replace instead.
+    const replaceMarker = replaceFailedPath(handle);
+    let markedJob: number | null = null;
+    let markerError: string | null = null;
+    if (existsSync(replaceMarker)) {
+      try {
+        const body = JSON.parse(readFileSync(replaceMarker, "utf8")) as { job?: unknown; error?: unknown };
+        if (typeof body.job === "number" && Number.isInteger(body.job)) markedJob = body.job;
+        if (typeof body.error === "string" && body.error !== "") markerError = body.error;
+      } catch {
+        markedJob = null;
+      }
+    }
+    const handoff = Boolean(process.env.MAGI_REPLACE_JOB || process.env.MAGI_REPLACE_ERROR);
     // One MAGI owns this workspace. Recover work interrupted by a process exit.
+    const open = and(eq(jobs.status, "claimed"), ne(jobs.type, "RunToolJob"));
     this.jobs.update(jobs).set({ status: "pending", worker: null })
-      .where(and(eq(jobs.status, "claimed"), ne(jobs.type, "RunToolJob"))).run();
+      .where(markedJob !== null && !handoff
+        ? and(open, or(ne(jobs.type, "ReplaceSelfJob"), ne(jobs.id, markedJob)))
+        : open)
+      .run();
     // A tool call belongs to the agent turn that published it, and that turn is gone
     // after a restart: answer its calls as failed instead of running them a second time.
     this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before this tool call finished" })
       .where(and(eq(jobs.type, "RunToolJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
-    this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before this card was filled" })
+    this.jobs.update(jobs).set({ status: "failed", error: CARD_RESTART_ERROR })
       .where(and(eq(jobs.type, "CardJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
     this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before this config was written" })
       .where(and(eq(jobs.type, "ConfigureJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
     // A supervised replace hands the job to the new process, which completes it
     // after its own workers are healthy. Any other restart failed the swap.
-    // A marker means the shell could not start the old process. This start claims
-    // that job and records the failure itself.
-    const replaceMarker = join(homedir(), ".magi", localName, "replace-failed.json");
-    if (!process.env.MAGI_REPLACE_JOB && !process.env.MAGI_REPLACE_ERROR && !existsSync(replaceMarker)) {
-      this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before this replace finished" })
+    if (!handoff && markedJob === null) {
+      this.jobs.update(jobs).set({ status: "failed", error: markerError ?? "MAGI restarted before this replace finished" })
         .where(and(eq(jobs.type, "ReplaceSelfJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
     }
     this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before this ASP command finished" })
