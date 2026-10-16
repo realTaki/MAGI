@@ -129,7 +129,7 @@ test("bots lists spawned magi not a static roster", async (t) => {
     const seeded = await request(app, "GET", "/bots", { token });
     assert.equal(seeded.status, 200);
     assert.deepEqual(seeded.data, {
-      bots: [{ handle: "@eva-001.magi", name: "CASPER", online: false }],
+      bots: [{ handle: "@eva-001.magi", name: "CASPER", online: true }],
     });
     const first = await request(app, "POST", "/chats", { token, body: { kind: "bot" } });
     const second = await request(app, "POST", "/chats", { token, body: { kind: "bot" } });
@@ -151,7 +151,10 @@ test("bots lists spawned magi not a static roster", async (t) => {
       new Set(listed.map((row) => record(row).name)),
       new Set(["eva-000", "CASPER", "eva-002"]),
     );
-    assert.equal(listed.every((row) => record(row).online === false), true);
+    const byHandle = Object.fromEntries(listed.map((row) => [record(row).handle, record(row)]));
+    assert.equal(byHandle["@eva-000.magi"]?.online, false);
+    assert.equal(byHandle["@eva-001.magi"]?.online, true);
+    assert.equal(byHandle["@eva-002.magi"]?.online, false);
     assert.equal(listed.some((row) => record(row).handle === "@user.magi"), false);
     assert.equal((await request(app, "GET", "/bots")).status, 401);
   });
@@ -168,7 +171,7 @@ test("group can add a listed bot", async (t) => {
     assert.equal(picker.status, 200);
     assert.deepEqual(record(picker.data).bots, [
       { handle, name: "eva-000", online: false, in_chat: false },
-      { handle: "@eva-001.magi", name: "CASPER", online: false, in_chat: false },
+      { handle: "@eva-001.magi", name: "CASPER", online: true, in_chat: false },
     ]);
     const added = await request(app, "POST", `/chats/${groupId}/members`, {
       token,
@@ -181,7 +184,7 @@ test("group can add a listed bot", async (t) => {
     const after = await request(app, "GET", `/bots?chat_id=${groupId}`, { token });
     assert.deepEqual(record(after.data).bots, [
       { handle, name: "eva-000", online: false, in_chat: true },
-      { handle: "@eva-001.magi", name: "CASPER", online: false, in_chat: false },
+      { handle: "@eva-001.magi", name: "CASPER", online: true, in_chat: false },
     ]);
     const unknown = await request(app, "POST", `/chats/${groupId}/members`, {
       token,
@@ -219,7 +222,7 @@ test("magi joins the group when it receives the invite", async (t) => {
     const online = record((await request(app, "GET", `/bots?chat_id=${groupId}`, { token })).data).bots;
     assert.deepEqual(online, [
       { handle, name: bot.name, online: true, in_chat: false },
-      { handle: "@eva-001.magi", name: "CASPER", online: false, in_chat: false },
+      { handle: "@eva-001.magi", name: "CASPER", online: true, in_chat: false },
     ]);
     const added = await request(app, "POST", `/chats/${groupId}/members`, { token, body: { handle } });
     assert.equal(added.status, 200);

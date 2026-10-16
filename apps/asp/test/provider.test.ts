@@ -27,7 +27,7 @@ test("provider update is transient", async (t) => {
       api_key: "sk-test",
       base_url: null,
       synced: [],
-      failed: [],
+      failed: [{ handle: "@eva-001.magi", detail: "MAGI rejected provider configuration" }],
     });
   });
   const database = new LocalDatabase(databasePath);

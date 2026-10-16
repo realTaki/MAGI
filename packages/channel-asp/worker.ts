@@ -2,26 +2,40 @@ import { BaseWorker, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, messageDelivery, type B
 import { setTimeout as sleep } from "node:timers/promises";
 import { AspClient, type AspEvent } from "./client.js";
 
+/** What a MAGI needs to speak on ASP; Shell writes these after the relay is up. */
+type Credentials = { base: string; token: string };
+
 export class AspWorker extends BaseWorker {
   readonly worker_name = "asp";
-  private readonly client: AspClient;
+  private client: AspClient | null = null;
   private nickname: string | null;
 
-  constructor(bus: Bus, base: string, token: string) {
+  /** `override` is for running a MAGI by hand; normally the settings have the token. */
+  constructor(bus: Bus, private readonly override?: Credentials) {
     super(bus);
-    this.client = new AspClient(bus.handle, base, token);
     this.nickname = bus.contacts.get(MAGI_CONTACT_ID)?.nickname ?? null;
   }
 
-  connect(): Promise<void> { return this.client.connect((event) => this.handle(event), (error) => this.report(error)); }
-  close(): void { this.client.close(); }
+  /** No relay address, nothing to do — the supervisor asks this before starting. */
+  configured(): boolean { return this.credentials() !== null; }
 
-  /** The manager starts and stops this worker like any other. */
+  connect(): Promise<void> {
+    const credentials = this.credentials();
+    if (!credentials) return Promise.resolve();
+    this.client ??= new AspClient(this.bus.handle, credentials.base, credentials.token);
+    return this.client.connect((event) => this.handle(event), (error) => this.report(error));
+  }
+  close(): void {
+    this.client?.close();
+    this.client = null;
+  }
+
+  /** Connecting happens in the background and retries on its own. */
   start(): void { void this.connect(); }
   stop(): void { this.close(); }
 
   /** Connecting happens in the background and retries on its own, so this is the state. */
-  health(): string | null { return this.client.connected ? null : "ASP is not connected"; }
+  health(): string | null { return this.client?.connected ? null : "ASP is not connected"; }
 
   async poll(): Promise<boolean> {
     const board = this.bus.board("MessageDeliveryJob");
@@ -37,7 +51,9 @@ export class AspWorker extends BaseWorker {
       if (!message) throw new Error(`message ${job.input.message_id} does not exist`);
       const chat = this.bus.chats.get(message.chat_id);
       if (!chat?.delivery_address) throw new Error("delivery has no ASP chat");
-      await this.client.send(chat.delivery_address, message.content);
+      const client = this.client;
+      if (!client) throw new Error("ASP is not connected");
+      await client.send(chat.delivery_address, message.content);
       board.submit(this.worker_name, job.id, { output: {} });
     } catch (error) {
       board.submit(this.worker_name, job.id, { error: error instanceof Error ? error.message : String(error) });
@@ -91,6 +107,7 @@ export class AspWorker extends BaseWorker {
       return event.event_id ? { type: "chat.ack", chat_id: id, event_id: event.event_id } : undefined;
     }
     if (event.type === "chat.invited" && payload.invitee === this.bus.handle) {
+      if (!this.client) return;
       await this.client.join(id);
       // This MAGI is in the chat too, so it belongs to its members.
       this.bus.chatMembers.add(this.bus.chats.forChannel("asp", id).id, MAGI_CONTACT_ID);
@@ -181,6 +198,14 @@ export class AspWorker extends BaseWorker {
     if (!text) return;
     const contact = this.remember(chatId, payload.sender);
     messageDelivery.record(this.bus, this.bus.chats.forChannel("asp", chatId).id, text, contact?.id);
+  }
+
+  /** Read at every start, so a token that arrives later is picked up by a restart. */
+  private credentials(): Credentials | null {
+    const base = this.override?.base ?? this.bus.settings.get("asp.base")?.trim();
+    const token = this.override?.token ?? this.bus.settings.get("asp.token")?.trim();
+    if (!base || !token) return null;
+    return { base, token };
   }
 }
 

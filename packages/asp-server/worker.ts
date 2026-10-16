@@ -94,6 +94,10 @@ export class AspServer extends BaseWorker {
     registerRoutes(router, this);
     this.#running = await listen(router, (request, socket) => this.#accept(request, socket), this.#host, this.#port);
     this.origin = this.#running.origin;
+    if (casper !== undefined) {
+      this.bus.settings.set("asp.base", this.origin);
+      this.bus.settings.set("asp.token", casper.token);
+    }
   }
 
   async stop(): Promise<void> {
@@ -186,7 +190,13 @@ function registerRoutes(router: Router, app: AspServer): void {
     if (body.kind !== "bot" && body.kind !== "group") {
       throw new HttpError(422, "kind must be bot or group");
     }
-    return { status: 201, body: await app.operator.createChat(creator, body.kind) };
+    const handle = optionalString(body, "handle");
+    if (handle !== null) {
+      if (body.kind === "group" || handle === app.operatorHandle || !/^@[A-Za-z0-9][A-Za-z0-9_.-]*\.magi$/.test(handle)) {
+        throw new HttpError(422, "handle must be a MAGI address on a bot chat");
+      }
+    }
+    return { status: 201, body: await app.operator.createChat(creator, body.kind, handle) };
   });
   router.add("GET", "/chats", (context) => {
     const caller = operatorOnly(context.headers);

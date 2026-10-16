@@ -55,7 +55,7 @@ export class Magi {
       new CliWorker(this.bus, options.deliver),
       new TaskWorker(this.bus),
       new McpWorker(this.bus, options.mcpConnector),
-      ...(options.asp ? [new AspWorker(this.bus, options.asp.base, options.asp.token)] : []),
+      new AspWorker(this.bus, options.asp),
       new TelegramWorker(this.bus, options.telegram),
     ], {
       // The agent has to *finish* rather than be stopped: a turn it already accepted

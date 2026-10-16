@@ -6,33 +6,37 @@ import { realpathSync } from "node:fs";
  * ManagerWorker runs them. The relay is `@magi/asp-server`.
  *
  * The BUS is owned by the host MAGI (`@eva-001.magi`, Casper). Shell still
- * keys this process as `@asp.magi` for rebuild. Channels that let Casper
- * speak on ASP as a participant are not on this list yet.
+ * keys this process as `@asp.magi` for rebuild. Casper speaks on ASP through
+ * AspWorker over the local relay, the same path as any MAGI.
  */
 
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
-import { ASP_MAGI_HANDLE, Bus } from "@magi/bus";
+import { ASP_MAGI_HANDLE, ASP_MAGI_NICKNAME, MAGI_CONTACT_ID, Bus } from "@magi/bus";
 import { ManagerWorker } from "@magi/manager";
 import { AgentWorker } from "@magi/agent/worker.js";
 import { ToolsWorker } from "@magi/built-in-tools/worker.js";
 import { ContactsWorker } from "@magi/contacts/worker.js";
 import { MemoryWorker } from "@magi/memory/worker.js";
 import { ProvidersWorker } from "@magi/providers/worker.js";
+import type { LLMClient } from "@magi/providers/client.js";
 import { SkillWorker } from "@magi/skills/worker.js";
+import { AspWorker } from "@magi/channel-asp/worker.js";
 
 import { AspServer, defaultDatabasePath, intranetBaseUrl, type CreateAppOptions } from "@magi/asp-server";
 
 export type { CreateAppOptions };
+export type AspOptions = CreateAppOptions & { client?: LLMClient };
 
 export class Asp {
   readonly bus: Bus;
   readonly server: AspServer;
   private readonly manager: ManagerWorker;
 
-  constructor(options: CreateAppOptions = {}) {
+  constructor(options: AspOptions = {}) {
     const databasePath = options.databasePath ?? defaultDatabasePath();
     this.bus = new Bus(ASP_MAGI_HANDLE, options.workspace ?? dirname(databasePath));
+    this.bus.contacts.update(MAGI_CONTACT_ID, { nickname: ASP_MAGI_NICKNAME });
     this.server = new AspServer(this.bus, { ...options, databasePath });
     this.manager = new ManagerWorker(this.bus, [
       new ContactsWorker(this.bus),
@@ -40,10 +44,9 @@ export class Asp {
       new AgentWorker(this.bus),
       new ToolsWorker(this.bus),
       new MemoryWorker(this.bus),
-      new ProvidersWorker(this.bus),
+      new ProvidersWorker(this.bus, options.client),
       this.server,
-      // TODO: attach host channels (CLI, tasks, MCP, Telegram). Casper is the
-      // relay; it does not connect to itself over AspWorker.
+      new AspWorker(this.bus),
     ], {
       drain: ["agent"],
     });

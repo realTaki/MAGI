@@ -71,8 +71,11 @@ test("disposing Shell aborts an in-flight provider poll without rescheduling", a
     }
     if (endpoint === "/chats") {
       return Response.json({
-        chat_id: "sess_002",
-        agents: ["@eva-002.magi"],
+        chats: [
+          { chat_id: "s0", kind: "bot", agents: ["@eva-000.magi"] },
+          { chat_id: "s1", kind: "bot", agents: ["@eva-001.magi"] },
+          { chat_id: "s2", kind: "bot", agents: ["@eva-002.magi"] },
+        ],
       });
     }
     if (endpoint === "/bots") {

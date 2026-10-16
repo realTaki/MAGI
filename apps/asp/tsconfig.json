@@ -39,6 +39,9 @@
     },
     {
       "path": "../../packages/memory"
+    },
+    {
+      "path": "../../packages/channel-asp"
     }
   ]
 }

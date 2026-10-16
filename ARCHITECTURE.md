@@ -94,8 +94,9 @@ supervisor. What the operator process does, in order (the worker is
    report this runtime.
 3. The default society is three MAGIs. Balthasar (`@eva-000.magi`) is this
    operator process. Casper (`@eva-001.magi`) is the ASP process. Melchior
-   (`@eva-002.magi`) is the only MAGI started as `eva.js`. Naming is best
-   effort: a MAGI that never comes online does not fail startup.
+   (`@eva-002.magi`) is the only MAGI started as `eva.js`. Each host MAGI
+   connects to ASP over AspWorker. Naming is best effort: a MAGI that never
+   comes online does not fail startup.
 
 Closing the last window quits Shell and stops its owned runtime. Reloading the
 client keeps the operator process and ASP running. `before-quit` stops every
@@ -129,8 +130,10 @@ desktop's Bearer token. The participant API (`/chats/open`,
 `/chats/:chat_id/...`, WebSocket `/connect`) accepts a MAGI's Bearer token.
 
 Creating a bot does not take a name or a model. ASP assigns the next free
-`eva-NNN` (Casper already occupies `eva-001`), and the desktop starts only
-spawned children:
+`eva-NNN` (Casper already occupies `eva-001`), or invites a specific handle
+when `POST /chats` includes one. The desktop starts only spawned children.
+Balthasar and Casper attach through AspWorker on their own process, the same
+BUS/Manager path as Melchior:
 
 ```text
 npm start -- @eva-002.magi http://127.0.0.1:42069 <token>

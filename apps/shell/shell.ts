@@ -6,14 +6,14 @@ import { realpathSync } from "node:fs";
  * ManagerWorker runs them. The backend is `@magi/webapp`.
  *
  * The BUS is owned by the host MAGI (`@eva-000.magi`, Balthasar). The webapp
- * still speaks as `@user.magi`. Channels that attach that MAGI to ASP are not
- * on this list yet.
+ * still speaks as `@user.magi`. AspWorker attaches Balthasar to ASP once the
+ * webapp writes `asp.base` / `asp.token` and asks the manager to start it.
  */
 
 import { fileURLToPath } from "node:url";
 import { prepareShellWorkspace, secureShellDatabases } from "./workspace.ts";
 import type { ProcessSpec } from "./host.js";
-import { Bus, SHELL_MAGI_HANDLE } from "@magi/bus";
+import { Bus, MAGI_CONTACT_ID, SHELL_MAGI_HANDLE, SHELL_MAGI_NICKNAME } from "@magi/bus";
 import { ManagerWorker } from "@magi/manager";
 import { AgentWorker } from "@magi/agent/worker.js";
 import { ToolsWorker } from "@magi/built-in-tools/worker.js";
@@ -21,6 +21,7 @@ import { ContactsWorker } from "@magi/contacts/worker.js";
 import { MemoryWorker } from "@magi/memory/worker.js";
 import { ProvidersWorker } from "@magi/providers/worker.js";
 import { SkillWorker } from "@magi/skills/worker.js";
+import { AspWorker } from "@magi/channel-asp/worker.js";
 import { AspProcessWorker, WebappWorker } from "@magi/webapp";
 
 type ShellContext = ConstructorParameters<typeof WebappWorker>[1];
@@ -37,6 +38,7 @@ export class Shell {
     const workspace = prepareShellWorkspace(context.paths.home);
     secureShellDatabases(workspace);
     this.bus = new Bus(SHELL_MAGI_HANDLE, workspace);
+    this.bus.contacts.update(MAGI_CONTACT_ID, { nickname: SHELL_MAGI_NICKNAME });
     try {
       secureShellDatabases(workspace);
       this.aspProcess = new AspProcessWorker(this.bus, {
@@ -58,7 +60,7 @@ export class Shell {
         new ProvidersWorker(this.bus),
         this.worker,
         this.aspProcess,
-        // TODO: attach host channels (ASP, CLI, tasks, MCP, Telegram).
+        new AspWorker(this.bus),
       ], {
         drain: ["agent", "webapp"],
       });

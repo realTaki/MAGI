@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import WebSocket from "ws";
 
-import { Asp, type CreateAppOptions } from "../asp.js";
+import { ASP_MAGI_HANDLE } from "@magi/bus";
+import { Asp, type AspOptions } from "../asp.js";
 
 export function tempRoot(t: { after: (fn: () => void) => void }): string {
   const root = mkdtempSync(path.join(tmpdir(), "asp-"));
@@ -11,13 +12,30 @@ export function tempRoot(t: { after: (fn: () => void) => void }): string {
   return root;
 }
 
+const silentClient = {
+  async complete() { return { role: "assistant" as const, content: "NO_REPLY" }; },
+  async verify() { throw new Error("no provider in tests"); },
+  configure() {},
+};
+
 export async function withApp(
-  options: CreateAppOptions,
+  options: AspOptions,
   run: (app: Asp) => Promise<void>,
 ): Promise<void> {
-  const app = new Asp({ aspBase: "http://asp.test", host: "127.0.0.1", port: 0, ...options });
+  const app = new Asp({
+    aspBase: "http://asp.test",
+    host: "127.0.0.1",
+    port: 0,
+    client: silentClient,
+    ...options,
+  });
   await app.start();
   try {
+    const deadline = Date.now() + 3_000;
+    while (!app.transport.isOnline(ASP_MAGI_HANDLE)) {
+      if (Date.now() >= deadline) throw new Error("Casper did not connect to ASP");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
     await run(app);
   } finally {
     await app.stop();

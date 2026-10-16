@@ -17,19 +17,33 @@ export class OperatorService {
     this.transport = transport;
   }
 
-  async createChat(creator: string, kind: string): Promise<Record<string, unknown>> {
+  async createChat(creator: string, kind: string, handle: string | null = null): Promise<Record<string, unknown>> {
     if (kind !== "bot" && kind !== "group") {
       throw new Error("kind must be bot or group");
     }
     let invite: string[] = [];
     let magi: { handle: string; name: string; token: string } | null = null;
     if (kind === "bot") {
-      const magiName = this.store.nextMagiName();
-      const handle = Store.magiHandle(magiName);
-      const magiToken = randomBytes(24).toString("base64url");
-      this.store.registerAgent({ handle, token: magiToken, name: magiName, managed: true });
-      magi = { handle, name: magiName, token: magiToken };
-      invite = [handle];
+      if (handle !== null) {
+        const existing = this.store.getAgent(handle);
+        if (existing !== undefined) {
+          magi = { handle: existing.handle, name: existing.name ?? handle, token: existing.token };
+          invite = [handle];
+        } else {
+          const magiName = handle.replace(/^@/, "").replace(/\.magi$/, "");
+          const magiToken = randomBytes(24).toString("base64url");
+          this.store.registerAgent({ handle, token: magiToken, name: magiName, managed: true });
+          magi = { handle, name: magiName, token: magiToken };
+          invite = [handle];
+        }
+      } else {
+        const magiName = this.store.nextMagiName();
+        const assigned = Store.magiHandle(magiName);
+        const magiToken = randomBytes(24).toString("base64url");
+        this.store.registerAgent({ handle: assigned, token: magiToken, name: magiName, managed: true });
+        magi = { handle: assigned, name: magiName, token: magiToken };
+        invite = [assigned];
+      }
     }
     const result = await this.chats.createChat({
       creator,

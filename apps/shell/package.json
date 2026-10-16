@@ -87,6 +87,7 @@
     "@magi/memory": "*",
     "@magi/skills": "*",
     "@magi/webapp": "*",
+    "@magi/channel-asp": "*",
     "@tanstack/react-query": "^5.103.2",
     "dugite": "^3.2.3",
     "react": "^19.3.0",

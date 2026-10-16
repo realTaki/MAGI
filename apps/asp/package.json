@@ -29,7 +29,8 @@
     "@magi/built-in-tools": "*",
     "@magi/contacts": "*",
     "@magi/memory": "*",
-    "@magi/skills": "*"
+    "@magi/skills": "*",
+    "@magi/channel-asp": "*"
   },
   "devDependencies": {
     "@types/node": "^24.13.6",

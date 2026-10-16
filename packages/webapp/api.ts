@@ -1027,34 +1027,36 @@ export function createLocalApi(context) {
 
   /**
    * Seeds Balthasar, Casper, and Melchior. Shell and ASP already host the first
-   * two; this only registers missing handles and spawns Melchior. Naming is
-   * best effort: an unnamed MAGI is cosmetic, and failing startup over it
-   * would not be.
+   * two; this registers missing handles, opens a 1:1 with each, and spawns
+   * Melchior. Naming is best effort: an unnamed MAGI is cosmetic, and failing
+   * startup over it would not be.
    */
   async function ensureDefaultMagis(progress) {
     const { token } = await aspJson("/operator");
-    const agents = (await aspJson("/agents", { token }))?.agents ?? [];
-    const have = new Set(
-      agents.map((row) => row?.handle).filter((handle) => typeof handle === "string"),
-    );
-    const missing = DEFAULT_SOCIETY.filter((member) => !have.has(member.handle));
-    if (missing.length === 0) {
-      return;
+    const chats = (await aspJson("/chats", { token }))?.chats ?? [];
+    const haveChat = new Map();
+    for (const chat of chats) {
+      if (chat?.kind !== "bot" || !Array.isArray(chat.agents) || chat.agents.length !== 1) continue;
+      const handle = chat.agents[0];
+      if (typeof handle === "string" && typeof chat.chat_id === "string") haveChat.set(handle, chat.chat_id);
     }
-    progress?.("Creating default MAGIs…", 0.98);
     const created = [];
-    for (const member of missing) {
-      const chat = await aspJson("/chats", {
-        token,
-        method: "POST",
-        body: { kind: "bot" },
-      });
-      const handle = chat?.agents?.[0];
-      const chatId = chat?.chat_id;
-      if (typeof handle === "string" && handle !== "" && typeof chatId === "string") {
-        created.push({ handle, nickname: member.nickname, chatId });
+    for (const member of DEFAULT_SOCIETY) {
+      let chatId = haveChat.get(member.handle);
+      if (typeof chatId !== "string") {
+        progress?.("Creating default MAGIs…", 0.98);
+        const chat = await aspJson("/chats", {
+          token,
+          method: "POST",
+          body: { kind: "bot", handle: member.handle },
+        });
+        chatId = chat?.chat_id;
+        if (typeof chatId === "string") {
+          created.push({ handle: member.handle, nickname: member.nickname, chatId });
+        }
       }
     }
+    await attachHostChannel(token);
     // Spawn only classic EVA children. Shell and ASP hosts are skipped in magi-runtime.
     await startManagedMagi();
     await Promise.all(
@@ -1069,6 +1071,17 @@ export function createLocalApi(context) {
         }
       }),
     );
+  }
+
+  /** Balthasar speaks on ASP through AspWorker once these settings exist. */
+  async function attachHostChannel(token) {
+    if (!bus) return;
+    const agents = (await aspJson("/agents", { token }))?.agents ?? [];
+    const host = agents.find((row) => row?.handle === SHELL_MAGI_HANDLE);
+    if (typeof host?.token !== "string" || host.token === "") return;
+    bus.settings.set("asp.base", ASP_ORIGIN.href);
+    bus.settings.set("asp.token", host.token);
+    bus.board("ManageWorkerNotify").publish({ worker: "asp", action: "start" }, "webapp");
   }
 
   /**

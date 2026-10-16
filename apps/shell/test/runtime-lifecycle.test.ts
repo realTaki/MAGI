@@ -58,10 +58,11 @@ test("retiring a reloaded client backend keeps ASP and MAGI running", async (t) 
     }
     if (endpoint === "/chats") {
       return Response.json({
-        chat_id: "sess_002",
-        kind: "bot",
-        agents: ["@eva-002.magi"],
-        magi: { handle: "@eva-002.magi", name: "eva-002", token: "tok-2" },
+        chats: [
+          { chat_id: "s0", kind: "bot", agents: ["@eva-000.magi"] },
+          { chat_id: "s1", kind: "bot", agents: ["@eva-001.magi"] },
+          { chat_id: "s2", kind: "bot", agents: ["@eva-002.magi"] },
+        ],
       });
     }
     if (endpoint === "/bots") {
@@ -165,10 +166,11 @@ test("the operator process creates and runs ASP from its own magi/asp clone", as
     }
     if (new URL(url).pathname === "/chats") {
       return Response.json({
-        chat_id: "sess_002",
-        kind: "bot",
-        agents: ["@eva-002.magi"],
-        magi: { handle: "@eva-002.magi", name: "eva-002", token: "tok-2" },
+        chats: [
+          { chat_id: "s0", kind: "bot", agents: ["@eva-000.magi"] },
+          { chat_id: "s1", kind: "bot", agents: ["@eva-001.magi"] },
+          { chat_id: "s2", kind: "bot", agents: ["@eva-002.magi"] },
+        ],
       });
     }
     throw new Error(`unexpected request: ${url}`);
