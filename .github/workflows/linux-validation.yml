@@ -1,7 +1,7 @@
 name: Linux AppImage validation (no release)
 on:
   push:
-    branches: ["codex/**"]
+    branches: ["main"]
   pull_request:
     branches: ["main"]
   workflow_dispatch:
