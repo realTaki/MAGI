@@ -9,6 +9,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { pathToFileURL } from "node:url";
+import { Bus, messageDelivery } from "@magi/bus";
 import { createSupervisor } from "../process.mjs";
 
 const repo = path.resolve(import.meta.dirname, "../../..");
@@ -38,16 +40,19 @@ function start(home, args, env, t) {
 test("a switch runs the new revision's child", async (t) => {
   const home = mkdtempSync(path.join(tmpdir(), "magi-switch-"));
   const proof = path.join(home, "proof");
-  const dirB = childAt(home, "eva-002", "b", `process.send({ v: 1, type: "hello" });
-process.send({ v: 1, type: "ready" });
-require("node:fs").writeFileSync(${JSON.stringify(proof)}, "from-b");
-process.on("message", (message) => { if (message?.type === "shutdown") process.exit(0); });
-setInterval(() => {}, 1000);
-`);
-  childAt(home, "eva-002", "a", `process.send({ v: 1, type: "hello" });
+  const dirB = path.join(home, "eva-002", "revisions", "b");
+  const childB = path.join(dirB, "packages", "node", "dist", "child.js");
+  childAt(home, "eva-002", "a", `const { mkdirSync, writeFileSync } = require("node:fs");
+const { dirname } = require("node:path");
+process.send({ v: 1, type: "hello" });
 process.on("message", (message) => { if (message?.type === "shutdown") process.exit(0); });
 process.send({ v: 1, type: "ready" });
-setTimeout(() => process.send({ v: 1, type: "switch", revision: "b", dir: ${JSON.stringify(dirB)}, job: 3 }), 30);
+setTimeout(() => {
+  const file = ${JSON.stringify(childB)};
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, ${JSON.stringify(`process.send({ v: 1, type: "hello" });\nprocess.send({ v: 1, type: "ready" });\nrequire("node:fs").writeFileSync(${JSON.stringify(proof)}, "from-b");\nprocess.on("message", (message) => { if (message?.type === "shutdown") process.exit(0); });\nsetInterval(() => {}, 1000);\n`)});
+  process.send({ v: 1, type: "switch", revision: "b", dir: ${JSON.stringify(dirB)}, job: 3 });
+}, 80);
 setInterval(() => {}, 1000);
 `);
   t.after(() => rmSync(home, { recursive: true, force: true }));
@@ -100,14 +105,20 @@ test("a failed switch starts the previous revision again", async (t) => {
   const home = mkdtempSync(path.join(tmpdir(), "magi-rollback-"));
   const runs = path.join(home, "runs");
   const restored = path.join(home, "restored");
-  const bad = childAt(home, "eva-002", "bad", "process.exit(2);\n");
-  childAt(home, "eva-002", "a", `const { readFileSync, writeFileSync, existsSync } = require("node:fs");
+  const bad = path.join(home, "eva-002", "revisions", "bad");
+  childAt(home, "eva-002", "a", `const { mkdirSync, readFileSync, writeFileSync, existsSync } = require("node:fs");
+const { dirname } = require("node:path");
 const n = existsSync(${JSON.stringify(runs)}) ? Number(readFileSync(${JSON.stringify(runs)}, "utf8")) : 0;
 writeFileSync(${JSON.stringify(runs)}, String(n + 1));
 process.send({ v: 1, type: "hello" });
 process.on("message", (message) => { if (message?.type === "shutdown") process.exit(0); });
 process.send({ v: 1, type: "ready" });
-if (n === 0) setTimeout(() => process.send({ v: 1, type: "switch", revision: "bad", dir: ${JSON.stringify(bad)}, job: 8 }), 30);
+if (n === 0) setTimeout(() => {
+  const file = ${JSON.stringify(path.join(bad, "packages", "node", "dist", "child.js"))};
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, "process.exit(2);\\n");
+  process.send({ v: 1, type: "switch", revision: "bad", dir: ${JSON.stringify(bad)}, job: 8 });
+}, 80);
 else writeFileSync(${JSON.stringify(restored)}, "previous");
 setInterval(() => {}, 1000);
 `);
@@ -136,19 +147,20 @@ test("a hosted upgrade finishes the job after the old launcher exits", async (t)
   const home = mkdtempSync(path.join(tmpdir(), "magi-hosted-"));
   const oldPid = path.join(home, "old.pid");
   const done = path.join(home, "done");
-  const dir = childAt(home, "eva-002", "next", `const { writeFileSync } = require("node:fs");
-process.send({ v: 1, type: "hello" });
-process.send({ v: 1, type: "ready" });
-if (process.env.MAGI_REPLACE_JOB) writeFileSync(${JSON.stringify(done)}, process.env.MAGI_REPLACE_JOB);
-process.on("message", (message) => { if (message?.type === "shutdown") process.exit(0); });
-setInterval(() => {}, 1000);
-`);
-  childAt(home, "eva-002", "old", `const { writeFileSync } = require("node:fs");
+  const dir = path.join(home, "eva-002", "revisions", "next");
+  const nextChild = path.join(dir, "packages", "node", "dist", "child.js");
+  childAt(home, "eva-002", "old", `const { mkdirSync, writeFileSync } = require("node:fs");
+const { dirname } = require("node:path");
 writeFileSync(${JSON.stringify(oldPid)}, String(process.ppid));
 process.send({ v: 1, type: "hello" });
 process.on("message", (message) => { if (message?.type === "shutdown") process.exit(0); });
 process.send({ v: 1, type: "ready" });
-setTimeout(() => process.send({ v: 1, type: "upgrade", revision: "next", dir: ${JSON.stringify(dir)}, launcher: ${JSON.stringify(launcher)}, job: 9 }), 30);
+setTimeout(() => {
+  const file = ${JSON.stringify(nextChild)};
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, ${JSON.stringify(`const { writeFileSync } = require("node:fs");\nprocess.send({ v: 1, type: "hello" });\nprocess.send({ v: 1, type: "ready" });\nif (process.env.MAGI_REPLACE_JOB) writeFileSync(${JSON.stringify(done)}, process.env.MAGI_REPLACE_JOB);\nprocess.on("message", (message) => { if (message?.type === "shutdown") process.exit(0); });\nsetInterval(() => {}, 1000);\n`)});
+  process.send({ v: 1, type: "upgrade", revision: "next", dir: ${JSON.stringify(dir)}, launcher: ${JSON.stringify(launcher)}, job: 9 });
+}, 80);
 setInterval(() => {}, 1000);
 `);
   const supervisor = createSupervisor({ node: process.execPath, env: { ...process.env, MAGI_NODE: process.execPath } });
@@ -181,6 +193,95 @@ setInterval(() => {}, 1000);
   assert.equal(readFileSync(done, "utf8"), "9");
   const pid = Number(readFileSync(oldPid, "utf8"));
   assert.throws(() => process.kill(pid, 0), /ESRCH/);
+  const stateDeadline = Date.now() + 4_000;
+  let state = {};
+  while (Date.now() < stateDeadline) {
+    try { state = JSON.parse(readFileSync(path.join(home, "eva-002", "launcher.json"), "utf8")); }
+    catch { state = {}; }
+    if (state.current === "next" && state.previous === "old") break;
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  }
+  assert.equal(state.current, "next");
+  assert.equal(state.previous, "old");
+  assert.equal(state.currentDir, dir);
+});
+
+test("a failed switch records the switch error on the job", async (t) => {
+  const home = mkdtempSync(path.join(tmpdir(), "magi-job-"));
+  const previous = process.env.MAGI_HOME;
+  process.env.MAGI_HOME = home;
+  const bus = new Bus("@eva-002.magi");
+  const chat = bus.chats.forChannel("cli", "operator");
+  messageDelivery.setHomeChat(bus, chat.id);
+  const id = bus.board("ReplaceSelfJob").publish({ swap: true }, "test");
+  bus.settings.set("replace.pending", String(id));
+  assert.ok(bus.board("ReplaceSelfJob").claimId("replace", id));
+  bus.close();
+  if (previous === undefined) delete process.env.MAGI_HOME;
+  else process.env.MAGI_HOME = previous;
+  const resultFile = path.join(home, "result.json");
+  const badDir = path.join(home, "eva-002", "revisions", "bad");
+  const busModule = pathToFileURL(path.join(repo, "packages/bus/dist/index.js")).href;
+  const replaceModule = pathToFileURL(path.join(repo, "packages/manager/dist/replace.js")).href;
+  childAt(home, "eva-002", "a", `const { mkdirSync, writeFileSync } = require("node:fs");
+const { dirname } = require("node:path");
+async function main() {
+  process.on("message", (message) => { if (message?.type === "shutdown") process.exit(0); });
+  process.send({ v: 1, type: "hello" });
+  try {
+    if (process.env.MAGI_REPLACE_ERROR) {
+      const jobId = Number(process.env.MAGI_REPLACE_JOB);
+      const failure = process.env.MAGI_REPLACE_ERROR;
+      const { Bus } = await import(${JSON.stringify(busModule)});
+      const { ReplaceWorker } = await import(${JSON.stringify(replaceModule)});
+      const bus = new Bus("@eva-002.magi");
+      const worker = new ReplaceWorker(bus, { app: "eva", script: "build" }, { healthy: () => null, async suspendForReplace() {}, async resume() {} });
+      await worker.poll();
+      writeFileSync(${JSON.stringify(resultFile)}, JSON.stringify({ job: jobId, error: failure, result: bus.board("ReplaceSelfJob").result(jobId) }));
+      bus.close();
+    } else {
+      setTimeout(() => {
+        const badChild = ${JSON.stringify(path.join(badDir, "packages/node/dist/child.js"))};
+        mkdirSync(dirname(badChild), { recursive: true });
+        writeFileSync(badChild, "process.exit(2);\\n");
+        process.send({ v: 1, type: "switch", revision: "bad", dir: ${JSON.stringify(badDir)}, job: ${id} });
+      }, 80);
+    }
+  } catch (error) {
+    writeFileSync(${JSON.stringify(resultFile)}, JSON.stringify({ failed: String(error && error.stack || error) }));
+  }
+  process.send({ v: 1, type: "ready" });
+  setInterval(() => {}, 1000);
+}
+main();
+`);
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const { proc, stderr } = start(home, ["--role", "agent", "@eva-002.magi"], {
+    MAGI_REVISION_DIR: path.join(home, "eva-002", "revisions", "a"),
+    MAGI_REVISION: "a",
+  }, t);
+  const deadline = Date.now() + 8_000;
+  let detail = "no result file";
+  while (Date.now() < deadline && proc.exitCode == null) {
+    try {
+      detail = readFileSync(resultFile, "utf8");
+      const body = JSON.parse(detail);
+      if (body.failed) throw new Error(body.failed);
+      const result = body.result;
+      assert.equal(result.status, "failed");
+      assert.match(result.error, /exited 2/);
+      assert.equal(result.error.includes("crashed"), false);
+      return;
+    } catch (error) {
+      if (error?.code !== "ENOENT") {
+        writeFileSync("/tmp/job-result-debug.txt", `${detail}\n${error && error.stack || error}\n${stderr()}`);
+        throw error;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  }
+  writeFileSync("/tmp/job-result-debug.txt", `timeout ${detail}\n${stderr()}`);
+  assert.fail(`job result was not recorded (${proc.exitCode}): ${stderr()}`);
 });
 
 function exists(file) {

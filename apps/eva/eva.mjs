@@ -95,7 +95,7 @@ function childScript(name, dir) {
   return script;
 }
 
-function spawnChild(role, rest, name, { script, revision, replaceJob, replaceError }) {
+function spawnChild(role, rest, name, { script, revision, previous, replaceJob, replaceError }) {
   const { node } = resolveToolchain();
   const host = process.env.MAGI_HOST === "1";
   const env = {
@@ -108,6 +108,7 @@ function spawnChild(role, rest, name, { script, revision, replaceJob, replaceErr
     ...(rest[1] ? { MAGI_ASP: rest[1] } : {}),
     ...(rest[2] ? { MAGI_ASP_TOKEN: rest[2] } : {}),
     ...(revision ? { MAGI_REVISION: revision } : {}),
+    ...(previous ? { MAGI_PREVIOUS_REVISION: previous } : {}),
   };
   delete env.MAGI_REPLACE_JOB;
   delete env.MAGI_REPLACE_ERROR;
@@ -216,7 +217,8 @@ function backoff(attempt) {
 async function main() {
   const { role, rest } = args();
   const name = nodeName(role, rest);
-  const state = readState(name);
+  const saved = readState(name);
+  const state = { ...saved };
   if (process.env.MAGI_REVISION_DIR) state.currentDir = process.env.MAGI_REVISION_DIR;
   if (process.env.MAGI_REVISION) state.current = process.env.MAGI_REVISION;
 
@@ -227,7 +229,7 @@ async function main() {
 
   const launch = (options) => {
     const script = options.script ?? childScript(name, options.dir ?? null);
-    const child = spawnChild(role, rest, name, { ...options, script });
+    const child = spawnChild(role, rest, name, { ...options, script, previous: state.previous });
     const started = Date.now();
     child.on("message", (message) => { void onMessage(message); });
     child.on("exit", () => { void onExit(child, started); });
@@ -284,7 +286,7 @@ async function main() {
       if (next) killTree(next);
       const text = report(name, error, job);
       try {
-        current = launch({ dir: previousDir, revision: state.current });
+        current = launch({ dir: previousDir, revision: state.current, replaceJob: job, replaceError: text });
         await waitHealthy(current);
       } catch (rollbackError) {
         report(name, `${text}; rollback failed: ${rollbackError instanceof Error ? rollbackError.message : rollbackError}`, job);
@@ -347,7 +349,7 @@ async function main() {
       killTree(next);
       const text = report(name, error, job);
       try {
-        current = launch({ dir: state.currentDir, revision: state.current });
+        current = launch({ dir: state.currentDir, revision: state.current, replaceJob: job, replaceError: text });
         await waitHealthy(current);
       } catch (rollbackError) {
         report(name, `${text}; rollback failed: ${rollbackError instanceof Error ? rollbackError.message : rollbackError}`, job);
@@ -383,6 +385,12 @@ async function main() {
     process.exit(1);
   }
   acceptingCrashes = true;
+  if (state.current !== saved.current || state.currentDir !== saved.currentDir) {
+    state.previous = saved.current;
+    state.previousDir = saved.currentDir;
+    writeState(name, state);
+    pruneRevisions(name, new Set([state.current, state.previous].filter(Boolean)));
+  }
   if (typeof process.send === "function") process.send({ v: LAUNCHER_PROTOCOL, type: "ready" });
   const stop = () => {
     replaced = true;

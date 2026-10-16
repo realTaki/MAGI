@@ -52,18 +52,3 @@ export class Asp {
   }
 }
 
-export async function runAsp(): Promise<() => Promise<void>> {
-  const { aspBase } = await import("@magi/runtime/asp.js");
-  const { healthyOrExit } = await import("@magi/manager");
-  const base = new URL(aspBase());
-  const asp = new Asp({
-    aspBase: base.href,
-    requestShutdown: () => process.kill(process.pid, "SIGTERM"),
-    host: base.hostname,
-    port: Number(base.port || "80"),
-  });
-  await asp.start();
-  await healthyOrExit(() => asp.healthy());
-  console.error(`[asp] listening on ${asp.origin}`);
-  return async () => { await asp.stop(); };
-}

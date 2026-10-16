@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdirSync, renameSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { magiHome } from "./home.js";
 import { resolveToolchain } from "./toolchain.js";
@@ -49,6 +49,8 @@ export async function reviseCheckout(root: string, target: string): Promise<{ re
   }
   if (!/^[0-9a-f]+$/i.test(revision)) throw new Error(`revision ${revision} is not a commit`);
   const dir = join(magiHome(), name, "revisions", revision);
+  const live = revision === process.env.MAGI_REVISION || revision === process.env.MAGI_PREVIOUS_REVISION;
+  if (live && existsSync(dir)) return { revision, previous, dir };
   const staging = `${dir}.building`;
   rmSync(staging, { recursive: true, force: true });
   mkdirSync(join(magiHome(), name, "revisions"), { recursive: true });
@@ -63,7 +65,7 @@ export async function reviseCheckout(root: string, target: string): Promise<{ re
     rmSync(staging, { recursive: true, force: true });
     throw error;
   }
-  rmSync(dir, { recursive: true, force: true });
+  if (!live) rmSync(dir, { recursive: true, force: true });
   renameSync(staging, dir);
   return { revision, previous, dir };
 }

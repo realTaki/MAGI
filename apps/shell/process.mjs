@@ -14,6 +14,7 @@ import { spawn } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { replaceFailedPath } from "@magi/bus/replaceMarker.js";
+import { LAUNCHER_PROTOCOL } from "@magi/runtime/protocol.js";
 import { createInterface } from "node:readline";
 
 /** Bootstrap Shell before it can run its own prepare method. */
@@ -213,7 +214,7 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
           notifyHost({ type: "event", event: "launcher.failed", payload: { error } });
           return;
         }
-        if (message?.type === "upgrade" && isHost && message.v === 1 && typeof message.launcher === "string") {
+        if (message?.type === "upgrade" && isHost && message.v === LAUNCHER_PROTOCOL && typeof message.launcher === "string") {
           entry.upgrade = {
             entry: message.launcher,
             cwd: dirname(message.launcher),
@@ -260,12 +261,22 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
       if (isHost && upgrade && !entry.stopping) {
         const next = { ...spec, entry: upgrade.entry, cwd: upgrade.cwd, args: upgrade.args, env: upgrade.env };
         records.set(id, { ...records.get(id), spec: next });
+        const previousSpec = spec;
         void start(next, { host, id, replacing: true }).then(async (handle) => {
           await handle.whenReady();
           onHostRestart?.(handle);
-        }).catch((error) => {
+        }).catch(async (error) => {
           const text = error instanceof Error ? error.message : String(error);
           notifyHost({ type: "event", event: "launcher.failed", payload: { error: text } });
+          records.set(id, { ...records.get(id), spec: previousSpec });
+          try {
+            const restored = await start(previousSpec, { host, id, replacing: true });
+            await restored.whenReady();
+            onHostRestart?.(restored);
+          } catch (rollbackError) {
+            const detail = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
+            notifyHost({ type: "event", event: "launcher.failed", payload: { error: `${text}; rollback failed: ${detail}` } });
+          }
         });
         return;
       }

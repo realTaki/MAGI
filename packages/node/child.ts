@@ -8,10 +8,12 @@ import { stdin, stdout } from "node:process";
 import { join } from "node:path";
 import { healthyOrExit, untilHealthy } from "@magi/manager";
 import { resolveToolchain } from "@magi/runtime/toolchain.js";
+import { aspBase } from "@magi/runtime/asp.js";
 import { Magi } from "./agent.js";
-import { Asp, runAsp } from "./asp.js";
+import { Asp } from "./asp.js";
 import { sendLauncher, untilShutdown, watchLauncherProtocol } from "./control.js";
-import { Shell, runShell } from "./shell.js";
+import { createLocalApi, operatingSystemHome, Shell } from "./shell.js";
+import { connectHost } from "./host.js";
 
 function role(): string {
   const flag = process.argv.indexOf("--role");
@@ -49,6 +51,84 @@ async function readLines(magi: Magi): Promise<void> {
   }
 }
 
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (value === undefined || value === "") throw new Error(`${name} is not set`);
+  return value;
+}
+
+async function startShell(): Promise<() => Promise<void>> {
+  const host = connectHost(process.stdin, process.stdout);
+  let retire: (() => Promise<void>) | undefined;
+  try {
+    const checkout = requireEnv("MAGI_CHECKOUT");
+    const initialProcesses = await host.restoreProcesses();
+    const api = createLocalApi({
+      initialProcesses,
+      paths: {
+        checkout,
+        appCheckout: process.env.MAGI_APP_CHECKOUT || checkout,
+        home: operatingSystemHome(),
+        userData: requireEnv("MAGI_USER_DATA"),
+      },
+      repository: requireEnv("MAGI_REPOSITORY"),
+      managed: process.env.MAGI_MANAGED === "1",
+      shellUpdate: {
+        packaged: process.env.MAGI_PACKAGED === "1",
+        currentVersion: process.env.MAGI_SHELL_VERSION ?? "",
+        install: (installer: string) => host.installShellUpdate({ installer }),
+      },
+      tools: {
+        git: requireEnv("MAGI_GIT"),
+        node: requireEnv("MAGI_NODE"),
+        npm: requireEnv("MAGI_NPM"),
+        env: process.env,
+      },
+      emit: (event: string, payload: unknown) => { void host.emit({ event, payload }); },
+      openExternal: (url: string) => host.openExternal({ url }),
+      copy: (text: string) => { void host.copy({ text }); },
+      startProcess: host.startProcess,
+      command: (file: string, args: string[], options: { cwd: string; env?: NodeJS.ProcessEnv; description?: string }) => host.command({ file, args, options }),
+      prepareDependencies: process.env.MAGI_MANAGED === "1" ? (root: string) => host.prepareDependencies(root) : undefined,
+    });
+    retire = () => api.dispose();
+    const handlers: Record<string, (params: unknown) => unknown> = {};
+    for (const [name, value] of Object.entries(api)) {
+      if (typeof value !== "function") continue;
+      handlers[name] = (params) => value(params);
+    }
+    handlers.prepare = () => api.prepare((message: string, percent: number) => { void host.progress({ message, percent }); });
+    handlers.start = () => api.start((message: string, percent: number) => { void host.progress({ message, percent }); });
+    host.serve(handlers);
+    await api.ready();
+    return async () => { try { await retire?.(); } finally { host.close(); } };
+  } catch (error) {
+    try { await retire?.(); } finally { host.close(); }
+    throw error;
+  }
+}
+
+async function startAsp(): Promise<() => Promise<void>> {
+  const base = new URL(aspBase());
+  const asp = new Asp({
+    aspBase: base.href,
+    requestShutdown: () => process.kill(process.pid, "SIGTERM"),
+    host: base.hostname,
+    port: Number(base.port || "80"),
+  });
+  await asp.start();
+  await healthyOrExit(() => asp.healthy());
+  console.error(`[asp] listening on ${asp.origin}`);
+  return async () => { await asp.stop(); };
+}
+
+async function startRole(selected: string): Promise<{ stop: () => Promise<void>; done: Promise<void> }> {
+  if (selected === "shell") return { stop: await startShell(), done: new Promise(() => {}) };
+  if (selected === "asp") return { stop: await startAsp(), done: new Promise(() => {}) };
+  if (selected !== "agent") throw new Error(`unknown role ${selected}`);
+  return runAgent();
+}
+
 async function main(): Promise<void> {
   sendLauncher({ type: "hello" });
   watchLauncherProtocol();
@@ -57,22 +137,7 @@ async function main(): Promise<void> {
     await runHealth(selected);
     return;
   }
-  if (selected === "shell") {
-    const stop = await runShell();
-    sendLauncher({ type: "ready" });
-    try { await untilShutdown(); }
-    finally { await stop?.(); }
-    return;
-  }
-  if (selected === "asp") {
-    const stop = await runAsp();
-    sendLauncher({ type: "ready" });
-    try { await untilShutdown(); }
-    finally { await stop?.(); }
-    return;
-  }
-  if (selected !== "agent") throw new Error(`unknown role ${selected}`);
-  const session = await runAgent();
+  const session = await startRole(selected);
   sendLauncher({ type: "ready" });
   try { await Promise.race([untilShutdown(), session.done]); }
   finally { await session.stop(); }
