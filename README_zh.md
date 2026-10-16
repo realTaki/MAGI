@@ -169,14 +169,9 @@ Electron App 启动本地 ASP，并运行本机的每条 MAGI 进程。ASP 负�
 
 当前安装包中的 Electron 壳（`apps/shell/`）和内置工具版本仍是固定的：虽然本地
 仓库也有壳的源码，修改它不会改变正在运行的 App。MAGI 与 ASP 的代码修改需要重启
-对应进程才能生效。本地可编辑源码是 RSI 的基础；MAGI 尚未实现对自身代码修订的
-自动验证、切换、重启和回滚。详见[壳的说明](apps/shell/README.md)。
+对应进程才能生效。自替换、回滚和失败标记见 [docs/architecture.md](docs/architecture.md)。
 
-深入实现请阅读：
-
-- [架构](ARCHITECTURE.md) —— 进程边界与各条业务流程
-- [术语与 ID 命名规范](ARCHITECTURE.md#canonical-terminology-and-names)
-- [ASP](apps/asp/README.md)
+深入实现请阅读 [docs/architecture.md](docs/architecture.md)。
 
 ## 项目状态
 
@@ -190,7 +185,7 @@ MAGI 仍处于实验阶段并在持续构建。现在交付的是本地桌面端
 | 事项 | 状态 | 说明 |
 | --- | --- | --- |
 | MAGI 之间的协作 | **Later** | ASP 只中继操作者的聊天，不提供 MAGI 之间共享的任务板。 |
-| 从 checkout 激活某个代码修订 | **Later** | 桌面端本来就跑在本地 Git checkout 上；改 `apps/eva/`、`packages/` 或 `apps/asp/` 仍需重启对应进程。App 不校验、也不回滚修订。 |
+| 从 checkout 激活某个代码修订 | 已有自替换 | 见 [docs/architecture.md](docs/architecture.md)。 |
 | 把上游合并进本地已改动的 checkout | **Later** | checkout 会与上游分叉，合并目前是手工操作。 |
 | 桌面端、终端、Telegram 之外的渠道 | **Later** | 邮件与日历尚未实现。 |
 

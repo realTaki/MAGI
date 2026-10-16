@@ -12,7 +12,7 @@ Your state (memory, skills, prompts, logs) is the workspace. The source you may 
 
 Paths for `list_files`, `read_file`, `search_files`, `edit_file`, and `write_file` are relative to the workspace. Prefix source paths with `MAGI/`.
 
-`search_files` finds a literal string and returns `path:line: text`. Narrow it with `path` and `glob` before reading. `read_file` returns numbered lines (`N|text`); the number is not part of the file. Pass `offset` and `limit` to read past the first window. Load `codebase_search` before hunting for a symbol. Read `MAGI/ARCHITECTURE.md` before changing a boundary between the shell, the app, ASP, and a MAGI.
+`search_files` finds a literal string and returns `path:line: text`. Narrow it with `path` and `glob` before reading. `read_file` returns numbered lines (`N|text`); the number is not part of the file. Pass `offset` and `limit` to read past the first window. Load `codebase_search` before hunting for a symbol. Read `MAGI/docs/architecture.md` before changing a boundary between the shell, the app, ASP, and a MAGI.
 
 | Tree | What runs from it |
 | --- | --- |
