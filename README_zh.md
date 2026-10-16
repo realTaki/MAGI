@@ -185,7 +185,7 @@ MAGI 仍处于实验阶段并在持续构建。现在交付的是本地桌面端
 | 事项 | 状态 | 说明 |
 | --- | --- | --- |
 | MAGI 之间的协作 | **Later** | ASP 只中继操作者的聊天，不提供 MAGI 之间共享的任务板。 |
-| 从 checkout 激活某个代码修订 | **已实现** | `replace_self` 由子进程构建，再请 eva 启动器切换修订；失败时保留旧进程并通知操作者。见 [docs/architecture.md](docs/architecture.md)。 |
+| 从 checkout 激活某个代码修订 | **已实现** | `replace_self` 检出目标修订，eva 启动器切换到该修订；失败时回到上一修订并通知操作者。见 [docs/architecture.md](docs/architecture.md)。 |
 | 把上游合并进本地已改动的 checkout | **Later** | checkout 会与上游分叉，合并目前是手工操作。 |
 | 桌面端、终端、Telegram 之外的渠道 | **Later** | 邮件与日历尚未实现。 |
 
