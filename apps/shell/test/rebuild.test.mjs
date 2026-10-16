@@ -1,6 +1,6 @@
 import test from "node:test";
 import { spawn, execFileSync } from "node:child_process";
-import { Bus } from "@magi/bus";
+import { Bus, SHELL_MAGI_HANDLE } from "@magi/bus";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -34,7 +34,7 @@ async function fixture(t, { spawnProcess } = {}) {
   t.after(() => cleanup(supervisor, directory));
   const specs = {};
   const handles = {};
-  for (const name of ["user", "asp", "eva", "other"]) {
+  for (const name of ["shell", "asp", "eva", "other"]) {
     const kind = name === "other" ? "eva" : name;
     const cwd = path.join(directory, name, "MAGI", "apps", kind);
     await mkdir(path.join(cwd, "dist"), { recursive: true });
@@ -49,17 +49,17 @@ async function fixture(t, { spawnProcess } = {}) {
   return { directory, supervisor, specs, handles, states };
 }
 
-for (const [target, name] of [["self", "eva"], ["app", "user"], ["asp", "asp"]]) {
+for (const [target, name] of [["self", "eva"], ["app", "shell"], ["asp", "asp"]]) {
   test(`${target}: compile own tree, replace only target, preserve identity and data paths`, async (t) => {
     const f = await fixture(t);
     const before = await f.states();
     const calls = [], events = [];
     let adopted = false;
-    const rebuild = createAppRebuilder({ supervisor: f.supervisor, tools: { node: process.execPath, npm: "npm-cli", git: "git", env: {} }, managed: () => true, pause: async () => {}, emit: (e) => events.push(e), onUser: async (handle) => { adopted = handle.id === f.handles.user.id; }, command: async (file, args, options) => {
+    const rebuild = createAppRebuilder({ supervisor: f.supervisor, tools: { node: process.execPath, npm: "npm-cli", git: "git", env: {} }, managed: () => true, pause: async () => {}, emit: (e) => events.push(e), onShell: async (handle) => { adopted = handle.id === f.handles.shell.id; }, command: async (file, args, options) => {
       calls.push({ file, args, cwd: options.cwd });
       if (args.includes("rev-parse")) return options.cwd === path.resolve(f.specs.eva.cwd, "..", "..") ? "magi/eva" : `magi/${name}`;
       if (args.includes("status")) return "";
-      if (args.includes("build")) await writeFile(f.specs[name].entry, program("new"));
+      if (args.includes("build") || args.includes("build:ui")) await writeFile(f.specs[name].entry, program("new"));
       return "";
     } });
     const result = await rebuild(`magi://runtime/rebuild?target=${target}&handle=%40eva.magi`);
@@ -75,16 +75,16 @@ for (const [target, name] of [["self", "eva"], ["app", "user"], ["asp", "asp"]])
         assert.equal(after[key].identity, before[key].identity);
       }
     }
-    assert.equal(adopted, name === "user");
-    assert.ok(calls.filter((c) => c.file === process.execPath).every((c) => c.cwd === path.resolve(f.specs[name].cwd, "..", "..") || (name === "user" && c.cwd === f.specs.user.cwd)));
+    assert.equal(adopted, name === "shell");
+    assert.ok(calls.filter((c) => c.file === process.execPath).every((c) => c.cwd === path.resolve(f.specs[name].cwd, "..", "..") || (name === "shell" && c.cwd === f.specs.shell.cwd)));
     assert.deepEqual(events.map((e) => e.phase), target === "self" ? ["requested", "building", "testing", "building", "restarting", "ready"] : ["requested", "merging", "building", "testing", "building", "restarting", "ready"]);
-    assert.equal((await f.supervisor.start(f.specs.other)).id, f.handles.other.id, "restored User adopts existing children");
+    assert.equal((await f.supervisor.start(f.specs.other)).id, f.handles.other.id, "restored Shell adopts existing children");
   });
 }
 
 test("build failure preserves running apps and reports failed building", async (t) => {
   const f = await fixture(t), before = await f.states(), events = [];
-  const rebuild = createAppRebuilder({ supervisor: f.supervisor, tools: {}, managed: () => true, pause: async () => {}, emit: (e) => events.push(e), onUser: async () => {}, command: async () => { throw new Error("compiler failed"); } });
+  const rebuild = createAppRebuilder({ supervisor: f.supervisor, tools: {}, managed: () => true, pause: async () => {}, emit: (e) => events.push(e), onShell: async () => {}, command: async () => { throw new Error("compiler failed"); } });
   await assert.rejects(rebuild("magi://runtime/rebuild?target=self&handle=%40eva.magi"), /compiler failed/);
   assert.deepEqual(await f.states(), before);
   assert.equal(events.at(-1).failedPhase, "building");
@@ -94,9 +94,9 @@ test("build failure preserves running apps and reports failed building", async (
 
 test("restart failure does not report ready or restart siblings", async (t) => {
   const f = await fixture(t), before = await f.states(), events = [];
-  const rebuild = createAppRebuilder({ supervisor: f.supervisor, tools: {}, managed: () => true, pause: async () => {}, emit: (e) => events.push(e), onUser: async () => {}, command: async () => { await writeFile(f.specs.eva.entry, 'process.exit(7)'); return ""; } });
+  const rebuild = createAppRebuilder({ supervisor: f.supervisor, tools: {}, managed: () => true, pause: async () => {}, emit: (e) => events.push(e), onShell: async () => {}, command: async () => { await writeFile(f.specs.eva.entry, 'process.exit(7)'); return ""; } });
   await assert.rejects(rebuild("magi://runtime/rebuild?target=self&handle=%40eva.magi"), /exited before ready.*7/);
-  for (const name of ["user", "asp", "other"]) assert.deepEqual((await f.states())[name], before[name]);
+  for (const name of ["shell", "asp", "other"]) assert.deepEqual((await f.states())[name], before[name]);
   assert.equal(events.at(-1).failedPhase, "restarting");
   assert.ok(!events.some((e) => e.phase === "ready"));
 });
@@ -113,21 +113,21 @@ test("strict link validation", () => {
   assert.equal(parseRebuildLink("https://runtime/rebuild?target=self&handle=@eva.magi"), null);
 });
 
-test("real User retires without stopping EVA and restores supervisor handles", async (t) => {
+test("real Shell retires without stopping EVA and restores supervisor handles", async (t) => {
   const f = await fixture(t);
-  f.supervisor.stop(f.handles.user.id);
-  // A real User is a host, unlike the simple app fixtures above.
+  f.supervisor.stop(f.handles.shell.id);
+  // A real Shell is a host, unlike the simple app fixtures above.
   const repository = path.resolve(import.meta.dirname, "..", "..", "..");
   const home = path.join(f.directory, "home");
-  const persisted = new Bus("@user.magi", path.join(home, ".magi", "user"));
+  const persisted = new Bus(SHELL_MAGI_HANDLE, path.join(home, ".magi", "shell"));
   persisted.settings.set("rebuild-test", "preserved");
   persisted.close();
   const spec = {
-    entry: path.join(repository, "apps", "user", "dist", "user.js"),
-    cwd: path.join(repository, "apps", "user"),
+    entry: path.join(repository, "apps", "shell", "dist", "shell.js"),
+    cwd: path.join(repository, "apps", "shell"),
     env: {
       MAGI_CHECKOUT: repository, MAGI_APP_CHECKOUT: repository,
-      MAGI_HOME: home, MAGI_USER_DATA: path.join(home, ".magi", "user", "electron"),
+      MAGI_HOME: home, MAGI_USER_DATA: path.join(home, ".magi", "shell", "electron"),
       MAGI_REPOSITORY: "https://github.com/realTaki/MAGI.git",
       MAGI_GIT: "git", MAGI_NODE: process.execPath,
       MAGI_NPM: path.join(repository, "apps", "shell", "runtime", "npm", "node_modules", "npm", "bin", "npm-cli.js"),
@@ -135,12 +135,12 @@ test("real User retires without stopping EVA and restores supervisor handles", a
   };
   // Omit the ASP fixture: its fake process has no health endpoint.
   f.supervisor.stop(f.handles.asp.id);
-  while (f.supervisor.snapshots().some((p) => [f.handles.asp.id, f.handles.user.id].includes(p.id))) await new Promise((r) => setTimeout(r, 10));
+  while (f.supervisor.snapshots().some((p) => [f.handles.asp.id, f.handles.shell.id].includes(p.id))) await new Promise((r) => setTimeout(r, 10));
   const before = await f.states();
   const user = await f.supervisor.start(spec, { host: { emit: () => {}, progress: () => {} } });
   await user.whenReady();
   await user.invoke("ready");
-  const data = path.join(home, ".magi", "user", "memories", "books.db");
+  const data = path.join(home, ".magi", "shell", "memories", "books.db");
   assert.ok((await readFile(data)).length > 0);
   const restored = await f.supervisor.restart(user.id);
   await restored.invoke("ready");
@@ -152,15 +152,15 @@ test("real User retires without stopping EVA and restores supervisor handles", a
   f.supervisor.stop(restored.id);
   while (f.supervisor.snapshots().some((p) => p.id === restored.id)) await new Promise((r) => setTimeout(r, 10));
   await assert.rejects(restored.invoke("ready"), /exited/);
-  const reopened = new Bus("@user.magi", path.join(home, ".magi", "user"));
+  const reopened = new Bus(SHELL_MAGI_HANDLE, path.join(home, ".magi", "shell"));
   assert.equal(reopened.settings.get("rebuild-test"), "preserved");
   reopened.close();
 });
 
-for (const name of ["user", "asp"]) {
+for (const name of ["shell", "asp"]) {
   test(`${name} self rebuild uses its registered checkout without a merge`, async (t) => {
     const f = await fixture(t), calls = [];
-    const rebuild = createAppRebuilder({ supervisor: f.supervisor, tools: {}, managed: () => true, pause: async () => {}, emit: () => {}, onUser: async () => {}, command: async (_file, args, options) => {
+    const rebuild = createAppRebuilder({ supervisor: f.supervisor, tools: {}, managed: () => true, pause: async () => {}, emit: () => {}, onShell: async () => {}, command: async (_file, args, options) => {
       calls.push({ args, cwd: options.cwd });
       await writeFile(f.specs[name].entry, program("new")); return "";
     } });
@@ -174,7 +174,7 @@ test("unowned target and unmanaged checkout are rejected before commands", async
   const f = await fixture(t);
   let commands = 0;
   for (const managed of [true, false]) {
-    const rebuild = createAppRebuilder({ supervisor: f.supervisor, tools: {}, managed: () => managed, pause: async () => {}, emit: () => {}, onUser: async () => {}, command: async () => { commands++; } });
+    const rebuild = createAppRebuilder({ supervisor: f.supervisor, tools: {}, managed: () => managed, pause: async () => {}, emit: () => {}, onShell: async () => {}, command: async () => { commands++; } });
     await assert.rejects(rebuild("magi://runtime/rebuild?target=self&handle=@unknown.magi"));
   }
   assert.equal(commands, 0);
@@ -182,7 +182,7 @@ test("unowned target and unmanaged checkout are rejected before commands", async
 
 test("failed merge aborts its transaction and leaves every app running", async (t) => {
   const f = await fixture(t), before = await f.states(), calls = [];
-  const rebuild = createAppRebuilder({ supervisor: f.supervisor, tools: { git: "git" }, managed: () => true, pause: async () => {}, emit: () => {}, onUser: async () => {}, command: async (_file, args, options) => {
+  const rebuild = createAppRebuilder({ supervisor: f.supervisor, tools: { git: "git" }, managed: () => true, pause: async () => {}, emit: () => {}, onShell: async () => {}, command: async (_file, args, options) => {
     calls.push(args);
     if (args.includes("rev-parse")) return options.cwd === path.resolve(f.specs.eva.cwd, "..", "..") ? "magi/eva" : "magi/asp";
     if (args.includes("status")) return "";
@@ -227,7 +227,7 @@ test("rebuild rejects overlapping transactions and conflicting identities", asyn
   const f = await fixture(t);
   let release;
   const paused = new Promise((resolve) => { release = resolve; });
-  const rebuild = createAppRebuilder({ supervisor: f.supervisor, tools: {}, managed: () => true, pause: () => paused, emit: () => {}, onUser: async () => {}, command: async () => "" });
+  const rebuild = createAppRebuilder({ supervisor: f.supervisor, tools: {}, managed: () => true, pause: () => paused, emit: () => {}, onShell: async () => {}, command: async () => "" });
   const first = rebuild("magi://runtime/rebuild?target=self&handle=@eva.magi");
   await assert.rejects(rebuild("magi://runtime/rebuild?target=self&handle=@eva.magi"), /still running/);
   await assert.rejects(f.supervisor.start({ ...f.specs.eva, args: ["@eva.magi", "different-token"] }), /Conflicting process/);
@@ -241,7 +241,7 @@ test("same-name scripts cannot become lifecycle targets; wrong publishing branch
     { id: "2", spec: { cwd: "/tmp/root/apps/asp", entry: "dist/asp.js" } },
   ];
   let commands = 0;
-  const make = (processes, branch) => createAppRebuilder({ supervisor: { snapshots: () => processes }, tools: {}, managed: () => true, pause: async () => {}, emit: () => {}, onUser: async () => {}, command: async () => { commands++; return branch; } });
+  const make = (processes, branch) => createAppRebuilder({ supervisor: { snapshots: () => processes }, tools: {}, managed: () => true, pause: async () => {}, emit: () => {}, onShell: async () => {}, command: async () => { commands++; return branch; } });
   await assert.rejects(make(specs)("magi://runtime/rebuild?target=self&handle=@eva.magi"), /not uniquely owned/);
   assert.equal(commands, 0);
   specs[0].spec = { cwd: "/tmp/root/apps/eva", entry: "dist/eva.js", args: ["@eva.magi"] };
@@ -290,7 +290,7 @@ test("publishing refuses a target on another branch before merge", async () => {
   const rebuild = createAppRebuilder({ supervisor: { snapshots: () => [
     { id: "eva", spec: { cwd: "/tmp/eva/MAGI/apps/eva", entry: "dist/eva.js", args: ["@eva.magi"] } },
     { id: "asp", spec: { cwd: "/tmp/asp/MAGI/apps/asp", entry: "dist/asp.js" } },
-  ] }, tools: {}, managed: () => true, pause: async () => {}, emit: () => {}, onUser: async () => {}, command: async () => ++calls === 1 ? "magi/eva" : "main" });
+  ] }, tools: {}, managed: () => true, pause: async () => {}, emit: () => {}, onShell: async () => {}, command: async () => ++calls === 1 ? "magi/eva" : "main" });
   await assert.rejects(rebuild("magi://runtime/rebuild?target=asp&handle=@eva.magi"), /own managed branch/);
   assert.equal(calls, 2);
 });
@@ -305,18 +305,18 @@ test("stop followed immediately by start waits for the old instance", async (t) 
   assert.equal(f.supervisor.snapshots().filter((p) => p.spec.args?.[0] === "@eva.magi").length, 1);
 });
 
-test("a broken User host pipe cannot take down the Shell supervisor", { timeout: 10_000 }, async (t) => {
+test("a broken Shell host pipe cannot take down the Shell supervisor", { timeout: 10_000 }, async (t) => {
   let userChild;
   const f = await fixture(t, { spawnProcess: (node, args, options) => {
     const child = spawn(node, args, options);
     if (options.stdio[0] === "pipe") userChild = child;
     return child;
   } });
-  f.supervisor.stop(f.handles.user.id);
-  while (f.supervisor.snapshots().some((p) => p.id === f.handles.user.id)) await new Promise((r) => setTimeout(r, 10));
-  const cwd = path.join(f.directory, "broken", "apps", "user");
+  f.supervisor.stop(f.handles.shell.id);
+  while (f.supervisor.snapshots().some((p) => p.id === f.handles.shell.id)) await new Promise((r) => setTimeout(r, 10));
+  const cwd = path.join(f.directory, "broken", "apps", "shell");
   await mkdir(path.join(cwd, "dist"), { recursive: true });
-  const entry = path.join(cwd, "dist", "user.js");
+  const entry = path.join(cwd, "dist", "shell.js");
   await writeFile(entry, "process.send({type:'ready'}); setInterval(()=>{},1000);");
   const host = await f.supervisor.start({ cwd, entry }, { host: {} });
   await host.whenReady();
@@ -350,7 +350,7 @@ test("private rebuild IPC binds the caller identity and refuses spoofed or unown
   const cases = [
     { kind: "eva", name: "owned", request: { type: "runtime.rebuild", id: "owned", target: "self" }, accepted: true },
     { kind: "eva", name: "spoofed", request: { type: "runtime.rebuild", id: "spoofed", target: "self", handle: "@other.magi" } },
-    { kind: "user", name: "wrong-role", request: { type: "runtime.rebuild", id: "wrong-role", target: "self" } },
+    { kind: "shell", name: "wrong-role", request: { type: "runtime.rebuild", id: "wrong-role", target: "self" } },
     { kind: "unrelated", name: "same-name", request: { type: "runtime.rebuild", id: "same-name", target: "self" } },
   ];
   for (const item of cases) {
@@ -371,7 +371,7 @@ test("failed tests and failed compilation retain the old instance", async (t) =>
   const f = await fixture(t), before = await f.states();
   for (const failing of ["test", "build"]) {
     const events = [];
-    const rebuild = createAppRebuilder({ supervisor: f.supervisor, tools: { npm: "npm-cli" }, managed: () => true, pause: async () => {}, emit: (event) => events.push(event), onUser: async () => {}, command: async (_file, args) => {
+    const rebuild = createAppRebuilder({ supervisor: f.supervisor, tools: { npm: "npm-cli" }, managed: () => true, pause: async () => {}, emit: (event) => events.push(event), onShell: async () => {}, command: async (_file, args) => {
       if ((failing === "test" && args[1] === "test") || (failing === "build" && args[2] === "build")) throw new Error(`rejected ${failing}`);
       return "";
     } });
@@ -433,7 +433,7 @@ test("source rebuild reuses live dependencies and rejects changed declarations",
   const supervisor = createSupervisor({ node: process.execPath, env: process.env }); t.after(() => cleanup(supervisor, directory));
   const handle = await supervisor.start({ cwd, entry, args: ["@dependencies.magi"], env: { STATE: state } }); await handle.whenReady();
   const calls = [];
-  const rebuild = createAppRebuilder({ supervisor, tools: { npm: "npm-cli" }, managed: () => true, pause: async () => {}, emit: () => {}, onUser: async () => {}, command: async (_file, args) => { calls.push(args); if (args[2] === "build") await writeFile(entry, program("new")); return ""; } });
+  const rebuild = createAppRebuilder({ supervisor, tools: { npm: "npm-cli" }, managed: () => true, pause: async () => {}, emit: () => {}, onShell: async () => {}, command: async (_file, args) => { calls.push(args); if (args[2] === "build") await writeFile(entry, program("new")); return ""; } });
   await rebuild("magi://runtime/rebuild?target=self&handle=@dependencies.magi");
   assert.ok(!calls.some((args) => args.includes("ci")), "loaded native modules are never removed for source-only edits");
   const before = JSON.parse(await readFile(state, "utf8"));

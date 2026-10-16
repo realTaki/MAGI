@@ -147,7 +147,7 @@ export function connectHost(stdin: Readable, stdout: Writable) {
     async restoreProcesses(): Promise<Array<{ spec: ProcessSpec; handle: ProcessHandle }>> {
       const result = await rpc("processes");
       if (!Array.isArray(result)) throw new Error("processes did not return a list");
-      return result.filter((entry) => entry.spec?.entry && !entry.spec.entry.endsWith("user.js"))
+      return result.filter((entry) => entry.spec?.entry && !entry.spec.entry.endsWith("shell.js"))
         .map((entry) => ({ spec: entry.spec as ProcessSpec, handle: processHandle(entry.id as string) }));
     },
     close() {

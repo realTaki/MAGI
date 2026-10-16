@@ -53,7 +53,7 @@
       "path": "apps/asp"
     },
     {
-      "path": "apps/user/tsconfig.process.json"
+      "path": "apps/shell"
     }
   ]
 }

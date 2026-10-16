@@ -7,7 +7,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { createLocalApi } from "../main/index.ts";
+import { createLocalApi } from "../shell.ts";
 
 function git(cwd, args) {
   return execFileSync("git", args, { cwd, encoding: "utf8" });
@@ -142,7 +142,7 @@ test("the app refuses to attach to a running Python ASP", async (t) => {
   await api.dispose();
 });
 
-test("the User module creates and runs ASP from its own magi/asp clone", async (t) => {
+test("the operator process creates and runs ASP from its own magi/asp clone", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-runtime-clones-"));
   let api;
   const { origin, seed } = makeOrigin(root);

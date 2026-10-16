@@ -1,48 +1,45 @@
 # Desktop app
 
 The Electron shell is a bootstrap for a local MAGI installation: it clones the
-checkout and loads the app from it. The app directory stays `apps/shell`. The
-operator process lives in `apps/user/` — interface (`apps/user/src/`) plus
-`user.ts`, which starts a BUS owned by Balthasar (`@eva-000.magi`) together
-with the `webapp` worker and the same agent workers as a MAGI. The human
-speaks as `@user.magi`. The backend prepares the checkout, starts local ASP
-on `127.0.0.1:42069` (Casper, `@eva-001.magi`), spawns Melchior
-(`@eva-002.magi` at `~/.magi/eva-002/MAGI`), and
-reports which interface entry the shell should show. The app
-module keeps its own files in `~/.magi/user/`; Electron's own profile moves under
-the same profile (`~/.magi/user/electron`, logs and crash dumps in `user/`,
-and Chromium/download/build caches in `~/.magi/shell/cache/`), so removing `~/.magi` removes everything MAGI-owned.
+checkout and loads the app from it. One directory, `apps/shell`, holds Electron
+(`main.mjs`) and the operator process: interface (`web/`) plus `shell.ts`, which
+starts a BUS owned by Balthasar (`@eva-000.magi`) together with the `webapp`
+worker and the same agent workers as a MAGI. The human speaks as `@user.magi`.
+The backend prepares the checkout, starts local ASP on `127.0.0.1:42069`
+(Casper, `@eva-001.magi`), spawns Melchior (`@eva-002.magi` at
+`~/.magi/eva-002/MAGI`), and reports which interface entry Electron should show.
+Operator files live in `~/.magi/shell/`; Electron's own profile is
+`~/.magi/shell/electron`, logs and crash dumps in `shell/`, and
+Chromium/download/build caches in `~/.magi/shell/cache/`, so removing `~/.magi`
+removes everything MAGI-owned.
 
 The project directory stays the Electron app directory (`build.directories.app`
-in `package.json`, which electron-builder would otherwise move to `apps/user/` — its
-two-package.json layout), so the packaged entry point stays `apps/shell/main.mjs`.
+in `package.json`), so the packaged entry point stays `apps/shell/main.mjs`.
 
 The app is also the machine-local layer of the system. `~/.magi/shell/MAGI` is the
-Shell clone used for installer builds. Each app is an independent Git clone of
-the GitHub remote; they share history only by push and fetch. Shell installer
-builds run from `~/.magi/shell/MAGI/apps/shell`, independently of the User branch.
-The shell clones User so it can load the backend; the User module then clones
-ASP:
+Shell clone used for installer builds and the operator process. Each app is an
+independent Git clone of the GitHub remote; they share history only by push and
+fetch. Shell installer builds run from `~/.magi/shell/MAGI/apps/shell`. The
+operator process then clones ASP:
 
 ```
-~/.magi/shell/MAGI     Shell clone on branch magi/shell (installer source)
+~/.magi/shell/MAGI     Shell clone on branch magi/shell (installer source and operator process)
 ~/.magi/shell/cache    generated caches (SIBLING of MAGI, not inside the clone)
-~/.magi/user/MAGI      User clone on magi/user
 ~/.magi/asp/MAGI       ASP clone on magi/asp
 ~/.magi/<name>/MAGI    that MAGI's clone on magi/<name>
 ```
 
-The app keeps the operator's GitHub credentials in `~/.magi/user/`.
+The app keeps the operator's GitHub credentials in `~/.magi/shell/`.
 ASP owns its server state, while each MAGI keeps its own store, so both may run
 on a remote server while this machine still works and keeps its own data.
-The app stores its chat history in `~/.magi/user/chat.sqlite`. It writes
+The app stores its chat history in `~/.magi/shell/chat.sqlite`. It writes
 events before acknowledging them to ASP, and reloads that history from SQLite
 after a restart. ASP keeps relay events in its own SQLite until each intended
 recipient acknowledges the exact event. Each MAGI keeps only its own jobs and
 chat state in its workspace: every message it hears and every message it says
 is a message delivery job.
 An old running ASP kept events only in memory. Before stopping it for this
-upgrade, run the bundled Node.js with `apps/user/scripts/import-asp-history.ts` from the MAGI
+upgrade, run the bundled Node.js with `apps/shell/scripts/import-asp-history.ts` from the MAGI
 checkout. This copies its available chats and events into the desktop
 SQLite without acknowledging or deleting them. The running shell loads the new
 app backend only on its next launch, so it cannot perform this first import
@@ -50,25 +47,24 @@ automatically. Events from an already stopped in-memory ASP cannot be recovered.
 The import preserves the desktop transcript; the old ASP's in-memory chat
 routing is unavailable after that ASP stops, so those older chats cannot send
 new messages until a new chat is created.
-The app stores provider credentials in the User BUS SettingsBook
-(`~/.magi/user/memories/books.db`). ASP forwards a provider update to MAGI
+The app stores provider credentials in the operator BUS SettingsBook
+(`~/.magi/shell/memories/books.db`). ASP forwards a provider update to MAGI
 without storing the key; the app retries delivery as MAGI come online.
 
 On first launch the packaged shell clones the complete repository into
-`~/.magi/shell/MAGI` with its bundled Git, clones `magi/user` at
-`~/.magi/user/MAGI`, then hands the app bundled Node.js and npm. The User module
-clones `magi/asp` at `~/.magi/asp/MAGI` and uses the tools to install
-dependencies and build only inside those clones before starting ASP. The
-startup page shows the current stage and offers Retry if preparation fails. It
-is always the small page packaged with the shell, so first-install and recovery
-behavior do not depend on an editable checkout. The packaged shell does not
-carry `apps/user/dist` — the checkout builds and supplies the product interface.
-Once ASP answers, the backend makes sure the default society exists:
-**Balthasar** (`@eva-000.magi`) in this operator process, **Casper**
-(`@eva-001.magi`) in ASP, and **Melchior** (`@eva-002.magi`) as the spawned
-EVA. Naming is best effort — a MAGI that never comes online stays unnamed
-rather than failing startup. `request_rebuild` stays Shell-owned; process
-keys are still `@user.magi` and `@asp.magi`.
+`~/.magi/shell/MAGI` with its bundled Git, then hands the app bundled Node.js
+and npm. The operator process clones `magi/asp` at `~/.magi/asp/MAGI` and uses
+the tools to install dependencies and build only inside those clones before
+starting ASP. The startup page shows the current stage and offers Retry if
+preparation fails. It is always the small page packaged with the shell, so
+first-install and recovery behavior do not depend on an editable checkout. The
+packaged shell does not carry `apps/shell/dist` — the checkout builds and
+supplies the product interface. Once ASP answers, the backend makes sure the
+default society exists: **Balthasar** (`@eva-000.magi`) in this operator
+process, **Casper** (`@eva-001.magi`) in ASP, and **Melchior** (`@eva-002.magi`)
+as the spawned EVA. Naming is best effort — a MAGI that never comes online stays
+unnamed rather than failing startup. `request_rebuild` stays Shell-owned;
+process keys are `@shell.magi` and `@asp.magi`.
 Later launches reuse the same Git working tree; they do not overwrite local
 changes or automatically pull upstream. Preparation currently runs again on each
 packaged launch.
@@ -77,27 +73,29 @@ packaged launch.
 
 Only seven things, none of them product-specific:
 
-1. Clone `~/.magi/shell/MAGI` when it is missing, then clone `magi/user` at
-   `~/.magi/user/MAGI` (packaged builds).
+1. Clone `~/.magi/shell/MAGI` when it is missing (packaged builds).
 2. Load its packaged startup/recovery page.
-3. Spawn `apps/user/dist/user.js` and give it native pieces over a host channel:
+3. Spawn `apps/shell/dist/shell.js` and give it native pieces over a host channel:
    paths, bundled tools, `openExternal`, clipboard, and event forwarding.
 4. Forward calls: `local:invoke` in, `local:event` out. Method names belong to
-   the app, so a new capability never changes the shell.
+   the app, so a new capability never changes the Electron main process.
 5. Accept a `magi://` link. The OS will only deliver it to this process, so the
    shell keeps a single instance and handles the rebuild in `rebuild.mjs`.
    The supervisor reuses the target's cwd, args, and env, waits for exit, and
-   waits for an IPC ready signal from the new process. User is not a lifecycle relay.
-   `runtime.rebuildStatus` retains the last phase/failure per target and caller;
-   `runtime.rebuild` events report requested, merging, building, restarting,
-   ready, or failed. OS link acceptance alone does not mean ready.
-6. Ask User to `prepare()` (returns the interface entry) and `start()`,
-   then show that entry — a built file or a dev URL.
-7. Stop all supervised apps on quit. Reloads do not kill User.
+   waits for an IPC ready signal from the new process. The operator process is
+   not a lifecycle relay. `runtime.rebuildStatus` retains the last phase/failure
+   per target and caller; `runtime.rebuild` events report requested, merging,
+   building, restarting, ready, or failed. OS link acceptance alone does not
+   mean ready.
+6. Ask the operator process to `prepare()` (returns the interface entry) and
+   `start()`, then show that entry — a built file or a dev URL.
+7. Stop all supervised apps on quit. Reloads do not kill the operator process.
 
-That leaves one contract: the checkout must contain `apps/user/dist/user.js`,
-started as `node dist/user.js` with a host channel on stdio. `prepare` returns
-the interface entry. `start` brings ASP up. Quit stops all supervised apps. User retirement closes its own workers and BUS; a replacement User adopts existing child handles.
+That leaves one contract: the checkout must contain `apps/shell/dist/shell.js`,
+started as `node dist/shell.js` with a host channel on stdio. `prepare` returns
+the interface entry. `start` brings ASP up. Quit stops all supervised apps.
+Operator retirement closes its own workers and BUS; a replacement adopts
+existing child handles.
 
 ## GitHub connection
 
@@ -105,15 +103,15 @@ Connecting the checkout to the operator's GitHub account is a capability of this
 machine, not part of the startup sequence and not an ASP concern. The app starts
 without it; the connection is offered once on first run, and the signed-in
 account is shown in Settings. It calls `github.state`,
-`github.signIn` and `github.connect` on User
-(`apps/user/dist/user.js` → `packages/webapp`), which the shell reaches through its generic bridge.
+`github.signIn` and `github.connect` on the operator process
+(`apps/shell/dist/shell.js` → `packages/webapp`), which Electron reaches through its generic bridge.
 
 - Sign-in is the OAuth device flow of the MAGI GitHub OAuth app
   (`Ov23li74Up8NcM5yCb61`): the operator approves a one-time code in the browser,
   so no client secret ships and only the token is per machine.
   `MAGI_GITHUB_CLIENT_ID` points a rebranded build at its own app.
-- The token is stored at `~/.magi/user/github-token` (mode 0600) and the app records
-  the account and fork in `~/.magi/user/github.json`.
+- The token is stored at `~/.magi/shell/github-token` (mode 0600) and the app records
+  the account and fork in `~/.magi/shell/github.json`.
 - If the account has no `MAGI` repository, `POST /repos/<upstream>/forks` creates
   one. A repository that is already there is used as it is — fork or not — and
   is never overwritten.
@@ -140,7 +138,7 @@ user tokens are short-lived and installed per repository.
 | `magi/` | Restart the affected MAGI process. |
 | `asp/` | Restart local ASP. |
 | `app/` | Settings → Runtime & build rebuilds the interface on demand; the app then asks whether to reload it. Source changes do not trigger automatic rebuilds. |
-| `apps/user/user.ts`, `apps/user/main/`, `packages/webapp/` | Loaded on the next launch. No rebuild, no reinstall. |
+| `apps/shell/shell.ts`, `packages/webapp/` | Loaded on the next launch. No rebuild, no reinstall. |
 | `apps/shell/boot/`, `apps/shell/*.mjs`, `apps/shell/preload.cjs`, packaged tools and build configuration | Rebuild and install a new shell. The App's About screen chooses and downloads the release from the checkout's active `origin`; the shell only performs its local replacement. |
 
 Loading the interface only replaces the interface: ASP and the MAGI processes keep
@@ -158,7 +156,7 @@ desktop app.
 Lifecycle acceptance is in `test/rebuild.test.mjs` and runs with the root
 `npm test` after TypeScript compilation. The tests use temporary state and
 check duplicate restarts, stop timeouts, entry/branch identity, IPC readiness,
-compiled EVA/ASP startup, and User's restored ownership of running EVA handles.
+compiled EVA/ASP startup, and the operator's restored ownership of running EVA handles.
 
 ## Profile bootstrap
 

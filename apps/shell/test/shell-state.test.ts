@@ -5,11 +5,11 @@ import path from "node:path";
 import test from "node:test";
 import Database from "better-sqlite3";
 import { Bus, SHELL_MAGI_HANDLE } from "@magi/bus";
-import { createLocalApi } from "../main/index.ts";
+import { createLocalApi } from "../shell.ts";
 
 function fixture(t) {
-  const home = mkdtempSync(path.join(tmpdir(), "magi-user-state-"));
-  const current = path.join(home, ".magi", "user");
+  const home = mkdtempSync(path.join(tmpdir(), "magi-shell-state-"));
+  const current = path.join(home, ".magi", "shell");
   const apis = [];
   t.after(async () => { for (const api of apis) await api.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
   return { home, current, app() {
@@ -51,7 +51,7 @@ test("cache initialization failure is reported by ready and disposal still close
   assert.equal(existsSync(path.join(f.current, "chat.sqlite")), true);
 });
 
-test("disposing User aborts an in-flight provider poll without rescheduling", async (t) => {
+test("disposing Shell aborts an in-flight provider poll without rescheduling", async (t) => {
   const f = fixture(t); seedSettings(f.current, keys);
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
@@ -87,7 +87,7 @@ test("disposing User aborts an in-flight provider poll without rescheduling", as
   const api = f.app(); await api.start();
   await started;
   await api.dispose();
-  assert.equal(aborted, true, "closing User cancels its network request");
+  assert.equal(aborted, true, "closing Shell cancels its network request");
   await new Promise((resolve) => setTimeout(resolve, 30));
-  assert.equal(bots, 2, "closed User never schedules another recipient poll");
+  assert.equal(bots, 2, "closed Shell never schedules another recipient poll");
 });

@@ -49,16 +49,16 @@ jobs:
         run: |
           apps/shell/runtime/bin/node.exe --test apps/shell/integration/self-rebuild.test.mjs
           if ($LASTEXITCODE -ne 0) { throw "EVA self-modification acceptance failed" }
-      - name: Full User acceptance
+      - name: Full Shell acceptance
         run: |
-          & ./apps/shell/runtime/bin/node.exe --test apps/user/test/*.test.ts
-          if ($LASTEXITCODE -ne 0) { throw "Full User acceptance failed" }
-      - name: Build User interface and backend
+          & ./apps/shell/runtime/bin/node.exe --test apps/shell/test/*.test.ts
+          if ($LASTEXITCODE -ne 0) { throw "Full Shell acceptance failed" }
+      - name: Build Shell interface and backend
         run: |
           $env:PATH = "$PWD/apps/shell/runtime/bin;$env:PATH"
-          & ./apps/shell/runtime/bin/node.exe ./apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run build --prefix apps/user
-          if ($LASTEXITCODE -ne 0) { throw "User build failed" }
-          if (!(Test-Path apps/user/dist/user.js)) { throw "User process entry was removed by UI build" }
+          & ./apps/shell/runtime/bin/node.exe ./apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run build:ui --prefix apps/shell
+          if ($LASTEXITCODE -ne 0) { throw "Shell UI build failed" }
+          if (!(Test-Path apps/shell/dist/shell.js)) { throw "Shell process entry was removed by UI build" }
       - name: Build unsigned Windows installer without publishing
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'

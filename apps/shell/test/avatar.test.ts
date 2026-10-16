@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
-import { createLocalApi } from "../main/index.ts";
+import { createLocalApi } from "../shell.ts";
 
 // A 1x1 transparent PNG: enough to prove bytes travel from GitHub to the cache.
 const PNG = Buffer.from(
@@ -27,7 +27,7 @@ function backend({ viewer = {}, viewerStatus = 200, avatarStatus = 200, metadata
     userData: path.join(root, "userData"),
     checkout: path.join(root, "checkout"),
   };
-  const appData = path.join(paths.home, ".magi", "user");
+  const appData = path.join(paths.home, ".magi", "shell");
   mkdirSync(appData, { recursive: true });
   mkdirSync(paths.checkout, { recursive: true });
   writeFileSync(path.join(appData, "github-token"), "ghp_test\n");
@@ -73,9 +73,9 @@ function backend({ viewer = {}, viewerStatus = 200, avatarStatus = 200, metadata
   return {
     api,
     requests,
-    avatarFile: () => path.join(paths.home, ".magi", "user", "github-avatar"),
-    tokenFile: () => path.join(paths.home, ".magi", "user", "github-token"),
-    metadata: () => JSON.parse(readFileSync(path.join(paths.home, ".magi", "user", "github.json"), "utf8")),
+    avatarFile: () => path.join(paths.home, ".magi", "shell", "github-avatar"),
+    tokenFile: () => path.join(paths.home, ".magi", "shell", "github-token"),
+    metadata: () => JSON.parse(readFileSync(path.join(paths.home, ".magi", "shell", "github.json"), "utf8")),
     downloads: () => requests.filter((url) => url === AVATAR_URL).length,
     dispose: async () => {
       await api.dispose();

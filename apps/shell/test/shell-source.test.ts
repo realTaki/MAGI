@@ -3,21 +3,19 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { createLocalApi } from '../main/index.ts';
+import { createLocalApi } from '../shell.ts';
 
-test('Shell build and replacement use the Shell source tree while the User branch remains independent', async (t) => {
+test('Shell installer is built from the Shell source tree', async (t) => {
   const home = await mkdtemp(path.join(tmpdir(), 'magi-shell-source-'));
-  const checkout = path.join(home, '.magi/shell/MAGI'), appCheckout = path.join(home, '.magi/user/MAGI');
+  const checkout = path.join(home, '.magi/shell/MAGI');
   const shellDir = path.join(checkout, 'apps/shell');
   await mkdir(path.join(shellDir, 'release'), { recursive: true });
-  await mkdir(path.join(appCheckout, 'apps/shell'), { recursive: true });
   await writeFile(path.join(shellDir, 'package-lock.json'), '{}');
   await writeFile(path.join(shellDir, 'main.mjs'), 'candidate shell source');
-  await writeFile(path.join(appCheckout, 'apps/shell/main.mjs'), 'older User branch source');
   const extension = process.platform === 'win32' ? '.exe' : process.platform === 'darwin' ? '.dmg' : '.AppImage';
   const installer = path.join(shellDir, 'release', `MAGI-${process.arch}${extension}`);
   const commands = [], installs = [];
-  const api = createLocalApi({ paths: { home, checkout, appCheckout, userData: path.join(home, '.magi/user/electron') }, managed: true,
+  const api = createLocalApi({ paths: { home, checkout, appCheckout: checkout, userData: path.join(home, '.magi/shell/electron') }, managed: true,
     repository: 'https://github.com/realTaki/MAGI.git', tools: { node: process.execPath, npm: 'owned-npm-cli.js', git: 'owned-git', env: {} },
     emit: () => {}, openExternal: async () => {}, copy: () => {},
     command: async (file, args, options) => {
@@ -32,5 +30,4 @@ test('Shell build and replacement use the Shell source tree while the User branc
   assert.equal((await api['runtime.buildAndInstallInstaller']()).quitting, true);
   assert.deepEqual(installs, [installer]);
   assert.deepEqual(commands.map(({ args }) => args), [['owned-npm-cli.js', 'ci'], ['owned-npm-cli.js', 'run', 'build'], ['owned-npm-cli.js', 'ci'], ['owned-npm-cli.js', 'run', 'build']]);
-  assert.equal(await readFile(path.join(appCheckout, 'apps/shell/main.mjs'), 'utf8'), 'older User branch source');
 });

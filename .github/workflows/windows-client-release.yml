@@ -35,7 +35,6 @@ jobs:
             package-lock.json
             apps/asp/package-lock.json
             apps/shell/package-lock.json
-            apps/user/package-lock.json
 
       - name: Install dependencies
         # `npm ci` is faster than `npm install` on a CI cache hit and refuses to
@@ -89,7 +88,7 @@ jobs:
         # off via an env var so the rest of the file keeps running.
         env:
           MAGI_SKIP_LIVE_INTEGRATION: '1'
-        run: npm test --prefix ../user
+        run: npm test
 
       - name: Build shell
         env:
@@ -101,7 +100,7 @@ jobs:
           if [[ -z "${WIN_CSC_LINK:-}" ]]; then
             unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD CSC_LINK CSC_KEY_PASSWORD
           fi
-          npm run build --prefix ../user
+          npm run build:ui
           node scripts/prepare-runtime.mjs
           for required in \
             runtime/bin/node.exe \

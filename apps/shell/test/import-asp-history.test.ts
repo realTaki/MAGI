@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { Bus, SHELL_MAGI_HANDLE } from "@magi/bus";
-import { openChatStore } from "../main/chat-store.ts";
+import { openChatStore } from "@magi/webapp/chat-store.js";
 import { importAspHistory } from "../scripts/import-asp-history.ts";
 
 test("ASP import preserves events without acknowledging them", async (t) => {

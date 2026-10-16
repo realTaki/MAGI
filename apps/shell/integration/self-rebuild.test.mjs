@@ -70,7 +70,7 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
   await command(git, ["checkout", "-B", "magi/self-loop"], { cwd: checkout });
   // Overlay this round's source while running before its commit. CI uses the
   // identical tracked files. No original checkout output is overwritten.
-  for (const file of ["apps/eva/eva.ts", "apps/user/user.ts", "apps/user/host.ts", "packages/webapp/api.ts", "packages/webapp/magi-runtime.ts", "packages/webapp/clone.ts", "packages/built-in-tools/rebuild.ts", "packages/manager/worker.ts", "apps/eva/test/agent.test.ts", "apps/eva/test/manager.test.ts", "apps/shell/process.mjs", "apps/shell/process-owner.mjs", "apps/shell/profile-layout.mjs", "apps/shell/clone.mjs", "apps/shell/test/profile-layout.test.mjs", "apps/shell/test/process-table.test.mjs", "apps/shell/installation.mjs", "apps/shell/rebuild.mjs", "apps/shell/dependency-state.mjs", "apps/shell/runtime-environment.mjs", "apps/shell/test/rebuild.test.mjs", "apps/shell/test/runtime-environment.test.mjs", "apps/shell/test/shutdown.test.mjs"]) {
+  for (const file of ["apps/eva/eva.ts", "apps/shell/shell.ts", "apps/shell/host.ts", "packages/webapp/api.ts", "packages/webapp/magi-runtime.ts", "packages/webapp/clone.ts", "packages/built-in-tools/rebuild.ts", "packages/manager/worker.ts", "apps/eva/test/agent.test.ts", "apps/eva/test/manager.test.ts", "apps/shell/process.mjs", "apps/shell/process-owner.mjs", "apps/shell/profile-layout.mjs", "apps/shell/clone.mjs", "apps/shell/test/profile-layout.test.mjs", "apps/shell/test/process-table.test.mjs", "apps/shell/installation.mjs", "apps/shell/rebuild.mjs", "apps/shell/dependency-state.mjs", "apps/shell/runtime-environment.mjs", "apps/shell/test/rebuild.test.mjs", "apps/shell/test/runtime-environment.test.mjs", "apps/shell/test/shutdown.test.mjs"]) {
     await cp(path.join(repository, file), path.join(checkout, file));
   }
   await symlink(path.join(repository, "apps/shell/runtime"), path.join(checkout, "apps/shell/runtime"), "junction");
@@ -155,7 +155,7 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
   persisted.contacts.update(MAGI_CONTACT_ID, { nickname: "durable nickname" }); persisted.close();
   supervisor = createSupervisor({ node, env, owner, readyTimeoutMs: 30_000, stopTimeoutMs: 30_000 });
   let managed = true;
-  const rebuild = createAppRebuilder({ supervisor, tools: { node, npm, git, env }, command, managed: () => managed, pause: () => sleep(100), emit: (event) => { events.push(event); console.log(`lifecycle: ${event.phase}${event.failedPhase ? ` (${event.failedPhase})` : ""}`); if (event.phase === "restarting") successfulRequest = true; }, onUser: async () => { throw new Error("User must not be replaced"); } });
+  const rebuild = createAppRebuilder({ supervisor, tools: { node, npm, git, env }, command, managed: () => managed, pause: () => sleep(100), emit: (event) => { events.push(event); console.log(`lifecycle: ${event.phase}${event.failedPhase ? ` (${event.failedPhase})` : ""}`); if (event.phase === "restarting") successfulRequest = true; }, onShell: async () => { throw new Error("Shell must not be replaced"); } });
   const child = await supervisor.start({ entry: path.join(checkout, "apps/eva/dist/eva.js"), cwd: path.join(checkout, "apps/eva"), args: [handle, base, "local-asp-only", "--workspace", workspace] });
   await child.whenReady(); await until(() => sockets.length === 1, "initial ASP connection missing");
   let sequence = 0;

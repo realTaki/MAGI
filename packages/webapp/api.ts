@@ -2,7 +2,7 @@
  * The operator backend: GitHub, MAGI processes, ASP lifecycle, and the cache
  * tables BUS does not cover.
  *
- * Electron no longer loads `main/index.ts`. User is `node dist/user.js`.
+ * Electron no longer loads `main/index.ts`. Shell is `node dist/shell.js`.
  * The shell talks to that process over NDJSON and forwards ``local:invoke``.
  *
  * The shell hands over a context (paths, Git, and small native helpers) and
@@ -220,7 +220,7 @@ function parseGitHubSlug(url) {
 export function createLocalApi(context) {
   const { paths, repository, tools, emit, openExternal, copy, shellUpdate, managed = false, aspProcess, bus } = context;
   const command = context.command ?? localCommand;
-  // Shell loads this backend from the User clone. Each app has its own clone
+  // Shell loads this backend from the Shell clone. Each app has its own clone
   // of MAGI_REPOSITORY_URL on branch magi/<name>.
   const appCheckout = paths.appCheckout ?? paths.checkout;
   let aspCheckout = paths.checkout;
@@ -268,7 +268,7 @@ export function createLocalApi(context) {
   }
 
   /**
-   * User prepares this separate `magi/asp` clone. Shell remains the
+   * Shell prepares this separate `magi/asp` clone. Electron remains the
    * process and command owner; creating a clone grants no lifecycle authority.
    */
   async function ensureAspCheckout() {
@@ -287,10 +287,10 @@ export function createLocalApi(context) {
   }
 
   const magiDataRoot = path.join(paths.home, ".magi");
-  const appData = path.join(magiDataRoot, "user");
+  const appData = path.join(magiDataRoot, "shell");
   mkdirSync(appData, { recursive: true });
   async function chatStore() {
-    if (disposed) throw new Error("The User backend is disposed.");
+    if (disposed) throw new Error("The Shell backend is disposed.");
     chatStorePromise ??= import("./chat-store.js")
       .then(({ openChatStore }) => openChatStore(path.join(appData, "chat.sqlite"), bus));
     return chatStorePromise;
@@ -801,15 +801,15 @@ export function createLocalApi(context) {
     if (devUrl !== "") {
       return devUrl;
     }
-    const built = path.join(appCheckout, "apps", "user", "dist", "index.html");
+    const built = path.join(appCheckout, "apps", "shell", "dist", "index.html");
     return existsSync(built) ? built : "http://127.0.0.1:5173";
   }
 
   /** Rebuild the interface only when explicitly requested. */
   async function rebuildInterface() {
-    const appDir = path.join(appCheckout, "apps", "user");
+    const appDir = path.join(appCheckout, "apps", "shell");
     const build = (description) =>
-      command(tools.node, [tools.npm, "run", "build"], {
+      command(tools.node, [tools.npm, "run", "build:ui"], {
         cwd: appDir,
         env: tools.env,
         description,
@@ -839,9 +839,9 @@ export function createLocalApi(context) {
   async function prepare(progress?: (message: string, percent: number) => void) {
     await ensureAspCheckout();
     const aspDir = path.join(aspCheckout, "apps", "asp");
-    const appDir = path.join(appCheckout, "apps", "user");
+    const appDir = path.join(appCheckout, "apps", "shell");
     // The MAGI runtime is a workspace now: its packages hang off the checkout root,
-    // so the root carries their lockfile and their node_modules — the User clone
+    // so the root carries their lockfile and their node_modules — the Shell clone
     // installs them for itself, while each MAGI's own clone installs its own.
     const magiDir = appCheckout;
     const required = [
@@ -898,7 +898,7 @@ export function createLocalApi(context) {
     }
     if (managed && !existsSync(path.join(appDir, "dist", "index.html"))) {
       progress?.("Building the app…", 0.8);
-      await command(tools.node, [tools.npm, "run", "build"], {
+      await command(tools.node, [tools.npm, "run", "build:ui"], {
         cwd: appDir,
         env: tools.env,
         description: "Could not build the desktop app",
@@ -1390,9 +1390,9 @@ export function createLocalApi(context) {
     }
   }
 
-  /** The App's clone, on the branch the shell checks out for it. */
+  /** The operator clone, on the branch the shell checks out for it. */
   function syncApp() {
-    return syncModule("user", appCheckout, "magi/user");
+    return syncModule("shell", appCheckout, "magi/shell");
   }
 
   /** The ASP clone, created here if this is the first time it is needed. */
@@ -1428,7 +1428,7 @@ export function createLocalApi(context) {
     return process.platform === "darwin" ? ".dmg" : process.platform === "win32" ? ".exe" : ".AppImage";
   }
 
-  /** Build Shell from its source authority, independently of the User branch. */
+  /** Build the Electron installer from the Shell source checkout. */
   async function buildInstallerFiles() {
     const shellDir = path.join(paths.checkout, "apps", "shell");
     if (!existsSync(path.join(shellDir, "package-lock.json"))) {

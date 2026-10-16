@@ -74,8 +74,7 @@ improvement **within explicit, inspectable constraints**.
 ## Repository layout
 
 ```text
-apps/shell/        Electron shell: window, checkout, and bundled Node 24 and npm. App dir stays shell.
-apps/user/          Operator process: Webapp plus host MAGI Balthasar (`@eva-000.magi`)
+apps/shell/        Electron plus the operator process: Webapp, Balthasar (`@eva-000.magi`), UI in web/
 apps/asp/          ASP process plus host MAGI Casper (`@eva-001.magi`)
 apps/eva/         Spawned MAGI runtime (Melchior `@eva-002.magi`, and later eva-NNN)
 packages/          The runtime's own packages: bus, manager, asp-server, webapp, agent, providers, tools, mcp, channel-*
@@ -85,10 +84,9 @@ On disk after a packaged install, each app is its own Git clone from the GitHub
 remote. They share history only by push and fetch. There is no shared base repo.
 
 ```text
-~/.magi/shell/MAGI       Shell clone on branch magi/shell (installer source)
+~/.magi/shell/MAGI       Shell clone on branch magi/shell (installer source and operator process)
 ~/.magi/shell/cache      generated caches (sibling of MAGI)
-~/.magi/user/            operator workspace: chat.sqlite, memories/books.db, github credentials
-~/.magi/user/MAGI        User clone on branch magi/user
+~/.magi/shell/           operator workspace: chat.sqlite, memories/books.db, github credentials
 ~/.magi/asp/             ASP workspace and asp.sqlite
 ~/.magi/asp/MAGI         ASP clone on branch magi/asp
 ~/.magi/<name>/          that MAGI's workspace (Books, Jobs, skills, prompts)
@@ -144,8 +142,8 @@ checkouts, and processes. ASP relays chats and never starts a process.
   tasks, contacts, prompts, and tools; Jobs for chat, model calls, tool calls,
   delivery, provider changes, tasks, and MCP server changes.
 - **Operator data stays on the desktop** — chat history is
-  `~/.magi/user/chat.sqlite`. Provider settings and the API key live in the
-  User BUS SettingsBook (`~/.magi/user/memories/books.db`). ASP forwards a
+  `~/.magi/shell/chat.sqlite`. Provider settings and the API key live in the
+  operator BUS SettingsBook (`~/.magi/shell/memories/books.db`). ASP forwards a
   provider update and does not keep a new copy of the key.
 - **Other channels** — a MAGI can also talk on the terminal, Telegram, and
   configured MCP servers. Those are part of the MAGI process, not of ASP.
@@ -186,7 +184,7 @@ on branch `magi/<name>` and runs it from there.
 3. **Talk.** The desktop writes the transcript locally, then sends the message
    through ASP. The MAGI answers on its WebSocket and the desktop stores that
    too.
-4. **Set a provider.** Settings writes the User BUS SettingsBook. ASP hands
+4. **Set a provider.** Settings writes the operator BUS SettingsBook. ASP hands
    the same values to each connected MAGI, which stores them in its own BUS.
 5. **Invite.** A group chat can add a MAGI the app already started.
    That MAGI joins when it receives `chat.invited`.
@@ -197,9 +195,7 @@ on branch `magi/<name>` and runs it from there.
 Operator
    │
    ▼
-apps/shell/       Electron window (thin shell; rebuild still Shell-owned)
-   │  loads
-apps/user/         operator process: @user.magi speech + Balthasar @eva-000.magi
+apps/shell/       Electron + operator process: @user.magi speech + Balthasar @eva-000.magi
    │  starts Node 24
    ▼
 apps/asp/         127.0.0.1:42069   relay + Casper @eva-001.magi
@@ -229,17 +225,17 @@ WebUI is built and loaded from the local checkout.
 The packaged app supplies an Electron bootstrap shell and private Git,
 Node.js and npm tools. On first launch it clones the complete repository
 to `~/.magi/shell/MAGI`. Later launches keep that Git working tree and use its
-`apps/eva/`, `packages/`, `apps/asp/` and `apps/user/` sources. Local changes are not
+`apps/eva/`, `packages/`, `apps/asp/` and `apps/shell/` sources. Local changes are not
 overwritten or pulled automatically. A user or coding agent can edit the
 checkout, rebuild the interface, and merge future upstream changes using Git.
 Once the operator connects GitHub from the interface, `origin` is their fork and
 `upstream` stays the repository the app cloned, so pushes land in their own
 account.
-When `apps/user/dist/index.html` changes, the app asks before reloading.
+When `apps/shell/dist/index.html` changes, the app asks before reloading.
 
 Only the bootstrap stays in the installed package: `apps/shell/` clones the
-checkout, loads the app from it — interface (`apps/user/src/`) and operator
-process (`apps/user/user.ts`, worker in `packages/webapp`) — and then simply asks that backend to prepare the
+checkout, loads the app from it — interface (`apps/shell/web/`) and operator
+process (`apps/shell/shell.ts`, worker in `packages/webapp`) — and then simply asks that backend to prepare the
 checkout, start ASP and name the interface entry, through one generic bridge.
 Editing the app takes effect without a new package; editing `apps/shell/`
 still does not change the running shell. Code changes in MAGI or ASP also need the affected process

@@ -45,11 +45,11 @@ Two bars, not a tradeoff: **little code**, and **clear code**. Long code is hard
 
 Then:
 
-- **TypeScript** for the runtime (`apps/eva/`, `packages/`), `apps/asp/`, and the operator app (`apps/user/`)
+- **TypeScript** for the runtime (`apps/eva/`, `packages/`), `apps/asp/`, and the operator app (`apps/shell/`)
 - Follow what's already in the codebase:
   - English for code and comments (Chinese allowed in user-facing strings)
 - `npm test` at the repository root (workspace build + runtime tests), `npm test` in
-  `apps/asp/`, and `npm test` in `apps/user/` should pass before pushing
+  `apps/asp/`, and `npm test` in `apps/shell/` should pass before pushing
 
 ## Commit style
 
@@ -72,13 +72,12 @@ docs: Update README with new architecture
 
 | Directory | Purpose |
 |-----------|---------|
-| `apps/shell/` | Electron shell: window, bundled Node 24 and npm |
-| `apps/user/` | Operator process: BUS manager (`user.ts`) and UI (`src/`) |
+| `apps/shell/` | Electron plus the operator process: BUS manager (`shell.ts`) and UI (`web/`) |
 | `apps/asp/` | ASP process: BUS manager (`asp.ts`) |
 | `apps/eva/` + `packages/` | The runtime entry and its packages: bus, manager, asp-server, webapp, agent, providers, tools, mcp, channels, tests |
 | `docs/` | Design docs + roadmap |
 
-**Package names follow one rule: a role in the society stays bare, everything else carries the `@magi/` scope.** `user` (the operator's app) and `eva` (the agent runtime behind spawned `eva-NNN`) are roles; `@magi/asp`, `@magi/shell` and every library under `packages/` are the machinery around them. The scope is not part of the module name, so `apps/asp` ↔ `@magi/asp` is aligned — what has to match is the *module*: `apps/user/`, `apps/eva/`, `apps/eva/eva.ts`. The app directory stays `shell`; do not rename it to `user`.
+**Package names follow one rule: a role in the society stays bare, everything else carries the `@magi/` scope.** `user` (operator speech, `@user.magi`) and `eva` (the agent runtime behind spawned `eva-NNN`) are roles; `@magi/asp`, `@magi/shell` and every library under `packages/` are the machinery around them. The scope is not part of the module name, so `apps/asp` ↔ `@magi/asp` is aligned — what has to match is the *module*: `apps/shell/`, `apps/eva/`, `apps/eva/eva.ts`.
 
 ## Questions?
 

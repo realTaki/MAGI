@@ -41,7 +41,6 @@ jobs:
             package-lock.json
             apps/asp/package-lock.json
             apps/shell/package-lock.json
-            apps/user/package-lock.json
 
       - name: Install dependencies
         # `npm ci` is faster than `npm install` on a CI cache hit and refuses to
@@ -75,7 +74,7 @@ jobs:
           npm version "$version" --no-git-tag-version --allow-same-version
 
       - name: Test app
-        run: npm test --prefix ../user
+        run: npm test
 
       - name: Build shell
         env:
@@ -97,7 +96,7 @@ jobs:
               --config.mac.hardenedRuntime=false
             )
           fi
-          npm run build --prefix ../user
+          npm run build:ui
           node scripts/prepare-runtime.mjs
           npx electron-builder \
             --mac dmg \

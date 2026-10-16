@@ -17,10 +17,10 @@ Paths for `list_files`, `read_file`, `search_files`, `edit_file`, and `write_fil
 | Tree | What runs from it |
 | --- | --- |
 | `MAGI/` on `magi/<you>` | This process, after a `self` rebuild |
-| `magi/user` (`~/.magi/user/MAGI`) | Operator UI. Not this checkout |
+| `magi/shell` (`~/.magi/shell/MAGI`) | Operator UI and Electron. Not this checkout |
 | `magi/asp` (`~/.magi/asp/MAGI`) | ASP. Not this checkout |
 
-Editing `MAGI/apps/user` or `MAGI/apps/asp` does not change the running UI or ASP.
+Editing `MAGI/apps/shell` or `MAGI/apps/asp` does not change the running UI or ASP.
 
 ## Edit
 
@@ -51,7 +51,7 @@ Call `request_rebuild` only after the edit is saved, and say what changed first.
 | `target` | What the desktop does |
 | --- | --- |
 | `self` | `npm ci` and `npm run build` in this checkout, then restart only you. Uncommitted files in `MAGI/` are included. No merge. |
-| `app` | Push this branch, then the User clone fetches and merges it, compiles the User backend and UI, and restarts only User. The window receives an interface update. ASP and other MAGI keep running. Uncommitted files are not included: commit and push first. |
-| `asp` | Push this branch, then the ASP clone fetches and merges it, compiles, and restarts only ASP. User and every EVA keep their processes. Uncommitted files are not included: commit and push first. |
+| `app` | Push this branch, then the Shell clone fetches and merges it, compiles the operator backend and UI, and restarts only the operator process. The window receives an interface update. ASP and other MAGI keep running. Uncommitted files are not included: commit and push first. |
+| `asp` | Push this branch, then the ASP clone fetches and merges it, compiles, and restarts only ASP. Shell and every EVA keep their processes. Uncommitted files are not included: commit and push first. |
 
 `app` and `asp` adopt the whole branch, not one file. Do not use them to publish an unrelated history. One rebuild at a time. If the tool says the link was opened, do not send another until the operator says the previous one finished. A conflict aborts the merge and does not build.

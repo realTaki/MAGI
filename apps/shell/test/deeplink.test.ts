@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseRebuildLink } from "../main/deeplink.ts";
+import { parseRebuildLink } from "@magi/webapp/deeplink.js";
 
 const self = "magi://runtime/rebuild?target=self&handle=%40eva-000.magi";
 

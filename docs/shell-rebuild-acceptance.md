@@ -6,17 +6,17 @@ This change does not update the organization repository or publish a release.
 ## Control boundary
 
 Shell owns the OS processes, original entry/cwd/args/env, restart locks, exit
-waiting and ready waiting for User, ASP and EVA. `magi://runtime/rebuild` is
-handled by Shell, including while User is unavailable. User's backend can
+waiting and ready waiting for the operator process, ASP and EVA. `magi://runtime/rebuild` is
+handled by Shell, including while the operator process is unavailable. The operator backend can
 request spawn/stop over its existing host channel; it does not implement the
 self-rebuild transaction. Its retirement closes its own BUS, workers and host
-pipe without stopping its peers. A broken User host pipe cannot crash Shell when a
-peer exits; a replacement User restores the supervisor snapshot. Shell terminates all supervised apps on quit.
-User's worker still holds roster/clone policy and proxies to supervised
+pipe without stopping its peers. A broken operator host pipe cannot crash Electron when a
+peer exits; a replacement operator process restores the supervisor snapshot. Shell terminates all supervised apps on quit.
+The operator worker still holds roster/clone policy and proxies to supervised
 handles; moving those product policies is outside this change.
 
 Targets must have a canonical `apps/<kind>/dist/<kind>.js` entry. Publishing an
-EVA branch into User/ASP checks both `magi/<caller>` and `magi/user`/`magi/asp`,
+EVA branch into Shell/ASP checks both `magi/<caller>` and `magi/shell`/`magi/asp`,
 refuses dirty target trees, and does not restart unrelated apps. Simultaneous
 restarts of one supervisor id share one replacement. A stop followed by start
 waits for the stopping process to exit instead of adopting its dying handle. Queued equivalent links
@@ -40,8 +40,8 @@ NODE_BIN="$PWD/apps/shell/runtime/bin/node"
 NPM_CLI="$PWD/apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js"
 "$NODE_BIN" "$NPM_CLI" run build
 "$NODE_BIN" "$NPM_CLI" test
-"$NODE_BIN" --test apps/user/test/user-bootstrap.test.ts apps/user/test/runtime-lifecycle.test.ts apps/user/test/deeplink.test.ts apps/user/test/magi-runtime.test.ts
-"$NODE_BIN" "$NPM_CLI" run build --prefix apps/user
+"$NODE_BIN" --test apps/shell/test/shell-bootstrap.test.ts apps/shell/test/runtime-lifecycle.test.ts apps/shell/test/deeplink.test.ts apps/shell/test/magi-runtime.test.ts
+"$NODE_BIN" "$NPM_CLI" run build:ui --prefix apps/shell
 "$NODE_BIN" --check apps/shell/main.mjs
 "$NODE_BIN" --check apps/shell/process.mjs
 "$NODE_BIN" --check apps/shell/rebuild.mjs
@@ -50,7 +50,7 @@ git diff --check
 
 Windows uses `apps/shell/runtime/bin/node.exe` and the same npm CLI. The
 `Windows validation (no release)` workflow bootstraps the owned runtime, runs
-root and full User acceptance, builds User, and produces an unsigned NSIS
+root and full Shell acceptance, builds Shell UI, and produces an unsigned NSIS
 installer with `--publish never`. It triggers on `codex/**` branches, main PRs
 and manual dispatch, not tags. Its token has only `contents: read`; no release
 job or release upload exists. The EXE is retained only as a short-lived Actions
@@ -59,8 +59,8 @@ artifact. Existing tag-release workflows are unchanged.
 Root acceptance includes Shell tests. They use temporary directories and
 explicit state paths: target isolation, freshly generated output, unchanged
 identity/cwd/args, build/restart failures, no-ready timeout, duplicate restarts,
-stop timeout, wrong entry/branches, and restored User management relationships.
-Current compiled EVA CLI, ASP class and User CLI are exercised. The ignored
+stop timeout, wrong entry/branches, and restored operator-process management relationships.
+Current compiled EVA CLI, ASP class and Shell CLI are exercised. The ignored
 SIGTERM fixture is POSIX-only: Windows forcibly terminates that signal target.
 The Windows path test runs on all platforms; native Windows CI provides the
 platform-specific process/build evidence. Windows bootstrap passes an explicit
@@ -96,7 +96,7 @@ compiled EVA directory-alias startup regression verifies this on all runners. Th
 below. No raw temporary logs are committed.
 
 ```sh
-apps/shell/runtime/bin/node --test apps/user/test/chat-store.test.ts apps/user/test/import-asp-history.test.ts apps/user/test/provider.test.ts
+apps/shell/runtime/bin/node --test apps/shell/test/chat-store.test.ts apps/shell/test/import-asp-history.test.ts apps/shell/test/provider.test.ts
 ```
 
 | Test | Historical failure | Fix applied |
@@ -113,17 +113,17 @@ both BUS and cache. Webapp initialization is awaited before ready; disposal
 aborts its ASP requests, cancels polling, awaits cache closure, and only then
 allows User to close BUS.
 
-Operator state lives at `~/.magi/user`. There is no directory rename or
+Operator state lives at `~/.magi/shell`. There is no directory rename or
 provider-file copy on startup. User credential databases/WAL/SHM keep POSIX
-0600 privacy. `user-state.test.ts` covers atomic SettingsBook write failure,
+0600 privacy. `shell-state.test.ts` covers atomic SettingsBook write failure,
 ready failure, and disposal during an active provider poll. Offline save still
 retains the operator's requested configuration locally. Existing `~/.magi`
 trees from earlier layouts are discarded and redeployed.
 
 ## Evidence and remaining end-to-end work
 
-Local Linux acceptance after the User fixes: root 101/101, full User 50/50
-with no skips (including real checkout startup), root and User builds passed. Native Windows result must be read from the workflow for the actual
+Local Linux acceptance after folding User into Shell: tsc -b green, ASP 19/19,
+Shell 88/88 plus one skipped live MAGI-boot test. Root and Shell UI builds passed. Native Windows result must be read from the workflow for the actual
 pushed commit; producing an EXE does not prove installation or runtime boot.
 
 Still queued: run one real EVA turn that edits its
@@ -280,7 +280,7 @@ Electron quit until cleanup finishes, and uses one owner for bootstrap Git/npm,
 build/rebuild commands and supervised User/ASP/EVA roots. User's internal
 command/dependency preparation requests go through its private host channel to
 the same Shell owner. The host permits the bundled Node/Git and canonical owned
-source directories; it adds no EVA-accessible command endpoint. `prepareAndStartUser`
+source directories; it adds no EVA-accessible command endpoint. `prepareAndStartShell`
 checks admission both before preparation and after its final await. Dock activate
 does not create another startup while shutdown is in progress.
 
@@ -321,9 +321,9 @@ OS job-object guarantee for a crashing Shell or arbitrary hostile descendants.
 Shell's profile Git authority is `~/.magi/shell/MAGI`; generated caches are in
 `~/.magi/shell/cache` (npm, Chromium HTTP cache, Electron downloads and builder).
 User, ASP, and each EVA are independent clones under their own workspaces
-(`~/.magi/user/MAGI`, `~/.magi/asp/MAGI`, `~/.magi/<name>/MAGI`). They share
+(`~/.magi/shell/MAGI`, `~/.magi/asp/MAGI`, `~/.magi/<name>/MAGI`). They share
 history only by push and fetch. Shell local installer build/replacement uses
-`paths.checkout/apps/shell`, rather than the User branch. Unpackaged root
+`paths.checkout/apps/shell`, from the Shell checkout. Unpackaged root
 resolution returns the repository root, two levels above `apps/shell`.
 
 `profile-layout.mjs` owns serialized, journaled profile preparation. Bootstrap

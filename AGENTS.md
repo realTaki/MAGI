@@ -25,7 +25,7 @@ Examples:
 
 ```bash
 apps/shell/runtime/bin/node --test apps/asp/dist/test/*.test.js
-/Applications/MAGI.app/Contents/Resources/runtime/bin/node --test apps/user/test/*.test.ts
+/Applications/MAGI.app/Contents/Resources/runtime/bin/node --test apps/shell/test/*.test.ts
 apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js test
 ```
 

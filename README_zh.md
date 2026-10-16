@@ -86,10 +86,9 @@ MAGI 应当因为持续运行而变得更好。目标是让它们观察工作、
 打包安装后，每个应用都是从 GitHub 远程独立克隆的仓库，只通过 push/fetch 同步，没有共享的底仓。
 
 ```text
-~/.magi/shell/MAGI       Shell 克隆，分支 magi/shell（安装包源码）
+~/.magi/shell/MAGI       Shell 克隆，分支 magi/shell（安装包源码和操作者进程）
 ~/.magi/shell/cache      生成缓存（与 MAGI 同级）
-~/.magi/user/            操作者工作区：chat.sqlite、memories/books.db、GitHub 凭证
-~/.magi/user/MAGI        User 克隆，分支 magi/user
+~/.magi/shell/           操作者工作区：chat.sqlite、memories/books.db、GitHub 凭证
 ~/.magi/asp/             ASP 工作区和 asp.sqlite
 ~/.magi/asp/MAGI         ASP 克隆，分支 magi/asp
 ~/.magi/<名字>/          该 MAGI 的工作区（Books、Jobs、skills、prompts）
@@ -102,7 +101,7 @@ MAGI 应当因为持续运行而变得更好。目标是让它们观察工作、
 - **ASP**：Node 24 运行 `apps/asp/dist/asp.js`，监听 `127.0.0.1:42069`。聊天和转发事件存在 `~/.magi/asp/asp.sqlite`。同一进程是 Casper（`@eva-001.magi`）。创建 bot 会注册 MAGI；只有需要独立进程的句柄（`@eva-002` 及之后）才会拉起 `eva.js`。创建 group 会开一个操作者可以邀请 MAGI 加入的聊天。
 - **宿主 MAGI 与一条 EVA**：Balthasar（`@eva-000.magi`）跑在操作者进程里，和 webapp 在一起。Casper 跑在 ASP 里。Melchior（`@eva-002.magi`）跑 `apps/eva/eva.ts`，检出在 `~/.magi/eva-002/MAGI`。之后再创建的 MAGI 也按这条 EVA 路径拉起。
 - **每个 MAGI 内部的 BUS**：对话、消息、记忆、Skills、任务、联系人、提示词和工具都是 Book；聊天、模型调用、工具调用、投递、切换 provider、任务和 MCP 服务器变更都是 Job。
-- **操作者的数据留在桌面端**：聊天记录是 `~/.magi/user/chat.sqlite`。Provider 和 API key 在 User BUS 的 SettingsBook（`~/.magi/user/memories/books.db`）。ASP 只转发更新，不另存一份 key。
+- **操作者的数据留在桌面端**：聊天记录是 `~/.magi/shell/chat.sqlite`。Provider 和 API key 在操作者 BUS 的 SettingsBook（`~/.magi/shell/memories/books.db`）。ASP 只转发更新，不另存一份 key。
 - **其他通道**：MAGI 进程自己还能走终端、Telegram 和已配置的 MCP 服务器。这些不属于 ASP。
 
 ## 快速开始
@@ -127,7 +126,7 @@ WebUI。启动页显示各阶段进度；本地 ASP 就绪后自动进入 WebUI�
 1. **打开桌面应用。** 壳克隆仓库、安装依赖、构建界面，并等到 ASP 在 42069 端口应答。
 2. **见到默认社会。** Balthasar 是操作者进程（`@eva-000.magi`，你自己的发言是 `@user.magi`）。Casper 是 ASP（`@eva-001.magi`）。Melchior 是拉起的 EVA（`@eva-002.magi`）。一直没上线的 MAGI 就保持没有昵称。
 3. **对话。** 桌面端先把记录写到本机，再经 ASP 发出去。MAGI 从自己的 WebSocket 回复，桌面端再把回复存下来。
-4. **设置模型。** 设置页写入 User BUS 的 SettingsBook。ASP 把同一组值交给每个已经连上的 MAGI，由 MAGI 写进自己的 BUS。
+4. **设置模型。** 设置页写入 operator BUS 的 SettingsBook。ASP 把同一组值交给每个已经连上的 MAGI，由 MAGI 写进自己的 BUS。
 5. **邀请。** 群聊可以加入一个 App 已经启动的 MAGI。对方收到 `chat.invited` 后加入。
 
 ## 架构
@@ -136,9 +135,7 @@ WebUI。启动页显示各阶段进度；本地 ASP 就绪后自动进入 WebUI�
 操作者
    │
    ▼
-apps/shell/       Electron 窗口（薄壳；request_rebuild 仍由 Shell 处理）
-   │  加载
-apps/user/        操作者进程：@user.magi 发言 + Balthasar @eva-000.magi
+apps/shell/       Electron + 操作者进程：@user.magi 发言 + Balthasar @eva-000.magi
    │  启动 Node 24
    ▼
 apps/asp/         127.0.0.1:42069   转发 + Casper @eva-001.magi
@@ -162,11 +159,11 @@ Electron App 启动本地 ASP，并运行本机的每条 MAGI 进程。ASP 负�
 安装包提供 Electron 启动壳及仅供 MAGI 使用的 Git、Node.js、npm 工具。首次启动
 会将完整仓库克隆到 `~/.magi/shell/MAGI`；之后从其中的 `magi/`、`asp/`、
 `apps/` 与 `packages/` 运行。用户或 coding agent 可以在这份普通 Git 仓库中修改源码、
-重新构建界面，并用 Git 合并上游更新。`apps/user/dist/index.html` 变化后，
+重新构建界面，并用 Git 合并上游更新。`apps/shell/dist/index.html` 变化后，
 桌面端会询问是否重新加载，不会擅自刷新界面。
 
 真正留在安装包里的只有启动壳：`apps/shell/` 克隆仓库、从里面加载整个应用
-（界面 `apps/user/src/` + 操作者进程 `apps/user/user.ts`，worker 在 `packages/webapp`），然后只是请这个后端
+（界面 `apps/shell/web/` + 操作者进程 `apps/shell/shell.ts`，worker 在 `packages/webapp`），然后只是请这个后端
 自己去准备依赖、启动 ASP、并交回界面入口——壳只提供一个通用桥。改 app **不需要
 重新打包**；改 `apps/shell/` 才需要。
 

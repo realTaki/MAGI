@@ -22,8 +22,8 @@ export function rebuildRequestKey(raw) {
   return request ? `${request.target}:${request.handle}` : raw;
 }
 
-/** Shell owns the transaction; User is never asked to rebuild a process. */
-export function createAppRebuilder({ supervisor, tools, command, managed, onUser, emit, pause }) {
+/** Shell owns the transaction; the operator process is never asked to rebuild a process. */
+export function createAppRebuilder({ supervisor, tools, command, managed, onShell, emit, pause }) {
   let busy = false;
   const statuses = new Map();
   const rebuild = async (raw) => {
@@ -41,7 +41,7 @@ export function createAppRebuilder({ supervisor, tools, command, managed, onUser
     try {
       const processes = supervisor.snapshots().map((entry) => ({ ...entry, app: describeApp(entry.spec) }))
         .filter((entry) => entry.app !== null);
-      const wanted = request.target === "self" ? request.handle : request.target === "app" ? "@user.magi" : "@asp.magi";
+      const wanted = request.target === "self" ? request.handle : request.target === "app" ? "@shell.magi" : "@asp.magi";
       const matches = processes.filter(({ app }) => app.handle === wanted);
       if (matches.length !== 1) throw new Error("The target app is not uniquely owned by Shell or is not running.");
       const target = matches[0];
@@ -105,18 +105,18 @@ export function createAppRebuilder({ supervisor, tools, command, managed, onUser
       await command(tools.node, [tools.npm, "run", "build"], {
         cwd: root, env: tools.env, description: "Could not compile the app",
       });
-      if (target.app.kind === "user") {
+      if (target.app.kind === "shell") {
         if (runningDependencies === null) await command(tools.node, [tools.npm, "ci", "--ignore-scripts"], {
-          cwd: target.spec.cwd, env: tools.env, description: "Could not install User interface dependencies",
+          cwd: target.spec.cwd, env: tools.env, description: "Could not install Shell interface dependencies",
         });
-        await command(tools.node, [tools.npm, "run", "build"], {
-          cwd: target.spec.cwd, env: tools.env, description: "Could not compile User interface",
+        await command(tools.node, [tools.npm, "run", "build:ui"], {
+          cwd: target.spec.cwd, env: tools.env, description: "Could not compile Shell interface",
         });
       }
       checkDependencies();
       phase = "restarting"; report();
       const handle = await supervisor.restart(target.id);
-      if (target.app.kind === "user") await onUser(handle);
+      if (target.app.kind === "shell") await onShell(handle);
       phase = "ready"; report();
       return { ...request, phase, rebuilt: true, ready: true };
     } catch (error) {

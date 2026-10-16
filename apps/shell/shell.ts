@@ -11,7 +11,7 @@ import { realpathSync } from "node:fs";
  */
 
 import { fileURLToPath } from "node:url";
-import { prepareUserWorkspace, secureUserDatabases } from "./workspace.ts";
+import { prepareShellWorkspace, secureShellDatabases } from "./workspace.ts";
 import type { ProcessSpec } from "./host.js";
 import { Bus, SHELL_MAGI_HANDLE } from "@magi/bus";
 import { ManagerWorker } from "@magi/manager";
@@ -23,9 +23,9 @@ import { ProvidersWorker } from "@magi/providers/worker.js";
 import { SkillWorker } from "@magi/skills/worker.js";
 import { AspProcessWorker, WebappWorker } from "@magi/webapp";
 
-type UserContext = ConstructorParameters<typeof WebappWorker>[1];
+type ShellContext = ConstructorParameters<typeof WebappWorker>[1];
 
-export class User {
+export class Shell {
   readonly bus: Bus;
   readonly worker: WebappWorker;
   readonly aspProcess: AspProcessWorker;
@@ -33,12 +33,12 @@ export class User {
   private ready: Promise<void> | null = null;
   private stopping: Promise<void> | null = null;
 
-  constructor(context: UserContext) {
-    const workspace = prepareUserWorkspace(context.paths.home);
-    secureUserDatabases(workspace);
+  constructor(context: ShellContext) {
+    const workspace = prepareShellWorkspace(context.paths.home);
+    secureShellDatabases(workspace);
     this.bus = new Bus(SHELL_MAGI_HANDLE, workspace);
     try {
-      secureUserDatabases(workspace);
+      secureShellDatabases(workspace);
       this.aspProcess = new AspProcessWorker(this.bus, {
         sourceCheckout: context.paths.checkout,
         node: context.tools.node,
@@ -103,20 +103,20 @@ export class User {
 }
 
 export function createLocalApi(context: ConstructorParameters<typeof WebappWorker>[1]) {
-  const user = new User(context);
-  const ready = user.start();
+  const shell = new Shell(context);
+  const ready = shell.start();
   let startError: unknown;
   void ready.catch((error: unknown) => {
     startError = error;
   });
-  const methods = user.worker.methods;
+  const methods = shell.worker.methods;
   const whenReady = async <T>(run: () => T | Promise<T>): Promise<T> => {
     try {
       await ready;
     } catch (error) {
       throw startError ?? error;
     }
-    if (user.stopped) throw new Error("The User backend is disposed.");
+    if (shell.stopped) throw new Error("The Shell backend is disposed.");
     return await run();
   };
   return {
@@ -126,8 +126,8 @@ export function createLocalApi(context: ConstructorParameters<typeof WebappWorke
       whenReady(() => methods.prepare(progress)),
     start: (progress: Parameters<typeof methods.start>[0]) =>
       whenReady(() => methods.start(progress)),
-    dispose: () => user.stop(),
-    shutdown: () => user.stop(true),
+    dispose: () => shell.stop(),
+    shutdown: () => shell.stop(true),
   };
 }
 
@@ -198,7 +198,7 @@ async function main(): Promise<void> {
       process.once("SIGTERM", resolve);
     });
   } finally {
-    // Close this User only; Shell continues to own the other apps.
+    // Close this operator process only; Electron continues to own the other apps.
     try { await retire?.(); }
     finally { host.close(); }
   }

@@ -7,15 +7,15 @@
     "tsBuildInfoFile": "dist/.tsbuildinfo"
   },
   "include": [
-    "user.ts",
+    "shell.ts",
     "host.ts",
     "workspace.ts"
   ],
   "exclude": [
     "dist",
-    "src",
+    "web",
     "test",
-    "main"
+    "scripts"
   ],
   "references": [
     {

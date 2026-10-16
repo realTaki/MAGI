@@ -15,8 +15,8 @@ import { existsSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { createInterface } from "node:readline";
 
-/** Bootstrap User before it can run its own prepare method. */
-export async function prepareUserProcess(spec, { node, npm, env, managed, command, assertOpen = () => {} }) {
+/** Bootstrap Shell before it can run its own prepare method. */
+export async function prepareShellProcess(spec, { node, npm, env, managed, command, assertOpen = () => {} }) {
   assertOpen();
   const checkout = resolve(spec.cwd, "..", "..");
   if (managed) await ensureInstalledDependencies(checkout, { node, npm, env, command, assertOpen });
@@ -25,18 +25,18 @@ export async function prepareUserProcess(spec, { node, npm, env, managed, comman
     await command(node, [npm, "run", "build:process"], {
       cwd: spec.cwd,
       env,
-      description: "Could not build the User process",
+      description: "Could not build the Shell process",
     });
   }
   assertOpen();
   if (!existsSync(spec.entry)) {
-    throw new Error(`The User process is missing: ${spec.entry}`);
+    throw new Error(`The Shell process is missing: ${spec.entry}`);
   }
 }
 
-export async function prepareAndStartUser(spec, tools, supervisor, options) {
+export async function prepareAndStartShell(spec, tools, supervisor, options) {
   supervisor.assertOpen();
-  await prepareUserProcess(spec, { ...tools, assertOpen: () => supervisor.assertOpen() });
+  await prepareShellProcess(spec, { ...tools, assertOpen: () => supervisor.assertOpen() });
   supervisor.assertOpen();
   return await supervisor.start(spec, options);
 }
@@ -58,7 +58,7 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
   function notifyHost(message) {
     if (hostSend === null) return;
     try { hostSend(message); }
-    catch { /* User may be retiring; a replacement restores the current snapshot. */ }
+    catch { /* Shell may be retiring; a replacement restores the current snapshot. */ }
   }
 
   function stop(id) {
@@ -101,7 +101,7 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
             });
             return await start(spec, { host });
           }
-          if (entry.host) throw new Error("User is already supervised");
+          if (entry.host) throw new Error("Shell is already supervised");
           return { id, whenReady: entry.whenReady };
         }
       }
@@ -172,7 +172,7 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
     const listeners = new Map();
     let exited = false;
     const send = (message) => {
-      if (exited || child.stdin.destroyed) throw new Error("User process exited");
+      if (exited || child.stdin.destroyed) throw new Error("Shell process exited");
       write(child.stdin, message);
     };
     child.stdin.on("error", (error) => {
@@ -188,7 +188,7 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
       try {
         message = JSON.parse(line);
       } catch {
-        console.error(`[user] bad ndjson: ${line.slice(0, 200)}`);
+        console.error(`[shell] bad ndjson: ${line.slice(0, 200)}`);
         return;
       }
       if (message?.type === "res") {
@@ -234,7 +234,7 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
       exited = true;
       lines.close();
       if (hostSend === send) hostSend = null;
-      for (const waiter of pending.values()) waiter.reject(new Error("User process exited"));
+      for (const waiter of pending.values()) waiter.reject(new Error("Shell process exited"));
       pending.clear();
     });
 
@@ -242,7 +242,7 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
       id,
       whenReady: () => ready,
       invoke(method, params) {
-        if (exited || child.stdin.destroyed) return Promise.reject(new Error("User process exited"));
+        if (exited || child.stdin.destroyed) return Promise.reject(new Error("Shell process exited"));
         const reqId = String(++rpc);
         return new Promise((resolve, reject) => {
           pending.set(reqId, { resolve, reject });

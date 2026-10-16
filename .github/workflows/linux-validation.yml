@@ -26,13 +26,13 @@ jobs:
         run: |
           npm ci
           npm_execpath="$(npm root -g)/npm/bin/npm-cli.js" node_modules/node/bin/node apps/shell/scripts/prepare-runtime.mjs
-      - name: Root acceptance and User build
+      - name: Root acceptance and Shell UI build
         run: |
           export PATH="$PWD/apps/shell/runtime/bin:$PATH"
           apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js test
-          apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run build --prefix apps/user
-      - name: Full User acceptance
-        run: apps/shell/runtime/bin/node --test apps/user/test/*.test.ts
+          apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run build:ui --prefix apps/shell
+      - name: Full Shell acceptance
+        run: apps/shell/runtime/bin/node --test apps/shell/test/*.test.ts
       - name: EVA self-modification through real process IPC
         run: apps/shell/runtime/bin/node --test apps/shell/integration/self-rebuild.test.mjs
       - name: Build AppImage without publishing

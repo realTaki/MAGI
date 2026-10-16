@@ -6,8 +6,8 @@ import {
   githubRepo,
   releaseAsset,
   shellRelease,
-} from "../main/shell-update.ts";
-import { updateScript } from "../../shell/update-script.mjs";
+} from "@magi/webapp/shell-update.js";
+import { updateScript } from "../update-script.mjs";
 
 test("a newer release asset is chosen for this machine", () => {
   assert.deepEqual(githubRepo("https://github.com/AgenticSocietyLab/MAGI.git"), {

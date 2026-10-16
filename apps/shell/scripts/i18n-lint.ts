@@ -30,6 +30,7 @@ import { fileURLToPath } from "node:url";
 const LOCALES_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
+  "web",
   "src",
   "i18n",
   "locales",

@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "main": "main.mjs",
-  "description": "MAGI Electron shell. It prepares the environment and loads the app.",
+  "description": "MAGI Electron shell and operator process.",
   "allowScripts": {
     "dugite": true,
     "electron": true,
@@ -12,8 +12,14 @@
   },
   "scripts": {
     "dev": "electron .",
+    "dev:ui": "vite --config web/vite.config.ts",
     "build": "node scripts/build.mjs",
-    "test": "node --test test/*.test.mjs"
+    "build:ui": "tsc --noEmit -p web/tsconfig.json && vite build --config web/vite.config.ts && node scripts/postbuild.ts && tsc -b",
+    "build:process": "tsc -b",
+    "start": "node dist/shell.js",
+    "lint": "node scripts/i18n-lint.ts",
+    "lint:i18n": "node scripts/i18n-lint.ts",
+    "test": "node --test test/*.test.mjs test/*.test.ts"
   },
   "build": {
     "appId": "ai.magi.app",
@@ -72,11 +78,34 @@
     }
   },
   "dependencies": {
-    "dugite": "^3.2.3"
+    "@magi/bus": "*",
+    "@magi/manager": "*",
+    "@magi/agent": "*",
+    "@magi/providers": "*",
+    "@magi/built-in-tools": "*",
+    "@magi/contacts": "*",
+    "@magi/memory": "*",
+    "@magi/skills": "*",
+    "@magi/webapp": "*",
+    "@tanstack/react-query": "^5.103.2",
+    "dugite": "^3.2.3",
+    "react": "^19.3.0",
+    "react-markdown": "^10.1.0",
+    "react-dom": "^19.3.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^24.13.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "better-sqlite3": "^13.0.3",
     "electron": "44.4.5",
     "electron-builder": "^26.15.3",
-    "node": "^24.21.0"
+    "node": "^24.21.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0"
   }
 }

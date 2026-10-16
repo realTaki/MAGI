@@ -1,7 +1,7 @@
 /**
  * Electron shell. It prepares what the app needs in order to exist — bundled
- * tools and the checkout — and opens a window. User, ASP, and Eva are the same
- * kind of child: `node <entry> ...args`. Shell owns their lifecycles.
+ * tools and the checkout — and opens a window. Shell, ASP, and Eva are the same
+ * kind of child: `node <entry> ...args`. Electron owns their lifecycles.
  */
 import { spawn } from "node:child_process";
 import {
@@ -24,11 +24,10 @@ import { createAppRebuilder, rebuildRequestKey } from "./rebuild.mjs";
 import { shellArtifactPath } from "./shell-path.mjs";
 import { prependRuntimePath } from "./runtime-environment.mjs";
 import { updateScript } from "./update-script.mjs";
-import { createSupervisor, prepareAndStartUser } from "./process.mjs";
+import { createSupervisor, prepareAndStartShell } from "./process.mjs";
 import { createProcessOwner } from "./process-owner.mjs";
 import { ensureInstalledDependencies } from "./installation.mjs";
 import { profilePaths, prepareShellProfile } from "./profile-layout.mjs";
-import { ensureManagedClone } from "./clone.mjs";
 
 const { resolveGitBinary, setupEnvironment } = dugite;
 const SHELL_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -40,13 +39,12 @@ const MAGI_REPOSITORY =
 // directory also removes Chromium storage, caches, logs, and crash dumps.
 const PROFILE_PATHS = profilePaths(app.getPath("home"));
 const MAGI_DATA_ROOT = PROFILE_PATHS.dataRoot;
-const MAGI_USER_DATA = path.join(MAGI_DATA_ROOT, "user");
-const MAGI_APP_CHECKOUT = path.join(MAGI_USER_DATA, "MAGI");
-const ELECTRON_USER_DATA = path.join(MAGI_USER_DATA, "electron");
+const MAGI_SHELL_HOME = PROFILE_PATHS.shellHome;
+const ELECTRON_USER_DATA = path.join(MAGI_SHELL_HOME, "electron");
 const ELECTRON_CACHE = path.join(PROFILE_PATHS.cache, "electron");
-const ELECTRON_LOGS = path.join(MAGI_USER_DATA, "logs");
-const ELECTRON_CRASH_DUMPS = path.join(MAGI_USER_DATA, "crash-dumps");
-const WINDOW_STATE_FILE = path.join(MAGI_USER_DATA, "window-state.json");
+const ELECTRON_LOGS = path.join(MAGI_SHELL_HOME, "logs");
+const ELECTRON_CRASH_DUMPS = path.join(MAGI_SHELL_HOME, "crash-dumps");
+const WINDOW_STATE_FILE = path.join(MAGI_SHELL_HOME, "window-state.json");
 const DEFAULT_WINDOW_SIZE = { width: 1040, height: 760 };
 const MINIMUM_WINDOW_SIZE = { width: 720, height: 560 };
 const WINDOW_EDGE_MARGIN = 24;
@@ -110,29 +108,10 @@ function toolsForRuntime(runtime) {
 }
 
 
-/**
- * The shell needs a User clone before it can spawn `dist/user.js`. All
- * other runtime clones, including ASP, are the User module's responsibility.
- */
-async function ensureAppCheckout(checkout, tools, progress) {
-  if (!app.isPackaged && !localCheckoutManaged) {
-    return checkout;
-  }
-  await ensureManagedClone({
-    run: (args, options) => command(tools.git, args, options),
-    env: tools.env,
-    url: MAGI_REPOSITORY,
-    destination: MAGI_APP_CHECKOUT,
-    branch: "magi/user",
-  });
-  progress("Prepared User source…", 0.14);
-  return MAGI_APP_CHECKOUT;
-}
-
-// Shell supervises User and forwards calls. Renderer reloads do not kill User.
-// The packaged shell runs `dist/user.js` from the User clone. An unpackaged
-// developer tree remains untouched, while an explicit scratch checkout uses
-// the same isolated-runtime layout as a packaged app.
+// Shell supervises the operator process and forwards calls. Renderer reloads
+// do not kill it. The packaged shell runs `dist/shell.js` from the Shell clone.
+// An unpackaged developer tree remains untouched, while an explicit scratch
+// checkout uses the same isolated-runtime layout as a packaged app.
 let localApi = null;
 let localApiError = null;
 let supervisor = null;
@@ -149,20 +128,20 @@ function devTools() {
   return toolsForRuntime(path.join(SHELL_DIR, "runtime"));
 }
 
-function userProcessSpec(appCheckout) {
+function shellProcessSpec(appCheckout) {
   if (app.isPackaged || localCheckoutManaged) {
     return {
-      entry: path.join(appCheckout, "apps", "user", "dist", "user.js"),
-      cwd: path.join(appCheckout, "apps", "user"),
+      entry: path.join(appCheckout, "apps", "shell", "dist", "shell.js"),
+      cwd: path.join(appCheckout, "apps", "shell"),
     };
   }
   return {
-    entry: path.join(SHELL_DIR, "..", "user", "dist", "user.js"),
-    cwd: path.join(SHELL_DIR, "..", "user"),
+    entry: path.join(SHELL_DIR, "dist", "shell.js"),
+    cwd: SHELL_DIR,
   };
 }
 
-async function spawnUser(runtimeRoot, appCheckout) {
+async function spawnShell(runtimeRoot, appCheckout) {
   const tools = localTools ?? devTools();
   processOwner.assertOpen();
   supervisor ??= createSupervisor({ node: tools.node, env: tools.env, owner: processOwner });
@@ -170,14 +149,14 @@ async function spawnUser(runtimeRoot, appCheckout) {
     supervisor, tools, command, managed: () => localCheckoutManaged,
     pause: () => new Promise((resolve) => setTimeout(resolve, 1000)),
     emit: (payload) => sendToWindow(mainWindow, "local:event", { event: "runtime.rebuild", payload }),
-    onUser: async (handle) => {
+    onShell: async (handle) => {
       localApi = handle;
       const { ui } = await handle.invoke("prepare");
       await handle.invoke("resume");
       sendToWindow(mainWindow, "local:event", { event: "app.interface-updated", payload: { ui } });
     },
   });
-  const spec = userProcessSpec(appCheckout);
+  const spec = shellProcessSpec(appCheckout);
   const ownedDirectory = (directory) => {
     if (typeof directory !== "string") throw new Error("Command requires an owned source directory");
     const actual = realpathSync(directory);
@@ -186,7 +165,7 @@ async function spawnUser(runtimeRoot, appCheckout) {
     if (!roots.some((root) => normalized(actual) === normalized(root) || normalized(actual).startsWith(`${normalized(root)}${path.sep}`))) throw new Error("Command directory is outside Shell-owned source trees");
     return actual;
   };
-  return await prepareAndStartUser(
+  return await prepareAndStartShell(
     {
       ...spec,
       env: {
@@ -278,15 +257,15 @@ async function launchLocalOperator(win) {
     const progress = (message, percent) => reportStartup(win, message, percent);
     progress("Checking local MAGI…", 0.02);
     const runtimeRoot = await resolveRuntimeRoot(progress);
-    const appCheckout = await ensureAppCheckout(runtimeRoot, localTools ?? devTools(), progress);
+    const appCheckout = runtimeRoot;
     progress("Loading the app…", 0.15);
     if (localApi === null) {
       try {
-        localApi = await spawnUser(runtimeRoot, appCheckout);
+        localApi = await spawnShell(runtimeRoot, appCheckout);
         localApiError = null;
       } catch (error) {
         localApiError = error instanceof Error ? error : new Error(String(error));
-        console.error(`[magi-app] could not start User: ${localApiError.message}`);
+        console.error(`[magi-app] could not start Shell: ${localApiError.message}`);
         throw localApiError;
       }
     }
@@ -299,7 +278,7 @@ async function launchLocalOperator(win) {
     await deliverDeeplinks();
   } catch (error) {
     if (processOwner.closing) return;
-    if (error instanceof Error && error.message === "User process exited") {
+    if (error instanceof Error && error.message === "Shell process exited") {
       localApi = null;
     }
     if (!win.isDestroyed()) {
@@ -608,7 +587,7 @@ let quitAllowed = false, quitPromise = null;
 app.on("before-quit", (event) => {
   if (quitAllowed) return;
   event.preventDefault();
-  // Close admission synchronously, before a finishing prepare can spawn User.
+  // Close admission synchronously, before a finishing prepare can spawn Shell.
   processOwner.beginClose(); supervisor?.beginClose();
   quitPromise ??= (async () => {
     try { await (supervisor ? supervisor.close() : processOwner.close()); }

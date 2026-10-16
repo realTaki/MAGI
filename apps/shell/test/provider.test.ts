@@ -5,12 +5,12 @@ import path from "node:path";
 import { test } from "node:test";
 
 import { Bus, SHELL_MAGI_HANDLE } from "@magi/bus";
-import { createLocalApi } from "../main/index.ts";
+import { createLocalApi } from "../shell.ts";
 
 /*
  * Business flow: switching the model, desktop side (`ARCHITECTURE.md`, "ASP").
- * The key is kept in the User BUS SettingsBook and reaches the MAGI
- * through ASP; User persists credentials atomically and ASP only relays.
+ * The key is kept in the Shell BUS SettingsBook and reaches the MAGI
+ * through ASP; Shell persists credentials atomically and ASP only relays.
  */
 
 const active = new Map();
@@ -58,8 +58,8 @@ test("the app saves the provider key locally and only broadcasts it through ASP"
   assert.deepEqual(saved.synced, ["@eva-000.magi"]);
   assert.ok(requests.some((request) => request.method === "PUT" && request.path === "/settings/provider"));
   assert.equal(JSON.parse(requests.find((request) => request.method === "PUT" && request.path === "/settings/provider").body).base_url, "https://example.com/v1");
-  assert.equal(existsSync(path.join(root, ".magi", "user", "provider.json")), false, "credentials live in SettingsBook");
-  const books = path.join(root, ".magi", "user", "memories", "books.db");
+  assert.equal(existsSync(path.join(root, ".magi", "shell", "provider.json")), false, "credentials live in SettingsBook");
+  const books = path.join(root, ".magi", "shell", "memories", "books.db");
   if (process.platform !== "win32") assert.equal(statSync(books).mode & 0o777, 0o600);
   await first.dispose();
   const second = app(root);
@@ -106,7 +106,7 @@ test("a provider rejection keeps the app's previous key", async (t) => {
 
 test("usage reads DeepSeek balance with the locally saved API key", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-provider-usage-"));
-  const appData = path.join(root, ".magi", "user");
+  const appData = path.join(root, ".magi", "shell");
   const bus = new Bus(SHELL_MAGI_HANDLE, appData);
   try {
     bus.settings.setMany({

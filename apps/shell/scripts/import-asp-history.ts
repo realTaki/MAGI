@@ -7,7 +7,7 @@ import { openChatStore } from "@magi/webapp/chat-store.js";
 
 export async function importAspHistory({
   asp = "http://127.0.0.1:42069",
-  database = path.join(homedir(), ".magi", "user", "chat.sqlite"),
+  database = path.join(homedir(), ".magi", "shell", "chat.sqlite"),
   fetcher = fetch,
 } = {}) {
   async function get(endpoint, token) {

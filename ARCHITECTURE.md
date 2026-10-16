@@ -1,18 +1,16 @@
 # MAGI Architecture
 
 The running system has three host processes plus any extra EVA children. The
-desktop operator process (still launched from `apps/user`, directory name
-`shell` on disk) hosts the human UI and the host MAGI **Balthasar**
-(`@eva-000.magi`). ASP is the chat relay and the host MAGI **Casper**
-(`@eva-001.magi`). **Melchior** (`@eva-002.magi`) is the one classic spawned
-EVA child, running `apps/eva/dist/eva.js` from `~/.magi/eva-002/MAGI`. ASP
-never starts a process. Within each process, Books and Jobs are the boundary
-for persistent state and coordination, so workers depend on the BUS rather
-than on one another.
+desktop operator process lives in `apps/shell`: Electron plus the Node host
+that runs the human UI and the host MAGI **Balthasar** (`@eva-000.magi`). ASP
+is the chat relay and the host MAGI **Casper** (`@eva-001.magi`). **Melchior**
+(`@eva-002.magi`) is the one classic spawned EVA child, running
+`apps/eva/dist/eva.js` from `~/.magi/eva-002/MAGI`. ASP never starts a process.
+Within each process, Books and Jobs are the boundary for persistent state and
+coordination, so workers depend on the BUS rather than on one another.
 
 ```text
-apps/shell/            Electron. Clones the repo, opens the window. App dir stays shell.
-apps/user/              Operator process: Webapp plus Balthasar's agent workers. Backend worker is packages/webapp.
+apps/shell/            Electron plus the operator process: Webapp, Balthasar's agent workers, UI in web/. Backend worker is packages/webapp.
 apps/asp/              Node 24. HTTP and WebSocket on 127.0.0.1:42069, plus Casper's agent workers.
 apps/eva/             Node 24. Spawned MAGI entry (Melchior, and any later eva-NNN).
 packages/              The runtime's packages: bus, manager, asp-server, webapp, agent, providers, built-in-tools, mcp, channel-*.
@@ -22,10 +20,10 @@ The installed package contains the shell plus Node.js 24 and npm. It
 does not contain a Python runtime. On first launch the shell clones this
 repository to `~/.magi/shell/MAGI`. Later launches keep that checkout.
 
-Before starting User in a fresh managed clone, the shell installs the root
-lockfile with `npm ci --ignore-scripts`, then runs `build:process` in `apps/user`
-when `dist/user.js` is missing. This bootstrap happens before User can prepare
-the remaining desktop components.
+Before starting the operator process in a fresh managed clone, the shell
+installs the root lockfile with `npm ci --ignore-scripts`, then runs
+`build:process` in `apps/shell` when `dist/shell.js` is missing. This bootstrap
+happens before Shell can prepare the remaining desktop components.
 
 ## Canonical terminology and names
 
@@ -69,11 +67,10 @@ participant operations use `/chats/:chat_id/...`.
 
 | Path | Owner | What it is |
 | --- | --- | --- |
-| `~/.magi/shell/MAGI` | Shell | Shell clone on branch `magi/shell`; installer source. |
+| `~/.magi/shell/MAGI` | Shell | Shell clone on branch `magi/shell`; installer source and operator process. |
 | `~/.magi/shell/cache` | Shell | Generated npm, Chromium, Electron download and builder caches. Sibling of MAGI. |
-| `~/.magi/user/MAGI` | desktop | User clone on branch `magi/user`. |
-| `~/.magi/user/chat.sqlite` | desktop | The operator's transcript. |
-| `~/.magi/user/memories/books.db` | desktop | Operator BUS (handle `@eva-000.magi`, Balthasar): provider, model, and API key (SettingsBook). |
+| `~/.magi/shell/chat.sqlite` | desktop | The operator's transcript. |
+| `~/.magi/shell/memories/books.db` | desktop | Operator BUS (handle `@eva-000.magi`, Balthasar): provider, model, and API key (SettingsBook). |
 | `~/.magi/asp/MAGI` | ASP | ASP clone on branch `magi/asp`. |
 | `~/.magi/asp/asp.sqlite` | ASP | Chats, participants, and relay events. |
 | `~/.magi/<name>` | that MAGI | Workspace. Books and Job history. |
@@ -82,16 +79,17 @@ participant operations use `/chats/:chat_id/...`.
 ## Desktop startup
 
 The shell puts Node.js 24 and npm on disk, then clones this repository to
-`~/.magi/shell/MAGI`. It starts User once as `node dist/user.js` from `apps/user/`
-(unpackaged: `apps/shell/../user/dist/user.js`). Reloads do not kill User. Quit
-closes process admission, drains/stops owned apps and reaps owned commands. User
-prepares ASP and EVA source trees; Shell starts them through its supervisor. What
-User does, in order (the worker is `packages/webapp`):
+`~/.magi/shell/MAGI`. It starts the operator process once as `node dist/shell.js`
+from `apps/shell/`. Reloads do not kill that process. Quit closes process
+admission, drains/stops owned apps and reaps owned commands. The operator
+process prepares ASP and EVA source trees; Electron starts them through its
+supervisor. What the operator process does, in order (the worker is
+`packages/webapp`):
 
 1. `prepare()` — check the lockfiles, ask Shell to validate/repair managed
    dependency installations against their completion markers and hidden locks,
-   then build the User interface when needed. Shell also prepares the User
-   process before its first start. It answers with the interface entry point.
+   then build the operator interface when needed. Electron also prepares the
+   operator process before its first start. It answers with the interface entry point.
 2. `start()` — run `apps/asp/dist/asp.js` with Node 24 and wait for `GET /health` to
    report this runtime.
 3. The default society is three MAGIs. Balthasar (`@eva-000.magi`) is this
@@ -100,27 +98,27 @@ User does, in order (the worker is `packages/webapp`):
    effort: a MAGI that never comes online does not fail startup.
 
 Closing the last window quits Shell and stops its owned runtime. Reloading the
-client keeps User and ASP running. `before-quit` stops every supervised
-app in `apps/shell/main.mjs`.
+client keeps the operator process and ASP running. `before-quit` stops every
+supervised app in `apps/shell/main.mjs`.
 
 Shell handles `request_rebuild` links directly. It compiles the target's actual
 clone, then replaces only that app using its original cwd, args, and env.
 `self` includes local source edits; `app` and `asp` push the requesting EVA's
-branch and merge it in the User or ASP clone. User rebuild includes both
-backend and UI. User retirement does not stop ASP or EVA; the replacement
-adopts their existing supervisor handles. Build errors leave the old app running;
-restart errors remain failed, without automatic rollback or retry. A ready IPC
-signal means the new app manager has initialized (ASP has bound its server);
-it does not imply an EVA has connected to ASP or passed all worker health checks.
-Shell retains the phase/result through `runtime.rebuildStatus` and emits
-`runtime.rebuild` events. The tool's OS acceptance is only a request.
+branch and merge it in the Shell or ASP clone. An `app` rebuild includes both
+operator backend and UI. Operator retirement does not stop ASP or EVA; the
+replacement adopts their existing supervisor handles. Build errors leave the old
+app running; restart errors remain failed, without automatic rollback or retry.
+A ready IPC signal means the new app manager has initialized (ASP has bound its
+server); it does not imply an EVA has connected to ASP or passed all worker
+health checks. Shell retains the phase/result through `runtime.rebuildStatus`
+and emits `runtime.rebuild` events. The tool's OS acceptance is only a request.
 
-Process ownership for rebuild still keys the operator process as `@user.magi`
-and ASP as `@asp.magi`. Moving those keys onto `@eva-000.magi` and
-`@eva-001.magi` is a follow-up. The Electron main process stays a thin shell.
+Process ownership for rebuild keys the operator process as `@shell.magi` and ASP
+as `@asp.magi`. Moving those keys onto `@eva-000.magi` and `@eva-001.magi` is a
+follow-up. The Electron main process stays a thin shell.
 
 `apps/shell/test/` verifies process isolation, new compiled output, ready and
-failure reporting, and User retirement. The other flows live with the tests that hold them, named below.
+failure reporting, and operator retirement. The other flows live with the tests that hold them, named below.
 
 ## ASP
 

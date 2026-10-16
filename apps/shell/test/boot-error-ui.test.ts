@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
 import test from "node:test";
 
-const boot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../shell/boot");
+const boot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../boot");
 
 test("startup error uses one text box and icon-only actions", async () => {
   const html = readFileSync(path.join(boot, "index.html"), "utf8");

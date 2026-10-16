@@ -5,8 +5,8 @@ import path from "node:path";
 import { test } from "node:test";
 import { Bus } from "@magi/bus";
 
-import { openChatStore } from "../main/chat-store.ts";
-import { createLocalApi } from "../main/index.ts";
+import { openChatStore } from "@magi/webapp/chat-store.js";
+import { createLocalApi } from "../shell.ts";
 
 /*
  * Business flow: sending a message, desktop side (`ARCHITECTURE.md`, "ASP").
@@ -18,7 +18,7 @@ test("desktop chat history and pending receipts survive a restart", {
   skip: Number(process.versions.node.split(".")[0]) < 22,
 }, async (t) => {
   const directory = mkdtempSync(path.join(tmpdir(), "magi-chat-"));
-  const file = path.join(directory, "user", "chat.sqlite");
+  const file = path.join(directory, "shell", "chat.sqlite");
   const chat = { chat_id: "sess_1", kind: "group", agents: [] };
   const event = {
     event_id: "evt_1", sequence: 3, type: "chat.message",
