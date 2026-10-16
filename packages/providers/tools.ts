@@ -25,7 +25,6 @@ function stringArg(args: Record<string, unknown>, key: string): string {
 function settingsArg(args: Record<string, unknown>): ProviderSettings {
   const settings: ProviderSettings = {};
   if (args.provider !== undefined) settings.provider = stringArg(args, "provider");
-  if (args.api_key !== undefined) settings.api_key = stringArg(args, "api_key");
   if (args.model !== undefined) settings.model = stringArg(args, "model");
   if (args.base_url !== undefined) settings.base_url = stringArg(args, "base_url");
   return settings;
@@ -51,7 +50,7 @@ export function providerTools(
       description: "Show or change the model provider this MAGI uses. A change is verified with the provider before it is applied, so a bad key never replaces a working one.",
       input_schema: { type: "object", properties: {
         action: { type: "string", enum: ["show", "update"] },
-        provider: { type: "string" }, api_key: { type: "string" },
+        provider: { type: "string" },
         model: { type: "string" }, base_url: { type: "string" },
       }, required: ["action"] },
       async run(args) {
@@ -59,7 +58,7 @@ export function providerTools(
         if (action === "show") return JSON.stringify(publicSettings(current()));
         if (action !== "update") throw new Error("action must be show or update");
         const change = settingsArg(args);
-        if (Object.keys(change).length === 0) throw new Error("update needs at least one of provider, api_key, model, base_url");
+        if (Object.keys(change).length === 0) throw new Error("update needs at least one of provider, model, base_url");
         await apply(change);
         return JSON.stringify({ status: "updated", ...publicSettings(current()) });
       },

@@ -11,7 +11,7 @@ import { realpathSync } from "node:fs";
  */
 
 import { fileURLToPath } from "node:url";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { ASP_MAGI_HANDLE, ASP_MAGI_NICKNAME, MAGI_CONTACT_ID, Bus } from "@magi/bus";
 import { ManagerWorker } from "@magi/manager";
 import { AgentWorker } from "@magi/agent/worker.js";
@@ -52,8 +52,12 @@ export class Asp {
       new TelegramWorker(this.bus),
     ], {
       drain: ["agent"],
+      build: { app: "asp", script: "build" },
     });
   }
+
+  /** Null when the workers that should be up have nothing wrong. */
+  healthy(): string | null { return this.manager.healthy(); }
 
   get origin(): string { return this.server.origin; }
   get database() { return this.server.database; }
@@ -75,7 +79,37 @@ export class Asp {
   }
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function untilHealthy(read: () => string | null): Promise<string | null> {
+  const deadline = Date.now() + 8_000;
+  let problem: string | null = "workers did not become healthy";
+  while (Date.now() < deadline) {
+    problem = read();
+    if (problem === null) return null;
+    await sleep(50);
+  }
+  return problem;
+}
+
 async function main(): Promise<void> {
+  if (process.env.MAGI_HEALTH === "1") {
+    const workspace = process.env.MAGI_HEALTH_WORKSPACE;
+    const asp = new Asp({
+      workspace,
+      databasePath: workspace ? join(workspace, "asp.sqlite") : undefined,
+      host: "127.0.0.1",
+      port: 0,
+    });
+    await asp.start();
+    const problem = await untilHealthy(() => asp.healthy());
+    await asp.stop();
+    if (problem) {
+      console.error(problem);
+      process.exitCode = 1;
+    }
+    return;
+  }
   const host = process.env.MAGI_ASP_HOST ?? "127.0.0.1";
   const port = Number(process.env.MAGI_ASP_PORT ?? "42069");
   const asp = new Asp({

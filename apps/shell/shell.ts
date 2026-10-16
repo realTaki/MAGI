@@ -66,6 +66,7 @@ export class Shell {
         new TelegramWorker(this.bus),
       ], {
         drain: ["agent", "webapp"],
+        build: { app: "shell", script: "build:process" },
       });
     } catch (error) {
       this.bus.close();
@@ -80,6 +81,9 @@ export class Shell {
     })();
     return this.ready;
   }
+
+  /** Null when the workers that should be up have nothing wrong. */
+  healthy(): string | null { return this.manager.healthy(); }
 
   get stopped(): boolean { return this.stopping !== null; }
 
@@ -142,7 +146,40 @@ function requireEnv(name: string): string {
   return value;
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function untilHealthy(read: () => string | null): Promise<string | null> {
+  const deadline = Date.now() + 8_000;
+  let problem: string | null = "workers did not become healthy";
+  while (Date.now() < deadline) {
+    problem = read();
+    if (problem === null) return null;
+    await sleep(50);
+  }
+  return problem;
+}
+
 async function main(): Promise<void> {
+  if (process.env.MAGI_HEALTH === "1") {
+    const home = process.env.MAGI_HEALTH_WORKSPACE ?? "";
+    const shell = new Shell({
+      paths: { checkout: home, appCheckout: home, home, userData: `${home}/electron` },
+      repository: "https://github.com/realTaki/MAGI.git",
+      managed: false,
+      tools: { git: "git", node: process.execPath, npm: "npm", env: process.env },
+      emit: () => {},
+      openExternal: async () => {},
+      copy: () => {},
+    });
+    await shell.start();
+    const problem = await untilHealthy(() => shell.healthy());
+    await shell.stop();
+    if (problem) {
+      console.error(problem);
+      process.exitCode = 1;
+    }
+    return;
+  }
   const { connectHost } = await import("./host.js");
   const host = connectHost(process.stdin, process.stdout);
   let retire: (() => Promise<void>) | undefined;

@@ -21,7 +21,6 @@ import { JobBoard, jobs, type JobInput, type JobType } from "./jobs/jobBoard.js"
 import { AgentTurnCache } from "./jobs/agentTurnCache.js";
 import { USER_HANDLE } from "./identity.js";
 import { loadOrCreateIdentity, type Identity } from "./identityKeys.js";
-import { EnvelopeOutbox } from "./outbox.js";
 import { SecretStore } from "./secrets.js";
 
 /**
@@ -48,7 +47,6 @@ export class Bus {
   readonly settings: SettingsBook;
   readonly secrets: SecretStore;
   readonly identity: Identity;
-  readonly outbox = new EnvelopeOutbox();
   readonly tools = new ToolBook();
   readonly agentTurns: AgentTurnCache;
   private readonly db: BusDb;
@@ -95,6 +93,14 @@ export class Bus {
       .where(and(eq(jobs.type, "CardJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
     this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before the public key arrived" })
       .where(and(eq(jobs.type, "PeerKeyJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
+    this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before this config was written" })
+      .where(and(eq(jobs.type, "ConfigureJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
+    this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before this replace finished" })
+      .where(and(eq(jobs.type, "ReplaceSelfJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
+    this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before this ASP command finished" })
+      .where(and(eq(jobs.type, "AspCommandJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
+    this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before this secret was applied" })
+      .where(and(eq(jobs.type, "InboundSecretJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
     this.settings = new SettingsBook(this.db);
     this.secrets = SecretStore.open(this.workspace);
     this.identity = loadOrCreateIdentity(this.workspace);

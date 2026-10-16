@@ -1,11 +1,13 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import type { BusDb } from "../drizzle/database.js";
+import type { AspCommandJob, AspCommandResult } from "./aspCommand.js";
 import type { CallLLMJob, CallLLMResult } from "./callLlm.js";
 import type { CardJob, CardResult } from "./card.js";
 import type { ChangeMcpServerNotify } from "./changeMcpServer.js";
 import type { ChangeProviderNotify } from "./changeProvider.js";
 import type { ConfigureJob, ConfigureResult } from "./configure.js";
+import type { InboundSecretJob, InboundSecretResult } from "./inboundSecret.js";
 import type { MessageDeliveryJob } from "./messageDelivery.js";
 import type { ManageWorkerNotify } from "./manageWorker.js";
 import type { PeerKeyJob, PeerKeyResult } from "./peerKey.js";
@@ -33,6 +35,8 @@ export type JobInput = {
   CardJob: CardJob;
   PeerKeyJob: PeerKeyJob;
   ReplaceSelfJob: ReplaceSelfJob;
+  AspCommandJob: AspCommandJob;
+  InboundSecretJob: InboundSecretJob;
 };
 
 /** Job type -> what the worker writes back. Empty where the job only acts. */
@@ -47,6 +51,8 @@ export type JobOutput = {
   CardJob: CardResult;
   PeerKeyJob: PeerKeyResult;
   ReplaceSelfJob: ReplaceSelfResult;
+  AspCommandJob: AspCommandResult;
+  InboundSecretJob: InboundSecretResult;
 };
 
 export type JobType = keyof JobInput;

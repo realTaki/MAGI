@@ -72,11 +72,19 @@ export class AspClient {
     return this.post("/profile", { public_key: publicKey });
   }
 
-  private async post(path: string, payload?: Record<string, unknown>): Promise<void> {
+  /** Relay HTTP. Callers are this worker; tools do not use it. */
+  async call(method: "GET" | "POST", path: string, payload?: Record<string, unknown>): Promise<unknown> {
     const response = await fetch(new URL(path, this.base), {
-      method: "POST", headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" },
-      body: payload ? JSON.stringify(payload) : undefined,
+      method,
+      headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" },
+      body: method === "POST" && payload ? JSON.stringify(payload) : undefined,
     });
-    if (!response.ok) throw new Error(`ASP HTTP ${response.status}: ${(await response.text()).slice(0, 500)}`);
+    const text = await response.text();
+    if (!response.ok) throw new Error(`ASP HTTP ${response.status}: ${text.slice(0, 500)}`);
+    return text === "" ? null : JSON.parse(text) as unknown;
+  }
+
+  private async post(path: string, payload?: Record<string, unknown>): Promise<void> {
+    await this.call("POST", path, payload);
   }
 }

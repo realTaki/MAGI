@@ -123,6 +123,12 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
     const ready = new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`App did not become ready: ${spec.cwd}`)), readyTimeoutMs);
       child.on("message", (message) => {
+        if (message?.type === "runtime.replace") {
+          if (children.get(id) === entry && entry.ready && !entry.stopping && !entry.replacing && describeApp(spec)) {
+            void restart(id).catch((error) => console.error("runtime.replace failed:", error instanceof Error ? error.message : error));
+          }
+          return;
+        }
         if (message?.type === "runtime.rebuild") {
           let error;
           try {

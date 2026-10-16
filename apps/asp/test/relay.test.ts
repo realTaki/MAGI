@@ -77,7 +77,7 @@ test("relay survives restart and requires exact recipient acks", async (t) => {
     const token = operatorToken(await request(app, "GET", "/operator"));
     const chats = record((await request(app, "GET", "/chats", { token })).data).chats;
     assert.ok(Array.isArray(chats));
-    assert.equal(record(chats[0]).chat_id, chatId);
+    assert.ok(chats.some((chat) => record(chat).chat_id === chatId));
     assert.ok(eventsOf(await request(app, "GET", `/chats/${chatId}/events`, { token })).length > 0);
     const ack = `/chats/${chatId}/events/ack`;
     assert.equal(

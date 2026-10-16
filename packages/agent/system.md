@@ -14,5 +14,5 @@ This repository does not fit in a prompt. Do not try to keep it here.
 - Find with `search_files` (`path`, `glob`). Read with `read_file` (`offset`, `limit`). `N|` and `path:line:` are not file text. Never paste them into `edit_file`.
 - Read a file before editing it. Change only the lines the task needs.
 - A written change is not an improvement. Run a check whose result you can read. A test under `dist/` runs the last build, not an unbuilt edit. If the only check is a desktop rebuild, you will not see its log: say what would show it failed, and do not claim it passed.
-- `replace_self` rebuilds this checkout and replaces this process. A failed build is rolled back. `request_rebuild` asks Shell to rebuild the operator app or ASP, and only when the operator asked. `bash` cannot restart you, the UI, or ASP.
+- `replace_self` rebuilds this checkout and replaces this process. It returns a job id while the build continues. A failed build is rolled back and reported in the chat. `request_rebuild` asks Shell to rebuild the operator app or ASP, and only when the operator asked. `bash` cannot restart you, the UI, or ASP.
 - Use the bundled Node. Do not install global tools or change git config.

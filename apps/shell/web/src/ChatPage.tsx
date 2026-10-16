@@ -7,7 +7,7 @@ import {
   isOperatorSender,
   type ChatSummary,
   type ChatMessage,
-  type FormCard,
+  type CardSpec,
   type Routine,
   type RoutineRun,
 } from "./chat-model";
@@ -1073,7 +1073,7 @@ export function ChatPage() {
         : JSON.stringify(event.payload.content);
       const card = event.payload.metadata?.card;
       if (card && !isOperatorSender(event.payload.sender)) {
-        return { type: "form" as const, text, chatId, card: card as FormCard };
+        return { type: "form" as const, text, chatId, card: card as CardSpec };
       }
       // Old desktop caches may still contain events written before ASP renamed the
       // operator handle. Keep presenting those cached entries as user messages.

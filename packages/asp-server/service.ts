@@ -1,5 +1,6 @@
 /** Chat lifecycle and event fan-out. */
 
+import { OPERATOR_HANDLE } from "./operator.js";
 import type { Participant, Chat, ChatEvent, Store } from "./store.js";
 import { eventToWire, makeId, nowMs } from "./store.js";
 import type { Transport } from "./transport.js";
@@ -81,7 +82,9 @@ export class ChatService {
       const chat = this.store.createChat({ creator: input.creator, topic: input.topic });
       this.store.addParticipant(chat.id, input.creator, "joined");
       for (const handle of invitees) {
-        this.store.addParticipant(chat.id, handle, "invited");
+        // The operator is already the person at the keyboard. Joining them here
+        // lets a card sent after this return show up in their history.
+        this.store.addParticipant(chat.id, handle, handle === OPERATOR_HANDLE ? "joined" : "invited");
       }
 
       let initialSequence: number | null = null;
@@ -93,6 +96,9 @@ export class ChatService {
         }
         Object.assign(payload, this.#intranetInviteFields());
         this.store.appendChatEvent(chat.id, "chat.invited", payload);
+        if (handle === OPERATOR_HANDLE) {
+          this.store.appendChatEvent(chat.id, "chat.joined", { agent: handle });
+        }
       }
 
       let messagePayload: Record<string, unknown> | null = null;

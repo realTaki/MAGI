@@ -144,10 +144,13 @@ test("ASP invite opens the message delivery job and the reply is delivered to th
     const posted = () => requests.find((item) => item.path === "/chats/s1/messages" && (item.body as { content?: string } | null)?.content === "hello back");
     for (let i = 0; i < 200 && (posted() === undefined || replies.length < 1); i++) await sleep(10);
     expect(replies).toEqual([{ type: "chat.ack", chat_id: "s1", event_id: "event-1" }]);
+    const s1 = requests.filter((item) => item.path.startsWith("/chats/s1"));
+    expect(s1.map((item) => item.path)).toEqual(["/chats/s1/join", "/chats/s1/messages"]);
+    expect((s1[1].body as { content?: string }).content).toBe("hello back");
     const chat = magi.bus.chats.forChannel("asp", "s1");
     const stored = magi.bus.messages.list(chat.id).map((message) => message.content);
-    expect(stored).toContain("hello");
-    expect(stored).toContain("hello back");
+    expect(stored[0]).toBe("hello");
+    expect(stored[1]).toBe("hello back");
   } finally {
     await magi.stop();
     server.stop(true);

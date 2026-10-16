@@ -28,21 +28,18 @@ test("provider_settings verifies a change before it becomes active", async () =>
   };
   try {
     await magi.start();
+    magi.bus.secrets.set("provider.api_key", "good-secret");
     const wanted = { provider: "custom", model: "gpt-test", base_url: "https://example.com/v1" };
 
-    const bad = await settled(call({ action: "update", ...wanted, api_key: "bad-secret" }));
-    expect(bad).toMatchObject({ status: "failed", error: "invalid key [redacted]" });
-    expect(magi.bus.secrets.get("provider.api_key")).toBeNull();
-    expect(configured).toHaveLength(0);
-
-    const good = await settled(call({ action: "update", ...wanted, api_key: "good-secret" }));
+    // A key on the tool call is not an argument. The stored key is what gets verified.
+    const good = await settled(call({ action: "update", ...wanted, api_key: "bad-secret" }));
     expect(good).toMatchObject({ status: "completed" });
     expect(good.output?.content).toContain("updated");
     expect(magi.bus.settings.get("provider.name")).toBe("custom");
     expect(magi.bus.settings.get("provider.model")).toBe("gpt-test");
     expect(magi.bus.settings.get("provider.base_url")).toBe("https://example.com/v1");
     expect(magi.bus.secrets.get("provider.api_key")).toBe("good-secret");
-    expect(configured).toHaveLength(1);
+    expect(configured).toEqual([{ ...wanted, api_key: "good-secret" }]);
 
     // `show` reports what is active, never the key itself.
     const shown = await settled(call({ action: "show" }));

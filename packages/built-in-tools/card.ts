@@ -8,14 +8,6 @@ import { randomUUID } from "node:crypto";
 import { MAGI_CONTACT_ID, messageDelivery, waitForJob, type Bus, type CardField, type CardSpec, type ExecutableTool } from "@magi/bus";
 import { stringArg } from "./args.js";
 
-function presentChat(bus: Bus): number | null {
-  const home = messageDelivery.homeChat(bus);
-  const homeChat = home === null ? null : bus.chats.get(home);
-  if (homeChat?.channel === "asp" && homeChat.delivery_address) return homeChat.id;
-  const asp = bus.chats.list("asp").find((chat) => chat.delivery_address !== "");
-  return asp?.id ?? null;
-}
-
 function fieldsArg(value: unknown): CardField[] {
   if (!Array.isArray(value) || value.length === 0) throw new Error("fields must be a non-empty list");
   return value.map((field) => {
@@ -48,7 +40,7 @@ export function cardTools(bus: Bus): ExecutableTool[] {
       fields: { type: "array" },
     }, required: ["title", "fields"] },
     async run(args) {
-      const chatId = presentChat(bus);
+      const chatId = messageDelivery.presentChat(bus);
       if (chatId === null) throw new Error("no ASP chat can present a card");
       const spec: CardSpec = {
         id: randomUUID(),

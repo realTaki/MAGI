@@ -43,6 +43,10 @@ export class Magi {
 
   constructor(handle: string, options: MagiOptions = {}) {
     this.bus = new Bus(handle, options.workspace);
+    if (options.asp) {
+      this.bus.settings.set("asp.base", options.asp.base);
+      this.bus.settings.set("asp.token", options.asp.token);
+    }
     this.manager = new ManagerWorker(this.bus, [
       // Contacts first: Identity leads the system context. A worker registers the
       // blocks it answers for as it is built, so this order is also prompt order.
@@ -61,8 +65,12 @@ export class Magi {
       // The agent has to *finish* rather than be stopped: a turn it already accepted
       // may still need a provider to answer and a channel to deliver.
       drain: ["agent"],
+      build: { app: "eva", script: "build" },
     });
   }
+
+  /** Null when the workers that should be up have nothing wrong. */
+  healthy(): string | null { return this.manager.healthy(); }
 
   start(): Promise<void> { return this.manager.start(); }
 
@@ -87,6 +95,10 @@ export class Magi {
 }
 
 async function main(): Promise<void> {
+  if (process.env.MAGI_HEALTH === "1") {
+    await runHealth();
+    return;
+  }
   const handle = process.argv[2];
   if (!handle) throw new Error("usage: npm start -- @handle.magi [asp-base asp-token] [--workspace path]");
   const positional: string[] = [];
@@ -137,6 +149,28 @@ async function main(): Promise<void> {
       if (line.trim()) await magi.chat(line);
     }
   } finally { input.close(); await magi.stop(); }
+}
+
+async function runHealth(): Promise<void> {
+  const magi = new Magi(process.argv[2] || "@health.magi", { workspace: process.env.MAGI_HEALTH_WORKSPACE });
+  await magi.start();
+  const problem = await untilHealthy(() => magi.healthy());
+  await magi.stop();
+  if (problem) {
+    console.error(problem);
+    process.exitCode = 1;
+  }
+}
+
+async function untilHealthy(read: () => string | null): Promise<string | null> {
+  const deadline = Date.now() + 8_000;
+  let problem: string | null = "workers did not become healthy";
+  while (Date.now() < deadline) {
+    problem = read();
+    if (problem === null) return null;
+    await sleep(50);
+  }
+  return problem;
 }
 
 if (process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])) {

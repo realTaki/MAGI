@@ -1,13 +1,21 @@
-import { BaseWorker, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, messageDelivery, waitForJob, type Bus, type Contact } from "@magi/bus";
+import { encryptFor, BaseWorker, ASP_MAGI_HANDLE, EVA_MAGI_HANDLE, MAGI_CONTACT_ID, SHELL_MAGI_HANDLE, SYSTEM_CONTACT_ID, USER_HANDLE, messageDelivery, waitForJob, type AspCommandJob, type Bus, type Contact } from "@magi/bus";
 import { AspClient, type AspEvent } from "./client.js";
 
 /** What a MAGI needs to speak on ASP; Shell writes these after the relay is up. */
 type Credentials = { base: string; token: string };
 
+const KNOWN_MAGI = new Set([SHELL_MAGI_HANDLE, ASP_MAGI_HANDLE, EVA_MAGI_HANDLE]);
+
 export class AspWorker extends BaseWorker {
   readonly worker_name = "asp";
   private client: AspClient | null = null;
   private nickname: string | null;
+  private command: Promise<void> | null = null;
+  private keyTask: Promise<void> | null = null;
+  private keyReady = false;
+  private keyError: string | null = null;
+  private keyRetryAt = 0;
+  private unspoken: string | null = null;
 
   /** `override` is for running a MAGI by hand; normally the settings have the token. */
   constructor(bus: Bus, private readonly override?: Credentials) {
@@ -27,19 +35,44 @@ export class AspWorker extends BaseWorker {
   close(): void {
     this.client?.close();
     this.client = null;
+    this.keyReady = false;
   }
 
   /** Connecting happens in the background and retries on its own. */
-  start(): void { void this.connect().then(() => this.registerKey()); }
+  start(): void { void this.connect(); }
   stop(): void { this.close(); }
 
-  /** Connecting happens in the background and retries on its own, so this is the state. */
-  health(): string | null { return this.client?.connected ? null : "ASP is not connected"; }
+  /** Connected and the public key registered. A failed registration stays visible. */
+  health(): string | null {
+    if (!this.client?.connected) return "ASP is not connected";
+    if (this.keyError) return this.keyError;
+    if (!this.keyReady) return "public key is not registered";
+    return null;
+  }
 
   async poll(): Promise<boolean> {
-    // Leave the message pending until the socket is up. Failing it here drops a
-    // sync that was sent during connect.
+    this.flushNotice();
+    this.kickKey();
+    // Leave messages and commands pending until the socket is up.
     if (!this.client?.connected) return false;
+    if (!this.command && await this.pollCommand()) return true;
+    return this.pollDelivery();
+  }
+
+  private flushNotice(): void {
+    if (this.unspoken === null) return;
+    if (messageDelivery.notify(this.bus, this.unspoken) !== null) this.unspoken = null;
+  }
+
+  /** Register once the socket is up, and again after a failure, without blocking poll. */
+  private kickKey(): void {
+    if (!this.client?.connected || this.keyReady || this.keyTask) return;
+    if (Date.now() < this.keyRetryAt) return;
+    this.keyRetryAt = Date.now() + 1_000;
+    this.keyTask = this.registerKey().finally(() => { this.keyTask = null; });
+  }
+
+  private async pollDelivery(): Promise<boolean> {
     const board = this.bus.board("MessageDeliveryJob");
     // Its own channel, and only what this MAGI said: the chat knows the channel it is on
     // and the address it is delivered to, so the job carries neither.
@@ -55,13 +88,41 @@ export class AspWorker extends BaseWorker {
       if (!chat?.delivery_address) throw new Error("delivery has no ASP chat");
       const client = this.client;
       if (!client) throw new Error("ASP is not connected");
-      const metadata = this.bus.outbox.take(message.id);
-      await client.send(chat.delivery_address, message.content, metadata ?? undefined);
+      await client.send(chat.delivery_address, message.content, job.input.metadata);
       board.submit(this.worker_name, job.id, { output: {} });
     } catch (error) {
       board.submit(this.worker_name, job.id, { error: error instanceof Error ? error.message : String(error) });
     }
     return true;
+  }
+
+  private async pollCommand(): Promise<boolean> {
+    const board = this.bus.board("AspCommandJob");
+    const job = board.claim(this.worker_name, (input) => {
+      if (input.name !== "sync_provider") return true;
+      if (this.keyError) return true;
+      return this.keyReady;
+    });
+    if (!job) return false;
+    const id = job.id;
+    const input = job.input;
+    this.command = this.runCommand(id, input).finally(() => { this.command = null; });
+    return true;
+  }
+
+  private async runCommand(id: number, input: AspCommandJob): Promise<void> {
+    const board = this.bus.board("AspCommandJob");
+    try {
+      if (input.name === "sync_provider" && !this.keyReady) throw new Error(this.keyError ?? "public key is not registered");
+      const output = input.name === "open_owner_chat" ? await this.openOwner() : await this.syncProvider();
+      board.submit(this.worker_name, id, { output });
+    } catch (error) {
+      const text = error instanceof Error ? error.message : String(error);
+      board.submit(this.worker_name, id, { error: text });
+      // An open that failed has no owner chat yet. The job result is the record;
+      // a sync failure still has a conversation to tell.
+      if (input.name === "sync_provider") this.report(error);
+    }
   }
 
   /** The operator sent this event, so a failure handling it is theirs to hear about. */
@@ -75,7 +136,8 @@ export class AspWorker extends BaseWorker {
 
   private report(error: unknown, chat?: string): void {
     const text = `[asp] ${error instanceof Error ? error.message : String(error)}`;
-    messageDelivery.notify(this.bus, text, chat ? this.bus.chats.forChannel("asp", chat).id : undefined);
+    const chatId = chat ? this.bus.chats.forChannel("asp", chat).id : undefined;
+    if (messageDelivery.notify(this.bus, text, chatId) === null) this.unspoken = text;
   }
 
   private async onEvent(event: AspEvent): Promise<Record<string, unknown> | void> {
@@ -162,7 +224,7 @@ export class AspWorker extends BaseWorker {
   private remember(chatId: string, sender: unknown): Contact | null {
     const handle = typeof sender === "string" ? sender.trim() : "";
     if (!handle) return null;
-    const contact = handle === "@user.magi" ? this.bus.contacts.get(SYSTEM_CONTACT_ID) : this.bus.contacts.forAspHandle(handle);
+    const contact = handle === USER_HANDLE ? this.bus.contacts.get(SYSTEM_CONTACT_ID) : this.bus.contacts.forAspHandle(handle);
     if (!contact) return null;
     this.bus.chatMembers.add(this.bus.chats.forChannel("asp", chatId).id, contact.id);
     return contact;
@@ -195,21 +257,34 @@ export class AspWorker extends BaseWorker {
     if (!client?.connected) return;
     try {
       await client.registerKey(this.bus.identity.publicKey);
+      this.keyError = null;
+      this.keyReady = true;
     } catch (error) {
-      this.report(error);
+      this.keyReady = false;
+      const text = error instanceof Error ? error.message : String(error);
+      if (this.keyError !== text) {
+        this.keyError = text;
+        this.report(error);
+      }
     }
   }
 
   /**
    * A structured field on a message: a card result, a key exchange, or a provider
-   * sync. The ciphertext never becomes message text. Returns true when the
-   * message was fully handled.
+   * sync. The ciphertext never becomes message text. A card result is accepted
+   * only from the operator, and a provider sync only from a trusted MAGI.
+   * Returns true when the message was fully handled.
    */
   private async structured(chatId: string, payload: Record<string, unknown>): Promise<boolean> {
     const metadata = payload.metadata;
     if (!isRecord(metadata)) return false;
+    const sender = typeof payload.sender === "string" ? payload.sender : "";
     if (metadata.card_result !== undefined) {
-      await this.completeCard(metadata.card_result);
+      if (!trusted(this.bus, sender, "card_result")) {
+        this.report(new Error(`ignored card result from ${sender || "unknown"}`), chatId);
+      } else {
+        this.publishSecret(chatId, sender, "card_result", isRecord(metadata.card_result) ? metadata.card_result : {});
+      }
       this.record(chatId, { sender: payload.sender, content: this.content(payload) || "card filled" });
       return true;
     }
@@ -230,7 +305,12 @@ export class AspWorker extends BaseWorker {
       return true;
     }
     if (envelope.kind === "provider.sync") {
-      await this.applySync(envelope);
+      if (!trusted(this.bus, sender, "provider.sync")) {
+        this.report(new Error(`ignored provider sync from ${sender || "unknown"}`), chatId);
+        this.record(chatId, { sender: payload.sender, content: "provider sync ignored" });
+        return true;
+      }
+      this.publishSecret(chatId, sender, "provider.sync", envelope);
       const summary = this.content(payload) || syncSummary(envelope);
       this.ingest(chatId, { sender: payload.sender, content: summary });
       return true;
@@ -238,57 +318,69 @@ export class AspWorker extends BaseWorker {
     return false;
   }
 
-  private async applySync(envelope: Record<string, unknown>): Promise<void> {
-    if (typeof envelope.ciphertext !== "string" || envelope.ciphertext === "") {
-      throw new Error("provider sync is missing a ciphertext");
-    }
-    const settings: Record<string, string> = {};
-    if (typeof envelope.provider === "string" && envelope.provider !== "") settings["provider.name"] = envelope.provider;
-    if (typeof envelope.model === "string" && envelope.model !== "") settings["provider.model"] = envelope.model;
-    if (typeof envelope.base_url === "string" && envelope.base_url !== "") settings["provider.base_url"] = envelope.base_url;
-    const id = this.bus.board("ConfigureJob").publish({
-      settings,
-      sealed: { "provider.api_key": envelope.ciphertext },
-      reload: ["providers"],
-    }, this.worker_name);
-    const result = await waitForJob(() => this.bus.board("ConfigureJob").result(id), 30_000, "ConfigureJob");
-    if (result.status === "failed") throw new Error(result.error ?? "provider sync failed");
+  private publishSecret(chatId: string, sender: string, kind: "card_result" | "provider.sync", body: Record<string, unknown>): void {
+    const chat = this.bus.chats.forChannel("asp", chatId);
+    this.bus.board("InboundSecretJob").publish({ sender, chat_id: chat.id, kind, body }, this.worker_name);
   }
 
-  private async completeCard(result: unknown): Promise<void> {
-    if (!isRecord(result) || typeof result.id !== "string") throw new Error("card result is missing an id");
-    const board = this.bus.board("CardJob");
-    const job = board.claim(this.worker_name, (input) => input.spec.id === result.id);
-    if (!job) throw new Error(`no open card ${result.id}`);
-    try {
-      const fields = isRecord(result.fields) ? result.fields : {};
-      const sealed: Record<string, string> = {};
-      const visible: Record<string, string> = {};
-      for (const field of job.input.spec.fields) {
-        const value = fields[field.name];
-        if (field.kind === "secret") {
-          if (!isRecord(value) || typeof value.ciphertext !== "string" || value.ciphertext === "") {
-            throw new Error(`card field ${field.name} is missing a ciphertext`);
-          }
-          sealed[field.name] = value.ciphertext;
-          visible[field.name] = "updated";
-        } else if (typeof value === "string") {
-          visible[field.name] = value;
-        } else {
-          throw new Error(`card field ${field.name} is missing a value`);
-        }
-      }
-      if (Object.keys(sealed).length > 0) {
-        const reload = Object.keys(sealed).some((key) => key === "provider.api_key" || key.startsWith("provider.")) ? ["providers"] : [];
-        const id = this.bus.board("ConfigureJob").publish({ sealed, reload }, this.worker_name);
-        const stored = await waitForJob(() => this.bus.board("ConfigureJob").result(id), 30_000, "ConfigureJob");
-        if (stored.status === "failed") throw new Error(stored.error ?? "could not store card secrets");
-      }
-      board.submit(this.worker_name, job.id, { output: { fields: visible } });
-    } catch (error) {
-      board.submit(this.worker_name, job.id, { error: error instanceof Error ? error.message : String(error) });
-      throw error;
+  private async openOwner(): Promise<{ chat_id: number }> {
+    const client = this.requireClient();
+    const opened = await client.call("POST", "/chats/open", { invite: [USER_HANDLE] });
+    if (!isRecord(opened) || typeof opened.chat_id !== "string") throw new Error("ASP did not open a chat");
+    const chat = this.bus.chats.forChannel("asp", opened.chat_id);
+    this.bus.chatMembers.add(chat.id, MAGI_CONTACT_ID);
+    if (messageDelivery.homeChat(this.bus) === null) messageDelivery.setHomeChat(this.bus, chat.id);
+    return { chat_id: chat.id };
+  }
+
+  private async syncProvider(): Promise<{ synced: string[] }> {
+    const provider = this.bus.settings.get("provider.name")?.trim();
+    const model = this.bus.settings.get("provider.model")?.trim();
+    const base_url = this.bus.settings.get("provider.base_url")?.trim() ?? "";
+    const api_key = this.bus.secrets.get("provider.api_key");
+    if (!provider || !model || !api_key) throw new Error("provider is not configured");
+    const client = this.requireClient();
+    const body = await client.call("GET", "/profiles");
+    if (!isRecord(body) || !Array.isArray(body.profiles)) throw new Error("ASP profiles were not a list");
+    const synced: string[] = [];
+    for (const row of body.profiles) {
+      if (!isRecord(row) || typeof row.handle !== "string" || row.handle === this.bus.handle) continue;
+      const known = typeof row.public_key === "string" && row.public_key !== "" ? row.public_key : null;
+      const key = await this.publicKey(row.handle, known);
+      const chatId = await this.chatWith(row.handle);
+      messageDelivery.send(this.bus, chatId, `provider sync: ${provider}, ${model}, key updated`, MAGI_CONTACT_ID, this.worker_name, {
+        envelope: { kind: "provider.sync", provider, model, base_url, ciphertext: encryptFor(key, api_key) },
+      });
+      synced.push(row.handle);
     }
+    return { synced };
+  }
+
+  private async publicKey(handle: string, known: string | null): Promise<string> {
+    if (known) return known;
+    const chatId = await this.chatWith(handle);
+    const jobId = this.bus.board("PeerKeyJob").publish({ handle }, this.worker_name);
+    messageDelivery.send(this.bus, chatId, "provider sync: public key requested", MAGI_CONTACT_ID, this.worker_name, {
+      envelope: { kind: "identity.key_request" },
+    });
+    const result = await waitForJob(() => this.bus.board("PeerKeyJob").result(jobId), 60_000, `public key for ${handle}`);
+    if (result.status === "failed" || !result.output?.public_key) {
+      throw new Error(result.error ?? `${handle} did not register a public key`);
+    }
+    return result.output.public_key;
+  }
+
+  private async chatWith(handle: string): Promise<number> {
+    const opened = await this.requireClient().call("POST", "/chats/open", { invite: [handle] });
+    if (!isRecord(opened) || typeof opened.chat_id !== "string") throw new Error("ASP did not open a chat");
+    const chat = this.bus.chats.forChannel("asp", opened.chat_id);
+    this.bus.chatMembers.add(chat.id, MAGI_CONTACT_ID);
+    return chat.id;
+  }
+
+  private requireClient(): AspClient {
+    if (!this.client) throw new Error("ASP is not connected");
+    return this.client;
   }
 
   private completePeerKey(sender: unknown, publicKey: string): void {
@@ -306,6 +398,16 @@ export class AspWorker extends BaseWorker {
     if (!base || !token) return null;
     return { base, token };
   }
+}
+
+/** Card results come from the operator. A sync comes from a known MAGI, decided before a new handle is stored. */
+function trusted(bus: Bus, sender: string, kind: "card_result" | "provider.sync"): boolean {
+  if (sender === "") return false;
+  if (kind === "card_result") return sender === USER_HANDLE;
+  if (sender === USER_HANDLE || sender === bus.handle) return sender === USER_HANDLE;
+  if (KNOWN_MAGI.has(sender)) return true;
+  const known = bus.contacts.list().find((contact) => contact.asp_handle === sender);
+  return known?.role === "magi";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

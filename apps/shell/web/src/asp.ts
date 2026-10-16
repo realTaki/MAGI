@@ -1,3 +1,5 @@
+import type { CardSpec } from "@magi/bus";
+
 /** Operator client for asp. The UI only requests; the app runs MAGI. */
 
 const ASP_BASE = "http://127.0.0.1:42069";
@@ -22,21 +24,7 @@ export type CreatedChat = {
   created_at?: number;
 };
 
-export type CardField = {
-  name: string;
-  label: string;
-  kind: "text" | "secret" | "choice";
-  choices?: string[];
-  optional?: boolean;
-};
-
-export type CardSpec = {
-  id: string;
-  title: string;
-  handle: string;
-  submit: string;
-  fields: CardField[];
-};
+export type { CardSpec };
 
 export type AspEvent = {
   type: string;
