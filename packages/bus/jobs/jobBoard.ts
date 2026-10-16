@@ -10,7 +10,6 @@ import type { ConfigureJob, ConfigureResult } from "./configure.js";
 import type { InboundSecretJob, InboundSecretResult } from "./inboundSecret.js";
 import type { MessageDeliveryJob } from "./messageDelivery.js";
 import type { ManageWorkerNotify } from "./manageWorker.js";
-import type { PeerKeyJob, PeerKeyResult } from "./peerKey.js";
 import type { ReplaceSelfJob, ReplaceSelfResult } from "./replaceSelf.js";
 import type { RunToolJob, RunToolResult } from "./runTool.js";
 
@@ -33,7 +32,6 @@ export type JobInput = {
   ManageWorkerNotify: ManageWorkerNotify;
   ConfigureJob: ConfigureJob;
   CardJob: CardJob;
-  PeerKeyJob: PeerKeyJob;
   ReplaceSelfJob: ReplaceSelfJob;
   AspCommandJob: AspCommandJob;
   InboundSecretJob: InboundSecretJob;
@@ -49,7 +47,6 @@ export type JobOutput = {
   ManageWorkerNotify: { running: string[] };
   ConfigureJob: ConfigureResult;
   CardJob: CardResult;
-  PeerKeyJob: PeerKeyResult;
   ReplaceSelfJob: ReplaceSelfResult;
   AspCommandJob: AspCommandResult;
   InboundSecretJob: InboundSecretResult;
@@ -102,6 +99,23 @@ export class JobBoard<K extends JobType> {
         if (claimed) return { id: row.id, type: this.type, input, status: "claimed" as const, worker };
       }
       return null;
+    }, { behavior: "immediate" });
+  }
+
+  /** Claim one pending job by id. A different pending job is left alone. */
+  claimId(worker: string, id: number): Job<K> | null {
+    return this.db.transaction((tx) => {
+      const row = tx.select({ id: jobs.id, input: jobs.input }).from(jobs)
+        .where(and(eq(jobs.id, id), eq(jobs.type, this.type), eq(jobs.status, "pending")))
+        .get();
+      if (!row) return null;
+      const claimed = tx.update(jobs)
+        .set({ status: "claimed", worker, updated_at: sql`(CURRENT_TIMESTAMP)` })
+        .where(and(eq(jobs.id, row.id), eq(jobs.status, "pending")))
+        .returning({ id: jobs.id })
+        .get();
+      if (!claimed) return null;
+      return { id: row.id, type: this.type, input: JSON.parse(row.input) as JobInput[K], status: "claimed" as const, worker };
     }, { behavior: "immediate" });
   }
 

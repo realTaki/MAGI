@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { prepareShellWorkspace, secureShellDatabases } from "./workspace.ts";
 import type { ProcessSpec } from "./host.js";
 import { Bus, MAGI_CONTACT_ID, SHELL_MAGI_HANDLE, SHELL_MAGI_NICKNAME } from "@magi/bus";
-import { ManagerWorker, untilHealthy } from "@magi/manager";
+import { ManagerWorker, healthyOrExit, untilHealthy } from "@magi/manager";
 import { AgentWorker } from "@magi/agent/worker.js";
 import { ToolsWorker } from "@magi/built-in-tools/worker.js";
 import { ContactsWorker } from "@magi/contacts/worker.js";
@@ -78,6 +78,7 @@ export class Shell {
     this.ready ??= (async () => {
       await this.manager.start();
       await this.worker.methods.ready();
+      await healthyOrExit(() => this.healthy());
     })();
     return this.ready;
   }

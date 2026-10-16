@@ -38,6 +38,8 @@ export class ConfigWorker extends BaseWorker {
 
   constructor(bus: Bus) {
     super(bus);
+    this.offers = Number(bus.settings.get("provider.card.offers") ?? "0") || 0;
+    this.cardStopped = bus.settings.get("provider.card.stopped") === "1";
   }
 
   async poll(): Promise<boolean> {
@@ -61,7 +63,20 @@ export class ConfigWorker extends BaseWorker {
 
   /** No provider key means this node cannot think. Show the card from here. */
   private async providerSetup(): Promise<void> {
-    if (this.cardStopped || this.bus.secrets.get("provider.api_key")) return;
+    if (this.bus.secrets.get("provider.api_key")) {
+      if (this.offers !== 0 || this.cardStopped || this.rejections() !== 0) {
+        this.offers = 0;
+        this.cardStopped = false;
+        this.bus.settings.set("provider.card.offers", "0");
+        this.bus.settings.set("provider.card.rejections", "0");
+        this.bus.settings.set("provider.card.stopped", "");
+      }
+      return;
+    }
+    if (this.cardStopped || this.rejections() >= 2 || (this.offers >= 2 && this.cardJob === null)) {
+      this.stopCard(this.cardStopped ? null : "provider card was rejected");
+      return;
+    }
     if (this.cardJob !== null) {
       const result = this.bus.board("CardJob").result(this.cardJob);
       if (!result) return;
@@ -70,18 +85,36 @@ export class ConfigWorker extends BaseWorker {
         this.announce(result.output?.fields ?? {});
         return;
       }
-      if (this.offers >= 2) {
-        this.cardStopped = true;
-        this.tell(`[provider] ${result.error ?? "provider card failed"}. The card will not be shown again.`);
-        return;
-      }
+      if (this.noteRejection(result.error ?? "provider card failed")) return;
     }
+    if (this.offers >= 2) return;
     const chatId = this.ensureOwnerChat();
     if (chatId === null) return;
     this.offers += 1;
+    this.bus.settings.set("provider.card.offers", String(this.offers));
     const spec = providerCard(this.bus.handle);
     this.cardJob = this.bus.board("CardJob").publish({ spec }, this.worker_name);
     messageDelivery.send(this.bus, chatId, `card: ${spec.title}`, MAGI_CONTACT_ID, this.worker_name, { card: spec });
+  }
+
+  private rejections(): number {
+    return Number(this.bus.settings.get("provider.card.rejections") ?? "0") || 0;
+  }
+
+  /** Count a rejection. True when the card must not be sent again. */
+  private noteRejection(reason: string): boolean {
+    const count = this.rejections() + 1;
+    this.bus.settings.set("provider.card.rejections", String(count));
+    if (count < 2 && this.offers < 2) return false;
+    this.stopCard(reason);
+    return true;
+  }
+
+  private stopCard(reason: string | null): void {
+    if (this.cardStopped) return;
+    this.cardStopped = true;
+    this.bus.settings.set("provider.card.stopped", "1");
+    if (reason) this.tell(`[provider] ${reason}. The card will not be shown again.`);
   }
 
   /** The startup card is shown only in a chat this worker opened. */
@@ -160,6 +193,7 @@ export class ConfigWorker extends BaseWorker {
     const board = this.bus.board("InboundSecretJob");
     try {
       if (input.kind === "card_result") await this.applyCard(input);
+      else if (input.kind === "card_reject") await this.rejectCard(input);
       else await this.applySync(input);
       board.submit(this.worker_name, id, { output: { applied: true } });
     } catch (error) {
@@ -212,6 +246,15 @@ export class ConfigWorker extends BaseWorker {
       board.submit(this.worker_name, job.id, { error: message(error) });
       throw error;
     }
+  }
+
+  private async rejectCard(input: InboundSecretJob): Promise<void> {
+    const id = typeof input.body.id === "string" ? input.body.id : "";
+    if (id === "") throw new Error("card rejection is missing an id");
+    const board = this.bus.board("CardJob");
+    const job = board.claim(this.worker_name, (card) => card.spec.id === id);
+    if (!job) throw new Error(`no open card ${id}`);
+    board.submit(this.worker_name, job.id, { error: "rejected" });
   }
 
   private async applySync(input: InboundSecretJob): Promise<void> {

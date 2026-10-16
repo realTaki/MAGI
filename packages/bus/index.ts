@@ -33,7 +33,6 @@ export type { ManageWorkerNotify } from "./jobs/manageWorker.js";
 export type { ConfigureJob, ConfigureResult } from "./jobs/configure.js";
 export { providerCard, PROVIDER_CHOICES } from "./jobs/card.js";
 export type { CardField, CardJob, CardResult, CardSpec } from "./jobs/card.js";
-export type { PeerKeyJob, PeerKeyResult } from "./jobs/peerKey.js";
 export type { ReplaceSelfJob, ReplaceSelfResult } from "./jobs/replaceSelf.js";
 export type { AspCommandJob, AspCommandResult } from "./jobs/aspCommand.js";
 export type { InboundSecretJob, InboundSecretResult } from "./jobs/inboundSecret.js";

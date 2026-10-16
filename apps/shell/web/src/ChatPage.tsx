@@ -479,6 +479,15 @@ function FormCardView({ message }: { message: Extract<ChatMessage, { type: "form
         </label>
       ))}
       <button type="submit" disabled={sent}>{sent ? "Sent" : card.submit}</button>
+      <button
+        type="button"
+        disabled={sent}
+        onClick={() => {
+          if (sent) return;
+          setSent(true);
+          void sendAspMessage(message.chatId, `card rejected: ${card.title}`, { card_reject: { id: card.id } });
+        }}
+      >Not now</button>
       {error ? <p className="chat-page__form-error">{error}</p> : null}
     </form>
   );

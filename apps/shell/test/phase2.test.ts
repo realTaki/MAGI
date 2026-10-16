@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
-import { Bus, encryptFor, messageDelivery } from "@magi/bus";
+import { Bus, messageDelivery } from "@magi/bus";
 import { ManagerWorker } from "@magi/manager";
 import { Asp } from "../../asp/asp.ts";
 import { Magi } from "../../eva/eva.ts";
@@ -124,24 +124,10 @@ test("a fresh MAGI shows the provider card on cold start and offers it again aft
     const submitted = await fetch(new URL(`/chats/${address}/messages`, asp.origin), {
       method: "POST",
       headers: { authorization: `Bearer ${asp.operatorToken}`, "content-type": "application/json" },
-      body: JSON.stringify({
-        content: "card filled",
-        metadata: {
-          card_result: {
-            id: card,
-            fields: {
-              provider: "custom",
-              model: "local",
-              base_url: "http://127.0.0.1:9/v1",
-              "provider.api_key": { ciphertext: encryptFor(magi.bus.identity.publicKey, "nope") },
-            },
-          },
-        },
-      }),
+      body: JSON.stringify({ content: "card rejected", metadata: { card_reject: { id: card } } }),
     });
     assert.equal(submitted.ok, true);
-    await until("provider card was not offered again", () => cards(magi!.bus).length >= 2 && magi!.bus.chats.list().some((candidate) =>
-      magi!.bus.messages.list(candidate.id).some((message) => message.content.startsWith("[provider] "))));
+    await until("provider card was not offered again", () => cards(magi!.bus).length >= 2);
     assert.equal(cards(magi.bus).length, 2);
     let again = "";
     await until("the card was not sent a second time", async () => {
@@ -159,26 +145,26 @@ test("a fresh MAGI shows the provider card on cold start and offers it again aft
     const againSubmitted = await fetch(new URL(`/chats/${address}/messages`, asp.origin), {
       method: "POST",
       headers: { authorization: `Bearer ${asp.operatorToken}`, "content-type": "application/json" },
-      body: JSON.stringify({
-        content: "card filled",
-        metadata: {
-          card_result: {
-            id: again,
-            fields: {
-              provider: "custom",
-              model: "local",
-              base_url: "http://127.0.0.1:9/v1",
-              "provider.api_key": { ciphertext: encryptFor(magi.bus.identity.publicKey, "nope") },
-            },
-          },
-        },
-      }),
+      body: JSON.stringify({ content: "card rejected", metadata: { card_reject: { id: again } } }),
     });
     assert.equal(againSubmitted.ok, true);
     await until("the operator was not told the card had stopped", () => magi!.bus.chats.list().some((candidate) =>
       magi!.bus.messages.list(candidate.id).some((message) => message.content.includes("will not be shown again"))));
-    await sleep(300);
+    assert.equal(magi.bus.settings.get("provider.card.rejections"), "2");
+    const workspace = path.join(root, "receiver");
+    await magi.stop();
+    magi = new Magi(handle, {
+      workspace,
+      asp: { base: asp.origin, token },
+      client: {
+        async complete() { calls += 1; return { role: "assistant" as const, content: "NO_REPLY" }; },
+        async verify() { throw new Error("rejected"); },
+      },
+    });
+    await magi.start();
+    await sleep(400);
     assert.equal(cards(magi.bus).length, 2);
+    assert.equal(magi.bus.settings.get("provider.card.rejections"), "2");
     assert.equal(calls, 0);
     assert.equal(magi.bus.secrets.get("provider.api_key"), null);
   } finally {

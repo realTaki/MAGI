@@ -17,6 +17,20 @@ const FAILURES_BEFORE_NOTICE = 3;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * The replacement process must not tell the shell it is ready until this
+ * returns. An unhealthy replacement exits so the shell can start the old one.
+ * Recording a failed replace does not exit.
+ */
+export async function healthyOrExit(read: () => string | null): Promise<void> {
+  if (!process.env.MAGI_REPLACE_JOB || process.env.MAGI_REPLACE_ERROR) return;
+  const problem = await untilHealthy(read);
+  if (problem) {
+    console.error(problem);
+    process.exit(1);
+  }
+}
+
 /** Wait until every wanted worker is up, or return what is still wrong. */
 export async function untilHealthy(read: () => string | null, timeoutMs = 8_000): Promise<string | null> {
   const deadline = Date.now() + timeoutMs;

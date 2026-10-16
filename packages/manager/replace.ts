@@ -64,9 +64,7 @@ export class ReplaceWorker extends BaseWorker {
       await checkEntry(entry);
       await this.host.suspendForReplace();
       suspended = true;
-      const base = this.bus.settings.get("asp.base")?.trim();
-      const token = this.bus.settings.get("asp.token")?.trim();
-      await healthCheck(entry, base && token ? { base, token } : undefined);
+      await healthCheck(entry);
       if (!swap) {
         board.submit(this.worker_name, id, { output: { replaced: true } });
         rmSync(backup, { recursive: true, force: true });
@@ -84,12 +82,17 @@ export class ReplaceWorker extends BaseWorker {
         }
         return;
       }
-      this.bus.close();
       const child = spawn(process.execPath, [entry, ...process.argv.slice(2)], {
         cwd: dirname(entry),
         env: { ...process.env, MAGI_REPLACE_JOB: String(id) },
         stdio: "inherit",
       });
+      const spawned = await new Promise<Error | null>((resolve) => {
+        child.once("spawn", () => resolve(null));
+        child.once("error", (error) => resolve(error));
+      });
+      if (spawned) throw spawned;
+      this.bus.close();
       child.unref();
       process.exit(0);
     } catch (error) {
@@ -109,30 +112,45 @@ export class ReplaceWorker extends BaseWorker {
    * only after its workers are healthy; otherwise put the previous dist back.
    */
   private finishHandoff(): boolean {
+    const jobId = Number(process.env.MAGI_REPLACE_JOB);
+    if (!Number.isInteger(jobId)) return false;
     const replaceError = process.env.MAGI_REPLACE_ERROR;
+    const board = this.bus.board("ReplaceSelfJob");
     if (!replaceError) {
       if (this.handoffDeadline === 0) this.handoffDeadline = Date.now() + 8_000;
-      if (this.host.healthy() && Date.now() < this.handoffDeadline) return false;
+      const problem = this.host.healthy();
+      if (problem) {
+        if (Date.now() < this.handoffDeadline) return false;
+        // The shell is waiting for ready. Exiting here makes it restore dist and start the old process.
+        console.error(problem);
+        process.exit(1);
+      }
     }
-    const board = this.bus.board("ReplaceSelfJob");
-    const job = board.claim(this.worker_name);
+    const done = board.result(jobId);
+    if (done) {
+      if (done.status === "failed") tell(this.bus, `[replace] ${done.error ?? "replace failed"}`);
+      this.clearHandoff();
+      return true;
+    }
+    const job = board.claimId(this.worker_name, jobId);
     if (!job) return false;
-    const dist = join(job.input.checkout ?? findCheckout(), "apps", this.build.app, "dist");
-    const backup = `${dist}.rollback`;
-    const problem = replaceError || this.host.healthy();
-    if (problem) {
-      if (existsSync(backup)) restore(dist, backup);
-      board.submit(this.worker_name, job.id, { error: problem });
-      tell(this.bus, `[replace] ${problem}`);
+    if (replaceError) {
+      board.submit(this.worker_name, job.id, { error: replaceError });
+      tell(this.bus, `[replace] ${replaceError}`);
     } else {
+      const dist = join(job.input.checkout ?? findCheckout(), "apps", this.build.app, "dist");
+      rmSync(`${dist}.rollback`, { recursive: true, force: true });
       board.submit(this.worker_name, job.id, { output: { replaced: true } });
-      rmSync(backup, { recursive: true, force: true });
       tell(this.bus, "[replace] replaced");
     }
+    this.clearHandoff();
+    return true;
+  }
+
+  private clearHandoff(): void {
     delete process.env.MAGI_REPLACE_JOB;
     delete process.env.MAGI_REPLACE_ERROR;
     this.bus.settings.set("replace.pending", "");
-    return true;
   }
 
   /** The previous process died during a replace. Say so once. */
@@ -188,19 +206,20 @@ function exec(file: string, args: string[], cwd: string): Promise<void> {
   });
 }
 
-/** Start the new entry's workers in a throwaway workspace and require them to come up healthy. */
-function healthCheck(entry: string, asp?: { base: string; token: string }): Promise<void> {
+/**
+ * Boot the new entry in a throwaway workspace. It must not be given the relay
+ * token: ASP is checked later, in the replacement process, with the real identity.
+ */
+function healthCheck(entry: string): Promise<void> {
   const workspace = mkdtempSync(join(tmpdir(), "magi-health-"));
+  const env: NodeJS.ProcessEnv = { ...process.env, MAGI_HEALTH: "1", MAGI_HEALTH_WORKSPACE: workspace };
+  delete env.MAGI_HEALTH_ASP_BASE;
+  delete env.MAGI_HEALTH_ASP_TOKEN;
   const child = fork(entry, ["@health.magi"], {
     execPath: process.execPath,
     execArgv: [],
     cwd: dirname(entry),
-    env: {
-      ...process.env,
-      MAGI_HEALTH: "1",
-      MAGI_HEALTH_WORKSPACE: workspace,
-      ...(asp ? { MAGI_HEALTH_ASP_BASE: asp.base, MAGI_HEALTH_ASP_TOKEN: asp.token } : {}),
-    },
+    env,
     stdio: ["ignore", "pipe", "pipe", "ipc"],
   });
   return new Promise((resolve, reject) => {
@@ -256,8 +275,8 @@ function askSupervisor(id: number): Promise<string | null> {
       timer.unref();
     };
     process.on("message", onMessage);
-    process.once("SIGTERM", () => finish(null));
-    process.once("SIGINT", () => finish(null));
+    process.once("SIGTERM", () => process.exit(0));
+    process.once("SIGINT", () => process.exit(0));
   });
 }
 

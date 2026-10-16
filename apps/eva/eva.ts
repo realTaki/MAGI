@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { Bus, messageDelivery } from "@magi/bus";
-import { ManagerWorker, untilHealthy } from "@magi/manager";
+import { ManagerWorker, healthyOrExit, untilHealthy } from "@magi/manager";
 import { AgentWorker } from "@magi/agent/worker.js";
 import { ProvidersWorker } from "@magi/providers/worker.js";
 import type { LLMClient } from "@magi/providers/client.js";
@@ -125,6 +125,7 @@ async function main(): Promise<void> {
     });
   }) : null;
   await magi.start();
+  await healthyOrExit(() => magi.healthy());
   // Until startup finishes, keep default signal termination: a stalled start
   // cannot drain workers and must still be stoppable by Shell's ready timeout.
   if (stopService) { process.once("SIGINT", stopService); process.once("SIGTERM", stopService); }
@@ -152,12 +153,7 @@ async function main(): Promise<void> {
 }
 
 async function runHealth(): Promise<void> {
-  const base = process.env.MAGI_HEALTH_ASP_BASE?.trim();
-  const token = process.env.MAGI_HEALTH_ASP_TOKEN?.trim();
-  const magi = new Magi(process.argv[2] || "@health.magi", {
-    workspace: process.env.MAGI_HEALTH_WORKSPACE,
-    asp: base && token ? { base, token } : undefined,
-  });
+  const magi = new Magi(process.argv[2] || "@health.magi", { workspace: process.env.MAGI_HEALTH_WORKSPACE });
   await magi.start();
   const problem = await untilHealthy(() => magi.healthy());
   await magi.stop();

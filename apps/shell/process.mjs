@@ -57,6 +57,46 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
     stream.write(`${JSON.stringify(message)}\n`);
   }
 
+  function workspaceOf(spec) {
+    const args = spec.args ?? [];
+    const flag = args.indexOf("--workspace");
+    if (flag >= 0 && typeof args[flag + 1] === "string") return args[flag + 1];
+    return null;
+  }
+
+  async function recordReplaceFailure(spec, jobId, text) {
+    const notice = `[replace] ${text}`;
+    const workspace = workspaceOf(spec);
+    const handle = describeApp(spec)?.handle;
+    if (!workspace || !handle || !jobId) {
+      notifyHost({ type: "event", event: "process.replace", payload: { error: text } });
+      return;
+    }
+    process.env.MAGI_REPLACE_JOB = jobId;
+    process.env.MAGI_REPLACE_ERROR = text;
+    try {
+      const { Bus, messageDelivery } = await import("@magi/bus");
+      const bus = new Bus(handle, workspace);
+      try {
+        const board = bus.board("ReplaceSelfJob");
+        const job = board.claimId("replace", Number(jobId));
+        if (job) board.submit("replace", job.id, { error: text });
+        else bus.board("ManageWorkerNotify").seal("shell", { worker: "replace", action: "restart" }, text);
+        if (messageDelivery.notify(bus, notice) === null) {
+          bus.board("ManageWorkerNotify").seal("shell", { worker: "replace", action: "restart" }, notice);
+        }
+      } finally {
+        bus.close();
+      }
+    } catch (error) {
+      notifyHost({ type: "event", event: "process.replace", payload: { error: text } });
+      console.error("replace restore failed:", error instanceof Error ? error.message : error);
+    } finally {
+      delete process.env.MAGI_REPLACE_JOB;
+      delete process.env.MAGI_REPLACE_ERROR;
+    }
+  }
+
   function restoreDist(spec) {
     const live = resolve(spec.cwd, "dist");
     const backup = `${live}.rollback`;
@@ -154,6 +194,7 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
           if (child.connected) child.send({ type: "runtime.replace.accepted" }, () => {});
           void restart(id).catch((error) => {
             const text = error instanceof Error ? error.message : String(error);
+            const job = replaceJobs.get(id);
             replaceJobs.delete(id);
             if (child.connected) {
               child.send({ type: "runtime.replace.accepted", error: text }, () => {});
@@ -162,10 +203,13 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
             const record = records.get(id);
             if (!record) return;
             restoreDist(record.spec);
+            if (job) replaceJobs.set(id, job);
             replaceErrors.set(id, text);
             void start(record.spec, { host: record.host, id, replacing: true }).catch((startError) => {
+              const detail = startError instanceof Error ? startError.message : String(startError);
+              replaceJobs.delete(id);
               replaceErrors.delete(id);
-              console.error("replace restore failed:", startError instanceof Error ? startError.message : startError);
+              void recordReplaceFailure(record.spec, job, `${text}; ${detail}`);
             });
           });
           return;
@@ -190,7 +234,7 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
       });
       const fail = (error) => { clearTimeout(timer); reject(error); };
       child.once("error", (error) => {
-        children.delete(id);
+        if (children.get(id)?.child === child) children.delete(id);
         fail(error);
       });
       child.once("exit", (code, signal) => fail(new Error(`App exited before ready (${code ?? signal})`)));
@@ -202,6 +246,7 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
       if (text) console.error(`[${basename(spec.entry)}]`, text);
     });
     child.once("exit", (code, signal) => {
+      if (children.get(id)?.child !== child) return;
       records.get(id).exit = { code, signal };
       children.delete(id);
       if (!isHost && !entry.replacing && hostSend !== null) {

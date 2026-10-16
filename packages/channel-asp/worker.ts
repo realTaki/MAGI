@@ -23,8 +23,11 @@ export class AspWorker extends BaseWorker {
     this.nickname = bus.contacts.get(MAGI_CONTACT_ID)?.nickname ?? null;
   }
 
-  /** No relay address, nothing to do — the supervisor asks this before starting. */
-  configured(): boolean { return this.credentials() !== null; }
+  /** No relay address, nothing to do. A throwaway health check must not connect or register a key. */
+  configured(): boolean {
+    if (process.env.MAGI_HEALTH === "1") return false;
+    return this.credentials() !== null;
+  }
 
   connect(): Promise<void> {
     const credentials = this.credentials();
@@ -279,31 +282,19 @@ export class AspWorker extends BaseWorker {
     const metadata = payload.metadata;
     if (!isRecord(metadata)) return false;
     const sender = typeof payload.sender === "string" ? payload.sender : "";
-    if (metadata.card_result !== undefined) {
+    if (metadata.card_result !== undefined || metadata.card_reject !== undefined) {
+      const rejected = metadata.card_reject !== undefined;
+      const body = rejected ? metadata.card_reject : metadata.card_result;
       if (!trusted(this.bus, sender, "card_result")) {
-        this.report(new Error(`ignored card result from ${sender || "unknown"}`), chatId);
+        this.report(new Error(`ignored card ${rejected ? "rejection" : "result"} from ${sender || "unknown"}`), chatId);
       } else {
-        this.publishSecret(chatId, sender, "card_result", isRecord(metadata.card_result) ? metadata.card_result : {});
+        this.publishSecret(chatId, sender, rejected ? "card_reject" : "card_result", isRecord(body) ? body : {});
       }
-      this.record(chatId, { sender: payload.sender, content: this.content(payload) || "card filled" });
+      this.record(chatId, { sender: payload.sender, content: this.content(payload) || (rejected ? "card rejected" : "card filled") });
       return true;
     }
     const envelope = metadata.envelope;
     if (!isRecord(envelope) || typeof envelope.kind !== "string") return false;
-    if (envelope.kind === "identity.key_request") {
-      await this.registerKey();
-      const chat = this.bus.chats.forChannel("asp", chatId);
-      messageDelivery.send(this.bus, chat.id, "provider sync: public key ready", MAGI_CONTACT_ID, this.worker_name, {
-        envelope: { kind: "identity.key_ready", public_key: this.bus.identity.publicKey },
-      });
-      this.record(chatId, { sender: payload.sender, content: "provider sync: public key requested" });
-      return true;
-    }
-    if (envelope.kind === "identity.key_ready" && typeof envelope.public_key === "string") {
-      this.completePeerKey(payload.sender, envelope.public_key);
-      this.record(chatId, { sender: payload.sender, content: "provider sync: public key ready" });
-      return true;
-    }
     if (envelope.kind === "provider.sync") {
       if (!trusted(this.bus, sender, "provider.sync")) {
         this.report(new Error(`ignored provider sync from ${sender || "unknown"}`), chatId);
@@ -318,7 +309,7 @@ export class AspWorker extends BaseWorker {
     return false;
   }
 
-  private publishSecret(chatId: string, sender: string, kind: "card_result" | "provider.sync", body: Record<string, unknown>): void {
+  private publishSecret(chatId: string, sender: string, kind: "card_result" | "card_reject" | "provider.sync", body: Record<string, unknown>): void {
     const chat = this.bus.chats.forChannel("asp", chatId);
     this.bus.board("InboundSecretJob").publish({ sender, chat_id: chat.id, kind, body }, this.worker_name);
   }
@@ -382,14 +373,6 @@ export class AspWorker extends BaseWorker {
   private requireClient(): AspClient {
     if (!this.client) throw new Error("ASP is not connected");
     return this.client;
-  }
-
-  private completePeerKey(sender: unknown, publicKey: string): void {
-    const handle = typeof sender === "string" ? sender : "";
-    const board = this.bus.board("PeerKeyJob");
-    const job = board.claim(this.worker_name, (input) => input.handle === handle);
-    if (!job) return;
-    board.submit(this.worker_name, job.id, { output: { public_key: publicKey } });
   }
 
   /** Read at every start, so a token that arrives later is picked up by a restart. */

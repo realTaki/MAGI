@@ -13,7 +13,7 @@ import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { ASP_MAGI_HANDLE, ASP_MAGI_NICKNAME, MAGI_CONTACT_ID, Bus } from "@magi/bus";
-import { ManagerWorker, untilHealthy } from "@magi/manager";
+import { ManagerWorker, healthyOrExit, untilHealthy } from "@magi/manager";
 import { AgentWorker } from "@magi/agent/worker.js";
 import { ToolsWorker } from "@magi/built-in-tools/worker.js";
 import { ContactsWorker } from "@magi/contacts/worker.js";
@@ -106,6 +106,7 @@ async function main(): Promise<void> {
     port,
   });
   await asp.start();
+  await healthyOrExit(() => asp.healthy());
   process.send?.({ type: "ready" });
   console.error(`[asp] listening on ${asp.origin}`);
   try {

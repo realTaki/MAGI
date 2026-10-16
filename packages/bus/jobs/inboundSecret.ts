@@ -7,7 +7,7 @@
 export type InboundSecretJob = {
   sender: string;
   chat_id: number;
-  kind: "card_result" | "provider.sync";
+  kind: "card_result" | "card_reject" | "provider.sync";
   body: Record<string, unknown>;
 };
 

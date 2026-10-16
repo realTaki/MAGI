@@ -91,8 +91,6 @@ export class Bus {
       .where(and(eq(jobs.type, "RunToolJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
     this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before this card was filled" })
       .where(and(eq(jobs.type, "CardJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
-    this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before the public key arrived" })
-      .where(and(eq(jobs.type, "PeerKeyJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
     this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before this config was written" })
       .where(and(eq(jobs.type, "ConfigureJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
     // A supervised replace hands the job to the new process, which completes it
