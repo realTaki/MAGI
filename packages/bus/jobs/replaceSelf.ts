@@ -8,6 +8,8 @@
 export type ReplaceSelfJob = {
   /** The checkout to build. Omitted, the running app's own checkout is used. */
   checkout?: string;
+  /** Commit or ref to check out. Omitted, the checkout's tracking branch is used. */
+  ref?: string;
   /** After a healthy build, hand this process to its supervisor or a new one. */
   swap?: boolean;
 };

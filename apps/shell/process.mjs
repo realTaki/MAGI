@@ -42,7 +42,7 @@ export async function prepareAndStartShell(spec, tools, supervisor, options) {
   return await supervisor.start(spec, options);
 }
 
-export function createSupervisor({ node, env, spawnProcess = spawn, owner = createProcessOwner({ spawnProcess }), readyTimeoutMs = 30_000, stopTimeoutMs = 30_000 }) {
+export function createSupervisor({ node, env, spawnProcess = spawn, owner = createProcessOwner({ spawnProcess }), readyTimeoutMs = 30_000, stopTimeoutMs = 30_000, onHostRestart } = {}) {
   const children = new Map();
   const records = new Map();
   const restarting = new Map();
@@ -171,9 +171,10 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
       detached: !isHost,
       windowsHide: true,
     });
-    const entry = { child, host: isHost, key, identity, replacing, ready: false };
+    const entry = { child, host: isHost, key, identity, replacing, ready: false, upgrade: null };
     children.set(id, entry);
     records.set(id, { spec, host, identity, key, dependencies, exit: null });
+    let stderrText = "";
     const ready = new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`App did not become ready: ${spec.cwd}`)), readyTimeoutMs);
       child.on("message", (message) => {
@@ -207,6 +208,27 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
           });
           return;
         }
+        if (message?.type === "failed") {
+          const error = typeof message.error === "string" && message.error !== "" ? message.error : "launcher failed";
+          notifyHost({ type: "event", event: "launcher.failed", payload: { error } });
+          return;
+        }
+        if (message?.type === "upgrade" && isHost && message.v === 1 && typeof message.launcher === "string") {
+          entry.upgrade = {
+            entry: message.launcher,
+            cwd: dirname(message.launcher),
+            args: spec.args,
+            env: {
+              ...spec.env,
+              MAGI_HOST: "1",
+              MAGI_LAUNCHER: message.launcher,
+              MAGI_REVISION: String(message.revision ?? ""),
+              MAGI_REVISION_DIR: String(message.dir ?? ""),
+              ...(Number.isInteger(message.job) ? { MAGI_REPLACE_JOB: String(message.job) } : {}),
+            },
+          };
+          return;
+        }
         if (message?.type !== "ready") return;
         entry.graceful = describeApp(spec)?.kind === "eva" && Array.isArray(message.lifecycle) && message.lifecycle.includes("shutdown");
         entry.ready = true;
@@ -218,9 +240,11 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
         if (children.get(id)?.child === child) children.delete(id);
         fail(error);
       });
-      let stderrText = "";
       child.stderr?.on("data", (chunk) => { stderrText = `${stderrText}${chunk}`.slice(-2000); });
-      child.once("exit", (code, signal) => fail(new Error(stderrText.trim() || `App exited before ready (${code ?? signal})`)));
+      child.once("exit", (code, signal) => {
+        if (entry.upgrade) return;
+        fail(new Error(stderrText.trim() || `App exited before ready (${code ?? signal})`));
+      });
     });
     void ready.catch(() => undefined);
     entry.whenReady = () => ready;
@@ -230,8 +254,24 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
     });
     child.once("exit", (code, signal) => {
       if (children.get(id)?.child !== child) return;
+      const upgrade = entry.upgrade;
       records.get(id).exit = { code, signal };
       children.delete(id);
+      if (isHost && upgrade && !entry.stopping) {
+        const next = { ...spec, entry: upgrade.entry, cwd: upgrade.cwd, args: upgrade.args, env: upgrade.env };
+        records.set(id, { ...records.get(id), spec: next });
+        void start(next, { host, id, replacing: true }).then(async (handle) => {
+          await handle.whenReady();
+          onHostRestart?.(handle);
+        }).catch((error) => {
+          const text = error instanceof Error ? error.message : String(error);
+          notifyHost({ type: "event", event: "launcher.failed", payload: { error: text } });
+        });
+        return;
+      }
+      if (isHost && entry.ready && code !== 0 && code !== null) {
+        notifyHost({ type: "event", event: "launcher.failed", payload: { error: stderrText.trim() || `launcher exited ${code}` } });
+      }
       if (!isHost && !entry.replacing && hostSend !== null) {
         notifyHost({ type: "event", event: "process.exit", payload: { id, code, signal } });
       }

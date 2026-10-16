@@ -7,7 +7,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { magiHome } from "@magi/runtime/home.js";
@@ -116,6 +116,7 @@ function spawnChild(role, rest, name, { script, revision, replaceJob, replaceErr
   const child = spawn(node, [script, "--role", role, ...rest], {
     env,
     stdio: host ? ["pipe", "pipe", "pipe", "ipc"] : ["ignore", "inherit", "inherit", "ipc"],
+    detached: true,
     windowsHide: true,
   });
   if (host) {
@@ -175,13 +176,37 @@ function stopChild(child) {
   else child.kill("SIGTERM");
 }
 
-function stopAndWait(child) {
+function stopTimeout(role) {
+  return role === "shell" ? 30_000 : 10_000;
+}
+
+function killTree(child) {
+  const pid = child?.pid;
+  if (!pid) return;
+  if (process.platform === "win32") {
+    spawn("taskkill.exe", ["/pid", String(pid), "/t", "/f"], { stdio: "ignore", windowsHide: true });
+    return;
+  }
+  try { process.kill(-pid, "SIGKILL"); }
+  catch { try { child.kill("SIGKILL"); } catch { /* already gone */ } }
+}
+
+function stopAndWait(child, role) {
   if (!child || child.exitCode != null || child.signalCode != null) return Promise.resolve();
   stopChild(child);
   return new Promise((resolve) => {
-    const timer = setTimeout(() => { child.kill("SIGKILL"); }, 5_000);
+    const timer = setTimeout(() => { killTree(child); }, stopTimeout(role));
     child.once("exit", () => { clearTimeout(timer); resolve(); });
   });
+}
+
+function pruneRevisions(name, keep) {
+  const root = join(magiHome(), name, "revisions");
+  if (!existsSync(root)) return;
+  for (const entry of readdirSync(root)) {
+    if (keep.has(entry)) continue;
+    rmSync(join(root, entry), { recursive: true, force: true });
+  }
 }
 
 function backoff(attempt) {
@@ -245,7 +270,7 @@ async function main() {
     let next = null;
     try {
       const script = childScript(name, message.dir);
-      await stopAndWait(old);
+      await stopAndWait(old, role);
       next = launch({ script, revision: message.revision, replaceJob: job, dir: message.dir });
       current = next;
       await waitHealthy(next);
@@ -254,15 +279,12 @@ async function main() {
       state.current = String(message.revision ?? "");
       state.currentDir = message.dir;
       writeState(name, state);
+      pruneRevisions(name, new Set([state.current, state.previous].filter(Boolean)));
     } catch (error) {
-      if (next) next.kill("SIGTERM");
+      if (next) killTree(next);
       const text = report(name, error, job);
       try {
-        current = launch({
-          dir: previousDir,
-          revision: state.current,
-          replaceError: text,
-        });
+        current = launch({ dir: previousDir, revision: state.current });
         await waitHealthy(current);
       } catch (rollbackError) {
         report(name, `${text}; rollback failed: ${rollbackError instanceof Error ? rollbackError.message : rollbackError}`, job);
@@ -282,38 +304,50 @@ async function main() {
       replaced = false;
       return;
     }
-    await stopAndWait(current);
+    if (process.env.MAGI_HOST === "1") {
+      const sent = process.send?.({
+        v: LAUNCHER_PROTOCOL,
+        type: "upgrade",
+        launcher,
+        dir: message.dir ?? "",
+        revision: message.revision ?? "",
+        job,
+      }) ?? false;
+      if (!sent) {
+        report(name, "the host did not accept the launcher upgrade", job);
+        replaced = false;
+        return;
+      }
+      await stopAndWait(current, role);
+      current = null;
+      process.exit(0);
+    }
+    await stopAndWait(current, role);
     current = null;
     const { node } = resolveToolchain();
-    const host = process.env.MAGI_HOST === "1";
     const next = spawn(node, [launcher, "--role", role, ...rest], {
       env: {
         ...process.env,
         MAGI_HANDOFF: "1",
-        MAGI_HOST: process.env.MAGI_HOST ?? "",
         MAGI_REVISION: String(message.revision ?? ""),
         MAGI_REVISION_DIR: String(message.dir ?? ""),
         MAGI_HOME: magiHome(),
         MAGI_LAUNCHER: launcher,
+        ...(job !== null ? { MAGI_REPLACE_JOB: String(job) } : {}),
       },
-      stdio: host ? ["pipe", "pipe", "pipe", "ipc"] : ["ignore", "inherit", "inherit", "ipc"],
+      stdio: ["ignore", "inherit", "inherit", "ipc"],
+      detached: true,
       windowsHide: true,
     });
     note(next);
-    if (host) {
-      process.stdin.unpipe();
-      process.stdin.pipe(next.stdin);
-      next.stdout.pipe(process.stdout);
-      next.stderr.pipe(process.stderr);
-    }
     try {
       await waitFor(next, "ready", 30_000);
       process.exit(0);
     } catch (error) {
-      next.kill("SIGTERM");
+      killTree(next);
       const text = report(name, error, job);
       try {
-        current = launch({ dir: state.currentDir, revision: state.current, replaceError: text });
+        current = launch({ dir: state.currentDir, revision: state.current });
         await waitHealthy(current);
       } catch (rollbackError) {
         report(name, `${text}; rollback failed: ${rollbackError instanceof Error ? rollbackError.message : rollbackError}`, job);
@@ -323,8 +357,17 @@ async function main() {
     }
   }
 
+  const inheritedJob = Number(process.env.MAGI_REPLACE_JOB);
+  const inheritedError = process.env.MAGI_REPLACE_ERROR || undefined;
+  delete process.env.MAGI_REPLACE_JOB;
+  delete process.env.MAGI_REPLACE_ERROR;
   try {
-    current = launch({ dir: state.currentDir, revision: state.current });
+    current = launch({
+      dir: state.currentDir,
+      revision: state.current,
+      replaceJob: Number.isInteger(inheritedJob) ? inheritedJob : undefined,
+      replaceError: inheritedError,
+    });
   } catch (error) {
     report(name, error);
     process.exit(1);
@@ -343,8 +386,7 @@ async function main() {
   if (typeof process.send === "function") process.send({ v: LAUNCHER_PROTOCOL, type: "ready" });
   const stop = () => {
     replaced = true;
-    stopChild(current);
-    process.exit(0);
+    void stopAndWait(current, role).then(() => process.exit(0));
   };
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);

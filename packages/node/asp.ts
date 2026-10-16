@@ -3,7 +3,7 @@
  * Casper speaks on the local relay through AspWorker, the same path as any node.
  */
 
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { ASP_MAGI_HANDLE, ASP_MAGI_NICKNAME, MAGI_CONTACT_ID, Bus } from "@magi/bus";
 import { ManagerWorker } from "@magi/manager";
 import type { LLMClient } from "@magi/providers/client.js";
@@ -52,26 +52,9 @@ export class Asp {
   }
 }
 
-export async function runAsp(): Promise<(() => Promise<void>) | void> {
+export async function runAsp(): Promise<() => Promise<void>> {
   const { aspBase } = await import("@magi/runtime/asp.js");
-  const { healthyOrExit, untilHealthy } = await import("@magi/manager");
-  if (process.env.MAGI_HEALTH === "1") {
-    const workspace = process.env.MAGI_HEALTH_WORKSPACE;
-    const asp = new Asp({
-      workspace,
-      databasePath: workspace ? join(workspace, "asp.sqlite") : undefined,
-      host: "127.0.0.1",
-      port: 0,
-    });
-    await asp.start();
-    const problem = await untilHealthy(() => asp.healthy());
-    await asp.stop();
-    if (problem) {
-      console.error(problem);
-      process.exitCode = 1;
-    }
-    return;
-  }
+  const { healthyOrExit } = await import("@magi/manager");
   const base = new URL(aspBase());
   const asp = new Asp({
     aspBase: base.href,

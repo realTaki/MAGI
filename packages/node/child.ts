@@ -5,11 +5,13 @@
 
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
-import { healthyOrExit } from "@magi/manager";
+import { join } from "node:path";
+import { healthyOrExit, untilHealthy } from "@magi/manager";
+import { resolveToolchain } from "@magi/runtime/toolchain.js";
 import { Magi } from "./agent.js";
-import { runAsp } from "./asp.js";
+import { Asp, runAsp } from "./asp.js";
 import { sendLauncher, untilShutdown, watchLauncherProtocol } from "./control.js";
-import { runShell } from "./shell.js";
+import { Shell, runShell } from "./shell.js";
 
 function role(): string {
   const flag = process.argv.indexOf("--role");
@@ -52,9 +54,7 @@ async function main(): Promise<void> {
   watchLauncherProtocol();
   const selected = role();
   if (process.env.MAGI_HEALTH === "1") {
-    if (selected === "shell") await runShell();
-    else if (selected === "asp") await runAsp();
-    else await runHealthAgent();
+    await runHealth(selected);
     return;
   }
   if (selected === "shell") {
@@ -78,12 +78,39 @@ async function main(): Promise<void> {
   finally { await session.stop(); }
 }
 
-async function runHealthAgent(): Promise<void> {
-  const { untilHealthy } = await import("@magi/manager");
-  const magi = new Magi(process.env.MAGI_HANDLE?.trim() || "@health.magi", { workspace: process.env.MAGI_HEALTH_WORKSPACE });
-  await magi.start();
-  const problem = await untilHealthy(() => magi.healthy());
-  await magi.stop();
+async function runHealth(selected: string): Promise<void> {
+  const home = process.env.MAGI_HEALTH_WORKSPACE ?? "";
+  const node = resolveToolchain().node;
+  let problem: string | null;
+  if (selected === "shell") {
+    const shell = new Shell({
+      paths: { checkout: home, appCheckout: home, home, userData: `${home}/electron` },
+      repository: "https://github.com/realTaki/MAGI.git",
+      managed: false,
+      tools: { git: "git", node, npm: "npm", env: process.env },
+      emit: () => {},
+      openExternal: async () => {},
+      copy: () => {},
+    });
+    await shell.start();
+    problem = await untilHealthy(() => shell.healthy());
+    await shell.stop();
+  } else if (selected === "asp") {
+    const asp = new Asp({
+      workspace: home,
+      databasePath: home ? join(home, "asp.sqlite") : undefined,
+      host: "127.0.0.1",
+      port: 0,
+    });
+    await asp.start();
+    problem = await untilHealthy(() => asp.healthy());
+    await asp.stop();
+  } else {
+    const magi = new Magi(process.env.MAGI_HANDLE?.trim() || "@health.magi", { workspace: home });
+    await magi.start();
+    problem = await untilHealthy(() => magi.healthy());
+    await magi.stop();
+  }
   if (problem) {
     console.error(problem);
     process.exitCode = 1;

@@ -144,7 +144,10 @@ function shellProcessSpec(appCheckout) {
 async function spawnShell(runtimeRoot, appCheckout) {
   const tools = localTools ?? devTools();
   processOwner.assertOpen();
-  supervisor ??= createSupervisor({ node: tools.node, env: tools.env, owner: processOwner });
+  supervisor ??= createSupervisor({
+    node: tools.node, env: tools.env, owner: processOwner,
+    onHostRestart: (handle) => { localApi = handle; },
+  });
   const spec = shellProcessSpec(appCheckout);
   const ownedDirectory = (directory) => {
     if (typeof directory !== "string") throw new Error("Command requires an owned source directory");

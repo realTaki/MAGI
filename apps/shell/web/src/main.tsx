@@ -14,7 +14,7 @@ window.magiDesktop?.onLocalEvent?.(({ event, payload }) => {
     const message = typeof payload?.message === "string" ? payload.message : "Could not apply the MAGI link.";
     window.alert(message);
   }
-  if (event === "process.replace") {
+  if (event === "process.replace" || event === "launcher.failed") {
     const message = typeof payload.error === "string" ? payload.error : "replace failed";
     notifyError(message);
   }

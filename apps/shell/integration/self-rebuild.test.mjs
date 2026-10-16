@@ -9,6 +9,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { createSupervisor } from "../process.mjs";
 
 const repo = path.resolve(import.meta.dirname, "../../..");
 const launcher = path.join(repo, "apps", "eva", "eva.mjs");
@@ -95,57 +96,91 @@ setTimeout(() => process.exit(1), 20);
   assert.equal(code, 1);
 });
 
-test("a launcher upgrade stops the old child before the new launcher reads the host pipe", async (t) => {
-  const home = mkdtempSync(path.join(tmpdir(), "magi-upgrade-"));
-  const down = path.join(home, "down");
-  const piped = path.join(home, "piped");
-  const nextPid = path.join(home, "next.pid");
-  const next = path.join(home, "next-launcher.mjs");
-  const dir = childAt(home, "eva-002", "next", `process.send({ v: 1, type: "hello" });
+test("a failed switch starts the previous revision again", async (t) => {
+  const home = mkdtempSync(path.join(tmpdir(), "magi-rollback-"));
+  const runs = path.join(home, "runs");
+  const restored = path.join(home, "restored");
+  const bad = childAt(home, "eva-002", "bad", "process.exit(2);\n");
+  childAt(home, "eva-002", "a", `const { readFileSync, writeFileSync, existsSync } = require("node:fs");
+const n = existsSync(${JSON.stringify(runs)}) ? Number(readFileSync(${JSON.stringify(runs)}, "utf8")) : 0;
+writeFileSync(${JSON.stringify(runs)}, String(n + 1));
+process.send({ v: 1, type: "hello" });
+process.on("message", (message) => { if (message?.type === "shutdown") process.exit(0); });
 process.send({ v: 1, type: "ready" });
+if (n === 0) setTimeout(() => process.send({ v: 1, type: "switch", revision: "bad", dir: ${JSON.stringify(bad)}, job: 8 }), 30);
+else writeFileSync(${JSON.stringify(restored)}, "previous");
+setInterval(() => {}, 1000);
+`);
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const { proc, stderr } = start(home, ["--role", "agent", "@eva-002.magi"], {
+    MAGI_REVISION_DIR: path.join(home, "eva-002", "revisions", "a"),
+    MAGI_REVISION: "a",
+  }, t);
+  const deadline = Date.now() + 8_000;
+  while (Date.now() < deadline && proc.exitCode == null) {
+    try {
+      assert.equal(readFileSync(restored, "utf8"), "previous");
+      const marker = JSON.parse(readFileSync(path.join(home, "eva-002", "replace-failed.json"), "utf8"));
+      assert.equal(marker.job, 8);
+      assert.match(marker.error, /exited 2/);
+      return;
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  }
+  assert.fail(`previous revision did not return (${proc.exitCode}): ${stderr()}`);
+});
+
+test("a hosted upgrade finishes the job after the old launcher exits", async (t) => {
+  const home = mkdtempSync(path.join(tmpdir(), "magi-hosted-"));
+  const oldPid = path.join(home, "old.pid");
+  const done = path.join(home, "done");
+  const dir = childAt(home, "eva-002", "next", `const { writeFileSync } = require("node:fs");
+process.send({ v: 1, type: "hello" });
+process.send({ v: 1, type: "ready" });
+if (process.env.MAGI_REPLACE_JOB) writeFileSync(${JSON.stringify(done)}, process.env.MAGI_REPLACE_JOB);
 process.on("message", (message) => { if (message?.type === "shutdown") process.exit(0); });
 setInterval(() => {}, 1000);
 `);
-  writeFileSync(next, `import { writeFileSync, existsSync } from "node:fs";
-import { spawn } from "node:child_process";
-if (!existsSync(${JSON.stringify(down)})) process.exit(2);
-writeFileSync(${JSON.stringify(nextPid)}, String(process.pid));
-const text = await new Promise((resolve) => {
-  process.stdin.once("data", (chunk) => resolve(String(chunk)));
-  setTimeout(() => resolve(""), 2000);
-});
-writeFileSync(${JSON.stringify(piped)}, text);
-const child = spawn(process.execPath, [${JSON.stringify(path.join(dir, "packages", "node", "dist", "child.js"))}, "--role", "agent"], { stdio: ["pipe", "pipe", "pipe", "ipc"] });
-process.stdin.pipe(child.stdin);
-child.on("message", (message) => {
-  if (message?.type === "ready") process.send({ v: 1, type: "ready" });
-});
-`);
   childAt(home, "eva-002", "old", `const { writeFileSync } = require("node:fs");
+writeFileSync(${JSON.stringify(oldPid)}, String(process.ppid));
 process.send({ v: 1, type: "hello" });
-process.on("message", (message) => {
-  if (message?.type === "shutdown") { writeFileSync(${JSON.stringify(down)}, "1"); process.exit(0); }
-});
+process.on("message", (message) => { if (message?.type === "shutdown") process.exit(0); });
 process.send({ v: 1, type: "ready" });
-setTimeout(() => process.send({ v: 1, type: "upgrade", revision: "next", dir: ${JSON.stringify(dir)}, launcher: ${JSON.stringify(next)}, job: 4 }), 30);
+setTimeout(() => process.send({ v: 1, type: "upgrade", revision: "next", dir: ${JSON.stringify(dir)}, launcher: ${JSON.stringify(launcher)}, job: 9 }), 30);
 setInterval(() => {}, 1000);
 `);
-  t.after(() => {
-    try { process.kill(Number(readFileSync(nextPid, "utf8")), "SIGTERM"); } catch { /* not started */ }
+  const supervisor = createSupervisor({ node: process.execPath, env: { ...process.env, MAGI_NODE: process.execPath } });
+  t.after(async () => {
+    await supervisor.close();
     rmSync(home, { recursive: true, force: true });
   });
-  const { proc, stderr } = start(home, ["--role", "agent", "@eva-002.magi"], {
-    MAGI_HOST: "1",
-    MAGI_REVISION_DIR: path.join(home, "eva-002", "revisions", "old"),
-    MAGI_REVISION: "old",
-  }, t);
+  const handle = await supervisor.start({
+    entry: launcher,
+    cwd: path.dirname(launcher),
+    args: ["--role", "agent", "@eva-002.magi"],
+    env: {
+      MAGI_HOME: home,
+      MAGI_HOST: "1",
+      MAGI_NODE: process.execPath,
+      MAGI_REVISION_DIR: path.join(home, "eva-002", "revisions", "old"),
+      MAGI_REVISION: "old",
+    },
+  }, { host: {} });
+  await handle.whenReady();
   const deadline = Date.now() + 8_000;
-  while (Date.now() < deadline && !exists(nextPid)) await new Promise((resolve) => setTimeout(resolve, 20));
-  proc.stdin.write("piped\n");
-  const code = await new Promise((resolve) => proc.once("exit", (exit) => resolve(exit)));
-  assert.equal(readFileSync(down, "utf8"), "1");
-  assert.equal(readFileSync(piped, "utf8"), "piped\n");
-  assert.equal(code, 0, stderr());
+  while (Date.now() < deadline) {
+    try {
+      if (readFileSync(done, "utf8") === "9") break;
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  }
+  assert.equal(readFileSync(done, "utf8"), "9");
+  const pid = Number(readFileSync(oldPid, "utf8"));
+  assert.throws(() => process.kill(pid, 0), /ESRCH/);
 });
 
 function exists(file) {

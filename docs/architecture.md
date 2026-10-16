@@ -52,7 +52,7 @@ A node with no `provider.api_key` opens a chat with the operator and posts `card
 
 A failed checkout or build fails the job and tells the operator. A new child that does not become ready is killed. The launcher starts the previous revision directory again, writes the replace-failed marker, and that child fails the job. One process runs one replace.
 
-If the new revision's `apps/eva/eva.mjs` differs, the child asks the launcher to upgrade. The launcher stops its child, starts the new launcher with the same host pipes, and exits only after that launcher's child is ready. Otherwise it stops the new launcher, starts the previous child, and writes the marker. A child that keeps crashing is restarted with backoff, then the launcher writes the marker and tells the operator.
+If the new revision's `apps/eva/eva.mjs` differs, the child asks for an upgrade. A launcher started by Electron tells Electron and exits after stopping its child; Electron starts the new `eva.mjs`. A launcher with no host starts the new launcher itself, and only after the old child has exited. A failed upgrade starts the previous child and writes the marker. A child that keeps crashing is restarted with backoff, then the launcher writes the marker and tells the operator. The window shows that failure.
 
 ## Failures
 

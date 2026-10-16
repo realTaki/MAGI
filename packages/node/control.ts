@@ -26,6 +26,7 @@ export function untilShutdown(): Promise<void> {
     const stop = () => resolve();
     process.once("SIGINT", stop);
     process.once("SIGTERM", stop);
+    process.on("disconnect", stop);
     process.on("message", (message) => {
       const body = message as { v?: number; type?: string };
       if (body?.v !== LAUNCHER_PROTOCOL) return;

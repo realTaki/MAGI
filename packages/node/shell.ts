@@ -8,6 +8,13 @@ import { dirname, join } from "node:path";
 import { magiHome } from "@magi/runtime/home.js";
 import type { ProcessSpec } from "./host.js";
 
+function operatingSystemHome(): string {
+  const explicit = process.env.MAGI_OS_HOME?.trim();
+  if (explicit) return explicit;
+  if (process.env.MAGI_HOME?.trim()) throw new Error("MAGI_OS_HOME is not set");
+  return dirname(magiHome());
+}
+
 function prepareShellWorkspace(home: string): string {
   const root = process.env.MAGI_HOME?.trim() ? magiHome() : join(home, ".magi");
   return join(root, "shell");
@@ -22,7 +29,7 @@ function secureShellDatabases(workspace: string): void {
   }
 }
 import { Bus, MAGI_CONTACT_ID, SHELL_MAGI_HANDLE, SHELL_MAGI_NICKNAME } from "@magi/bus";
-import { ManagerWorker, healthyOrExit, untilHealthy } from "@magi/manager";
+import { ManagerWorker, healthyOrExit } from "@magi/manager";
 import { AspProcessWorker, WebappWorker } from "@magi/webapp";
 import { shellWorkers } from "./roles.js";
 
@@ -135,27 +142,7 @@ function requireEnv(name: string): string {
   return value;
 }
 
-export async function runShell(): Promise<(() => Promise<void>) | void> {
-  if (process.env.MAGI_HEALTH === "1") {
-    const home = process.env.MAGI_HEALTH_WORKSPACE ?? "";
-    const shell = new Shell({
-      paths: { checkout: home, appCheckout: home, home, userData: `${home}/electron` },
-      repository: "https://github.com/realTaki/MAGI.git",
-      managed: false,
-      tools: { git: "git", node: process.execPath, npm: "npm", env: process.env },
-      emit: () => {},
-      openExternal: async () => {},
-      copy: () => {},
-    });
-    await shell.start();
-    const problem = await untilHealthy(() => shell.healthy());
-    await shell.stop();
-    if (problem) {
-      console.error(problem);
-      process.exitCode = 1;
-    }
-    return;
-  }
+export async function runShell(): Promise<() => Promise<void>> {
   const { connectHost } = await import("./host.js");
   const host = connectHost(process.stdin, process.stdout);
   let retire: (() => Promise<void>) | undefined;
@@ -167,7 +154,7 @@ export async function runShell(): Promise<(() => Promise<void>) | void> {
       paths: {
         checkout,
         appCheckout: process.env.MAGI_APP_CHECKOUT || checkout,
-        home: process.env.MAGI_OS_HOME?.trim() || dirname(magiHome()),
+        home: operatingSystemHome(),
         userData: requireEnv("MAGI_USER_DATA"),
       },
       repository: requireEnv("MAGI_REPOSITORY"),

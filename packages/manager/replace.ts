@@ -16,7 +16,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BaseWorker, messageDelivery, replaceFailedPath, type Bus } from "@magi/bus";
 import { LAUNCHER_PROTOCOL } from "@magi/runtime/protocol.js";
-import { reviseCheckout } from "@magi/runtime/revise.js";
+import { reviseCheckout, trackingRef } from "@magi/runtime/revise.js";
 import { resolveToolchain } from "@magi/runtime/toolchain.js";
 
 export type AppBuild = {
@@ -51,15 +51,15 @@ export class ReplaceWorker extends BaseWorker {
     if (!job) return false;
     const id = job.id;
     const input = job.input;
-    this.task = this.execute(id, input.checkout, input.swap === true).finally(() => { this.task = null; });
+    this.task = this.execute(id, input.checkout, input.ref, input.swap === true).finally(() => { this.task = null; });
     return true;
   }
 
-  private async execute(id: number, requested: string | undefined, swap: boolean): Promise<void> {
+  private async execute(id: number, requested: string | undefined, ref: string | undefined, swap: boolean): Promise<void> {
     const board = this.bus.board("ReplaceSelfJob");
     const checkout = requested ?? findCheckout();
     if (swap) {
-      await this.switchRevision(id, checkout);
+      await this.switchRevision(id, checkout, ref);
       return;
     }
     const appDir = join(checkout, "apps", this.build.app);
@@ -91,13 +91,14 @@ export class ReplaceWorker extends BaseWorker {
   }
 
   /** Build the target revision in its own directory, then ask the launcher to run it. */
-  private async switchRevision(id: number, checkout: string): Promise<void> {
+  private async switchRevision(id: number, checkout: string, ref: string | undefined): Promise<void> {
     const board = this.bus.board("ReplaceSelfJob");
     try {
       if (typeof process.send !== "function" || !process.connected) {
         throw new Error("this node has no launcher to switch to the new revision");
       }
-      const { revision, previous, dir } = await reviseCheckout(checkout);
+      const target = ref?.trim() || await trackingRef(checkout);
+      const { revision, previous, dir } = await reviseCheckout(checkout, target);
       const launcher = join(dir, "apps", "eva", "eva.mjs");
       const running = process.env.MAGI_LAUNCHER;
       const upgrade = Boolean(running && existsSync(running) && existsSync(launcher) && fileHash(running) !== fileHash(launcher));
@@ -175,11 +176,11 @@ export class ReplaceWorker extends BaseWorker {
       return true;
     }
     const board = this.bus.board("ReplaceSelfJob");
-    if (jobId !== null && !board.result(jobId) && !board.fail(jobId, error)) {
-      tell(this.bus, `[replace] ${error}`);
+    if (jobId !== null && board.result(jobId)) {
       rmSync(marker, { force: true });
       return true;
     }
+    if (jobId !== null) board.fail(jobId, error);
     tell(this.bus, `[replace] ${error}`);
     rmSync(marker, { force: true });
     return true;
@@ -189,10 +190,18 @@ export class ReplaceWorker extends BaseWorker {
   private noteFailedReplace(): boolean {
     const pending = this.bus.settings.get("replace.pending");
     if (!pending) return false;
-    const result = this.bus.board("ReplaceSelfJob").result(Number(pending));
-    if (!result) return false;
+    if (process.env.MAGI_REPLACE_JOB) return false;
+    const id = Number(pending);
+    const board = this.bus.board("ReplaceSelfJob");
+    const result = board.result(id);
     this.bus.settings.set("replace.pending", "");
-    if (result.status === "failed") tell(this.bus, `[replace] ${result.error ?? "replace failed"}`);
+    if (result) {
+      if (result.status === "failed") tell(this.bus, `[replace] ${result.error ?? "replace failed"}`);
+      return true;
+    }
+    const error = "MAGI crashed before this replace finished";
+    board.fail(id, error);
+    tell(this.bus, `[replace] ${error}`);
     return true;
   }
 }
