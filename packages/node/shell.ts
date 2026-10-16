@@ -4,8 +4,7 @@
  */
 
 import { existsSync, chmodSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { magiHome } from "@magi/runtime/home.js";
 import type { ProcessSpec } from "./host.js";
 
@@ -24,15 +23,8 @@ function secureShellDatabases(workspace: string): void {
 }
 import { Bus, MAGI_CONTACT_ID, SHELL_MAGI_HANDLE, SHELL_MAGI_NICKNAME } from "@magi/bus";
 import { ManagerWorker, healthyOrExit, untilHealthy } from "@magi/manager";
-import { AgentWorker } from "@magi/agent/worker.js";
-import { ToolsWorker } from "@magi/built-in-tools/worker.js";
-import { ContactsWorker } from "@magi/contacts/worker.js";
-import { MemoryWorker } from "@magi/memory/worker.js";
-import { ProvidersWorker } from "@magi/providers/worker.js";
-import { SkillWorker } from "@magi/skills/worker.js";
-import { AspWorker } from "@magi/channel-asp/worker.js";
-import { TelegramWorker } from "@magi/channel-telegram/worker.js";
 import { AspProcessWorker, WebappWorker } from "@magi/webapp";
+import { shellWorkers } from "./roles.js";
 
 type ShellContext = ConstructorParameters<typeof WebappWorker>[1];
 
@@ -60,20 +52,7 @@ export class Shell {
         initialProcess: context.initialProcesses?.find(({ spec }: { spec: ProcessSpec }) => spec.entry.endsWith("asp.js")),
       });
       this.worker = new WebappWorker(this.bus, { ...context, aspProcess: this.aspProcess });
-      this.manager = new ManagerWorker(this.bus, [
-        // Contacts first: Identity leads the system context, same order as Magi.
-        new ContactsWorker(this.bus),
-        new SkillWorker(this.bus),
-        new AgentWorker(this.bus),
-        new ToolsWorker(this.bus),
-        new MemoryWorker(this.bus),
-        new ProvidersWorker(this.bus),
-        this.worker,
-        this.aspProcess,
-        new AspWorker(this.bus),
-        // Telegram stays off until this workspace has a bot token.
-        new TelegramWorker(this.bus),
-      ], {
+      this.manager = new ManagerWorker(this.bus, shellWorkers(this.bus, this.worker, this.aspProcess), {
         drain: ["agent", "webapp"],
         build: { app: "shell", script: "build:process" },
       });
@@ -156,7 +135,7 @@ function requireEnv(name: string): string {
   return value;
 }
 
-export async function runShell(): Promise<void> {
+export async function runShell(): Promise<(() => Promise<void>) | void> {
   if (process.env.MAGI_HEALTH === "1") {
     const home = process.env.MAGI_HEALTH_WORKSPACE ?? "";
     const shell = new Shell({
@@ -188,7 +167,7 @@ export async function runShell(): Promise<void> {
       paths: {
         checkout,
         appCheckout: process.env.MAGI_APP_CHECKOUT || checkout,
-        home: process.env.MAGI_OS_HOME?.trim() || homedir(),
+        home: process.env.MAGI_OS_HOME?.trim() || dirname(magiHome()),
         userData: requireEnv("MAGI_USER_DATA"),
       },
       repository: requireEnv("MAGI_REPOSITORY"),
@@ -231,20 +210,14 @@ export async function runShell(): Promise<void> {
       });
     host.serve(handlers);
     await api.ready();
-    process.send?.({ v: 1, type: "ready" });
-    await new Promise<void>((resolve) => {
-      const stop = () => resolve();
-      process.once("SIGINT", stop);
-      process.once("SIGTERM", stop);
-      process.on("message", (message) => {
-        const body = message as { type?: string };
-        if (body?.type === "shutdown") stop();
-      });
-    });
-  } finally {
-    // Close this operator process only; Electron continues to own the other apps.
+    return async () => {
+      try { await retire?.(); }
+      finally { host.close(); }
+    };
+  } catch (error) {
     try { await retire?.(); }
     finally { host.close(); }
+    throw error;
   }
 }
 

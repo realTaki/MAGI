@@ -48,11 +48,11 @@ A node with no `provider.api_key` opens a chat with the operator and posts `card
 
 ## Self-replace
 
-`replace_self`, and `request_rebuild` with target `self`, publish `ReplaceSelfJob`. The replace worker snapshots that app's `dist`, builds, and health-checks the child. On `swap`, the child fetches, installs, tests, and builds, then asks the launcher to switch revision. The launcher starts the new child, waits until it is ready, and only then stops the old one.
+`replace_self`, and `request_rebuild` with target `self`, publish `ReplaceSelfJob`. On `swap`, the child checks the target revision out under `$MAGI_HOME/<node>/revisions/<sha>`, installs, tests, and builds there, then asks the launcher to run that directory. The launcher stops the old child before starting the new one, so two processes do not open the same database. The new child is that revision's `packages/node/dist/child.js`.
 
-A failed build restores the previous `dist`, resumes the old workers, fails the job, and tells the operator. A new child that does not become ready is killed. The old child keeps running. The launcher writes the replace-failed marker and tells that child. The next poll fails the `ReplaceSelfJob` and deletes the marker. One process runs one replace.
+A failed checkout or build fails the job and tells the operator. A new child that does not become ready is killed. The launcher starts the previous revision directory again, writes the replace-failed marker, and that child fails the job. One process runs one replace.
 
-The launcher can replace itself: it starts the new launcher, and the old launcher exits only after the new launcher and its child are ready. Otherwise it stops the new launcher and writes the marker.
+If the new revision's `apps/eva/eva.mjs` differs, the child asks the launcher to upgrade. The launcher stops its child, starts the new launcher with the same host pipes, and exits only after that launcher's child is ready. Otherwise it stops the new launcher, starts the previous child, and writes the marker. A child that keeps crashing is restarted with backoff, then the launcher writes the marker and tells the operator.
 
 ## Failures
 

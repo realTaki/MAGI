@@ -1,4 +1,7 @@
 import { execFile } from "node:child_process";
+import { existsSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { magiHome } from "./home.js";
 import { resolveToolchain } from "./toolchain.js";
 
 function run(file: string, args: string[], cwd: string): Promise<string> {
@@ -14,16 +17,24 @@ function run(file: string, args: string[], cwd: string): Promise<string> {
 }
 
 /**
- * This node upgrades its own checkout: fetch, install, test, build.
- * The caller then asks the launcher to switch to the resulting revision.
+ * Check out the target revision in its own directory under MAGI_HOME, then
+ * install, test, and build there. The running tree is left on its current commit.
  */
-export async function reviseCheckout(root: string): Promise<{ revision: string; previous: string }> {
+export async function reviseCheckout(root: string, target?: string): Promise<{ revision: string; previous: string; dir: string }> {
   const { git } = resolveToolchain();
+  const name = process.env.MAGI_NODE_NAME?.trim() || "agent";
   const previous = (await run(git, ["rev-parse", "HEAD"], root)).trim();
   await run(git, ["fetch", "--prune", "origin"], root);
-  await run("npm", ["ci", "--ignore-scripts"], root);
-  await run("npm", ["test"], root);
-  await run("npm", ["run", "build"], root);
-  const revision = (await run(git, ["rev-parse", "HEAD"], root)).trim();
-  return { revision, previous };
+  const revision = (await run(git, ["rev-parse", "--verify", target?.trim() || "origin/HEAD"], root)).trim();
+  if (!/^[0-9a-f]+$/i.test(revision)) throw new Error(`revision ${revision} is not a commit`);
+  const dir = join(magiHome(), name, "revisions", revision);
+  if (!existsSync(join(dir, ".git"))) {
+    mkdirSync(join(magiHome(), name, "revisions"), { recursive: true });
+    await run(git, ["clone", "--local", root, dir], root);
+  }
+  await run(git, ["checkout", "--detach", revision], dir);
+  await run("npm", ["ci"], dir);
+  await run("npm", ["test"], dir);
+  await run("npm", ["run", "build"], dir);
+  return { revision, previous, dir };
 }

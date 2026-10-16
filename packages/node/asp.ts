@@ -6,17 +6,9 @@
 import { dirname, join } from "node:path";
 import { ASP_MAGI_HANDLE, ASP_MAGI_NICKNAME, MAGI_CONTACT_ID, Bus } from "@magi/bus";
 import { ManagerWorker } from "@magi/manager";
-import { AgentWorker } from "@magi/agent/worker.js";
-import { ToolsWorker } from "@magi/built-in-tools/worker.js";
-import { ContactsWorker } from "@magi/contacts/worker.js";
-import { MemoryWorker } from "@magi/memory/worker.js";
-import { ProvidersWorker } from "@magi/providers/worker.js";
 import type { LLMClient } from "@magi/providers/client.js";
-import { SkillWorker } from "@magi/skills/worker.js";
-import { AspWorker } from "@magi/channel-asp/worker.js";
-import { TelegramWorker } from "@magi/channel-telegram/worker.js";
-
 import { AspServer, defaultDatabasePath, type CreateAppOptions } from "@magi/asp-server";
+import { aspWorkers } from "./roles.js";
 
 export type { CreateAppOptions };
 export type AspOptions = CreateAppOptions & { client?: LLMClient };
@@ -31,18 +23,7 @@ export class Asp {
     this.bus = new Bus(ASP_MAGI_HANDLE, options.workspace ?? dirname(databasePath));
     this.bus.contacts.update(MAGI_CONTACT_ID, { nickname: ASP_MAGI_NICKNAME });
     this.server = new AspServer(this.bus, { ...options, databasePath });
-    this.manager = new ManagerWorker(this.bus, [
-      new ContactsWorker(this.bus),
-      new SkillWorker(this.bus),
-      new AgentWorker(this.bus),
-      new ToolsWorker(this.bus),
-      new MemoryWorker(this.bus),
-      new ProvidersWorker(this.bus, options.client),
-      this.server,
-      new AspWorker(this.bus),
-      // Telegram stays off until this workspace has a bot token.
-      new TelegramWorker(this.bus),
-    ], {
+    this.manager = new ManagerWorker(this.bus, aspWorkers(this.bus, this.server, options.client), {
       drain: ["agent"],
       build: { app: "asp", script: "build" },
     });
@@ -71,7 +52,7 @@ export class Asp {
   }
 }
 
-export async function runAsp(): Promise<void> {
+export async function runAsp(): Promise<(() => Promise<void>) | void> {
   const { aspBase } = await import("@magi/runtime/asp.js");
   const { healthyOrExit, untilHealthy } = await import("@magi/manager");
   if (process.env.MAGI_HEALTH === "1") {
@@ -100,15 +81,6 @@ export async function runAsp(): Promise<void> {
   });
   await asp.start();
   await healthyOrExit(() => asp.healthy());
-  process.send?.({ v: 1, type: "ready" });
   console.error(`[asp] listening on ${asp.origin}`);
-  try {
-    await new Promise<void>((resolve) => {
-      process.once("SIGINT", resolve);
-      process.once("SIGTERM", resolve);
-      process.on("message", (message) => {
-        if ((message as { type?: string })?.type === "shutdown") resolve();
-      });
-    });
-  } finally { await asp.stop(); }
+  return async () => { await asp.stop(); };
 }

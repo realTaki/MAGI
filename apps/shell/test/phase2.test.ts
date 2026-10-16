@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
 import { Bus, messageDelivery } from "@magi/bus";
+import { magiHome } from "@magi/runtime/home.js";
 import { ManagerWorker } from "@magi/manager";
 import { Asp } from "../../asp/asp.ts";
 import { Magi } from "../../eva/eva.ts";
@@ -299,7 +300,7 @@ test("one rejection then a restart still shows the provider card", async () => {
 test("the next start records a replace the shell could not restore", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-replace-marker-"));
   const handle = "@eva-replace-marker-188d.magi";
-  const markerDir = path.join(homedir(), ".magi", "eva-replace-marker-188d");
+  const markerDir = path.join(magiHome(), "eva-replace-marker-188d");
   const marker = path.join(markerDir, "replace-failed.json");
   const workspace = path.join(root, "workspace");
   const client = { async complete() { return { role: "assistant" as const, content: "NO_REPLY" }; } };
@@ -333,7 +334,7 @@ test("the next start records a replace the shell could not restore", async () =>
 test("a replace marker without a job fails the open replace", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-replace-marker-null-"));
   const handle = "@eva-replace-marker-null-188d.magi";
-  const markerDir = path.join(homedir(), ".magi", "eva-replace-marker-null-188d");
+  const markerDir = path.join(magiHome(), "eva-replace-marker-null-188d");
   const marker = path.join(markerDir, "replace-failed.json");
   const workspace = path.join(root, "workspace");
   const client = { async complete() { return { role: "assistant" as const, content: "NO_REPLY" }; } };
@@ -367,7 +368,7 @@ test("a replace marker without a job fails the open replace", async () => {
 test("a corrupt replace marker is reported and removed", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-replace-marker-bad-"));
   const handle = "@eva-replace-marker-bad-188d.magi";
-  const markerDir = path.join(homedir(), ".magi", "eva-replace-marker-bad-188d");
+  const markerDir = path.join(magiHome(), "eva-replace-marker-bad-188d");
   const marker = path.join(markerDir, "replace-failed.json");
   const workspace = path.join(root, "workspace");
   const client = { async complete() { return { role: "assistant" as const, content: "NO_REPLY" }; } };
@@ -395,7 +396,7 @@ test("a corrupt replace marker is reported and removed", async () => {
 test("a replace marker for a missing job is reported and removed", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-replace-marker-missing-"));
   const handle = "@eva-replace-marker-missing-188d.magi";
-  const markerDir = path.join(homedir(), ".magi", "eva-replace-marker-missing-188d");
+  const markerDir = path.join(magiHome(), "eva-replace-marker-missing-188d");
   const marker = path.join(markerDir, "replace-failed.json");
   const workspace = path.join(root, "workspace");
   const client = { async complete() { return { role: "assistant" as const, content: "NO_REPLY" }; } };
@@ -424,7 +425,7 @@ test("a replace marker for a missing job is reported and removed", async () => {
 test("a replace whose old process also fails leaves a marker and tells the shell", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-shell-marker-"));
   const handle = "@eva-shell-marker-188d.magi";
-  const markerDir = path.join(homedir(), ".magi", "eva-shell-marker-188d");
+  const markerDir = path.join(magiHome(), "eva-shell-marker-188d");
   const marker = path.join(markerDir, "replace-failed.json");
   const log = path.join(root, "shell-events.log");
   const shellCwd = path.join(root, "apps", "shell");

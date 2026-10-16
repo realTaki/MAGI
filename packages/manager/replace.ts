@@ -8,13 +8,16 @@
  * asks its supervisor to restart it, and a hand-run app exits after spawning.
  */
 
+import { createHash } from "node:crypto";
 import { execFile, fork } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BaseWorker, messageDelivery, replaceFailedPath, type Bus } from "@magi/bus";
+import { LAUNCHER_PROTOCOL } from "@magi/runtime/protocol.js";
 import { reviseCheckout } from "@magi/runtime/revise.js";
+import { resolveToolchain } from "@magi/runtime/toolchain.js";
 
 export type AppBuild = {
   app: "eva" | "asp" | "shell";
@@ -55,6 +58,10 @@ export class ReplaceWorker extends BaseWorker {
   private async execute(id: number, requested: string | undefined, swap: boolean): Promise<void> {
     const board = this.bus.board("ReplaceSelfJob");
     const checkout = requested ?? findCheckout();
+    if (swap) {
+      await this.switchRevision(id, checkout);
+      return;
+    }
     const appDir = join(checkout, "apps", this.build.app);
     const dist = join(appDir, "dist");
     const backup = `${dist}.rollback`;
@@ -67,32 +74,10 @@ export class ReplaceWorker extends BaseWorker {
       await this.host.suspendForReplace();
       suspended = true;
       await healthCheck(this.build.app === "eva" ? "agent" : this.build.app);
-      if (!swap) {
-        board.submit(this.worker_name, id, { output: { replaced: true } });
-        rmSync(backup, { recursive: true, force: true });
-        tell(this.bus, "[replace] replaced");
-        await this.host.resume();
-        return;
-      }
-      if (typeof process.send !== "function" || !process.connected) {
-        throw new Error("this node has no launcher to switch to the new revision");
-      }
-      const { revision, previous } = await reviseCheckout(checkout);
-      this.bus.settings.set("replace.pending", String(id));
-      process.send({ v: 1, type: "switch", revision, previous, job: id, checkout });
-      const failure = await new Promise<string>((resolve) => {
-        const timer = setTimeout(() => resolve("launcher did not switch to the new revision"), 45_000);
-        timer.unref();
-        const onMessage = (message: unknown) => {
-          const body = message as { type?: string; error?: string };
-          if (body?.type !== "switch-failed") return;
-          clearTimeout(timer);
-          process.off("message", onMessage);
-          resolve(body.error || "switch failed");
-        };
-        process.on("message", onMessage);
-      });
-      throw new Error(failure);
+      board.submit(this.worker_name, id, { output: { replaced: true } });
+      rmSync(backup, { recursive: true, force: true });
+      tell(this.bus, "[replace] replaced");
+      await this.host.resume();
     } catch (error) {
       restore(dist, backup);
       let text = message(error);
@@ -100,6 +85,37 @@ export class ReplaceWorker extends BaseWorker {
         try { await this.host.resume(); }
         catch (resumeError) { text = `${text}; ${message(resumeError)}`; }
       }
+      board.submit(this.worker_name, id, { error: text });
+      tell(this.bus, `[replace] ${text}`);
+    }
+  }
+
+  /** Build the target revision in its own directory, then ask the launcher to run it. */
+  private async switchRevision(id: number, checkout: string): Promise<void> {
+    const board = this.bus.board("ReplaceSelfJob");
+    try {
+      if (typeof process.send !== "function" || !process.connected) {
+        throw new Error("this node has no launcher to switch to the new revision");
+      }
+      const { revision, previous, dir } = await reviseCheckout(checkout);
+      const launcher = join(dir, "apps", "eva", "eva.mjs");
+      const running = process.env.MAGI_LAUNCHER;
+      const upgrade = Boolean(running && existsSync(running) && existsSync(launcher) && fileHash(running) !== fileHash(launcher));
+      this.bus.settings.set("replace.pending", String(id));
+      process.send({
+        v: LAUNCHER_PROTOCOL,
+        type: upgrade ? "upgrade" : "switch",
+        revision,
+        previous,
+        dir,
+        job: id,
+        launcher,
+      });
+      const outcome = await waitLauncher();
+      if (outcome === "shutdown") return;
+      throw new Error(outcome);
+    } catch (error) {
+      const text = message(error);
       board.submit(this.worker_name, id, { error: text });
       tell(this.bus, `[replace] ${text}`);
     }
@@ -204,13 +220,17 @@ function restore(live: string, backup: string): void {
   rmSync(backup, { recursive: true, force: true });
 }
 
+function nodeBinary(): string {
+  return resolveToolchain().node;
+}
+
 function runBuild(appDir: string, script: string): Promise<void> {
-  return exec(process.execPath, ["--run", script], appDir);
+  return exec(nodeBinary(), ["--run", script], appDir);
 }
 
 function checkEntry(entry: string): Promise<void> {
   if (!existsSync(entry)) return Promise.reject(new Error(`build produced no ${entry}`));
-  return exec(process.execPath, ["--check", entry], dirname(entry));
+  return exec(nodeBinary(), ["--check", entry], dirname(entry));
 }
 
 function exec(file: string, args: string[], cwd: string): Promise<void> {
@@ -246,7 +266,7 @@ function healthCheck(role: "agent" | "asp" | "shell"): Promise<void> {
   delete env.MAGI_REPLACE_ERROR;
   const entry = childScript();
   const child = fork(entry, ["--role", role], {
-    execPath: process.execPath,
+    execPath: nodeBinary(),
     execArgv: [],
     cwd: dirname(entry),
     env,
@@ -265,6 +285,30 @@ function healthCheck(role: "agent" | "asp" | "shell"): Promise<void> {
       if (code === 0) resolve();
       else reject(new Error(stderr.trim() || `replacement workers exited ${code ?? "null"}`));
     });
+  });
+}
+
+function fileHash(file: string): string {
+  return createHash("sha256").update(readFileSync(file)).digest("hex");
+}
+
+/** Shutdown means the launcher took over. Anything else is a failure the job must record. */
+function waitLauncher(): Promise<string> {
+  return new Promise((resolve) => {
+    const onMessage = (message: unknown) => {
+      const body = message as { v?: number; type?: string; error?: string };
+      if (body?.v !== LAUNCHER_PROTOCOL) return;
+      if (body.type === "shutdown") {
+        process.off("message", onMessage);
+        resolve("shutdown");
+        return;
+      }
+      if (body.type === "switch-failed" || body.type === "upgrade-failed") {
+        process.off("message", onMessage);
+        resolve(body.error || "switch failed");
+      }
+    };
+    process.on("message", onMessage);
   });
 }
 

@@ -1,17 +1,9 @@
 import { Bus, messageDelivery } from "@magi/bus";
 import { ManagerWorker } from "@magi/manager";
-import { AgentWorker } from "@magi/agent/worker.js";
-import { ProvidersWorker } from "@magi/providers/worker.js";
 import type { LLMClient } from "@magi/providers/client.js";
-import { ToolsWorker, type Tool } from "@magi/built-in-tools/worker.js";
-import { ContactsWorker } from "@magi/contacts/worker.js";
-import { MemoryWorker } from "@magi/memory/worker.js";
-import { CliWorker } from "@magi/channel-cli/worker.js";
-import { AspWorker } from "@magi/channel-asp/worker.js";
-import { TelegramWorker } from "@magi/channel-telegram/worker.js";
-import { TaskWorker } from "@magi/channel-tasks/worker.js";
-import { McpWorker, type McpConnector } from "@magi/mcp/worker.js";
-import { SkillWorker } from "@magi/skills/worker.js";
+import type { Tool } from "@magi/built-in-tools/worker.js";
+import type { McpConnector } from "@magi/mcp/worker.js";
+import { agentWorkers } from "./roles.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -36,19 +28,7 @@ export class Magi {
       this.bus.settings.set("asp.base", options.asp.base);
       this.bus.settings.set("asp.token", options.asp.token);
     }
-    this.manager = new ManagerWorker(this.bus, [
-      new ContactsWorker(this.bus),
-      new SkillWorker(this.bus),
-      new AgentWorker(this.bus),
-      new ToolsWorker(this.bus, options.tools),
-      new MemoryWorker(this.bus),
-      new ProvidersWorker(this.bus, options.client),
-      new CliWorker(this.bus, options.deliver),
-      new TaskWorker(this.bus),
-      new McpWorker(this.bus, options.mcpConnector),
-      new AspWorker(this.bus, options.asp),
-      new TelegramWorker(this.bus, options.telegram),
-    ], {
+    this.manager = new ManagerWorker(this.bus, agentWorkers(this.bus, options), {
       drain: ["agent"],
       build: { app: "eva", script: "build" },
     });

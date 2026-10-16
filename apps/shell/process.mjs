@@ -218,7 +218,9 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
         if (children.get(id)?.child === child) children.delete(id);
         fail(error);
       });
-      child.once("exit", (code, signal) => fail(new Error(`App exited before ready (${code ?? signal})`)));
+      let stderrText = "";
+      child.stderr?.on("data", (chunk) => { stderrText = `${stderrText}${chunk}`.slice(-2000); });
+      child.once("exit", (code, signal) => fail(new Error(stderrText.trim() || `App exited before ready (${code ?? signal})`)));
     });
     void ready.catch(() => undefined);
     entry.whenReady = () => ready;
