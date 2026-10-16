@@ -17,6 +17,9 @@
   ],
   "references": [
     {
+      "path": "../runtime"
+    },
+    {
       "path": "../bus"
     }
   ]

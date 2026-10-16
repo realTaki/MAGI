@@ -1,7 +1,7 @@
 /**
- * Electron shell. It prepares what the app needs in order to exist — bundled
- * tools and the checkout — and opens a window. Shell, ASP, and Eva are the same
- * kind of child: `node <entry> ...args`. Electron owns their lifecycles.
+ * Electron shell. It opens the window and starts the eva launcher for the
+ * shell role. ASP and other nodes are their own launchers. Electron does not
+ * start them.
  */
 import { spawn } from "node:child_process";
 import {
@@ -20,7 +20,6 @@ import { fileURLToPath } from "node:url";
 import dugite from "dugite";
 import { app, BrowserWindow, Menu, clipboard, ipcMain, screen, shell } from "electron";
 
-import { createAppRebuilder, rebuildRequestKey } from "./rebuild.mjs";
 import { shellArtifactPath } from "./shell-path.mjs";
 import { prependRuntimePath } from "./runtime-environment.mjs";
 import { updateScript } from "./update-script.mjs";
@@ -108,14 +107,11 @@ function toolsForRuntime(runtime) {
 }
 
 
-// Shell supervises the operator process and forwards calls. Renderer reloads
-// do not kill it. The packaged shell runs `dist/shell.js` from the Shell clone.
-// An unpackaged developer tree remains untouched, while an explicit scratch
-// checkout uses the same isolated-runtime layout as a packaged app.
+// Electron starts the eva launcher. The launcher starts the shell child.
+// Renderer reloads do not kill that launcher.
 let localApi = null;
 let localApiError = null;
 let supervisor = null;
-let rebuildFromLink = null;
 // Where the bundled runtime is, when this build has one. The app starts every
 // child process from this: Node.js and npm for the TypeScript components.
 let localTools = null;
@@ -129,15 +125,11 @@ function devTools() {
 }
 
 function shellProcessSpec(appCheckout) {
-  if (app.isPackaged || localCheckoutManaged) {
-    return {
-      entry: path.join(appCheckout, "apps", "shell", "dist", "shell.js"),
-      cwd: path.join(appCheckout, "apps", "shell"),
-    };
-  }
+  const root = app.isPackaged || localCheckoutManaged ? appCheckout : path.join(SHELL_DIR, "..", "..");
   return {
-    entry: path.join(SHELL_DIR, "dist", "shell.js"),
-    cwd: SHELL_DIR,
+    entry: path.join(root, "apps", "eva", "eva.mjs"),
+    cwd: path.join(root, "apps", "eva"),
+    args: ["--role", "shell"],
   };
 }
 
@@ -145,17 +137,6 @@ async function spawnShell(runtimeRoot, appCheckout) {
   const tools = localTools ?? devTools();
   processOwner.assertOpen();
   supervisor ??= createSupervisor({ node: tools.node, env: tools.env, owner: processOwner });
-  rebuildFromLink ??= createAppRebuilder({
-    supervisor, tools, command, managed: () => localCheckoutManaged,
-    pause: () => new Promise((resolve) => setTimeout(resolve, 1000)),
-    emit: (payload) => sendToWindow(mainWindow, "local:event", { event: "runtime.rebuild", payload }),
-    onShell: async (handle) => {
-      localApi = handle;
-      const { ui } = await handle.invoke("prepare");
-      await handle.invoke("resume");
-      sendToWindow(mainWindow, "local:event", { event: "app.interface-updated", payload: { ui } });
-    },
-  });
   const spec = shellProcessSpec(appCheckout);
   const ownedDirectory = (directory) => {
     if (typeof directory !== "string") throw new Error("Command requires an owned source directory");
@@ -172,7 +153,9 @@ async function spawnShell(runtimeRoot, appCheckout) {
         ...tools.env,
         MAGI_CHECKOUT: runtimeRoot,
         MAGI_APP_CHECKOUT: appCheckout,
-        MAGI_HOME: app.getPath("home"),
+        MAGI_OS_HOME: app.getPath("home"),
+        MAGI_HOME: process.env.MAGI_HOME?.trim() || path.join(app.getPath("home"), ".magi"),
+        MAGI_HOST: "1",
         MAGI_USER_DATA: app.getPath("userData"),
         MAGI_REPOSITORY,
         MAGI_MANAGED: localCheckoutManaged ? "1" : "",
@@ -274,8 +257,6 @@ async function launchLocalOperator(win) {
     if (!win.isDestroyed()) {
       await loadApp(win, ui);
     }
-    appReady = true;
-    await deliverDeeplinks();
   } catch (error) {
     if (processOwner.closing) return;
     if (error instanceof Error && error.message === "Shell process exited") {
@@ -435,14 +416,8 @@ function createWindow() {
 }
 
 // One generic bridge: every local capability lives in the app backend, so the
-// shell does not change when the app grows one. A magi:// link is the exception
-// the OS forces on us: Shell receives it and owns its lifecycle transaction.
+// shell does not change when the app grows one.
 ipcMain.handle("local:invoke", async (_event, method, payload) => {
-  if (method === "runtime.rebuildStatus") return rebuildFromLink?.status() ?? [];
-  if (method === "runtime.applyDeeplink") {
-    if (!rebuildFromLink) throw new Error("Shell lifecycle is not loaded yet.");
-    return await rebuildFromLink(payload?.url);
-  }
   if (localApi === null) {
     throw localApiError ?? new Error("The desktop app backend is not loaded yet.");
   }
@@ -478,13 +453,6 @@ async function installShellUpdate(installer) {
   return { quitting: true };
 }
 
-const pendingDeeplinks = [];
-let deliveringDeeplink = false;
-let activeDeeplink = null;
-let appReady = false;
-let lastDeeplink = { url: "", at: 0 };
-let argvDeeplinksQueued = false;
-
 function focusMainWindow() {
   if (mainWindow === null || mainWindow.isDestroyed()) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
@@ -492,73 +460,13 @@ function focusMainWindow() {
   mainWindow.focus();
 }
 
-function queueDeeplink(raw) {
-  if (typeof raw !== "string" || !raw.startsWith("magi:")) return;
-  const requestKey = rebuildRequestKey(raw);
-  if (pendingDeeplinks.some((url) => rebuildRequestKey(url) === requestKey) || activeDeeplink === requestKey) return;
-  const now = Date.now();
-  if (lastDeeplink.url === raw && now - lastDeeplink.at < 2000) return;
-  lastDeeplink = { url: raw, at: now };
-  pendingDeeplinks.push(raw);
-  focusMainWindow();
-}
-
-function queueArgvDeeplinks() {
-  if (argvDeeplinksQueued) return;
-  argvDeeplinksQueued = true;
-  for (const arg of process.argv) queueDeeplink(arg);
-}
-
-async function deliverDeeplinks() {
-  if (!appReady || deliveringDeeplink || rebuildFromLink === null) return;
-  deliveringDeeplink = true;
-  try {
-    while (pendingDeeplinks.length > 0) {
-      const url = pendingDeeplinks.shift();
-      activeDeeplink = rebuildRequestKey(url);
-      try {
-        await rebuildFromLink(url);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.error(`[magi] deeplink: ${message}`);
-        sendToWindow(mainWindow, "local:event", {
-          event: "runtime.deeplink-failed",
-          payload: { url, message },
-        });
-      }
-    }
-  } finally {
-    activeDeeplink = null;
-    deliveringDeeplink = false;
-    if (pendingDeeplinks.length > 0) void deliverDeeplinks();
-  }
-}
-
-function registerMagiProtocol() {
-  // An unpackaged `electron .` is not the app the OS registered, so name the
-  // executable and the app entry. A packaged build registers `magi://` itself.
-  if (process.defaultApp && process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient("magi", process.execPath, [path.resolve(process.argv[1])]);
-    return;
-  }
-  app.setAsDefaultProtocolClient("magi");
-}
-
 const ownsInstance = app.requestSingleInstanceLock();
 if (!ownsInstance) {
   app.quit();
 } else {
-  app.on("second-instance", (_event, argv) => {
-    for (const arg of argv) queueDeeplink(arg);
-    if (appReady) void deliverDeeplinks();
+  app.on("second-instance", () => {
+    focusMainWindow();
   });
-  app.on("open-url", (event, url) => {
-    event.preventDefault();
-    queueDeeplink(url);
-    if (appReady) void deliverDeeplinks();
-  });
-  registerMagiProtocol();
-  queueArgvDeeplinks();
 
   // Relocate profile cache before any BrowserWindow can open Chromium files
   // inside it (Windows refuses renaming directories with those files open).

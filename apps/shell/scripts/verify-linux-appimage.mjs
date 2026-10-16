@@ -17,7 +17,7 @@ try {
   const resources = path.join(appDir, "resources");
   const archive = path.join(resources, "app.asar");
   const entries = listPackage(archive);
-  for (const file of ["/main.mjs", "/process.mjs", "/process-owner.mjs", "/installation.mjs", "/profile-layout.mjs", "/rebuild.mjs", "/app-spec.mjs", "/dependency-state.mjs", "/runtime-environment.mjs", "/shell-path.mjs", "/preload.cjs"]) assert.ok(entries.includes(file), `${file} missing from package`);
+  for (const file of ["/main.mjs", "/process.mjs", "/process-owner.mjs", "/installation.mjs", "/profile-layout.mjs", "/app-spec.mjs", "/dependency-state.mjs", "/runtime-environment.mjs", "/shell-path.mjs", "/preload.cjs"]) assert.ok(entries.includes(file), `${file} missing from package`);
   const helper = path.join(dir, "shell-path.mjs");
   writeFileSync(helper, extractFile(archive, "shell-path.mjs"));
   const probe = path.join(dir, "probe.mjs");

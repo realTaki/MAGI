@@ -1,0 +1,38 @@
+{
+  "name": "@magi/node",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "The MAGI child: one BUS, one ManagerWorker, and the workers for this role.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./*": {
+      "types": "./dist/*",
+      "default": "./dist/*"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@magi/runtime": "*",
+    "@magi/bus": "*",
+    "@magi/manager": "*",
+    "@magi/agent": "*",
+    "@magi/providers": "*",
+    "@magi/built-in-tools": "*",
+    "@magi/contacts": "*",
+    "@magi/memory": "*",
+    "@magi/mcp": "*",
+    "@magi/skills": "*",
+    "@magi/channel-asp": "*",
+    "@magi/channel-cli": "*",
+    "@magi/channel-tasks": "*",
+    "@magi/channel-telegram": "*",
+    "@magi/asp-server": "*",
+    "@magi/webapp": "*"
+  }
+}

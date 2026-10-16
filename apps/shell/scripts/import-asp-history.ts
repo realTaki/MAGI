@@ -1,13 +1,14 @@
 /** Copy a running ASP's visible events into desktop history without acknowledging them. */
 import path from "node:path";
-import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { Bus, SHELL_MAGI_HANDLE } from "@magi/bus";
+import { aspBase, } from "@magi/runtime/asp.js";
+import { magiHome } from "@magi/runtime/home.js";
 import { openChatStore } from "@magi/webapp/chat-store.js";
 
 export async function importAspHistory({
-  asp = "http://127.0.0.1:42069",
-  database = path.join(homedir(), ".magi", "shell", "chat.sqlite"),
+  asp = aspBase(),
+  database = path.join(magiHome(), "shell", "chat.sqlite"),
   fetcher = fetch,
 } = {}) {
   async function get(endpoint, token) {

@@ -16,8 +16,9 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { BaseWorker, type Bus } from "@magi/bus";
+import { aspBase } from "@magi/runtime/asp.js";
 
-export const ASP_ORIGIN = new URL("http://127.0.0.1:42069");
+export const ASP_ORIGIN = new URL(aspBase());
 
 export type AspHealth = "ready" | "unavailable" | "incompatible";
 
@@ -149,57 +150,8 @@ export class AspProcessWorker extends BaseWorker {
       this.issue = null;
       return;
     }
-    const aspDir = join(checkout, "apps", "asp");
-    if (!existsSync(join(aspDir, "dist", "asp.js"))) {
-      throw new Error(`ASP was not found at ${aspDir}`);
-    }
-    progress?.("Starting local ASP…", 0.94);
-    this.stoppingProcess = false;
-    try {
-      if (this.startProcess) {
-        const handle = await this.startProcess({
-          entry: "dist/asp.js",
-          cwd: aspDir,
-          env: {
-            ...this.env,
-            MAGI_ASP_HOST: this.origin.hostname,
-            MAGI_ASP_PORT: this.origin.port || "42069",
-          },
-        });
-        this.handle = handle;
-        const exited = new Promise<never>((_, reject) => {
-          handle.onExit((code, signal) => {
-            if (this.stoppingProcess) return;
-            if (this.handle !== handle) return;
-            this.issue = `ASP exited (${code ?? signal ?? "unknown"})`;
-            reject(new Error(`ASP exited (${code ?? signal ?? "unknown"})`));
-          });
-        });
-        void exited.catch(() => undefined);
-        progress?.("Waiting for local ASP…", 0.97);
-        await Promise.race([this.waitUntilReady(), exited]);
-      } else {
-        const child = this.spawnAsp(aspDir);
-        this.child = child;
-        await new Promise<void>((resolve, reject) => {
-          child.once("error", reject);
-          child.once("spawn", resolve);
-        });
-        progress?.("Waiting for local ASP…", 0.97);
-        await Promise.race([
-          this.waitUntilReady(),
-          new Promise<never>((_, reject) => {
-            child.once("exit", (code, signal) => {
-              reject(new Error(`ASP exited (${code ?? signal ?? "unknown"})`));
-            });
-          }),
-        ]);
-      }
-      this.issue = null;
-    } catch (error) {
-      this.killOwned();
-      throw error;
-    }
+    this.issue = `ASP is not running at ${this.origin.href}. Start it with eva --role asp.`;
+    throw new Error(this.issue);
   }
 
   async stopOwned(): Promise<void> {

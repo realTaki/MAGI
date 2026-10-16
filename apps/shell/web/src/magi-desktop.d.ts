@@ -14,6 +14,7 @@ export {};
 declare global {
   interface Window {
     magiDesktop?: {
+      aspBase?: string;
       retryStartup?: () => Promise<void>;
       copyText?: (text: string) => Promise<void>;
       onStartupProgress?: (

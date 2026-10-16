@@ -10,5 +10,8 @@
   ],
   "exclude": [
     "dist"
+  ],
+  "references": [
+    { "path": "../runtime" }
   ]
 }

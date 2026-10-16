@@ -1,8 +1,8 @@
 # Shell
 
-The Electron app and the operator process. Balthasar (`@eva-000.magi`) lives here. The human speaks as `@user.magi`.
+The Electron window. Balthasar (`@eva-000.magi`) is the shell child of the eva launcher. The human speaks as `@user.magi`.
 
-Open the app. A packaged first launch clones `~/.magi/shell/MAGI` and starts ASP and Melchior from there. Operator files are under `~/.magi/shell/`. Quitting the app stops the supervised processes.
+Open the app. Electron starts `eva --role shell`. It does not start ASP or other nodes. Operator files are under `$MAGI_HOME/shell` (default `~/.magi/shell`).
 
 GitHub sign-in is optional and happens in Settings after startup. The device-flow token is stored at `~/.magi/shell/github-token`.
 

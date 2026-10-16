@@ -2,7 +2,11 @@ import type { CardSpec } from "@magi/bus";
 
 /** Operator client for asp. The UI only requests; the app runs MAGI. */
 
-const ASP_BASE = "http://127.0.0.1:42069";
+function aspBase(): string {
+  const configured = window.magiDesktop?.aspBase?.trim();
+  if (!configured) throw new Error("ASP address is not configured");
+  return configured.replace(/\/$/, "");
+}
 
 /** The first thing said in a new chat, in the operator's name. */
 const GREETING = "Hi";
@@ -62,7 +66,7 @@ async function getOperator(): Promise<Operator | null> {
     return operator;
   }
   try {
-    const response = await fetch(`${ASP_BASE}/operator`, {
+    const response = await fetch(`${aspBase()}/operator`, {
       signal: AbortSignal.timeout(1500),
     });
     if (!response.ok) {
@@ -82,7 +86,7 @@ export function clearOperator(): void {
 export async function listAspChats(): Promise<CreatedChat[]> {
   const creds = await getOperator();
   if (!creds) return [];
-  const response = await fetch(`${ASP_BASE}/chats`, {
+  const response = await fetch(`${aspBase()}/chats`, {
     headers: { Authorization: `Bearer ${creds.token}` },
   });
   if (!response.ok) throw new Error(`ASP chats: ${response.status}`);
@@ -92,7 +96,7 @@ export async function listAspChats(): Promise<CreatedChat[]> {
 export async function listAspEvents(chatId: string, afterSequence?: number): Promise<AspEvent[]> {
   const creds = await getOperator();
   if (!creds) return [];
-  const url = new URL(`${ASP_BASE}/chats/${chatId}/events`);
+  const url = new URL(`${aspBase()}/chats/${chatId}/events`);
   if (afterSequence !== undefined && afterSequence >= 0) {
     url.searchParams.set("after_sequence", String(afterSequence));
   }
@@ -107,7 +111,7 @@ export async function ackAspEvents(chatId: string, events: AspEvent[]): Promise<
   if (events.length === 0) return;
   const creds = await getOperator();
   if (!creds) throw new Error("ASP is unavailable");
-  const response = await fetch(`${ASP_BASE}/chats/${chatId}/events/ack`, {
+  const response = await fetch(`${aspBase()}/chats/${chatId}/events/ack`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${creds.token}`,
@@ -196,7 +200,7 @@ export async function syncAspEvents(id: string): Promise<AspEvent[]> {
 export async function sendAspMessage(chatId: string, text: string, metadata?: Record<string, unknown>): Promise<void> {
   const creds = await getOperator();
   if (!creds) throw new Error("ASP is unavailable");
-  const response = await fetch(`${ASP_BASE}/chats/${chatId}/messages`, {
+  const response = await fetch(`${aspBase()}/chats/${chatId}/messages`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${creds.token}`,
@@ -210,7 +214,7 @@ export async function sendAspMessage(chatId: string, text: string, metadata?: Re
 export async function listProfiles(): Promise<Array<{ handle: string; public_key: string | null }>> {
   const creds = await getOperator();
   if (!creds) throw new Error("ASP is unavailable");
-  const response = await fetch(`${ASP_BASE}/profiles`, {
+  const response = await fetch(`${aspBase()}/profiles`, {
     headers: { Authorization: `Bearer ${creds.token}` },
   });
   if (!response.ok) throw new Error(`ASP profiles: ${response.status}`);
@@ -245,7 +249,7 @@ export async function encryptSecret(publicKeyPem: string, plaintext: string): Pr
 export async function updateAspNickname(handle: string, nickname: string): Promise<void> {
   const creds = await getOperator();
   if (!creds) throw new Error("ASP is unavailable");
-  const response = await fetch(`${ASP_BASE}/bots/${encodeURIComponent(handle)}/nickname`, {
+  const response = await fetch(`${aspBase()}/bots/${encodeURIComponent(handle)}/nickname`, {
     method: "PATCH",
     headers: {
       Authorization: `Bearer ${creds.token}`,
@@ -267,7 +271,7 @@ export async function createAspChat(
     return null;
   }
   try {
-    const response = await fetch(`${ASP_BASE}/chats`, {
+    const response = await fetch(`${aspBase()}/chats`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${creds.token}`,
@@ -299,7 +303,7 @@ export async function patchAspChat(
     return;
   }
   try {
-    await fetch(`${ASP_BASE}/chats/${chatId}`, {
+    await fetch(`${aspBase()}/chats/${chatId}`, {
       method: "PATCH",
       headers: {
         Authorization: `Bearer ${creds.token}`,
@@ -319,7 +323,7 @@ export async function listAspBots(chatId?: string): Promise<AspBot[]> {
     return [];
   }
   try {
-    const url = new URL("bots", `${ASP_BASE}/`);
+    const url = new URL("bots", `${aspBase()}/`);
     if (chatId) {
       url.searchParams.set("chat_id", chatId);
     }
@@ -346,7 +350,7 @@ export async function addAspChatMember(
     return null;
   }
   try {
-    const response = await fetch(`${ASP_BASE}/chats/${chatId}/members`, {
+    const response = await fetch(`${aspBase()}/chats/${chatId}/members`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${creds.token}`,

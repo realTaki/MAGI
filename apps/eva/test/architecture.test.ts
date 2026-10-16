@@ -21,18 +21,18 @@ async function sources(directory: string): Promise<string[]> {
 function permitted(owner: string, file: string, imported: string): boolean {
   if (imported.startsWith("@magi/")) {
     const name = imported.slice(6).split("/")[0];
-    return name === owner || name === "bus";
+    return name === owner || name === "bus" || name === "runtime";
   }
   if (imported.startsWith(".")) {
     const name = relative(packages, resolve(dirname(file), imported)).split(sep)[0];
-    return name === owner || name === "bus";
+    return name === owner || name === "bus" || name === "runtime";
   }
   return true; // Platform and third-party imports do not cross worker boundaries.
 }
 
-test("every worker package imports only itself or BUS", async () => {
+test("every worker package imports only itself, BUS, or the shared runtime", async () => {
   const workers = (await readdir(packages, { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory() && entry.name !== "bus");
+    .filter((entry) => entry.isDirectory() && !["bus", "node", "runtime"].includes(entry.name));
   assert.ok(workers.length > 0, "worker packages must be discovered");
   for (const worker of workers) {
     const files = await sources(join(packages, worker.name));

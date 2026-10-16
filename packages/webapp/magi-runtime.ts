@@ -1,21 +1,9 @@
 /**
- * The desktop app owns the source tree and the process of every spawned MAGI.
+ * Checkout paths for a MAGI workspace. The shell does not start other nodes.
+ * Each node is an eva launcher and one child process. `start` reports that.
  *
- * ASP is a relay: it registers handlers and holds their tokens, but it never
- * starts a process (see apps/asp/README.md). Balthasar (`@eva-000.magi`) lives
- * in the operator process and Casper (`@eva-001.magi`) lives in ASP; this
- * module does not spawn `eva.js` for those handles. Each spawned MAGI gets its
- * own branch (`magi/eva-002`) cloned from the GitHub remote into its own
- * workspace (`~/.magi/eva-002/MAGI`), with that checkout's dependencies
- * installed, and the agent is started from it.
- *
- * Nothing is retried behind the operator's back: a MAGI that stopped stays
- * stopped until it is started again (the left panel shows who is offline, and
- * every MAGI's profile carries its own start/stop/rebuild controls).
- *
- * A checkout this app does not own (`managed: false`, i.e. a developer's tree)
- * is never rewired: MAGI then run from the shared `<checkout>/apps/eva` exactly
- * as before.
+ * A managed workspace can still be cloned so the operator can see its branch.
+ * The child of that node fetches, tests, and builds when it replaces itself.
  */
 
 import { spawn } from "node:child_process";
@@ -46,9 +34,7 @@ export function agentBranch(handle) {
 }
 
 export function magiCli(node, handle, base, token) {
-  // Process entries are compiled before launch. Run the explicit output with the
-  // desktop's Node rather than looking up an executable on PATH.
-  return [node, "dist/eva.js", handle, base, token];
+  return [node, "eva.mjs", "--role", "agent", handle, base, token];
 }
 
 function describe(error) {
@@ -84,14 +70,8 @@ export function createMagiRuntime({
   }
 
   function nodeBinary() {
-    const candidates = [
-      typeof tools.node === "string" ? tools.node : "",
-      path.join(checkout, "apps", "shell", "runtime", "bin", process.platform === "win32" ? "node.exe" : "node"),
-    ];
-    for (const candidate of candidates) {
-      if (candidate !== "" && candidate !== "node" && existsSync(candidate)) return candidate;
-    }
-    throw new Error("MAGI's bundled Node 24 runtime is missing");
+    if (typeof tools.node === "string" && tools.node !== "" && existsSync(tools.node)) return tools.node;
+    return "node";
   }
 
   function npmCli() {
@@ -202,45 +182,15 @@ export function createMagiRuntime({
     return await ensureSource(handle);
   }
 
-  function launch(handle, token, root) {
-    if (startProcess) {
-      return startProcess({
-        entry: "dist/eva.js",
-        cwd: path.join(root, "apps", "eva"),
-        args: [handle, base, token],
-        env: tools.env,
-      }).then((child) => {
-        child.onExit(() => children.delete(handle));
-        children.set(handle, { child, root });
-        return child;
-      });
-    }
-    const command = magiCli(nodeBinary(), handle, base, token);
-    const child = spawnProcess(command[0], command.slice(1), {
-      cwd: path.join(root, "apps", "eva"),
-      env: tools.env,
-      stdio: ["ignore", "ignore", "pipe"],
-      detached: true,
-      windowsHide: true,
-    });
-    child.on?.("error", () => children.delete(handle));
-    child.on?.("exit", () => children.delete(handle));
-    child.stderr?.on("data", (chunk) => {
-      const text = String(chunk).trim();
-      if (text !== "") log(`[magi ${agentName(handle)}] ${text}`);
-    });
-    children.set(handle, { child, root });
-    return child;
+  function refuse(handle) {
+    throw new Error(`${handle} is its own node. Start it with eva --role agent.`);
   }
 
-  /** Start one MAGI. Starting one that already runs does nothing. */
+  /** Shell does not start another node's process. */
   async function start(agent) {
-    const { handle, token } = require(agent);
+    const { handle } = require(agent);
     if (isInProcessMagiHandle(handle)) return { handle, started: false };
-    if (isRunning(handle)) return { handle, started: false };
-    const root = await rootFor(handle);
-    await launch(handle, token, root);
-    return { handle, started: true };
+    refuse(handle);
   }
 
   /** Start every agent of a roster; used once when the app brings ASP up. */
@@ -312,38 +262,19 @@ export function createMagiRuntime({
     return await start(agent);
   }
 
-  /** Install and build on this MAGI's own checkout, then start it again. */
+  /** This node replaces itself. Shell does not rebuild another process. */
   async function rebuild(agent) {
-    const { handle, token } = require(agent);
+    const { handle } = require(agent);
     if (isInProcessMagiHandle(handle)) return { handle, rebuilt: false, started: false };
-    stop(handle);
-    const root = await rootFor(handle);
-    // The whole workspace is rebuilt: `npm run build` at the root fans out through
-    // the project references, so every package this MAGI runs is up to date.
-    const cwd = root;
-    // As in `install()`: the native dependency is prebuilt and must not be compiled.
-    if (prepareDependencies) await prepareDependencies(cwd);
-    else await npm(["ci", "--ignore-scripts"], {
-      cwd,
-      env: tools.env,
-      description: `Could not install MAGI dependencies in ${cwd}`,
-    });
-    await npm(["run", "build"], {
-      cwd,
-      env: tools.env,
-      description: `Could not build MAGI in ${cwd}`,
-    });
-    const started = await start({ handle, token });
-    return { handle, rebuilt: true, started: started.started };
+    throw new Error(`${handle} replaces itself with replace_self. Shell does not rebuild it.`);
   }
 
   /**
-   * Fetch origin and merge its default branch into this MAGI's branch. A branch
-   * that actually moved is restarted so the MAGI runs the merged source; a
-   * conflict is aborted and reported instead of leaving a half-merged clone.
+   * Fetch origin and merge its default branch into this MAGI's checkout.
+   * A conflict is aborted. This process does not restart the node.
    */
   async function merge(agent) {
-    const { handle, token } = require(agent);
+    const { handle } = require(agent);
     if (isInProcessMagiHandle(handle)) {
       throw new Error(`${handle} runs in Shell or ASP, so there is no EVA clone to merge.`);
     }
@@ -374,7 +305,6 @@ export function createMagiRuntime({
       }
       throw new Error(`${agentBranch(handle)} could not merge ${from}; the merge was aborted.`);
     }
-    if (moved) await restart({ handle, token });
     return { handle, merged: moved, from };
   }
 

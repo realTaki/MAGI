@@ -16,7 +16,7 @@
     "build": "node scripts/build.mjs",
     "build:ui": "tsc --noEmit -p web/tsconfig.json && vite build --config web/vite.config.ts && node scripts/postbuild.ts && tsc -b",
     "build:process": "tsc -b",
-    "start": "node dist/shell.js",
+    "start": "node ../eva/eva.mjs --role shell",
     "lint": "node scripts/i18n-lint.ts",
     "lint:i18n": "node scripts/i18n-lint.ts",
     "test": "node --test test/*.test.mjs test/*.test.ts"
@@ -25,14 +25,6 @@
     "appId": "ai.magi.app",
     "productName": "MAGI",
     "executableName": "MAGI",
-    "protocols": [
-      {
-        "name": "MAGI",
-        "schemes": [
-          "magi"
-        ]
-      }
-    ],
     "files": [
       "main.mjs",
       "process.mjs",
@@ -40,7 +32,6 @@
       "profile-layout.mjs",
       "clone.mjs",
       "installation.mjs",
-      "rebuild.mjs",
       "app-spec.mjs",
       "dependency-state.mjs",
       "runtime-environment.mjs",

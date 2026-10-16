@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { magiHome } from "@magi/runtime/home.js";
 import { and, eq, inArray, ne, or } from "drizzle-orm";
 import Database from "better-sqlite3";
 import { workspaceDatabase, migrateBooks, migrateJobs, type BusDb } from "./drizzle/database.js";
@@ -60,7 +60,7 @@ export class Bus {
     // A MAGI workspace is a sibling of user/, asp/, and the MAGI checkout.
     // Do not put it under ".magi/magi": macOS normally has a case-insensitive
     // filesystem, so that path aliases a ".magi/MAGI" source checkout.
-    this.workspace = resolve(workspace ?? join(homedir(), ".magi", localName));
+    this.workspace = resolve(workspace ?? join(magiHome(), localName));
     const memoriesPath = join(this.workspace, "memories", "books.db");
     const jobsPath = join(this.workspace, "logs", "jobs.db");
     mkdirSync(join(this.workspace, "memories"), { recursive: true });

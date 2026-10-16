@@ -1,8 +1,8 @@
 /** The durable SQLite connection owned by a running ASP server process. */
 
 import { existsSync, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
 import path from "node:path";
+import { magiHome } from "@magi/runtime/home.js";
 
 import Database from "better-sqlite3";
 import type { Database as SQLiteDatabase } from "better-sqlite3";
@@ -16,7 +16,7 @@ import { aspSettings } from "./tables/settings.js";
 export type AspDb = BetterSQLite3Database & { $client: SQLiteDatabase };
 
 export function defaultDataDir(): string {
-  return path.join(homedir(), ".magi", "asp");
+  return path.join(magiHome(), "asp");
 }
 
 export function defaultDatabasePath(): string {

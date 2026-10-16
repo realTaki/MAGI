@@ -31,7 +31,7 @@ function makeOrigin(root) {
   return { origin, seed };
 }
 
-test("retiring a reloaded client backend keeps ASP and MAGI running", async (t) => {
+test("retiring the client leaves an ASP the shell did not start", async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-runtime-lifecycle-"));
   let api;
   const checkout = path.join(root, "checkout");
@@ -39,7 +39,7 @@ test("retiring a reloaded client backend keeps ASP and MAGI running", async (t) 
   writeFileSync(path.join(checkout, "apps", "asp", "dist", "asp.js"), "");
 
   const originalFetch = globalThis.fetch;
-  let healthy = false;
+  const healthy = true;
   globalThis.fetch = async (url, options = {}) => {
     const endpoint = new URL(url).pathname;
     if (endpoint === "/health") {
@@ -106,10 +106,10 @@ test("retiring a reloaded client backend keeps ASP and MAGI running", async (t) 
 
   await api.start();
   await api.dispose();
-  assert.deepEqual(signals, [], "client/backend reload must not stop ASP");
+  assert.deepEqual(signals, [], "reloading the client must not stop ASP");
 
   await api.shutdown();
-  assert.deepEqual(signals, ["SIGTERM"], "desktop shutdown stops its ASP child");
+  assert.deepEqual(signals, [], "the shell does not own the ASP process");
 });
 
 test("the app refuses to attach to a running Python ASP", async (t) => {
@@ -192,10 +192,9 @@ test("the operator process creates and runs ASP from its own magi/asp clone", as
   });
   t.after(async () => { await api?.dispose(); globalThis.fetch = originalFetch; rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
 
-  await api.start();
+  await assert.rejects(api.start(), /eva --role asp/);
+  assert.equal(spawnedCwd, "");
   const aspClone = path.join(root, ".magi", "asp", "MAGI");
-  assert.equal(spawnedCwd, path.join(aspClone, "apps", "asp"));
-  assert.notEqual(spawnedCwd, path.join(seed, "apps", "asp"));
   assert.equal(git(aspClone, ["rev-parse", "--abbrev-ref", "HEAD"]).trim(), "magi/asp");
 });
 

@@ -2,27 +2,43 @@
 
 How the running system fits together. Later work is in [future.md](future.md).
 
-## Three nodes
+## Launcher and child
 
-| Process | Handle | Name |
-| --- | --- | --- |
-| `apps/shell` | `@eva-000.magi` | Balthasar |
-| `apps/asp` | `@eva-001.magi` | Casper |
-| `apps/eva` | `@eva-002.magi` | Melchior |
+`eva` is the launcher (`apps/eva/eva.mjs`). It is one OS process. It does not open a BUS.
 
-The human speaks as `@user.magi` from the shell. Further bots are more `apps/eva` processes. A chat is a `chat`, not a conversation or a session.
+It starts one child OS process, `packages/node` `child.js`. That child is the BUS, one `ManagerWorker`, and the workers for its role. Shell, ASP, and a cloud agent are the same pair. They differ by `--role`:
 
-Electron (`apps/shell/main.mjs`) owns the window and the process supervisor. It starts the Node host `dist/shell.js`. That Node process is Balthasar's BUS and workers. Electron does not run them.
+| Role | Handle | Name | Workers added |
+| --- | --- | --- | --- |
+| `shell` | `@eva-000.magi` | Balthasar | Webapp, the Electron UI backend |
+| `asp` | `@eva-001.magi` | Casper | AspServer, the relay |
+| `agent` | `@eva-002.magi` and later handles | Melchior | the agent workers |
 
-Each of the three is the same shape. The entry builds a BUS for that handle, then a `ManagerWorker` runs the workers. Workers do not call each other. They publish a job and whoever owns that work claims it. `ManagerWorker` also runs config and self-replace. Casper's list includes `TelegramWorker` (`apps/asp/asp.ts`). It stays off until that workspace has a bot token.
+The human speaks as `@user.magi` from the shell. Workers do not call each other. They publish a job and whoever owns that work claims it.
+
+Electron (`apps/shell/main.mjs`) owns the window. It starts `eva --role shell`. It does not start ASP or other nodes, and it does not run their workers. The launcher and the child are separate processes so a crash, a Node upgrade, or a native module such as `better-sqlite3` stays in the child. They are not threads in one process.
+
+`apps/shell` and `apps/asp` are not process entries. Their worker lists live in `@magi/node` and the launcher starts them.
+
+## State and toolchain
+
+`MAGI_HOME` is the data root. The default is `~/.magi`. A container mounts that path and runs the launcher as its main process. `MAGI_OS_HOME` is the operating-system home when a caller still needs it. The shell workspace is `$MAGI_HOME/shell`. Casper's relay database and BUS workspace are `$MAGI_HOME/asp` (`asp.sqlite`). Those are not process names.
+
+The launcher remembers the current and previous revision in `$MAGI_HOME/<node>/launcher.json`. A failed switch writes `$MAGI_HOME/eva-000/replace-failed.json`, `eva-001`, or `eva-002` (the handle with `@` and `.magi` removed).
+
+Node, npm, and git resolve in this order: `MAGI_NODE` / `MAGI_NPM` / `MAGI_GIT`, then the bundled runtime under `apps/shell/runtime` and dugite, then `PATH`.
+
+The relay address is `MAGI_ASP`, or `http://$MAGI_ASP_HOST:$MAGI_ASP_PORT` when those are set. The desktop window reads the address from the preload bridge.
 
 ## Relay
 
-MAGIs do not connect to each other. Chat goes through the ASP server in the Casper process: a WebSocket at `/connect` with a bearer token. Events are stored in `~/.magi/asp/asp.sqlite`. That directory is the relay database and Casper's BUS workspace. It is not the name the shell uses for the ASP process: `describeApp` (`apps/shell/app-spec.mjs`) keys that child `@asp.magi`.
+MAGIs do not connect to each other. Chat goes through the ASP server in the Casper child: a WebSocket at `/connect` with a bearer token. Events are stored in `~/.magi/asp/asp.sqlite`.
 
 Each recipient acks the exact event (`chat.ack`, or `POST /chats/:chat_id/events/ack`). The event stays in SQLite until every intended recipient has acked it (`apps/asp/test/relay.test.ts`). When a handle connects and it had no open socket, the server sends the events it has not seen acked (`packages/asp-server/service.ts` `#onBackOnline`, from `packages/asp-server/transport.ts` `connect`). Casper's own `AspWorker` uses that same local relay.
 
-ASP does not start processes. The shell does.
+ASP does not start processes. The shell does not start them either. Each node is its own launcher.
+
+Casper's list includes `TelegramWorker`. It stays off until that workspace has a bot token.
 
 ## Provider
 
@@ -32,9 +48,11 @@ A node with no `provider.api_key` opens a chat with the operator and posts `card
 
 ## Self-replace
 
-`replace_self` publishes `ReplaceSelfJob` and returns the id. The replace worker snapshots that app's `dist`, builds, and health-checks the new workers before the job is completed. A supervised process asks the shell to restart it. A hand-run process exits only after the new process is ready.
+`replace_self`, and `request_rebuild` with target `self`, publish `ReplaceSelfJob`. The replace worker snapshots that app's `dist`, builds, and health-checks the child. On `swap`, the child fetches, installs, tests, and builds, then asks the launcher to switch revision. The launcher starts the new child, waits until it is ready, and only then stops the old one.
 
-A failed build, or a new process that is not healthy, restores the previous `dist`, resumes the old workers, fails the job, and tells the operator. If the restored process also fails to start, the shell does not open that app's database. It writes a marker and shows the error. `replaceFailedPath` (`packages/bus/replaceMarker.ts`) strips `@` and `.magi`, so the files are `~/.magi/eva-000/replace-failed.json`, `~/.magi/eva-001/replace-failed.json`, and `~/.magi/eva-002/replace-failed.json`. The shell maps the `@asp.magi` child to `@eva-001.magi` and the `@shell.magi` child to `@eva-000.magi` before that. The next successful start fails that `ReplaceSelfJob` and deletes the marker. One process runs one replace.
+A failed build restores the previous `dist`, resumes the old workers, fails the job, and tells the operator. A new child that does not become ready is killed. The old child keeps running. The launcher writes the replace-failed marker and tells that child. The next poll fails the `ReplaceSelfJob` and deletes the marker. One process runs one replace.
+
+The launcher can replace itself: it starts the new launcher, and the old launcher exits only after the new launcher and its child are ready. Otherwise it stops the new launcher and writes the marker.
 
 ## Failures
 

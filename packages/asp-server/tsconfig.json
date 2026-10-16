@@ -13,8 +13,7 @@
     "drizzle.config.ts"
   ],
   "references": [
-    {
-      "path": "../bus"
-    }
+    { "path": "../bus" },
+    { "path": "../runtime" }
   ]
 }

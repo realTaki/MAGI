@@ -164,7 +164,6 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
       env: {
         ...env,
         ...spec.env,
-        ...(describeApp(spec)?.kind === "eva" ? { MAGI_SHELL_REBUILD: "ipc" } : {}),
         ...(replaceJob ? { MAGI_REPLACE_JOB: replaceJob } : {}),
         ...(replaceError ? { MAGI_REPLACE_ERROR: replaceError } : {}),
       },
@@ -206,18 +205,6 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
               recordReplaceFailure(record.spec, job, `${text}; ${detail}`);
             });
           });
-          return;
-        }
-        if (message?.type === "runtime.rebuild") {
-          let error;
-          try {
-            const app = describeApp(spec);
-            if (children.get(id) !== entry || !entry.ready || entry.stopping || entry.replacing || app?.kind !== "eva") throw new Error("Only a live Shell-owned EVA may request a rebuild");
-            if (Object.keys(message).sort().join(",") !== "id,target,type" || typeof message.id !== "string" || message.id.length > 64 || !["self", "app", "asp"].includes(message.target)) throw new Error("Invalid lifecycle request");
-            if (!rebuildHandler) throw new Error("Shell lifecycle is not loaded");
-            rebuildHandler({ target: message.target, handle: app.handle });
-          } catch (failure) { error = failure instanceof Error ? failure.message : String(failure); }
-          if (child.connected) child.send({ type: "runtime.rebuild.accepted", id: message.id, ...(error ? { error } : {}) }, () => {});
           return;
         }
         if (message?.type !== "ready") return;

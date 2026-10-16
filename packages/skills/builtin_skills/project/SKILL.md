@@ -44,14 +44,6 @@ When a check can run in this process, run that one file with the checkout's Node
 
 ## Rebuild
 
-The desktop backend is not listening on a port. `request_rebuild` opens a `magi://` link; the installed MAGI app receives it and is the only process that may stop or start ASP, the UI, or you. `bash npm run build` does not replace a running process. Do not kill your own process.
+`request_rebuild` with target `self` queues `ReplaceSelfJob` on this node. The child fetches, tests, and builds, then asks its launcher to switch revision. The launcher is a separate process. A failed switch leaves this process running and tells the operator. `bash` does not replace a running process. Do not kill your own process.
 
-Call `request_rebuild` only after the edit is saved, and say what changed first. The build log does not come back to this process.
-
-| `target` | What the desktop does |
-| --- | --- |
-| `self` | `npm ci` and `npm run build` in this checkout, then restart only you. Uncommitted files in `MAGI/` are included. No merge. |
-| `app` | Push this branch, then the Shell clone fetches and merges it, compiles the operator backend and UI, and restarts only the operator process. The window receives an interface update. ASP and other MAGI keep running. Uncommitted files are not included: commit and push first. |
-| `asp` | Push this branch, then the ASP clone fetches and merges it, compiles, and restarts only ASP. Shell and every EVA keep their processes. Uncommitted files are not included: commit and push first. |
-
-`app` and `asp` adopt the whole branch, not one file. Do not use them to publish an unrelated history. One rebuild at a time. If the tool says the link was opened, do not send another until the operator says the previous one finished. A conflict aborts the merge and does not build.
+Call it only after the edit is saved, and say what changed first. Another node replaces itself the same way. This node does not restart Shell or ASP.

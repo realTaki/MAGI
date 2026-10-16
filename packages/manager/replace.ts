@@ -8,11 +8,13 @@
  * asks its supervisor to restart it, and a hand-run app exits after spawning.
  */
 
-import { execFile, fork, spawn } from "node:child_process";
+import { execFile, fork } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { BaseWorker, messageDelivery, replaceFailedPath, type Bus } from "@magi/bus";
+import { reviseCheckout } from "@magi/runtime/revise.js";
 
 export type AppBuild = {
   app: "eva" | "asp" | "shell";
@@ -64,7 +66,7 @@ export class ReplaceWorker extends BaseWorker {
       await checkEntry(entry);
       await this.host.suspendForReplace();
       suspended = true;
-      await healthCheck(entry);
+      await healthCheck(this.build.app === "eva" ? "agent" : this.build.app);
       if (!swap) {
         board.submit(this.worker_name, id, { output: { replaced: true } });
         rmSync(backup, { recursive: true, force: true });
@@ -72,47 +74,25 @@ export class ReplaceWorker extends BaseWorker {
         await this.host.resume();
         return;
       }
-      // The job stays open until the process that takes over is healthy.
-      this.bus.settings.set("replace.pending", String(id));
-      if (typeof process.send === "function" && process.connected) {
-        const refused = await askSupervisor(id);
-        if (refused) {
-          this.bus.settings.set("replace.pending", "");
-          throw new Error(refused);
-        }
-        return;
+      if (typeof process.send !== "function" || !process.connected) {
+        throw new Error("this node has no launcher to switch to the new revision");
       }
-      const child = spawn(process.execPath, [entry, ...process.argv.slice(2)], {
-        cwd: dirname(entry),
-        env: { ...process.env, MAGI_REPLACE_JOB: String(id) },
-        stdio: ["inherit", "inherit", "inherit", "ipc"],
-        detached: true,
+      const { revision, previous } = await reviseCheckout(checkout);
+      this.bus.settings.set("replace.pending", String(id));
+      process.send({ v: 1, type: "switch", revision, previous, job: id, checkout });
+      const failure = await new Promise<string>((resolve) => {
+        const timer = setTimeout(() => resolve("launcher did not switch to the new revision"), 45_000);
+        timer.unref();
+        const onMessage = (message: unknown) => {
+          const body = message as { type?: string; error?: string };
+          if (body?.type !== "switch-failed") return;
+          clearTimeout(timer);
+          process.off("message", onMessage);
+          resolve(body.error || "switch failed");
+        };
+        process.on("message", onMessage);
       });
-      await new Promise<void>((resolve, reject) => {
-        let settled = false;
-        const finish = (error: Error | null) => {
-          if (settled) return;
-          settled = true;
-          child.off("message", onMessage);
-          child.off("exit", onExit);
-          child.off("error", onError);
-          if (error) reject(error);
-          else resolve();
-        };
-        const onError = (error: Error) => finish(error);
-        const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
-          finish(new Error(`replacement exited ${code ?? signal ?? "null"}`));
-        };
-        const onMessage = (body: { type?: string }) => {
-          if (body?.type === "ready") finish(null);
-        };
-        child.once("error", onError);
-        child.once("exit", onExit);
-        child.on("message", onMessage);
-      });
-      this.bus.close();
-      child.unref();
-      process.exit(0);
+      throw new Error(failure);
     } catch (error) {
       restore(dist, backup);
       let text = message(error);
@@ -246,12 +226,26 @@ function exec(file: string, args: string[], cwd: string): Promise<void> {
  * Boot the new entry in a throwaway workspace. It must not be given the relay
  * token: ASP is checked later, in the replacement process, with the real identity.
  */
-function healthCheck(entry: string): Promise<void> {
+function childScript(): string {
+  const override = process.env.MAGI_CHILD?.trim();
+  if (override) return override;
+  return join(dirname(fileURLToPath(import.meta.url)), "..", "..", "node", "dist", "child.js");
+}
+
+function healthCheck(role: "agent" | "asp" | "shell"): Promise<void> {
   const workspace = mkdtempSync(join(tmpdir(), "magi-health-"));
-  const env: NodeJS.ProcessEnv = { ...process.env, MAGI_HEALTH: "1", MAGI_HEALTH_WORKSPACE: workspace };
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    MAGI_HEALTH: "1",
+    MAGI_HEALTH_WORKSPACE: workspace,
+    MAGI_ROLE: role,
+  };
   delete env.MAGI_HEALTH_ASP_BASE;
   delete env.MAGI_HEALTH_ASP_TOKEN;
-  const child = fork(entry, ["@health.magi"], {
+  delete env.MAGI_REPLACE_JOB;
+  delete env.MAGI_REPLACE_ERROR;
+  const entry = childScript();
+  const child = fork(entry, ["--role", role], {
     execPath: process.execPath,
     execArgv: [],
     cwd: dirname(entry),
@@ -277,41 +271,6 @@ function healthCheck(entry: string): Promise<void> {
 function tell(bus: Bus, text: string): void {
   if (messageDelivery.notify(bus, text) !== null) return;
   bus.board("ManageWorkerNotify").seal("replace", { worker: "replace", action: "restart" }, text);
-}
-
-/** Ask the supervisor to restart this process. An error string means it refused or the restart failed. Null means this process is being replaced. */
-function askSupervisor(id: number): Promise<string | null> {
-  process.send?.({ type: "runtime.replace", job: id });
-  return new Promise((resolve) => {
-    let accepted = false;
-    let timer = setTimeout(onTimeout, 15_000);
-    timer.unref();
-    function finish(result: string | null) {
-      clearTimeout(timer);
-      process.off("message", onMessage);
-      resolve(result);
-    }
-    function onTimeout() {
-      finish(accepted ? "shell did not finish the replace" : "shell did not accept the replace");
-    }
-    const onMessage = (body: { type?: string; error?: string }) => {
-      if (body?.type === "shutdown") {
-        finish(null);
-        return;
-      }
-      if (body?.type !== "runtime.replace.accepted") return;
-      if (typeof body.error === "string" && body.error !== "") {
-        finish(body.error);
-        return;
-      }
-      if (accepted) return;
-      accepted = true;
-      clearTimeout(timer);
-      timer = setTimeout(onTimeout, 120_000);
-      timer.unref();
-    };
-    process.on("message", onMessage);
-  });
 }
 
 function message(error: unknown): string {

@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "The MAGI runtime: one long-lived agent, its BUS and its workers.",
+  "description": "The eva launcher. It starts one child process and does not run a BUS.",
   "exports": {
     ".": {
       "types": "./dist/eva.d.ts",
@@ -17,9 +17,11 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "start": "node dist/eva.js"
+    "start": "node eva.mjs"
   },
   "dependencies": {
+    "@magi/node": "*",
+    "@magi/runtime": "*",
     "@magi/bus": "*",
     "@magi/manager": "*",
     "@magi/agent": "*",

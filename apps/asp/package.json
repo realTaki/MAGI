@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "MAGI ASP process: BUS manager and asp-server worker.",
+  "description": "Casper's worker classes. The eva launcher starts them with --role asp.",
   "exports": {
     ".": {
       "types": "./dist/asp.d.ts",
@@ -17,7 +17,7 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "start": "node dist/asp.js",
+    "start": "node ../eva/eva.mjs --role asp",
     "test": "node --test dist/test/*.test.js"
   },
   "dependencies": {

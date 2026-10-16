@@ -6,13 +6,13 @@
 
 [中文 README](README_zh.md)
 
-MAGI is a local multi-agent runtime. Each node has its own process, workspace, and provider credentials. The desktop app starts those processes. They talk through ASP.
+MAGI is a local multi-agent runtime. Each node is the `eva` launcher plus one child process, with its own workspace and provider credentials. The nodes talk through ASP. The desktop app starts only the shell launcher.
 
 How the three nodes, the relay, provider setup, and self-replace actually work is in [docs/architecture.md](docs/architecture.md). Later work is in [docs/future.md](docs/future.md).
 
 ## Run
 
-Open the Electron app in [`apps/shell/`](apps/shell/). On first launch it clones this repository into `~/.magi/shell/MAGI`, prepares dependencies, and starts ASP on [http://127.0.0.1:42069](http://127.0.0.1:42069). The default society is Balthasar, Casper, and Melchior.
+Open the Electron app in [`apps/shell/`](apps/shell/). It starts `eva --role shell`. Start Casper with `node apps/eva/eva.mjs --role asp` and Melchior with `node apps/eva/eva.mjs --role agent @eva-002.magi`. State lives under `MAGI_HOME` (default `~/.magi`). The relay address is `MAGI_ASP`.
 
 Build from the repository root with `npm run build`. Tests run with the bundled Node 24 runtime under `apps/shell/runtime/bin`.
 

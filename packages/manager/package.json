@@ -19,6 +19,7 @@
     "build": "tsc -b"
   },
   "dependencies": {
-    "@magi/bus": "*"
+    "@magi/bus": "*",
+    "@magi/runtime": "*"
   }
 }

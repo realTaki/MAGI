@@ -2,7 +2,13 @@
   "files": [],
   "references": [
     {
+      "path": "packages/runtime"
+    },
+    {
       "path": "packages/bus"
+    },
+    {
+      "path": "packages/node"
     },
     {
       "path": "packages/asp-server"
