@@ -2,10 +2,14 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import type { BusDb } from "../drizzle/database.js";
 import type { CallLLMJob, CallLLMResult } from "./callLlm.js";
+import type { CardJob, CardResult } from "./card.js";
 import type { ChangeMcpServerNotify } from "./changeMcpServer.js";
 import type { ChangeProviderNotify } from "./changeProvider.js";
+import type { ConfigureJob, ConfigureResult } from "./configure.js";
 import type { MessageDeliveryJob } from "./messageDelivery.js";
 import type { ManageWorkerNotify } from "./manageWorker.js";
+import type { PeerKeyJob, PeerKeyResult } from "./peerKey.js";
+import type { ReplaceSelfJob, ReplaceSelfResult } from "./replaceSelf.js";
 import type { RunToolJob, RunToolResult } from "./runTool.js";
 
 /**
@@ -25,6 +29,10 @@ export type JobInput = {
   ChangeProviderNotify: ChangeProviderNotify;
   ChangeMcpServerNotify: ChangeMcpServerNotify;
   ManageWorkerNotify: ManageWorkerNotify;
+  ConfigureJob: ConfigureJob;
+  CardJob: CardJob;
+  PeerKeyJob: PeerKeyJob;
+  ReplaceSelfJob: ReplaceSelfJob;
 };
 
 /** Job type -> what the worker writes back. Empty where the job only acts. */
@@ -35,6 +43,10 @@ export type JobOutput = {
   ChangeProviderNotify: Record<string, never>;
   ChangeMcpServerNotify: Record<string, never>;
   ManageWorkerNotify: { running: string[] };
+  ConfigureJob: ConfigureResult;
+  CardJob: CardResult;
+  PeerKeyJob: PeerKeyResult;
+  ReplaceSelfJob: ReplaceSelfResult;
 };
 
 export type JobType = keyof JobInput;

@@ -50,6 +50,7 @@ export class RelayWorker extends BaseWorker {
         inbound_policy: row.inbound_policy,
         allowlist: allowlists.get(row.handle) ?? new Set<string>(),
         managed: row.managed,
+        public_key: row.public_key,
       });
     }
     const chats: Chat[] = [];
@@ -98,12 +99,14 @@ export class RelayWorker extends BaseWorker {
         token: agent.token,
         inbound_policy: agent.inbound_policy,
         managed: agent.managed,
+        public_key: agent.public_key,
       }).onConflictDoUpdate({
         target: relayPrincipals.handle,
         set: {
           token: agent.token,
           inbound_policy: agent.inbound_policy,
           managed: agent.managed,
+          public_key: agent.public_key,
         },
       }).run();
       tx.delete(relayAllowlist).where(eq(relayAllowlist.contact_handle, agent.handle)).run();

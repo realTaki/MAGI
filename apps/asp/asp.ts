@@ -22,6 +22,7 @@ import { ProvidersWorker } from "@magi/providers/worker.js";
 import type { LLMClient } from "@magi/providers/client.js";
 import { SkillWorker } from "@magi/skills/worker.js";
 import { AspWorker } from "@magi/channel-asp/worker.js";
+import { TelegramWorker } from "@magi/channel-telegram/worker.js";
 
 import { AspServer, defaultDatabasePath, intranetBaseUrl, type CreateAppOptions } from "@magi/asp-server";
 
@@ -47,6 +48,8 @@ export class Asp {
       new ProvidersWorker(this.bus, options.client),
       this.server,
       new AspWorker(this.bus),
+      // Telegram stays off until this workspace has a bot token.
+      new TelegramWorker(this.bus),
     ], {
       drain: ["agent"],
     });

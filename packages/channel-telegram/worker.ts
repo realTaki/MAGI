@@ -123,7 +123,7 @@ export class TelegramWorker extends BaseWorker {
 
   /** Read at every start, so a token that arrives later is picked up by a restart. */
   private credentials(): Credentials | null {
-    const token = this.override?.token ?? this.bus.settings.get("telegram.bot_token")?.trim();
+    const token = this.override?.token ?? this.bus.secrets.get("telegram.bot_token")?.trim();
     if (!token) return null;
     const apiBase = this.override?.apiBase ?? this.bus.settings.get("telegram.api_base")?.trim();
     return { token, apiBase: apiBase || undefined };

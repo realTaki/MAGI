@@ -17,7 +17,6 @@
  *   github.signIn            — OAuth device flow; stores the token for Git to use.
  *   github.connect           — fork when the account has none, then point the
  *                              checkout at it.
- *   provider.settings/save   — keep the key on SettingsBook and sync through ASP.
  *   source.status            — branch, commit, and how this checkout sits
  *                              against the AgenticSociety remote.
  *   source.update            — fetch the remote and merge it into this checkout.
@@ -28,7 +27,6 @@
 import { spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import {
   ASP_MAGI_HANDLE,
   ASP_MAGI_NICKNAME,
@@ -63,7 +61,6 @@ const GITHUB_CLIENT_ID =
 const GITHUB_TIMEOUT_MS = 20_000;
 const FORK_TIMEOUT_MS = 60_000;
 const AVATAR_TIMEOUT_MS = 8_000;
-const PROVIDER_POLL_MS = 5_000;
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -231,12 +228,10 @@ export function createLocalApi(context) {
   let deviceFlowPending = false;
   let runtimeBusy = false;
   let chatStorePromise = null;
-  let providerTimer = null;
   let disposed = false;
   let disposal = null;
   let initialization = null;
   const lifetime = new AbortController();
-  const providerAttempted = new Set();
   // ASP keeps the roll of agents; this backend prepares their source trees,
   // while Shell owns processes and commands through the host (see magi-runtime.ts).
   // A developer's own checkout is never
@@ -378,106 +373,6 @@ export function createLocalApi(context) {
   function writeMetadata(metadata) {
     mkdirSync(path.dirname(metadataFile()), { recursive: true });
     writeFileSync(metadataFile(), `${JSON.stringify(metadata, null, 2)}\n`);
-  }
-
-  function normalizeProvider(settings) {
-    return Object.fromEntries(
-      ["provider", "model", "api_key", "base_url"].map((field) => [
-        field,
-        typeof settings?.[field] === "string" ? settings[field].trim() || null : null,
-      ]),
-    );
-  }
-
-  async function providerCatalog() {
-    // pi-ai belongs to `packages/providers`; which node_modules holds it depends on
-    // whether the install hoisted it, so both places are asked before giving up.
-    const candidates = [
-      path.join(appCheckout, "node_modules", "@earendil-works", "pi-ai", "dist", "providers", "all.js"),
-      path.join(appCheckout, "packages", "providers", "node_modules", "@earendil-works", "pi-ai", "dist", "providers", "all.js"),
-    ];
-    const entry = candidates.find((candidate) => existsSync(candidate));
-    if (entry === undefined) throw new Error("The provider catalog needs pi-ai: install the workspace first.");
-    const { getBuiltinModels } = await import(pathToFileURL(entry).href);
-    return Object.fromEntries([
-      "openai", "anthropic", "minimax-cn",
-    ].map((provider) => [provider, getBuiltinModels(provider).map((model) => ({ id: model.id, name: model.name }))]).concat([
-      ["minimax-global", getBuiltinModels("minimax").map((model) => ({ id: model.id, name: model.name }))],
-      ["deepseek", getBuiltinModels("deepseek").map((model) => ({ id: model.id, name: model.name }))],
-    ]));
-  }
-
-  function readProvider() {
-    const settings = {
-      provider: bus.settings.get("provider.name"),
-      model: bus.settings.get("provider.model"),
-      api_key: bus.settings.get("provider.api_key"),
-      base_url: bus.settings.get("provider.base_url"),
-    };
-    if (settings.provider === null && settings.model === null && settings.api_key === null && settings.base_url === null) {
-      return null;
-    }
-    return normalizeProvider(settings);
-  }
-
-  function writeProvider(settings) {
-    const normalized = normalizeProvider(settings);
-    bus.settings.setMany({
-      "provider.name": normalized.provider ?? "",
-      "provider.model": normalized.model ?? "",
-      "provider.api_key": normalized.api_key ?? "",
-      "provider.base_url": normalized.base_url ?? "",
-    });
-  }
-
-  async function providerUsage() {
-    const settings = readProvider();
-    const provider = settings?.provider ?? null;
-    if (!provider || !settings?.api_key) {
-      return { provider, status: "unconfigured", balances: [], message: "" };
-    }
-    if (provider !== "deepseek") {
-      return { provider, status: "unsupported", balances: [], message: "" };
-    }
-    try {
-      const response = await fetch("https://api.deepseek.com/user/balance", {
-        headers: { Authorization: `Bearer ${settings.api_key}` },
-        signal: AbortSignal.timeout(8_000),
-      });
-      if (!response.ok) {
-        return {
-          provider,
-          status: "error",
-          balances: [],
-          message: `DeepSeek balance request failed (${response.status})`,
-        };
-      }
-      const body = await response.json() as {
-        balance_infos?: Array<{ currency?: unknown; total_balance?: unknown }>;
-        is_available?: boolean;
-      } | null;
-      const balances = Array.isArray(body?.balance_infos)
-        ? body.balance_infos.flatMap((entry) =>
-            typeof entry?.currency === "string" && typeof entry?.total_balance === "string"
-              ? [{ currency: entry.currency, total: entry.total_balance }]
-              : [],
-          )
-        : [];
-      return {
-        provider,
-        status: "available",
-        available: body?.is_available === true,
-        balances,
-        message: "",
-      };
-    } catch (error) {
-      return {
-        provider,
-        status: "error",
-        balances: [],
-        message: error instanceof Error ? error.message : String(error),
-      };
-    }
   }
 
   // The account's name and picture are this machine's state, so they live next
@@ -937,70 +832,6 @@ export function createLocalApi(context) {
     return data;
   }
 
-  async function syncProvider(settings, handles, token) {
-    return await aspJson("/settings/provider", {
-      token,
-      method: "PUT",
-      body: { ...settings, ...(handles === null ? {} : { handles }) },
-      timeoutMs: 30_000,
-    });
-  }
-
-  async function saveProvider(input) {
-    const settings = normalizeProvider(input);
-    let token;
-    try {
-      token = (await aspJson("/operator")).token;
-    } catch (error) {
-      writeProvider(settings); // Preserve the existing offline-save contract.
-      throw new Error(`Saved in the app, but MAGI sync failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-    const previous = readProvider();
-    writeProvider(settings);
-    providerAttempted.clear();
-    let result;
-    try { result = await syncProvider(settings, null, token); }
-    catch (error) {
-      throw new Error(`Saved in the app, but MAGI sync failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-    if ((result.synced ?? []).length === 0 && (result.failed ?? []).length > 0 &&
-        result.failed.every((item) => item.detail === "MAGI rejected provider configuration")) {
-      writeProvider(previous);
-      throw new Error("MAGI rejected the provider configuration; the previous settings were kept");
-    }
-    for (const handle of result.synced ?? []) providerAttempted.add(handle);
-    for (const item of result.failed ?? []) providerAttempted.add(item.handle);
-    return result;
-  }
-
-  function watchProviderRecipients(token) {
-    if (disposed || providerTimer !== null) return;
-    const poll = async () => {
-      try {
-        const settings = readProvider();
-        if (settings !== null) {
-          const bots = (await aspJson("/bots", { token }))?.bots ?? [];
-          const online = new Set(bots.filter((bot) => bot.online).map((bot) => bot.handle));
-          for (const handle of providerAttempted) {
-            if (!online.has(handle)) providerAttempted.delete(handle);
-          }
-          const pending = [...online].filter((handle) => !providerAttempted.has(handle));
-          if (pending.length > 0) {
-            const result = await syncProvider(settings, pending, token);
-            for (const handle of result.synced ?? []) providerAttempted.add(handle);
-            for (const item of result.failed ?? []) providerAttempted.add(item.handle);
-          }
-        }
-      } catch (error) {
-        if (!disposed) console.error(`[magi-app] provider sync: ${error instanceof Error ? error.message : String(error)}`);
-      }
-      if (providerTimer !== null) {
-        providerTimer = setTimeout(() => void poll(), PROVIDER_POLL_MS);
-      }
-    };
-    providerTimer = setTimeout(() => void poll(), 0);
-  }
-
   /** A freshly spawned MAGI answers on its socket only after it has booted. */
   async function nameWhenOnline(handle, nickname, token) {
     const deadline = Date.now() + MAGI_ONLINE_TIMEOUT_MS;
@@ -1099,15 +930,6 @@ export function createLocalApi(context) {
     });
   }
 
-  async function activateProviderSync() {
-    const { token } = await aspJson("/operator");
-    try {
-      watchProviderRecipients(token);
-    } catch (error) {
-      console.error(`[magi-app] provider sync: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
   /** Brings local ASP up unless something already answers on its port. */
   async function start(progress?: (message: string, percent: number) => void) {
     await ensureAspCheckout();
@@ -1121,7 +943,6 @@ export function createLocalApi(context) {
     // start and stop from each MAGI's profile.
     await startManagedMagi();
     await ensureDefaultMagis(progress);
-    await activateProviderSync();
     return { origin: ASP_ORIGIN.href };
   }
 
@@ -1129,8 +950,6 @@ export function createLocalApi(context) {
     if (disposal !== null) return await disposal;
     disposed = true;
     lifetime.abort();
-    if (providerTimer !== null) clearTimeout(providerTimer);
-    providerTimer = null;
     const pendingStore = chatStorePromise;
     chatStorePromise = null;
     disposal = (async () => {
@@ -1658,7 +1477,7 @@ export function createLocalApi(context) {
   return {
     ready: () => { initialization ??= chatStore().then(() => undefined); return initialization; },
     prepare,
-    resume: async () => { if (await aspProcess.probe() === "ready") await activateProviderSync(); },
+    resume: async () => undefined,
     start,
     dispose,
     shutdown,
@@ -1686,10 +1505,6 @@ export function createLocalApi(context) {
     "github.state": currentState,
     "github.signIn": signIn,
     "github.connect": connect,
-    "provider.settings": () => readProvider() ?? normalizeProvider(null),
-    "provider.catalog": providerCatalog,
-    "provider.usage": providerUsage,
-    "provider.save": saveProvider,
     "source.status": sourceStatus,
     "source.update": () => runtimeAction(updateSource),
     "chat.listChats": async () => (await chatStore()).listChats(),

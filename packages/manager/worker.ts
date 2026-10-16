@@ -5,7 +5,10 @@
  * This worker runs them and answers `ManageWorkerNotify`.
  */
 
-import { BaseWorker, messageDelivery, type Bus, type ManageWorkerNotify } from "@magi/bus";
+import { execFile, fork, type ChildProcess } from "node:child_process";
+import { cpSync, existsSync, rmSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { BaseWorker, decryptWith, MAGI_CONTACT_ID, messageDelivery, providerCard, SYSTEM_CONTACT_ID, type Bus, type ConfigureJob, type ManageWorkerNotify } from "@magi/bus";
 
 const POLL_MS = 20;
 const HEALTH_MS = 1_000;
@@ -44,6 +47,10 @@ export class ManagerWorker extends BaseWorker {
   private readonly failing = new Set<string>();
   private started = false;
   private initializing = false;
+  /** The startup provider card, if one is waiting for the user. Offered once. */
+  private providerCardJob: number | null = null;
+  private providerCardChat: number | null = null;
+  private providerCardOffered = false;
   private loop: Promise<void> | null = null;
   private lastHealthCheck = 0;
 
@@ -80,6 +87,9 @@ export class ManagerWorker extends BaseWorker {
 
   async poll(): Promise<boolean> {
     this.checkHealth();
+    await this.providerSetup();
+    if (await this.pollReplace()) return true;
+    if (await this.pollConfigure()) return true;
     const board = this.bus.board("ManageWorkerNotify");
     const job = board.claim(this.worker_name);
     if (!job) return false;
@@ -99,6 +109,142 @@ export class ManagerWorker extends BaseWorker {
       catch (error) { console.error("manager:", error); }
       if (!worked && this.started) await sleep(POLL_MS);
     }
+  }
+
+  /**
+   * No provider key means this node cannot think. Show the provider card from
+   * here, not from a model turn. After the user submits it, apply the fields
+   * and hand the rest of provider_setup to the agent.
+   */
+  private async providerSetup(): Promise<void> {
+    if (this.providerCardJob !== null) {
+      await this.finishProviderCard();
+      return;
+    }
+    if (this.providerCardOffered || this.bus.secrets.get("provider.api_key")) return;
+    const chatId = this.cardChat();
+    if (chatId === null) return;
+    const spec = providerCard(this.bus.handle);
+    this.providerCardOffered = true;
+    this.providerCardJob = this.bus.board("CardJob").publish({ spec }, "manager");
+    this.providerCardChat = chatId;
+    messageDelivery.send(this.bus, chatId, `card: ${spec.title}`, MAGI_CONTACT_ID, "manager", { card: spec });
+  }
+
+  private cardChat(): number | null {
+    const mine = (id: number): boolean =>
+      this.bus.chatMembers.list(id).some((member) => member.id === MAGI_CONTACT_ID);
+    const home = messageDelivery.homeChat(this.bus);
+    const homeChat = home === null ? null : this.bus.chats.get(home);
+    if (homeChat?.channel === "asp" && homeChat.delivery_address && mine(homeChat.id)) return homeChat.id;
+    const asp = this.bus.chats.list("asp").find((chat) => chat.delivery_address !== "" && mine(chat.id));
+    return asp?.id ?? null;
+  }
+
+  private async finishProviderCard(): Promise<void> {
+    const id = this.providerCardJob;
+    const chatId = this.providerCardChat;
+    if (id === null || chatId === null) return;
+    const result = this.bus.board("CardJob").result(id);
+    if (!result) return;
+    this.providerCardJob = null;
+    this.providerCardChat = null;
+    if (result.status === "failed") {
+      messageDelivery.notify(this.bus, `[provider] ${result.error ?? "provider card failed"}`, chatId);
+      return;
+    }
+    const fields = result.output?.fields ?? {};
+    const settings: Record<string, string> = {};
+    if (fields.provider) settings["provider.name"] = fields.provider;
+    if (fields.model) settings["provider.model"] = fields.model;
+    if (fields.base_url) settings["provider.base_url"] = fields.base_url;
+    try {
+      await this.configure({ settings, reload: ["providers"] });
+    } catch (error) {
+      messageDelivery.notify(this.bus, `[provider] ${message(error)}`, chatId);
+      return;
+    }
+    messageDelivery.send(this.bus, chatId, [
+      "Provider card submitted.",
+      `provider: ${fields.provider ?? ""}`,
+      `model: ${fields.model ?? ""}`,
+      `base_url: ${fields.base_url ?? ""}`,
+      "provider.api_key: updated",
+      "Load provider_setup and continue from step 2. Do not show another card.",
+    ].join("\n"), SYSTEM_CONTACT_ID, "manager");
+  }
+
+  /** Rebuild the checkout. A failed build or health check restores the previous output. */
+  private async pollReplace(): Promise<boolean> {
+    const board = this.bus.board("ReplaceSelfJob");
+    const job = board.claim(this.worker_name);
+    if (!job) return false;
+    const checkout = job.input.checkout;
+    const live = join(checkout, "apps", "eva", "dist");
+    const backup = `${live}.rollback`;
+    let replacement: ChildProcess | null = null;
+    try {
+      snapshot(live, backup);
+      await runBuild(checkout);
+      const entry = join(live, "eva.js");
+      await checkEntry(entry);
+      if (job.input.swap) replacement = await spawnReady(entry);
+      board.submit(this.worker_name, job.id, { output: { replaced: true } });
+      if (replacement) {
+        for (const name of this.drain) await this.stopWorker(name);
+        replacement.unref();
+        process.exit(0);
+      }
+    } catch (error) {
+      replacement?.kill();
+      restore(live, backup);
+      const text = message(error);
+      board.submit(this.worker_name, job.id, { error: text });
+      messageDelivery.notify(this.bus, `[replace] ${text}`);
+    }
+    return true;
+  }
+
+  /** Persist settings and secrets. Sealed values are decrypted here and nowhere else. */
+  private async pollConfigure(): Promise<boolean> {
+    const board = this.bus.board("ConfigureJob");
+    const job = board.claim(this.worker_name);
+    if (!job) return false;
+    try {
+      const written = await this.configure(job.input);
+      board.submit(this.worker_name, job.id, { output: { secret_set: written } });
+    } catch (error) {
+      board.submit(this.worker_name, job.id, { error: message(error) });
+    }
+    return true;
+  }
+
+  private async configure(input: ConfigureJob): Promise<string[]> {
+    const written: string[] = [];
+    for (const [key, value] of Object.entries(input.settings ?? {})) {
+      this.bus.settings.set(key, value);
+    }
+    for (const [key, value] of Object.entries(input.secrets ?? {})) {
+      this.bus.secrets.set(key, value);
+      written.push(key);
+    }
+    for (const [key, ciphertext] of Object.entries(input.sealed ?? {})) {
+      let plain: string;
+      try {
+        plain = decryptWith(this.bus.identity.privateKey, ciphertext);
+      } catch {
+        throw new Error(`could not decrypt ${key}`);
+      }
+      this.bus.secrets.set(key, plain);
+      written.push(key);
+    }
+    for (const name of input.reload ?? []) {
+      const worker = this.workers.find((candidate) => candidate.worker_name === name);
+      if (!worker) continue;
+      await this.stopWorker(name);
+      await this.reconcile();
+    }
+    return written;
   }
 
   /** Start, stop, or restart one worker by name. The settings stay the source of truth. */
@@ -218,4 +364,56 @@ function disabledKey(worker: string): string {
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function snapshot(live: string, backup: string): void {
+  rmSync(backup, { recursive: true, force: true });
+  if (existsSync(live)) cpSync(live, backup, { recursive: true });
+}
+
+function restore(live: string, backup: string): void {
+  rmSync(live, { recursive: true, force: true });
+  if (existsSync(backup)) cpSync(backup, live, { recursive: true });
+}
+
+function runBuild(checkout: string): Promise<void> {
+  return exec(process.execPath, ["--run", "build"], checkout);
+}
+
+function checkEntry(entry: string): Promise<void> {
+  if (!existsSync(entry)) return Promise.reject(new Error(`build produced no ${entry}`));
+  return exec(process.execPath, ["--check", entry], dirname(entry));
+}
+
+function exec(file: string, args: string[], cwd: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    execFile(file, args, { cwd }, (error, _stdout, stderr) => {
+      if (error) reject(new Error(stderr.trim() || error.message));
+      else resolve();
+    });
+  });
+}
+
+function spawnReady(entry: string): Promise<ChildProcess> {
+  const child = fork(entry, [], {
+    execPath: process.execPath,
+    execArgv: [],
+    cwd: dirname(entry),
+    stdio: ["ignore", "inherit", "inherit", "ipc"],
+  });
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error("replacement did not become ready"));
+    }, 15_000);
+    child.once("message", (body: { type?: string }) => {
+      if (body?.type !== "ready") return;
+      clearTimeout(timer);
+      resolve(child);
+    });
+    child.once("exit", () => {
+      clearTimeout(timer);
+      reject(new Error("replacement exited before it was ready"));
+    });
+  });
 }

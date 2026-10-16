@@ -7,11 +7,12 @@ import {
   isOperatorSender,
   type ChatSummary,
   type ChatMessage,
+  type FormCard,
   type Routine,
   type RoutineRun,
 } from "./chat-model";
 import { Avatar } from "./Avatar";
-import { createAspChat, patchAspChat, clearOperator, listAspBots, listAspChats, sendAspMessage, updateAspNickname, addAspChatMember, storedChats, saveChats, storedEvents, syncAspEvents, storedOutgoingMessages, queueOutgoingMessage, removeOutgoingMessage, type AspBot, type AspEvent, type CreatedChat, type OutgoingMessage } from "./asp";
+import { createAspChat, patchAspChat, clearOperator, encryptSecret, listAspBots, listAspChats, listProfiles, sendAspMessage, updateAspNickname, addAspChatMember, storedChats, saveChats, storedEvents, syncAspEvents, storedOutgoingMessages, queueOutgoingMessage, removeOutgoingMessage, type AspBot, type AspEvent, type CreatedChat, type OutgoingMessage } from "./asp";
 import { initialsFromLogin, useGitHubAccount } from "./github-connect";
 import { openSettingsRoute } from "./hash-route";
 import { useT } from "./i18n";
@@ -419,6 +420,70 @@ function previewForChat(chat: ChatView, extra: ExtraMessages) {
   return chat.preview;
 }
 
+function FormCardView({ message }: { message: Extract<ChatMessage, { type: "form" }> }) {
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [error, setError] = useState("");
+  const [sent, setSent] = useState(false);
+  const card = message.card;
+  return (
+    <form
+      className="chat-page__form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (sent) return;
+        void (async () => {
+          try {
+            const fields: Record<string, unknown> = {};
+            const secret = card.fields.some((field) => field.kind === "secret");
+            const profiles = secret ? await listProfiles() : [];
+            const publicKey = profiles.find((profile) => profile.handle === card.handle)?.public_key ?? null;
+            if (secret && !publicKey) throw new Error(`${card.handle} has no public key yet`);
+            for (const field of card.fields) {
+              const value = values[field.name] ?? "";
+              if (value === "" && !field.optional) throw new Error(`${field.label} is required`);
+              fields[field.name] = field.kind === "secret"
+                ? { ciphertext: await encryptSecret(publicKey!, value) }
+                : value;
+            }
+            await sendAspMessage(message.chatId, `card filled: ${card.title}`, {
+              card_result: { id: card.id, fields },
+            });
+            setSent(true);
+            setError("");
+          } catch (caught) {
+            setError(caught instanceof Error ? caught.message : String(caught));
+          }
+        })();
+      }}
+    >
+      <div className="chat-page__form-title">{card.title}</div>
+      {card.fields.map((field) => (
+        <label key={field.name} className="chat-page__form-row">
+          <span>{field.label}</span>
+          {field.kind === "choice" ? (
+            <select
+              value={values[field.name] ?? ""}
+              onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))}
+            >
+              <option value="">Choose</option>
+              {(field.choices ?? []).map((choice) => <option key={choice} value={choice}>{choice}</option>)}
+            </select>
+          ) : (
+            <input
+              type={field.kind === "secret" ? "password" : "text"}
+              autoComplete="off"
+              value={values[field.name] ?? ""}
+              onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))}
+            />
+          )}
+        </label>
+      ))}
+      <button type="submit" disabled={sent}>{sent ? "Sent" : card.submit}</button>
+      {error ? <p className="chat-page__form-error">{error}</p> : null}
+    </form>
+  );
+}
+
 function Thread({ messages }: { messages: ChatMessage[] }) {
   return (
     <>
@@ -434,6 +499,13 @@ function Thread({ messages }: { messages: ChatMessage[] }) {
           return (
             <div key={`meta-${index}`} className="chat-page__meta">
               {message.text}
+            </div>
+          );
+        }
+        if (message.type === "form") {
+          return (
+            <div key={`form-${message.card.id}`} className="chat-page__message chat-page__message--bot">
+              <FormCardView message={message} />
             </div>
           );
         }
@@ -995,14 +1067,21 @@ export function ChatPage() {
 
   function applyChatEvents(chatId: string, events: AspEvent[]) {
     const messageEvents = events.filter((event) => event.type === "chat.message");
-    const thread: ChatMessage[] = messageEvents.map((event) => ({
+    const thread: ChatMessage[] = messageEvents.map((event) => {
+      const text = typeof event.payload.content === "string"
+        ? event.payload.content
+        : JSON.stringify(event.payload.content);
+      const card = event.payload.metadata?.card;
+      if (card && !isOperatorSender(event.payload.sender)) {
+        return { type: "form" as const, text, chatId, card: card as FormCard };
+      }
       // Old desktop caches may still contain events written before ASP renamed the
       // operator handle. Keep presenting those cached entries as user messages.
-      type: isOperatorSender(event.payload.sender) ? "user" as const : "bot" as const,
-      text: typeof event.payload.content === "string"
-        ? event.payload.content
-        : JSON.stringify(event.payload.content),
-    }));
+      return {
+        type: isOperatorSender(event.payload.sender) ? "user" as const : "bot" as const,
+        text,
+      };
+    });
     const latest = thread.at(-1);
     const lastSequence = events.reduce((highest, event) => Math.max(highest, event.sequence), -1);
     const latestAgentSequence = messageEvents.reduce(

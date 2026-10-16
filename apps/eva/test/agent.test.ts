@@ -295,7 +295,7 @@ describe("local MAGI agent", () => {
     let failed = null;
     for (let i = 0; i < 100 && !failed; i++) { failed = board.result(badId); await sleep(10); }
     expect(failed).toMatchObject({ status: "failed", error: "invalid key [redacted]" });
-    expect(magi.bus.settings.get("provider.api_key")).toBeNull();
+    expect(magi.bus.secrets.get("provider.api_key")).toBeNull();
 
     const goodId = board.publish({ provider: "custom", model: "gpt-test", api_key: "good-secret", base_url: "https://example.com/v1" }, "test");
     let completed = null;
@@ -304,7 +304,7 @@ describe("local MAGI agent", () => {
     expect(magi.bus.settings.get("provider.name")).toBe("custom");
     expect(magi.bus.settings.get("provider.model")).toBe("gpt-test");
     expect(magi.bus.settings.get("provider.base_url")).toBe("https://example.com/v1");
-    expect(magi.bus.settings.get("provider.api_key")).toBe("good-secret");
+    expect(magi.bus.secrets.get("provider.api_key")).toBe("good-secret");
     expect(magi.bus.settings.get("provider.context_window")).toBe("1000000");
     expect(configured).toHaveLength(1);
     await magi.stop();

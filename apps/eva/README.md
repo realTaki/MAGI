@@ -31,16 +31,16 @@ directory with the `workspace` option. The source checkout, when present, is
 line and everything else from that workspace — the process reads no environment
 variables.
 
-Provider settings live in that workspace and the operator's app writes them
-through ASP (`provider.name`, `provider.api_key`, `provider.model`,
-`provider.base_url`). A fresh MAGI has none until they are saved in the app, and
-nothing reads them from the environment. Provider models and protocols are
-handled by `@earendil-works/pi-ai`; the desktop app offers OpenAI, Anthropic,
+Provider settings live in that workspace. With no API key, the manager shows
+the provider card before any model turn. The MAGI applies the result itself
+and may sync it to the others: the key travels as ciphertext to each
+recipient's public key. Nothing reads provider settings from the environment.
+Provider models and protocols are
+handled by `@earendil-works/pi-ai`. The provider card offers OpenAI, Anthropic,
 MiniMax, DeepSeek, and a custom OpenAI-compatible HTTPS endpoint (HTTP is
-allowed for localhost) — for a custom endpoint, choose `custom` and supply base
-URL, model ID and API key there. The Python LiteLLM dependency is not used.
+allowed for localhost). The Python LiteLLM dependency is not used.
 `/exit` stops terminal chat; Ctrl-C stops ASP mode. Telegram runs when the
-workspace has a `telegram.bot_token` setting; the channel is the Chat SDK's
+workspace has a `telegram.bot_token` secret; the channel is the Chat SDK's
 Telegram adapter (`chat`, `@chat-adapter/telegram`) in long-polling mode, so
 the protocol is not ours — the worker only records an update and posts what
 this MAGI said. In a group it hears only what addresses it: an @

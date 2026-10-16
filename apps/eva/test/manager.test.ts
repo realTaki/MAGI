@@ -50,7 +50,7 @@ test("a channel whose credentials arrive later comes up without a restart", asyn
     await sleep(50);
     expect(telegram.calls).toEqual([]);
 
-    magi.bus.settings.set("telegram.bot_token", "test-token");
+    magi.bus.secrets.set("telegram.bot_token", "test-token");
     magi.bus.settings.set("telegram.api_base", telegram.base);
     const started = await manage(magi, "tg", "start");
     expect(started.status).toBe("completed");
@@ -97,7 +97,7 @@ test("a channel that fails while it runs reaches the chat the operator used", as
     // Speaking once is what gives the workspace an address to report trouble to.
     const chat = magi.bus.chats.forChannel("cli", "terminal");
     messageDelivery.setHomeChat(magi.bus, chat.id);
-    magi.bus.settings.set("telegram.bot_token", "bad-token");
+    magi.bus.secrets.set("telegram.bot_token", "bad-token");
     magi.bus.settings.set("telegram.api_base", telegram.base);
     await manage(magi, "tg", "start");
 
@@ -127,7 +127,7 @@ test("a channel that cannot log in is reported instead of starting", async () =>
     await magi.start();
     const chat = magi.bus.chats.forChannel("cli", "terminal");
     messageDelivery.setHomeChat(magi.bus, chat.id);
-    magi.bus.settings.set("telegram.bot_token", "bad-token");
+    magi.bus.secrets.set("telegram.bot_token", "bad-token");
     magi.bus.settings.set("telegram.api_base", telegram.base);
 
     const started = await manage(magi, "tg", "start");

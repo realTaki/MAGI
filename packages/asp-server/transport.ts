@@ -37,7 +37,6 @@ export class Transport {
   readonly #cursors = new Map<string, number>();
   readonly #disconnectTimers = new Map<string, NodeJS.Timeout>();
   readonly #nicknameRequests = new Map<string, Pending>();
-  readonly #providerRequests = new Map<string, Pending>();
   #hooks: LifecycleHooks | null = null;
   readonly store: Store;
 
@@ -99,17 +98,6 @@ export class Transport {
     );
   }
 
-  updateProvider(
-    handle: string,
-    settings: { provider: string | null; model: string | null; api_key: string | null; base_url: string | null },
-  ): Promise<boolean> {
-    return this.#controlRequest(
-      handle,
-      { type: "agent.provider.update", ...settings },
-      this.#providerRequests,
-    );
-  }
-
   receiveControl(handle: string, message: Record<string, unknown>): void {
     const kind = message.type;
     if (kind === "agent.nickname.current") {
@@ -121,12 +109,7 @@ export class Transport {
       }
       return;
     }
-    const pendingRequests =
-      kind === "agent.nickname.updated"
-        ? this.#nicknameRequests
-        : kind === "agent.provider.updated"
-          ? this.#providerRequests
-          : null;
+    const pendingRequests = kind === "agent.nickname.updated" ? this.#nicknameRequests : null;
     if (pendingRequests === null || typeof message.request_id !== "string") {
       return;
     }

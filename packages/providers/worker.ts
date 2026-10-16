@@ -1,4 +1,4 @@
-import { BaseWorker, type CallLLMJob, type ExecutableTool } from "@magi/bus";
+import { BaseWorker, waitForJob, type CallLLMJob, type ExecutableTool } from "@magi/bus";
 import type { Bus } from "@magi/bus";
 import { PiAiClient, type LLMClient, type ProviderSettings } from "./client.js";
 import { providerTools } from "./tools.js";
@@ -13,17 +13,11 @@ export class ProvidersWorker extends BaseWorker {
 
   constructor(bus: Bus, client?: LLMClient) {
     super(bus);
-    // A freshly started MAGI has no provider at all: these settings belong to
-    // this workspace and the operator's app writes them through ASP
-    // (ChangeProviderNotify), while the model changes them with the
-    // `provider_settings` tool below. Nothing else configures them — no
-    // environment, no default provider, no default model.
-    this.settings = {
-      provider: bus.settings.get("provider.name") ?? undefined,
-      api_key: bus.settings.get("provider.api_key") ?? undefined,
-      model: bus.settings.get("provider.model") ?? undefined,
-      base_url: bus.settings.get("provider.base_url") ?? bus.settings.get("provider.api_base") ?? undefined,
-    };
+    // A freshly started MAGI has no provider until it configures itself.
+    // The key lives in the secret store. The model changes the rest with
+    // `provider_settings`, which the manager writes. Nothing reads the
+    // environment and there is no default provider.
+    this.settings = this.readSettings();
     this.client = client ?? new PiAiClient(this.settings);
     this.own = providerTools(() => this.settings, (settings) => this.apply(settings));
     // Offered only while this worker runs: a stopped worker would leave the model
@@ -33,6 +27,10 @@ export class ProvidersWorker extends BaseWorker {
 
   async start(): Promise<void> {
     this.started = true;
+    this.settings = this.readSettings();
+    if (this.settings.provider && this.settings.api_key && this.client.configure) {
+      this.client.configure(this.settings);
+    }
     this.syncContextWindow();
   }
 
@@ -92,30 +90,43 @@ export class ProvidersWorker extends BaseWorker {
     return true;
   }
 
+  private readSettings(): ProviderSettings {
+    return {
+      provider: this.bus.settings.get("provider.name") ?? undefined,
+      api_key: this.bus.secrets.get("provider.api_key") ?? undefined,
+      model: this.bus.settings.get("provider.model") ?? undefined,
+      base_url: this.bus.settings.get("provider.base_url") ?? undefined,
+    };
+  }
+
   /**
    * Verify a candidate before it becomes the active provider, so a bad key never
-   * replaces a working one. A field the caller left out keeps its current value,
-   * and a failure is reported with the key taken out of it.
+   * replaces a working one. A field the caller left out keeps its current value.
+   * The manager writes the result; this worker only verifies and then uses it.
    */
   private async apply(change: ProviderSettings): Promise<void> {
     const candidate: ProviderSettings = {
       provider: change.provider ?? this.settings.provider,
-      api_key: change.api_key ?? this.settings.api_key,
+      api_key: change.api_key ?? this.bus.secrets.get("provider.api_key") ?? this.settings.api_key,
       model: change.model ?? this.settings.model,
       base_url: change.base_url ?? this.settings.base_url,
     };
     try {
       if (!this.client.verify || !this.client.configure) throw new Error("provider client cannot be reconfigured");
       await this.client.verify(candidate);
-      this.client.configure(candidate);
     } catch (error) {
       throw new Error(redact(message(error), candidate.api_key));
     }
+    const settings: Record<string, string> = {};
+    if (change.provider !== undefined) settings["provider.name"] = change.provider;
+    if (change.model !== undefined) settings["provider.model"] = change.model;
+    if (change.base_url !== undefined) settings["provider.base_url"] = change.base_url;
+    const secrets = change.api_key !== undefined ? { "provider.api_key": change.api_key } : undefined;
+    const id = this.bus.board("ConfigureJob").publish({ settings, secrets }, this.worker_name);
+    const stored = await waitForJob(() => this.bus.board("ConfigureJob").result(id), 30_000, "ConfigureJob");
+    if (stored.status === "failed") throw new Error(stored.error ?? "configure failed");
+    this.client.configure!(candidate);
     this.settings = candidate;
-    if (change.provider !== undefined) this.bus.settings.set("provider.name", change.provider);
-    if (change.api_key !== undefined) this.bus.settings.set("provider.api_key", change.api_key);
-    if (change.model !== undefined) this.bus.settings.set("provider.model", change.model);
-    if (change.base_url !== undefined) this.bus.settings.set("provider.base_url", change.base_url);
     this.syncContextWindow();
   }
 

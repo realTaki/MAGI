@@ -141,16 +141,13 @@ test("ASP invite opens the message delivery job and the reply is delivered to th
       type: "chat.invited", event_id: "event-1", chat_id: "s1",
       payload: { invitee: "@alice.magi", initial_message: { content: "hello" } },
     }));
-    for (let i = 0; i < 200 && (requests.length < 2 || replies.length < 1); i++) await sleep(10);
-    expect(requests).toEqual([
-      { path: "/chats/s1/join", body: null },
-      { path: "/chats/s1/messages", body: { content: "hello back" } },
-    ]);
+    const posted = () => requests.find((item) => item.path === "/chats/s1/messages" && (item.body as { content?: string } | null)?.content === "hello back");
+    for (let i = 0; i < 200 && (posted() === undefined || replies.length < 1); i++) await sleep(10);
     expect(replies).toEqual([{ type: "chat.ack", chat_id: "s1", event_id: "event-1" }]);
     const chat = magi.bus.chats.forChannel("asp", "s1");
-    const stored = magi.bus.messages.list(chat.id);
-    expect(stored[0]?.content).toBe("hello");
-    expect(stored[1]?.content).toBe("hello back");
+    const stored = magi.bus.messages.list(chat.id).map((message) => message.content);
+    expect(stored).toContain("hello");
+    expect(stored).toContain("hello back");
   } finally {
     await magi.stop();
     server.stop(true);

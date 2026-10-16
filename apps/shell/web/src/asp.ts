@@ -22,11 +22,31 @@ export type CreatedChat = {
   created_at?: number;
 };
 
+export type CardField = {
+  name: string;
+  label: string;
+  kind: "text" | "secret" | "choice";
+  choices?: string[];
+  optional?: boolean;
+};
+
+export type CardSpec = {
+  id: string;
+  title: string;
+  handle: string;
+  submit: string;
+  fields: CardField[];
+};
+
 export type AspEvent = {
   type: string;
   sequence: number;
   event_id: string;
-  payload: { sender?: string; content?: unknown };
+  payload: {
+    sender?: string;
+    content?: unknown;
+    metadata?: { card?: CardSpec };
+  };
 };
 
 export type AspBot = {
@@ -185,7 +205,7 @@ export async function syncAspEvents(id: string): Promise<AspEvent[]> {
   return await storedEvents(id);
 }
 
-export async function sendAspMessage(chatId: string, text: string): Promise<void> {
+export async function sendAspMessage(chatId: string, text: string, metadata?: Record<string, unknown>): Promise<void> {
   const creds = await getOperator();
   if (!creds) throw new Error("ASP is unavailable");
   const response = await fetch(`${ASP_BASE}/chats/${chatId}/messages`, {
@@ -194,9 +214,44 @@ export async function sendAspMessage(chatId: string, text: string): Promise<void
       Authorization: `Bearer ${creds.token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ content: text }),
+    body: JSON.stringify(metadata ? { content: text, metadata } : { content: text }),
   });
   if (!response.ok) throw new Error(`ASP send: ${response.status}`);
+}
+
+export async function listProfiles(): Promise<Array<{ handle: string; public_key: string | null }>> {
+  const creds = await getOperator();
+  if (!creds) throw new Error("ASP is unavailable");
+  const response = await fetch(`${ASP_BASE}/profiles`, {
+    headers: { Authorization: `Bearer ${creds.token}` },
+  });
+  if (!response.ok) throw new Error(`ASP profiles: ${response.status}`);
+  const body = await response.json() as { profiles?: Array<{ handle?: string; public_key?: string | null }> };
+  return (body.profiles ?? []).flatMap((profile) =>
+    typeof profile.handle === "string"
+      ? [{ handle: profile.handle, public_key: typeof profile.public_key === "string" ? profile.public_key : null }]
+      : [],
+  );
+}
+
+/** Encrypt a card secret to the MAGI that asked for it. The plaintext stays in this form. */
+export async function encryptSecret(publicKeyPem: string, plaintext: string): Promise<string> {
+  const body = publicKeyPem.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+  const binary = atob(body);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  const key = await crypto.subtle.importKey(
+    "spki",
+    bytes.buffer,
+    { name: "RSA-OAEP", hash: "SHA-256" },
+    false,
+    ["encrypt"],
+  );
+  const cipher = await crypto.subtle.encrypt({ name: "RSA-OAEP" }, key, new TextEncoder().encode(plaintext));
+  const out = new Uint8Array(cipher);
+  let encoded = "";
+  for (const byte of out) encoded += String.fromCharCode(byte);
+  return btoa(encoded);
 }
 
 export async function updateAspNickname(handle: string, nickname: string): Promise<void> {
@@ -321,27 +376,6 @@ export async function addAspChatMember(
   }
 }
 
-export type ProviderSettings = {
-  provider: string | null;
-  model: string | null;
-  api_key: string | null;
-  base_url: string | null;
-};
-
-/** What the app saved locally, plus which MAGI confirmed the broadcast. */
-export type ProviderSettingsSaved = ProviderSettings & {
-  synced: string[];
-  failed: { handle: string; detail: string }[];
-};
-
-export type ProviderUsage = {
-  provider: string | null;
-  status: "available" | "unsupported" | "unconfigured" | "error";
-  available?: boolean;
-  balances: Array<{ currency: string; total: string }>;
-  message: string;
-};
-
 export type SourceStatus = {
   available: boolean;
   branch: string;
@@ -371,30 +405,4 @@ export type SourceStatus = {
 export async function getSourceStatus(): Promise<SourceStatus | null> {
   const invoke = window.magiDesktop?.invokeLocal;
   return invoke ? ((await invoke("source.status")) as SourceStatus) : null;
-}
-
-export async function getProviderSettings(): Promise<ProviderSettings | null> {
-  const invoke = window.magiDesktop?.invokeLocal;
-  return invoke ? (await invoke("provider.settings")) as ProviderSettings : null;
-}
-
-export async function getProviderCatalog(): Promise<Record<string, { id: string; name: string }[]>> {
-  const invoke = window.magiDesktop?.invokeLocal;
-  return invoke ? (await invoke("provider.catalog")) as Record<string, { id: string; name: string }[]> : {};
-}
-
-export async function getProviderUsage(): Promise<ProviderUsage> {
-  const invoke = window.magiDesktop?.invokeLocal;
-  if (!invoke) {
-    return { provider: null, status: "error", balances: [], message: "Desktop backend unavailable" };
-  }
-  return (await invoke("provider.usage")) as ProviderUsage;
-}
-
-export async function saveProviderSettings(
-  input: ProviderSettings,
-): Promise<ProviderSettingsSaved> {
-  const invoke = window.magiDesktop?.invokeLocal;
-  if (!invoke) throw new Error("The desktop app is unavailable");
-  return (await invoke("provider.save", input)) as ProviderSettingsSaved;
 }

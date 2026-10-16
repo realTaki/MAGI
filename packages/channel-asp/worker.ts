@@ -1,5 +1,4 @@
-import { BaseWorker, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, messageDelivery, type Bus, type Contact } from "@magi/bus";
-import { setTimeout as sleep } from "node:timers/promises";
+import { BaseWorker, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, messageDelivery, waitForJob, type Bus, type Contact } from "@magi/bus";
 import { AspClient, type AspEvent } from "./client.js";
 
 /** What a MAGI needs to speak on ASP; Shell writes these after the relay is up. */
@@ -31,13 +30,16 @@ export class AspWorker extends BaseWorker {
   }
 
   /** Connecting happens in the background and retries on its own. */
-  start(): void { void this.connect(); }
+  start(): void { void this.connect().then(() => this.registerKey()); }
   stop(): void { this.close(); }
 
   /** Connecting happens in the background and retries on its own, so this is the state. */
   health(): string | null { return this.client?.connected ? null : "ASP is not connected"; }
 
   async poll(): Promise<boolean> {
+    // Leave the message pending until the socket is up. Failing it here drops a
+    // sync that was sent during connect.
+    if (!this.client?.connected) return false;
     const board = this.bus.board("MessageDeliveryJob");
     // Its own channel, and only what this MAGI said: the chat knows the channel it is on
     // and the address it is delivered to, so the job carries neither.
@@ -53,7 +55,8 @@ export class AspWorker extends BaseWorker {
       if (!chat?.delivery_address) throw new Error("delivery has no ASP chat");
       const client = this.client;
       if (!client) throw new Error("ASP is not connected");
-      await client.send(chat.delivery_address, message.content);
+      const metadata = this.bus.outbox.take(message.id);
+      await client.send(chat.delivery_address, message.content, metadata ?? undefined);
       board.submit(this.worker_name, job.id, { output: {} });
     } catch (error) {
       board.submit(this.worker_name, job.id, { error: error instanceof Error ? error.message : String(error) });
@@ -85,19 +88,6 @@ export class AspWorker extends BaseWorker {
       }
       return { type: "agent.nickname.updated", request_id: event.request_id, ok: updated };
     }
-    if (event.type === "agent.provider.update") {
-      const board = this.bus.board("ChangeProviderNotify");
-      const jobId = board.publish({
-        provider: text(event.provider), api_key: text(event.api_key), model: text(event.model), base_url: text(event.base_url),
-      }, this.worker_name);
-      const deadline = Date.now() + 30_000;
-      while (Date.now() < deadline) {
-        const result = board.result(jobId);
-        if (result) return { type: "agent.provider.updated", request_id: event.request_id, ok: result.status === "completed" };
-        await sleep(10);
-      }
-      return { type: "agent.provider.updated", request_id: event.request_id, ok: false };
-    }
     const id = event.chat_id;
     if (!id) return;
     const payload = event.payload ?? {};
@@ -121,9 +111,9 @@ export class AspWorker extends BaseWorker {
         }
       }
     } else if (event.type === "chat.message" && payload.sender !== this.bus.handle) {
-      // Everything said in the chat is recorded — that is the chat's history —
-      // but only what is asked of this MAGI opens a turn.
-      if (this.asked(payload)) this.ingest(id, payload);
+      if (await this.structured(id, payload)) {
+        // A card result or a key exchange is done. It is not a turn.
+      } else if (this.asked(payload)) this.ingest(id, payload);
       else this.record(id, payload);
     }
     if (event.event_id) return { type: "chat.ack", chat_id: id, event_id: event.event_id };
@@ -200,6 +190,115 @@ export class AspWorker extends BaseWorker {
     messageDelivery.record(this.bus, this.bus.chats.forChannel("asp", chatId).id, text, contact?.id);
   }
 
+  private async registerKey(): Promise<void> {
+    const client = this.client;
+    if (!client?.connected) return;
+    try {
+      await client.registerKey(this.bus.identity.publicKey);
+    } catch (error) {
+      this.report(error);
+    }
+  }
+
+  /**
+   * A structured field on a message: a card result, a key exchange, or a provider
+   * sync. The ciphertext never becomes message text. Returns true when the
+   * message was fully handled.
+   */
+  private async structured(chatId: string, payload: Record<string, unknown>): Promise<boolean> {
+    const metadata = payload.metadata;
+    if (!isRecord(metadata)) return false;
+    if (metadata.card_result !== undefined) {
+      await this.completeCard(metadata.card_result);
+      this.record(chatId, { sender: payload.sender, content: this.content(payload) || "card filled" });
+      return true;
+    }
+    const envelope = metadata.envelope;
+    if (!isRecord(envelope) || typeof envelope.kind !== "string") return false;
+    if (envelope.kind === "identity.key_request") {
+      await this.registerKey();
+      const chat = this.bus.chats.forChannel("asp", chatId);
+      messageDelivery.send(this.bus, chat.id, "provider sync: public key ready", MAGI_CONTACT_ID, this.worker_name, {
+        envelope: { kind: "identity.key_ready", public_key: this.bus.identity.publicKey },
+      });
+      this.record(chatId, { sender: payload.sender, content: "provider sync: public key requested" });
+      return true;
+    }
+    if (envelope.kind === "identity.key_ready" && typeof envelope.public_key === "string") {
+      this.completePeerKey(payload.sender, envelope.public_key);
+      this.record(chatId, { sender: payload.sender, content: "provider sync: public key ready" });
+      return true;
+    }
+    if (envelope.kind === "provider.sync") {
+      await this.applySync(envelope);
+      const summary = this.content(payload) || syncSummary(envelope);
+      this.ingest(chatId, { sender: payload.sender, content: summary });
+      return true;
+    }
+    return false;
+  }
+
+  private async applySync(envelope: Record<string, unknown>): Promise<void> {
+    if (typeof envelope.ciphertext !== "string" || envelope.ciphertext === "") {
+      throw new Error("provider sync is missing a ciphertext");
+    }
+    const settings: Record<string, string> = {};
+    if (typeof envelope.provider === "string" && envelope.provider !== "") settings["provider.name"] = envelope.provider;
+    if (typeof envelope.model === "string" && envelope.model !== "") settings["provider.model"] = envelope.model;
+    if (typeof envelope.base_url === "string" && envelope.base_url !== "") settings["provider.base_url"] = envelope.base_url;
+    const id = this.bus.board("ConfigureJob").publish({
+      settings,
+      sealed: { "provider.api_key": envelope.ciphertext },
+      reload: ["providers"],
+    }, this.worker_name);
+    const result = await waitForJob(() => this.bus.board("ConfigureJob").result(id), 30_000, "ConfigureJob");
+    if (result.status === "failed") throw new Error(result.error ?? "provider sync failed");
+  }
+
+  private async completeCard(result: unknown): Promise<void> {
+    if (!isRecord(result) || typeof result.id !== "string") throw new Error("card result is missing an id");
+    const board = this.bus.board("CardJob");
+    const job = board.claim(this.worker_name, (input) => input.spec.id === result.id);
+    if (!job) throw new Error(`no open card ${result.id}`);
+    try {
+      const fields = isRecord(result.fields) ? result.fields : {};
+      const sealed: Record<string, string> = {};
+      const visible: Record<string, string> = {};
+      for (const field of job.input.spec.fields) {
+        const value = fields[field.name];
+        if (field.kind === "secret") {
+          if (!isRecord(value) || typeof value.ciphertext !== "string" || value.ciphertext === "") {
+            throw new Error(`card field ${field.name} is missing a ciphertext`);
+          }
+          sealed[field.name] = value.ciphertext;
+          visible[field.name] = "updated";
+        } else if (typeof value === "string") {
+          visible[field.name] = value;
+        } else {
+          throw new Error(`card field ${field.name} is missing a value`);
+        }
+      }
+      if (Object.keys(sealed).length > 0) {
+        const reload = Object.keys(sealed).some((key) => key === "provider.api_key" || key.startsWith("provider.")) ? ["providers"] : [];
+        const id = this.bus.board("ConfigureJob").publish({ sealed, reload }, this.worker_name);
+        const stored = await waitForJob(() => this.bus.board("ConfigureJob").result(id), 30_000, "ConfigureJob");
+        if (stored.status === "failed") throw new Error(stored.error ?? "could not store card secrets");
+      }
+      board.submit(this.worker_name, job.id, { output: { fields: visible } });
+    } catch (error) {
+      board.submit(this.worker_name, job.id, { error: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
+  }
+
+  private completePeerKey(sender: unknown, publicKey: string): void {
+    const handle = typeof sender === "string" ? sender : "";
+    const board = this.bus.board("PeerKeyJob");
+    const job = board.claim(this.worker_name, (input) => input.handle === handle);
+    if (!job) return;
+    board.submit(this.worker_name, job.id, { output: { public_key: publicKey } });
+  }
+
   /** Read at every start, so a token that arrives later is picked up by a restart. */
   private credentials(): Credentials | null {
     const base = this.override?.base ?? this.bus.settings.get("asp.base")?.trim();
@@ -209,6 +308,12 @@ export class AspWorker extends BaseWorker {
   }
 }
 
-function text(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function syncSummary(envelope: Record<string, unknown>): string {
+  const provider = typeof envelope.provider === "string" ? envelope.provider : "provider";
+  const model = typeof envelope.model === "string" ? envelope.model : "model";
+  return `provider sync: ${provider}, ${model}, key updated`;
 }

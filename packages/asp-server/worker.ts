@@ -97,6 +97,7 @@ export class AspServer extends BaseWorker {
     if (casper !== undefined) {
       this.bus.settings.set("asp.base", this.origin);
       this.bus.settings.set("asp.token", casper.token);
+      this.bus.board("ManageWorkerNotify").publish({ worker: "asp", action: "start" }, "asp-server");
     }
   }
 
@@ -299,41 +300,29 @@ function registerRoutes(router: Router, app: AspServer): void {
     app.store.updateAgent(agent);
     return { body: { handle, nickname } };
   });
-  router.add("PUT", "/settings/provider", async (context) => {
-    operatorOnly(context.headers);
+  router.add("POST", "/profile", (context) => {
+    const handle = auth(context.headers);
     const body = requireObject(context.body ?? {});
-    const settings = {
-      provider: optionalString(body, "provider"),
-      model: optionalString(body, "model"),
-      api_key: optionalString(body, "api_key"),
-      base_url: optionalString(body, "base_url"),
-    };
-    const handles = providerHandles(body.handles);
-    const synced: string[] = [];
-    const failed: { handle: string; detail: string }[] = [];
-    const targets = handles ?? [...app.store.agents.keys()];
-    for (const handle of [...new Set(targets)]) {
-      if (handle === app.operatorHandle || app.store.getAgent(handle) === undefined) {
-        continue;
-      }
-      try {
-        if (await app.transport.updateProvider(handle, settings)) {
-          synced.push(handle);
-        } else {
-          failed.push({ handle, detail: "MAGI rejected provider configuration" });
-        }
-      } catch (error) {
-        if (error instanceof ConnectionError) {
-          continue;
-        }
-        if (error instanceof TimeoutError) {
-          failed.push({ handle, detail: "MAGI did not confirm" });
-          continue;
-        }
-        throw error;
-      }
+    if (typeof body.public_key !== "string" || body.public_key.trim() === "") {
+      throw new HttpError(422, "public_key is required");
     }
-    return { body: { ...settings, synced, failed } };
+    const agent = app.store.getAgent(handle);
+    if (agent === undefined) throw new HttpError(404, "not found");
+    agent.public_key = body.public_key.trim();
+    app.store.updateAgent(agent);
+    return { body: { handle, public_key: agent.public_key } };
+  });
+  router.add("GET", "/profiles", (context) => {
+    auth(context.headers);
+    const profiles = [...app.store.agents.values()]
+      .filter((agent) => agent.handle !== app.operatorHandle)
+      .map((agent) => ({
+        handle: agent.handle,
+        name: agent.name,
+        nickname: agent.nickname,
+        public_key: agent.public_key,
+      }));
+    return { body: { profiles } };
   });
 
   router.add("POST", "/chats/open", async (context) => {
@@ -530,16 +519,6 @@ function initialMessage(value: unknown): InitialMessage | null {
     message.metadata = body.metadata;
   }
   return message;
-}
-
-function providerHandles(value: unknown): string[] | null {
-  if (value === undefined || value === null) {
-    return null;
-  }
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
-    throw new HttpError(422, "handles must be a list of handles");
-  }
-  return value;
 }
 
 function parseSocket(data: unknown): unknown {

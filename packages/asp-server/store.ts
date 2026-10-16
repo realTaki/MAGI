@@ -24,6 +24,7 @@ export type Agent = {
   inbound_policy: InboundPolicy;
   allowlist: Set<string>;
   managed: boolean;
+  public_key: string | null;
 };
 
 export type Chat = {
@@ -315,6 +316,7 @@ export class Store {
       inbound_policy: "open",
       allowlist: new Set(),
       managed,
+      public_key: null,
     };
     this.agents.set(input.handle, agent);
     this.agentByToken.set(input.token, input.handle);

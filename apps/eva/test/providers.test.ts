@@ -32,7 +32,7 @@ test("provider_settings verifies a change before it becomes active", async () =>
 
     const bad = await settled(call({ action: "update", ...wanted, api_key: "bad-secret" }));
     expect(bad).toMatchObject({ status: "failed", error: "invalid key [redacted]" });
-    expect(magi.bus.settings.get("provider.api_key")).toBeNull();
+    expect(magi.bus.secrets.get("provider.api_key")).toBeNull();
     expect(configured).toHaveLength(0);
 
     const good = await settled(call({ action: "update", ...wanted, api_key: "good-secret" }));
@@ -41,7 +41,7 @@ test("provider_settings verifies a change before it becomes active", async () =>
     expect(magi.bus.settings.get("provider.name")).toBe("custom");
     expect(magi.bus.settings.get("provider.model")).toBe("gpt-test");
     expect(magi.bus.settings.get("provider.base_url")).toBe("https://example.com/v1");
-    expect(magi.bus.settings.get("provider.api_key")).toBe("good-secret");
+    expect(magi.bus.secrets.get("provider.api_key")).toBe("good-secret");
     expect(configured).toHaveLength(1);
 
     // `show` reports what is active, never the key itself.

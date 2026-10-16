@@ -1,3 +1,11 @@
+export type FormCard = {
+  id: string;
+  title: string;
+  handle: string;
+  submit: string;
+  fields: Array<{ name: string; label: string; kind: "text" | "secret" | "choice"; choices?: string[]; optional?: boolean }>;
+};
+
 export type ChatMessage =
   | { type: "time"; text: string }
   | { type: "meta"; text: string }
@@ -5,7 +13,8 @@ export type ChatMessage =
   | { type: "pending"; text: string }
   | { type: "bot"; text: string }
   | { type: "typing" }
-  | { type: "card"; lines: { k: string; v: string }[] };
+  | { type: "card"; lines: { k: string; v: string }[] }
+  | { type: "form"; text: string; chatId: string; card: FormCard };
 
 export type RoutineRun = {
   mark: string;

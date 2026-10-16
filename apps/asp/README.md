@@ -13,8 +13,9 @@ in `packages/asp-server` turns a table change into SQL under `db/drizzle/`,
 which the worker applies when it opens the database. Rows go through drizzle
 rather than hand-written SQL. App dir stays `asp`.
 
-Desktop-only HTTP `/chats`, `/bots`, and `/settings/provider` require the
-operator Bearer token. Participant HTTP uses `/chats/open` and
+Desktop-only HTTP `/chats` and `/bots` require the
+operator Bearer token. `POST /profile` and `GET /profiles` are how a MAGI
+registers and reads public keys. Participant HTTP uses `/chats/open` and
 `/chats/{chat_id}/...` with a participant Bearer token; WebSocket `/connect`
 is MAGI's live channel.
 SQLite is `~/.magi/asp/asp.sqlite`.
@@ -38,12 +39,5 @@ Group profile **invite** uses:
 - `GET /bots` — MAGI this operator can add
 - `POST /chats/{chat_id}/members` `{ "handle" }` — invite that MAGI; it joins on receipt
 
-The desktop operator process owns provider settings and the API key in the Shell BUS
-SettingsBook (`~/.magi/shell/memories/books.db`).
-ASP only forwards a complete update to MAGI; it never saves a new copy:
-
-- `PUT /settings/provider` — transiently hands `agent.provider.update` to
-  connected MAGI and reports `synced` / `failed`. The app retries when a MAGI
-  comes online.
-- The MAGI side answers with `agent.provider.updated` after publishing the change
-  into its own bus (persisted settings + live provider reconfiguration).
+Each MAGI keeps its provider key in its own secret store. ASP keeps the
+public key that MAGI registers, and nothing else about the provider.

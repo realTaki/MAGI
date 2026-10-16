@@ -30,6 +30,14 @@ export type { RunToolJob, RunToolResult, LLMToolCall } from "./jobs/runTool.js";
 export type { ChangeProviderNotify } from "./jobs/changeProvider.js";
 export type { ChangeMcpServerNotify } from "./jobs/changeMcpServer.js";
 export type { ManageWorkerNotify } from "./jobs/manageWorker.js";
+export type { ConfigureJob, ConfigureResult } from "./jobs/configure.js";
+export { providerCard, PROVIDER_CHOICES } from "./jobs/card.js";
+export type { CardField, CardJob, CardResult, CardSpec } from "./jobs/card.js";
+export type { PeerKeyJob, PeerKeyResult } from "./jobs/peerKey.js";
+export type { ReplaceSelfJob, ReplaceSelfResult } from "./jobs/replaceSelf.js";
 export type { Job, JobResult } from "./jobs/jobBoard.js";
+export { waitForJob } from "./jobs/wait.js";
+export { encryptFor, decryptWith, loadOrCreateIdentity } from "./identityKeys.js";
+export type { Identity } from "./identityKeys.js";
 // The message job also exports how its text is recorded and delivered.
 export { messageDelivery } from "./jobs/messageDelivery.js";

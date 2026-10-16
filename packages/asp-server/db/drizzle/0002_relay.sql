@@ -2,7 +2,8 @@ CREATE TABLE `relay_principals` (
 	`handle` text PRIMARY KEY NOT NULL,
 	`token` text NOT NULL,
 	`inbound_policy` text NOT NULL,
-	`managed` integer NOT NULL
+	`managed` integer NOT NULL,
+	`public_key` text
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `relay_principals_token_unique` ON `relay_principals` (`token`);

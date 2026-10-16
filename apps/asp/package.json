@@ -30,7 +30,8 @@
     "@magi/contacts": "*",
     "@magi/memory": "*",
     "@magi/skills": "*",
-    "@magi/channel-asp": "*"
+    "@magi/channel-asp": "*",
+    "@magi/channel-telegram": "*"
   },
   "devDependencies": {
     "@types/node": "^24.13.6",

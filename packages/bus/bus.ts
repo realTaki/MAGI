@@ -20,6 +20,9 @@ import { ToolBook } from "./books/toolBook.js";
 import { JobBoard, jobs, type JobInput, type JobType } from "./jobs/jobBoard.js";
 import { AgentTurnCache } from "./jobs/agentTurnCache.js";
 import { USER_HANDLE } from "./identity.js";
+import { loadOrCreateIdentity, type Identity } from "./identityKeys.js";
+import { EnvelopeOutbox } from "./outbox.js";
+import { SecretStore } from "./secrets.js";
 
 /**
  * One MAGI's shared bus: Books for durable state, Jobs for coordination.
@@ -43,6 +46,9 @@ export class Bus {
   readonly mcpServers: McpServerBook;
   readonly prompts: PromptBook;
   readonly settings: SettingsBook;
+  readonly secrets: SecretStore;
+  readonly identity: Identity;
+  readonly outbox = new EnvelopeOutbox();
   readonly tools = new ToolBook();
   readonly agentTurns: AgentTurnCache;
   private readonly db: BusDb;
@@ -85,7 +91,13 @@ export class Bus {
     // after a restart: answer its calls as failed instead of running them a second time.
     this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before this tool call finished" })
       .where(and(eq(jobs.type, "RunToolJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
+    this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before this card was filled" })
+      .where(and(eq(jobs.type, "CardJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
+    this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before the public key arrived" })
+      .where(and(eq(jobs.type, "PeerKeyJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
     this.settings = new SettingsBook(this.db);
+    this.secrets = SecretStore.open(this.workspace);
+    this.identity = loadOrCreateIdentity(this.workspace);
     this.chats = new ChatBook(this.db);
     this.messages = new MessageBook(this.db);
     this.memoryBook = new MemoryBook(this.db);

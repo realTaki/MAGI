@@ -7,6 +7,7 @@ export const relayPrincipals = sqliteTable("relay_principals", {
   token: text("token").notNull().unique(),
   inbound_policy: text("inbound_policy", { enum: ["allowlist", "open"] }).notNull(),
   managed: integer("managed", { mode: "boolean" }).notNull(),
+  public_key: text("public_key"),
 });
 
 export const relayAllowlist = sqliteTable("relay_allowlist", {

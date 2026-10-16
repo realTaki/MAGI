@@ -19,9 +19,11 @@ export type MessageDeliveryJob = {
 };
 
 /** Record the message, then hand it to whoever must act on it. Returns the job id. */
-function send(bus: Bus, chat_id: number, text: string, contact_id = SYSTEM_CONTACT_ID, publisher = "channel"): number {
+function send(bus: Bus, chat_id: number, text: string, contact_id = SYSTEM_CONTACT_ID, publisher = "channel", metadata?: Record<string, unknown>): number {
   if (!bus.chats.get(chat_id)) throw new Error(`chat ${chat_id} does not exist`);
   const message_id = bus.messages.add(chat_id, contact_id, text);
+  // Attach before the job is visible. The channel can claim the job on its next poll.
+  if (metadata) bus.outbox.attach(message_id, metadata);
   return bus.board("MessageDeliveryJob").publish({ message_id }, publisher);
 }
 

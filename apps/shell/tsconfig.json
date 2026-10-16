@@ -47,6 +47,9 @@
     },
     {
       "path": "../../packages/channel-asp"
+    },
+    {
+      "path": "../../packages/channel-telegram"
     }
   ]
 }

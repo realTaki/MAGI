@@ -125,7 +125,7 @@ failure reporting, and operator retirement. The other flows live with the tests 
 
 `apps/asp/asp.ts` is the process entry, the same shape as `apps/eva/eva.ts`. Both compile through `tsc -b` and run as `dist/asp.js` / `dist/eva.js`.
 
-The operator API (`/chats`, `/bots`, `/settings/provider`) requires the
+The operator API (`/chats`, `/bots`) requires the
 desktop's Bearer token. The participant API (`/chats/open`,
 `/chats/:chat_id/...`, WebSocket `/connect`) accepts a MAGI's Bearer token.
 
@@ -148,11 +148,12 @@ acknowledged that exact event. The desktop stores the long-term transcript
 itself and acknowledges ASP after that write. ASP does not keep the operator's
 history.
 
-`PUT /settings/provider` forwards a complete provider update to connected
-MAGI and reports which ones synced. ASP does not save a new copy of the key.
+Each MAGI configures its own provider. ASP stores the public key a MAGI
+registers on its profile (`POST /profile`) and lists those keys at
+`GET /profiles`. It does not accept a provider configuration from the operator.
 
 Asserted in `asp/test/`: creating a chat, relaying with exact recipient
-acks, and the update being transient.
+acks, and a MAGI registering its public key.
 
 ## A MAGI process
 

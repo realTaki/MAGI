@@ -150,7 +150,8 @@ test("EVA self-edits through model tools, asks Shell over IPC, and serves durabl
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   const persisted = new Bus(handle, workspace);
-  persisted.settings.setMany({ "provider.name": "custom", "provider.model": "fixture", "provider.api_key": "local-fixture-only", "provider.base_url": `${base}/v1`, "self-loop.state": "preserved" });
+  persisted.settings.setMany({ "provider.name": "custom", "provider.model": "fixture", "provider.base_url": `${base}/v1`, "self-loop.state": "preserved" });
+  persisted.secrets.set("provider.api_key", "local-fixture-only");
   persisted.memoryBook.save({ topic: "restart evidence", detail: "durable self-loop memory", kind: "long_term" });
   persisted.contacts.update(MAGI_CONTACT_ID, { nickname: "durable nickname" }); persisted.close();
   supervisor = createSupervisor({ node, env, owner, readyTimeoutMs: 30_000, stopTimeoutMs: 30_000 });

@@ -22,6 +22,7 @@ import { MemoryWorker } from "@magi/memory/worker.js";
 import { ProvidersWorker } from "@magi/providers/worker.js";
 import { SkillWorker } from "@magi/skills/worker.js";
 import { AspWorker } from "@magi/channel-asp/worker.js";
+import { TelegramWorker } from "@magi/channel-telegram/worker.js";
 import { AspProcessWorker, WebappWorker } from "@magi/webapp";
 
 type ShellContext = ConstructorParameters<typeof WebappWorker>[1];
@@ -61,6 +62,8 @@ export class Shell {
         this.worker,
         this.aspProcess,
         new AspWorker(this.bus),
+        // Telegram stays off until this workspace has a bot token.
+        new TelegramWorker(this.bus),
       ], {
         drain: ["agent", "webapp"],
       });

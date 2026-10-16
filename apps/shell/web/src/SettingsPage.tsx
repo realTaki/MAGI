@@ -7,12 +7,12 @@ import { openChatsRoute } from "./hash-route";
 import { LOCALE_LABELS, SUPPORTED_LOCALES, useI18n, useT } from "./i18n";
 import type { LocalePreference } from "./i18n";
 import { notifyError } from "./notify";
-import { clearOperator, getProviderCatalog, getProviderSettings, getProviderUsage, getSourceStatus, saveProviderSettings } from "./asp";
-import type { ProviderUsage, SourceStatus } from "./asp";
+import { clearOperator, getSourceStatus } from "./asp";
+import type { SourceStatus } from "./asp";
 import { useTheme } from "./theme";
 import type { ThemePreference } from "./theme";
 
-type SettingsSection = "general" | "provider" | "usage" | "runtime" | "about";
+type SettingsSection = "general" | "runtime" | "about";
 type ClientRelease = {
   packaged: boolean;
   currentVersion: string;
@@ -26,8 +26,6 @@ type ClientRelease = {
   reason: "" | "no-release" | "no-asset" | "unavailable";
 };
 
-const PROVIDERS = ["openai", "anthropic", "minimax-cn", "minimax-global", "deepseek", "custom"] as const;
-
 export function SettingsPage() {
   const t = useT();
   const { localePreference, setLocalePreference } = useI18n();
@@ -35,16 +33,6 @@ export function SettingsPage() {
     useTheme();
   const account = useGitHubAccount();
   const [section, setSection] = useState<SettingsSection>("general");
-  const [provider, setProvider] = useState("");
-  const [model, setModel] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [catalog, setCatalog] = useState<Record<string, { id: string; name: string }[]>>({});
-  const [savingProvider, setSavingProvider] = useState(false);
-  const [providerStatus, setProviderStatus] = useState("");
-  const [providerStatusIsError, setProviderStatusIsError] = useState(false);
-  const [providerUsage, setProviderUsage] = useState<ProviderUsage | null>(null);
-  const [providerUsageLoading, setProviderUsageLoading] = useState(false);
   const [source, setSource] = useState<SourceStatus | null>(null);
   const [sourceLoaded, setSourceLoaded] = useState(false);
   const [shellRelease, setShellRelease] = useState<ClientRelease | null>(null);
@@ -195,44 +183,6 @@ export function SettingsPage() {
   }
 
   useEffect(() => {
-    if (section !== "usage") {
-      return;
-    }
-    let cancelled = false;
-    setProviderUsageLoading(true);
-    void getProviderUsage()
-      .then((usage) => {
-        if (!cancelled) setProviderUsage(usage);
-      })
-      .finally(() => {
-        if (!cancelled) setProviderUsageLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [section]);
-
-  useEffect(() => {
-    if (section !== "provider") {
-      return;
-    }
-    let cancelled = false;
-    void getProviderCatalog().then((value) => { if (!cancelled) setCatalog(value); }).catch(() => {});
-    void getProviderSettings().then((settings) => {
-      if (cancelled || settings === null) {
-        return;
-      }
-      setProvider(settings.provider === "claude" ? "anthropic" : settings.provider ?? "");
-      setModel(settings.model ?? "");
-      setApiKey(settings.api_key ?? "");
-      setBaseUrl(settings.base_url ?? "");
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [section]);
-
-  useEffect(() => {
     if (section !== "about") {
       return;
     }
@@ -289,64 +239,6 @@ export function SettingsPage() {
     }
   }
 
-  function chooseProvider(next: string) {
-    setProvider(next);
-    if (next !== "custom") setModel(catalog[next]?.some((entry) => entry.id === model) ? model : "");
-  }
-
-  const modelChoices = catalog[provider] ?? [];
-  const selectionKnown = !!provider && !!model.trim() && (provider !== "custom" || !!baseUrl.trim());
-
-  /** Saving the key reports what synced where; a failure also reaches the notice stack. */
-  async function saveProvider(): Promise<ActionOutcome> {
-    setSavingProvider(true);
-    setProviderStatus("");
-    setProviderStatusIsError(false);
-    try {
-      const saved = await saveProviderSettings({
-        provider,
-        model,
-        api_key: apiKey,
-        base_url: provider === "custom" ? baseUrl : null,
-      });
-      setProvider(saved.provider ?? "");
-      setModel(saved.model ?? "");
-      setApiKey(saved.api_key ?? "");
-      setBaseUrl(saved.base_url ?? "");
-      const parts = [`${t("appSettings.providerSynced")} ${saved.synced.length}`];
-      // A key that reached the app but not every MAGI is a partial failure, and the
-      // operator should see it as one rather than as a quiet count.
-      if (saved.failed.length > 0) parts.push(`${t("appSettings.providerFailed")} ${saved.failed.length}`);
-      const message = parts.join(" · ");
-      setProviderStatus(message);
-      if (saved.failed.length > 0) notifyError(message);
-      return { ok: saved.failed.length === 0, message };
-    } catch (error) {
-      const text = error instanceof Error ? error.message : String(error);
-      setProviderStatus(text);
-      setProviderStatusIsError(true);
-      notifyError(text);
-      return { ok: false, message: text };
-    } finally {
-      setSavingProvider(false);
-    }
-  }
-
-  /** Asking the provider for the balance again; a failure has to be visible somewhere. */
-  async function refreshProviderUsage(): Promise<ActionOutcome> {
-    setProviderUsageLoading(true);
-    try {
-      setProviderUsage(await getProviderUsage());
-      return { ok: true, message: "" };
-    } catch (error) {
-      const text = error instanceof Error ? error.message : String(error);
-      notifyError(text);
-      return { ok: false, message: text };
-    } finally {
-      setProviderUsageLoading(false);
-    }
-  }
-
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -363,15 +255,11 @@ export function SettingsPage() {
   }
 
   const heading =
-    section === "provider"
-      ? t("appSettings.navProvider")
-      : section === "usage"
-        ? t("appSettings.navUsage")
-        : section === "runtime"
-          ? t("appSettings.navRuntime")
-        : section === "about"
-          ? t("appSettings.navAbout")
-          : t("appSettings.navGeneral");
+    section === "runtime"
+      ? t("appSettings.navRuntime")
+      : section === "about"
+        ? t("appSettings.navAbout")
+        : t("appSettings.navGeneral");
 
   return (
     <div className="settings-overlay" data-theme={resolved}>
@@ -393,18 +281,6 @@ export function SettingsPage() {
             icon={<GearIcon />}
             label={t("appSettings.navGeneral")}
             onClick={() => setSection("general")}
-          />
-          <NavButton
-            active={section === "provider"}
-            icon={<ProviderIcon />}
-            label={t("appSettings.navProvider")}
-            onClick={() => setSection("provider")}
-          />
-          <NavButton
-            active={section === "usage"}
-            icon={<UsageIcon />}
-            label={t("appSettings.navUsage")}
-            onClick={() => setSection("usage")}
           />
           <NavButton
             active={section === "runtime"}
@@ -513,125 +389,6 @@ export function SettingsPage() {
                       ))}
                     </select>
                   </label>
-                </div>
-              </>
-            ) : null}
-
-            {section === "provider" ? (
-              <>
-                <p className="settings-overlay__lede">{t("appSettings.providerHint")}</p>
-                <div className="settings-card">
-                  <label className="settings-card__row">
-                    <span>{t("appSettings.providerName")}</span>
-                    <select
-                      className="settings-card__select settings-card__choice"
-                      value={provider}
-                      onChange={(event) => chooseProvider(event.target.value)}
-                    >
-                      <option value="">{t("appSettings.providerChoose")}</option>
-                      {PROVIDERS.map((name) => (
-                        <option key={name} value={name}>
-                          {name === "custom" ? t("appSettings.providerCustom") : name === "anthropic" ? "Anthropic" : name === "minimax-cn" ? "MiniMax CN" : name === "minimax-global" ? "MiniMax Global" : name === "deepseek" ? "DeepSeek" : "OpenAI"}
-                        </option>
-                      ))}
-                      {provider !== "" && !PROVIDERS.some((name) => name === provider) ? (
-                        <option value={provider}>{provider}</option>
-                      ) : null}
-                    </select>
-                  </label>
-                  <label className="settings-card__row">
-                    <span>{t("appSettings.providerModel")}</span>
-                    {provider === "custom" || modelChoices.length === 0 ? <input
-                      className="settings-card__input"
-                      value={model}
-                      onChange={(event) => setModel(event.target.value)}
-                      placeholder={t("appSettings.providerModel")}
-                    /> : <select
-                      className="settings-card__select settings-card__choice"
-                      value={model}
-                      disabled={!provider}
-                      onChange={(event) => setModel(event.target.value)}
-                    >
-                      <option value="">{t("appSettings.providerChoose")}</option>
-                      {modelChoices.map((entry) => (
-                        <option key={entry.id} value={entry.id}>
-                          {entry.name}
-                        </option>
-                      ))}
-                      {model !== "" && !modelChoices.some((entry) => entry.id === model) ? (
-                        <option value={model}>{model}</option>
-                      ) : null}
-                    </select>}
-                  </label>
-                  {provider === "custom" ? <label className="settings-card__row">
-                    <span>{t("appSettings.providerBaseUrl")}</span>
-                    <input className="settings-card__input" type="url" value={baseUrl}
-                      placeholder="https://example.com/v1" onChange={(event) => setBaseUrl(event.target.value)} />
-                  </label> : null}
-                  <label className="settings-card__row">
-                    <span>{t("appSettings.providerApiKey")}</span>
-                    <input
-                      className="settings-card__input"
-                      type="password"
-                      autoComplete="off"
-                      value={apiKey}
-                      placeholder={t("appSettings.providerApiKeyPlaceholder")}
-                      onChange={(event) => setApiKey(event.target.value)}
-                    />
-                  </label>
-                </div>
-                <div className="settings-card__actions">
-                  <ActionButton
-                    label={t("appSettings.providerSave")}
-                    disabled={savingProvider || !selectionKnown}
-                    onRun={saveProvider}
-                  />
-                  <span
-                    className={`settings-card__status${providerStatusIsError ? " is-error" : ""}`}
-                  >
-                    {providerStatus}
-                  </span>
-                </div>
-
-                <p className="settings-overlay__lede">{t("appSettings.providerNote")}</p>
-              </>
-            ) : null}
-
-            {section === "usage" ? (
-              <>
-                <div className="settings-card">
-                  <label className="settings-card__row">
-                    <span>{t("appSettings.usageProvider")}</span>
-                    <span className="settings-card__value">{providerUsage?.provider || "—"}</span>
-                  </label>
-                  {providerUsage?.status === "available"
-                    ? providerUsage.balances.map((balance) => (
-                        <label className="settings-card__row" key={balance.currency}>
-                          <span>{balance.currency}</span>
-                          <span className="settings-card__value">{balance.total}</span>
-                        </label>
-                      ))
-                    : null}
-                </div>
-                <p className="settings-overlay__lede">
-                  {providerUsageLoading
-                    ? t("appSettings.usageLoading")
-                    : providerUsage?.status === "available"
-                      ? providerUsage.available
-                        ? t("appSettings.usageAvailable")
-                        : t("appSettings.usageExhausted")
-                      : providerUsage?.status === "unsupported"
-                        ? t("appSettings.usageUnsupported")
-                        : providerUsage?.status === "error"
-                          ? providerUsage.message
-                          : t("appSettings.usageUnconfigured")}
-                </p>
-                <div className="settings-card__actions">
-                  <ActionButton
-                    label={t("appSettings.usageRefresh")}
-                    disabled={providerUsageLoading}
-                    onRun={refreshProviderUsage}
-                  />
                 </div>
               </>
             ) : null}
@@ -1023,26 +780,6 @@ function DarkThemeIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
       <path d="M20.3 14.6A8.6 8.6 0 0 1 9.4 3.7a8.6 8.6 0 1 0 10.9 10.9Z" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function ProviderIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <circle cx="12" cy="12" r="3.2" />
-      <path
-        d="M12 3v3M12 18v3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M3 12h3M18 12h3M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function UsageIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <path d="M4 19V10M10 19V5M16 19v-7M22 19H2" strokeLinecap="round" />
     </svg>
   );
 }

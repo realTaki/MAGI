@@ -5,7 +5,7 @@ export type AspEvent = {
   type?: string; event_id?: string; chat_id?: string; payload?: Record<string, unknown>;
   /** Chat events are numbered; control events (nickname, provider) are not. */
   sequence?: number;
-  request_id?: string; nickname?: string; provider?: string; api_key?: string; model?: string; base_url?: string;
+  request_id?: string; nickname?: string;
 };
 
 export class AspClient {
@@ -64,7 +64,13 @@ export class AspClient {
   close(): void { this.stopped = true; this.socket?.close(); this.socket = null; this.listener = null; }
 
   join(chatId: string): Promise<void> { return this.post(`/chats/${encodeURIComponent(chatId)}/join`); }
-  send(chatId: string, content: string): Promise<void> { return this.post(`/chats/${encodeURIComponent(chatId)}/messages`, { content }); }
+  send(chatId: string, content: string, metadata?: Record<string, unknown>): Promise<void> {
+    return this.post(`/chats/${encodeURIComponent(chatId)}/messages`, metadata ? { content, metadata } : { content });
+  }
+  /** Register this MAGI's public key on its ASP profile. */
+  registerKey(publicKey: string): Promise<void> {
+    return this.post("/profile", { public_key: publicKey });
+  }
 
   private async post(path: string, payload?: Record<string, unknown>): Promise<void> {
     const response = await fetch(new URL(path, this.base), {
