@@ -8,9 +8,9 @@ import tailwindcss from "@tailwindcss/vite";
 const UI_ROOT = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  root: ".",
+  root: UI_ROOT,
   base: "./",
-  publicDir: "public",
+  publicDir: path.resolve(UI_ROOT, "public"),
   plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
