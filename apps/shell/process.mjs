@@ -11,8 +11,9 @@ import { dependencyState } from "./dependency-state.mjs";
 import { createProcessOwner } from "./process-owner.mjs";
 import { ensureInstalledDependencies } from "./installation.mjs";
 import { spawn } from "node:child_process";
-import { cpSync, existsSync, rmSync } from "node:fs";
-import { basename, resolve } from "node:path";
+import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 
 /** Bootstrap Shell before it can run its own prepare method. */
@@ -57,44 +58,33 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
     stream.write(`${JSON.stringify(message)}\n`);
   }
 
-  function workspaceOf(spec) {
-    const args = spec.args ?? [];
-    const flag = args.indexOf("--workspace");
-    if (flag >= 0 && typeof args[flag + 1] === "string") return args[flag + 1];
-    return null;
+  /** The bus handle for a supervised app. describeApp aliases asp and shell. */
+  function markerHandle(spec) {
+    const app = describeApp(spec);
+    if (!app) return null;
+    if (app.kind === "asp") return "@eva-001.magi";
+    if (app.kind === "shell") return "@eva-000.magi";
+    return app.handle;
   }
 
-  async function recordReplaceFailure(spec, jobId, text) {
-    const notice = `[replace] ${text}`;
-    const workspace = workspaceOf(spec);
-    const handle = describeApp(spec)?.handle;
-    if (!workspace || !handle || !jobId) {
-      notifyHost({ type: "event", event: "process.replace", payload: { error: text } });
-      return;
+  function replaceFailedPath(handle) {
+    const localName = handle.replace(/^@/, "").replace(/\.magi$/, "");
+    return join(homedir(), ".magi", localName, "replace-failed.json");
+  }
+
+  /**
+   * The old process did not start. Leave the app database alone and record the
+   * failure where the next successful start can claim that ReplaceSelfJob.
+   */
+  function recordReplaceFailure(spec, jobId, text) {
+    const handle = markerHandle(spec);
+    if (handle) {
+      const file = replaceFailedPath(handle);
+      mkdirSync(dirname(file), { recursive: true });
+      const job = Number(jobId);
+      writeFileSync(file, JSON.stringify({ job: Number.isInteger(job) ? job : null, error: text }));
     }
-    process.env.MAGI_REPLACE_JOB = jobId;
-    process.env.MAGI_REPLACE_ERROR = text;
-    try {
-      const { Bus, messageDelivery } = await import("@magi/bus");
-      const bus = new Bus(handle, workspace);
-      try {
-        const board = bus.board("ReplaceSelfJob");
-        const job = board.claimId("replace", Number(jobId));
-        if (job) board.submit("replace", job.id, { error: text });
-        else bus.board("ManageWorkerNotify").seal("shell", { worker: "replace", action: "restart" }, text);
-        if (messageDelivery.notify(bus, notice) === null) {
-          bus.board("ManageWorkerNotify").seal("shell", { worker: "replace", action: "restart" }, notice);
-        }
-      } finally {
-        bus.close();
-      }
-    } catch (error) {
-      notifyHost({ type: "event", event: "process.replace", payload: { error: text } });
-      console.error("replace restore failed:", error instanceof Error ? error.message : error);
-    } finally {
-      delete process.env.MAGI_REPLACE_JOB;
-      delete process.env.MAGI_REPLACE_ERROR;
-    }
+    notifyHost({ type: "event", event: "process.replace", payload: { error: text } });
   }
 
   function restoreDist(spec) {
@@ -190,11 +180,11 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
             if (child.connected) child.send({ type: "runtime.replace.accepted", error: "replace was refused" }, () => {});
             return;
           }
-          if (typeof message.job === "number") replaceJobs.set(id, String(message.job));
+          const job = typeof message.job === "number" ? String(message.job) : undefined;
+          if (job) replaceJobs.set(id, job);
           if (child.connected) child.send({ type: "runtime.replace.accepted" }, () => {});
           void restart(id).catch((error) => {
             const text = error instanceof Error ? error.message : String(error);
-            const job = replaceJobs.get(id);
             replaceJobs.delete(id);
             if (child.connected) {
               child.send({ type: "runtime.replace.accepted", error: text }, () => {});
@@ -205,11 +195,11 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
             restoreDist(record.spec);
             if (job) replaceJobs.set(id, job);
             replaceErrors.set(id, text);
-            void start(record.spec, { host: record.host, id, replacing: true }).catch((startError) => {
+            void start(record.spec, { host: record.host, id, replacing: true }).then((handle) => handle.whenReady()).catch((startError) => {
               const detail = startError instanceof Error ? startError.message : String(startError);
               replaceJobs.delete(id);
               replaceErrors.delete(id);
-              void recordReplaceFailure(record.spec, job, `${text}; ${detail}`);
+              recordReplaceFailure(record.spec, job, `${text}; ${detail}`);
             });
           });
           return;

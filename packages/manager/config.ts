@@ -29,7 +29,7 @@ export class ConfigWorker extends BaseWorker {
   /** The open-chat job, while ASP is being asked for a home chat. */
   private opening: number | null = null;
   private openAgainAt = 0;
-  /** How many times the startup card has been sent. One rejection gets one resend. */
+  /** How many times the startup card has been sent. A restart does not add to this. */
   private offers = 0;
   private cardStopped = false;
   /** Inbound card and sync work, off this worker's poll so config writes can finish. */
@@ -73,7 +73,7 @@ export class ConfigWorker extends BaseWorker {
       }
       return;
     }
-    if (this.cardStopped || this.rejections() >= 2 || (this.offers >= 2 && this.cardJob === null)) {
+    if (this.cardStopped || this.rejections() >= 2) {
       this.stopCard(this.cardStopped ? null : "provider card was rejected");
       return;
     }
@@ -85,13 +85,18 @@ export class ConfigWorker extends BaseWorker {
         this.announce(result.output?.fields ?? {});
         return;
       }
-      if (this.noteRejection(result.error ?? "provider card failed")) return;
+      // The bus fails a card that was still open when the process exited. That is not the user.
+      if (result.error !== "MAGI restarted before this card was filled" && this.noteRejection(result.error ?? "provider card failed")) return;
     }
-    if (this.offers >= 2) return;
+    if (this.rejections() >= 1 && this.bus.settings.get("provider.card.resent") === "1" && this.offers >= 2) return;
     const chatId = this.ensureOwnerChat();
     if (chatId === null) return;
-    this.offers += 1;
-    this.bus.settings.set("provider.card.offers", String(this.offers));
+    const recovering = this.offers > 0 && this.cardJob === null && this.rejections() === 0;
+    if (!recovering) {
+      this.offers += 1;
+      this.bus.settings.set("provider.card.offers", String(this.offers));
+      if (this.rejections() === 1) this.bus.settings.set("provider.card.resent", "1");
+    }
     const spec = providerCard(this.bus.handle);
     this.cardJob = this.bus.board("CardJob").publish({ spec }, this.worker_name);
     messageDelivery.send(this.bus, chatId, `card: ${spec.title}`, MAGI_CONTACT_ID, this.worker_name, { card: spec });

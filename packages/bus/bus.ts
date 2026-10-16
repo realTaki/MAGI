@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { and, eq, inArray, ne } from "drizzle-orm";
@@ -95,7 +95,10 @@ export class Bus {
       .where(and(eq(jobs.type, "ConfigureJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
     // A supervised replace hands the job to the new process, which completes it
     // after its own workers are healthy. Any other restart failed the swap.
-    if (!process.env.MAGI_REPLACE_JOB && !process.env.MAGI_REPLACE_ERROR) {
+    // A marker means the shell could not start the old process. This start claims
+    // that job and records the failure itself.
+    const replaceMarker = join(homedir(), ".magi", localName, "replace-failed.json");
+    if (!process.env.MAGI_REPLACE_JOB && !process.env.MAGI_REPLACE_ERROR && !existsSync(replaceMarker)) {
       this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before this replace finished" })
         .where(and(eq(jobs.type, "ReplaceSelfJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
     }

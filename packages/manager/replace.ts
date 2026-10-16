@@ -9,8 +9,8 @@
  */
 
 import { execFile, fork, spawn } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { BaseWorker, messageDelivery, type Bus } from "@magi/bus";
 
@@ -31,7 +31,6 @@ const HEALTH_MS = 20_000;
 export class ReplaceWorker extends BaseWorker {
   readonly worker_name = "replace";
   private task: Promise<void> | null = null;
-  private handoffDeadline = 0;
 
   constructor(bus: Bus, private readonly build: AppBuild, private readonly host: ReplaceHost) {
     super(bus);
@@ -40,6 +39,7 @@ export class ReplaceWorker extends BaseWorker {
   async poll(): Promise<boolean> {
     if (process.env.MAGI_REPLACE_JOB || process.env.MAGI_REPLACE_ERROR) return this.finishHandoff();
     if (this.noteFailedReplace()) return true;
+    if (this.consumeReplaceMarker()) return true;
     if (this.task) return false;
     const board = this.bus.board("ReplaceSelfJob");
     const job = board.claim(this.worker_name);
@@ -85,13 +85,31 @@ export class ReplaceWorker extends BaseWorker {
       const child = spawn(process.execPath, [entry, ...process.argv.slice(2)], {
         cwd: dirname(entry),
         env: { ...process.env, MAGI_REPLACE_JOB: String(id) },
-        stdio: "inherit",
+        stdio: ["inherit", "inherit", "inherit", "ipc"],
+        detached: true,
       });
-      const spawned = await new Promise<Error | null>((resolve) => {
-        child.once("spawn", () => resolve(null));
-        child.once("error", (error) => resolve(error));
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const finish = (error: Error | null) => {
+          if (settled) return;
+          settled = true;
+          child.off("message", onMessage);
+          child.off("exit", onExit);
+          child.off("error", onError);
+          if (error) reject(error);
+          else resolve();
+        };
+        const onError = (error: Error) => finish(error);
+        const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
+          finish(new Error(`replacement exited ${code ?? signal ?? "null"}`));
+        };
+        const onMessage = (body: { type?: string }) => {
+          if (body?.type === "ready") finish(null);
+        };
+        child.once("error", onError);
+        child.once("exit", onExit);
+        child.on("message", onMessage);
       });
-      if (spawned) throw spawned;
       this.bus.close();
       child.unref();
       process.exit(0);
@@ -109,23 +127,15 @@ export class ReplaceWorker extends BaseWorker {
 
   /**
    * This process is the one the supervisor just started. Submit the replace
-   * only after its workers are healthy; otherwise put the previous dist back.
+   * only after its workers are healthy. An unhealthy replacement stays silent
+   * so healthyOrExit can end it and the shell can start the old process.
    */
   private finishHandoff(): boolean {
     const jobId = Number(process.env.MAGI_REPLACE_JOB);
     if (!Number.isInteger(jobId)) return false;
     const replaceError = process.env.MAGI_REPLACE_ERROR;
+    if (!replaceError && this.host.healthy() !== null) return false;
     const board = this.bus.board("ReplaceSelfJob");
-    if (!replaceError) {
-      if (this.handoffDeadline === 0) this.handoffDeadline = Date.now() + 8_000;
-      const problem = this.host.healthy();
-      if (problem) {
-        if (Date.now() < this.handoffDeadline) return false;
-        // The shell is waiting for ready. Exiting here makes it restore dist and start the old process.
-        console.error(problem);
-        process.exit(1);
-      }
-    }
     const done = board.result(jobId);
     if (done) {
       if (done.status === "failed") tell(this.bus, `[replace] ${done.error ?? "replace failed"}`);
@@ -151,6 +161,32 @@ export class ReplaceWorker extends BaseWorker {
     delete process.env.MAGI_REPLACE_JOB;
     delete process.env.MAGI_REPLACE_ERROR;
     this.bus.settings.set("replace.pending", "");
+  }
+
+  /** The shell could not start the old process. Fail that job and drop the marker. */
+  private consumeReplaceMarker(): boolean {
+    const marker = replaceFailedPath(this.bus.handle);
+    if (!existsSync(marker)) return false;
+    let jobId: number | null = null;
+    let error = "replace failed";
+    try {
+      const body = JSON.parse(readFileSync(marker, "utf8")) as { job?: unknown; error?: unknown };
+      if (typeof body.error === "string" && body.error !== "") error = body.error;
+      if (typeof body.job === "number" && Number.isInteger(body.job)) jobId = body.job;
+    } catch {
+      error = "replace failed";
+    }
+    if (jobId !== null) {
+      const board = this.bus.board("ReplaceSelfJob");
+      const done = board.result(jobId);
+      if (!done) {
+        const job = board.claimId(this.worker_name, jobId);
+        if (job) board.submit(this.worker_name, job.id, { error });
+      }
+    }
+    tell(this.bus, `[replace] ${error}`);
+    rmSync(marker, { force: true });
+    return true;
   }
 
   /** The previous process died during a replace. Say so once. */
@@ -275,9 +311,12 @@ function askSupervisor(id: number): Promise<string | null> {
       timer.unref();
     };
     process.on("message", onMessage);
-    process.once("SIGTERM", () => process.exit(0));
-    process.once("SIGINT", () => process.exit(0));
   });
+}
+
+function replaceFailedPath(handle: string): string {
+  const localName = handle.replace(/^@/, "").replace(/\.magi$/, "");
+  return join(homedir(), ".magi", localName, "replace-failed.json");
 }
 
 function message(error: unknown): string {

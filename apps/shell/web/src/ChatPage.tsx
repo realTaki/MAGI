@@ -484,8 +484,15 @@ function FormCardView({ message }: { message: Extract<ChatMessage, { type: "form
         disabled={sent}
         onClick={() => {
           if (sent) return;
-          setSent(true);
-          void sendAspMessage(message.chatId, `card rejected: ${card.title}`, { card_reject: { id: card.id } });
+          void (async () => {
+            try {
+              await sendAspMessage(message.chatId, `card rejected: ${card.title}`, { card_reject: { id: card.id } });
+              setSent(true);
+              setError("");
+            } catch (caught) {
+              setError(caught instanceof Error ? caught.message : String(caught));
+            }
+          })();
         }}
       >Not now</button>
       {error ? <p className="chat-page__form-error">{error}</p> : null}

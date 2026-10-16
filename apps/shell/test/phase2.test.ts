@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
@@ -8,6 +8,7 @@ import { Bus, messageDelivery } from "@magi/bus";
 import { ManagerWorker } from "@magi/manager";
 import { Asp } from "../../asp/asp.ts";
 import { Magi } from "../../eva/eva.ts";
+import { createSupervisor } from "../process.mjs";
 
 const repo = path.resolve(import.meta.dirname, "../../..");
 const tsc = path.join(repo, "node_modules/typescript/lib/tsc.js");
@@ -170,6 +171,134 @@ test("a fresh MAGI shows the provider card on cold start and offers it again aft
   } finally {
     await magi?.stop();
     await asp.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("two restarts do not count as rejecting the provider card", async () => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-card-restart-"));
+  const asp = new Asp({
+    databasePath: path.join(root, "asp.sqlite"),
+    workspace: path.join(root, "casper"),
+    host: "127.0.0.1",
+    port: 0,
+    client: { async complete() { return { role: "assistant" as const, content: "NO_REPLY" }; } },
+  });
+  let calls = 0;
+  let magi: Magi | null = null;
+  const client = {
+    async complete() { calls += 1; return { role: "assistant" as const, content: "NO_REPLY" }; },
+  };
+  try {
+    await asp.start();
+    const created = await fetch(new URL("/chats", asp.origin), {
+      method: "POST",
+      headers: { authorization: `Bearer ${asp.operatorToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ kind: "bot" }),
+    });
+    const body = await created.json() as { magi?: { handle?: string; token?: string } };
+    const handle = body.magi?.handle ?? "";
+    const token = body.magi?.token ?? "";
+    const workspace = path.join(root, "receiver");
+    magi = new Magi(handle, { workspace, asp: { base: asp.origin, token }, client });
+    await magi.start();
+    await until("provider card was not shown", () => cards(magi!.bus).length >= 1);
+    assert.equal(calls, 0);
+    for (let restart = 0; restart < 2; restart += 1) {
+      const before = cards(magi.bus).length;
+      await magi.stop();
+      magi = new Magi(handle, { workspace, asp: { base: asp.origin, token }, client });
+      await magi.start();
+      await until("provider card was not shown after a restart", () => cards(magi!.bus).length > before);
+    }
+    await sleep(400);
+    const texts = magi.bus.chats.list().flatMap((chat) => magi!.bus.messages.list(chat.id, 50).map((message) => message.content));
+    assert.equal(texts.some((text) => text.includes("rejected") || text.includes("will not be shown again")), false);
+    assert.equal(magi.bus.settings.get("provider.card.offers"), "1");
+    assert.equal(magi.bus.settings.get("provider.card.rejections") ?? "0", "0");
+    assert.equal(calls, 0);
+  } finally {
+    await magi?.stop();
+    await asp.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the next start records a replace the shell could not restore", async () => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-replace-marker-"));
+  const handle = "@eva-replace-marker-188d.magi";
+  const markerDir = path.join(homedir(), ".magi", "eva-replace-marker-188d");
+  const marker = path.join(markerDir, "replace-failed.json");
+  const workspace = path.join(root, "workspace");
+  const client = { async complete() { return { role: "assistant" as const, content: "NO_REPLY" }; } };
+  let magi: Magi | null = null;
+  try {
+    const first = new Magi(handle, { workspace, client });
+    first.bus.secrets.set("provider.api_key", "present");
+    const chat = first.bus.chats.forChannel("cli", "operator");
+    messageDelivery.setHomeChat(first.bus, chat.id);
+    const id = first.bus.board("ReplaceSelfJob").publish({ checkout: path.join(root, "absent"), swap: true }, "test");
+    await first.stop();
+    mkdirSync(markerDir, { recursive: true });
+    writeFileSync(marker, JSON.stringify({ job: id, error: "old process did not start" }));
+    magi = new Magi(handle, { workspace, client });
+    await magi.start();
+    await until("replace marker was not applied", () => magi!.bus.board("ReplaceSelfJob").result(id) !== null);
+    const result = magi.bus.board("ReplaceSelfJob").result(id);
+    assert.equal(result?.status, "failed");
+    assert.equal(result?.error, "old process did not start");
+    assert.equal(existsSync(marker), false);
+    const notes = magi.bus.messages.list(chat.id).map((message) => message.content);
+    assert.ok(notes.some((text) => text.startsWith("[replace] old process did not start")));
+  } finally {
+    await magi?.stop();
+    rmSync(markerDir, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a replace whose old process also fails leaves a marker and tells the shell", async () => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-shell-marker-"));
+  const handle = "@eva-shell-marker-188d.magi";
+  const markerDir = path.join(homedir(), ".magi", "eva-shell-marker-188d");
+  const marker = path.join(markerDir, "replace-failed.json");
+  const log = path.join(root, "shell-events.log");
+  const shellCwd = path.join(root, "apps", "shell");
+  const evaCwd = path.join(root, "apps", "eva");
+  mkdirSync(path.join(shellCwd, "dist"), { recursive: true });
+  mkdirSync(path.join(evaCwd, "dist"), { recursive: true });
+  writeFileSync(path.join(shellCwd, "dist", "shell.js"), `const { createInterface } = require("node:readline");
+const { appendFileSync } = require("node:fs");
+process.send({ type: "ready" });
+createInterface({ input: process.stdin }).on("line", (line) => appendFileSync(process.env.LOG, line + "\\n"));
+setInterval(() => {}, 1000);
+`);
+  writeFileSync(path.join(evaCwd, "dist", "eva.js"), `if (process.env.MAGI_REPLACE_JOB || process.env.MAGI_REPLACE_ERROR) process.exit(1);
+process.send({ type: "ready" });
+process.send({ type: "runtime.replace", job: 41 });
+setInterval(() => {}, 1000);
+`);
+  const supervisor = createSupervisor({ node: process.execPath, env: process.env, readyTimeoutMs: 5_000, stopTimeoutMs: 5_000 });
+  try {
+    const shell = await supervisor.start(
+      { entry: path.join(shellCwd, "dist", "shell.js"), cwd: shellCwd, env: { LOG: log } },
+      { host: {} },
+    );
+    await shell.whenReady();
+    const eva = await supervisor.start({ entry: path.join(evaCwd, "dist", "eva.js"), cwd: evaCwd, args: [handle] });
+    await eva.whenReady();
+    await until("replace marker was not written", () => {
+      if (!existsSync(marker) || !existsSync(log)) return false;
+      return readFileSync(log, "utf8").includes("\"event\":\"process.replace\"");
+    }, 15_000);
+    const body = JSON.parse(readFileSync(marker, "utf8")) as { job?: number; error?: string };
+    assert.equal(body.job, 41);
+    assert.match(body.error ?? "", /exited before ready/);
+    assert.equal(existsSync(path.join(markerDir, "memories")), false);
+    assert.equal(existsSync(path.join(markerDir, "logs")), false);
+  } finally {
+    await supervisor.close();
+    rmSync(markerDir, { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });
   }
 });

@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import App from "./App";
+import { notifyError } from "./notify";
 import "./styles.css";
 
 window.magiDesktop?.onLocalEvent?.(({ event, payload }) => {
@@ -12,6 +13,10 @@ window.magiDesktop?.onLocalEvent?.(({ event, payload }) => {
   if (event === "runtime.deeplink-failed") {
     const message = typeof payload?.message === "string" ? payload.message : "Could not apply the MAGI link.";
     window.alert(message);
+  }
+  if (event === "process.replace") {
+    const message = typeof payload.error === "string" ? payload.error : "replace failed";
+    notifyError(message);
   }
 });
 

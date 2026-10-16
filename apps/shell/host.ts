@@ -99,6 +99,11 @@ export function connectHost(stdin: Readable, stdout: Writable) {
       deliverExit(payload.id, code, signal);
       return;
     }
+    if (rec.type === "event" && rec.event === "process.replace") {
+      const payload = isRecord(rec.payload) ? rec.payload : { error: "replace failed" };
+      void rpc("emit", { event: "process.replace", payload });
+      return;
+    }
     if (rec.type === "req" && typeof rec.id === "string" && typeof rec.method === "string") {
       const req: Req = { type: "req", id: rec.id, method: rec.method, params: rec.params };
       if (handlers === null) queued.push(req);
