@@ -8,7 +8,7 @@ import { nodeHarness } from "./nodeHarness.js";
 import type { WebSocket } from "ws";
 
 /*
- * Business flow: sending a message, MAGI side (`ARCHITECTURE.md`, "A MAGI process").
+ * Business flow: sending a message, MAGI side (`docs/architecture.md`, "Relay").
  * A chat event is written into the workspace and acknowledged once; a replay
  * is not taken in twice.
  */

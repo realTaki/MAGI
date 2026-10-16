@@ -6,7 +6,7 @@ import { ASP_MAGI_HANDLE } from "@magi/bus";
 import { connect, isRecord, receiveInvite, request, tempRoot, withApp } from "./helpers.js";
 
 /*
- * Business flow: creating a chat (`ARCHITECTURE.md`, "ASP").
+ * Business flow: creating a chat (`docs/architecture.md`, "Relay").
  * `POST /chats {kind:"bot"}` assigns the next `eva-NNN` and starts it;
  * `{kind:"group"}` opens with the operator alone; an invite arrives as
  * `chat.invited`, and the MAGI joins on receipt.

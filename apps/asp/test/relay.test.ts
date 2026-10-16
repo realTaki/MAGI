@@ -5,7 +5,7 @@ import test from "node:test";
 import { isRecord, request, tempRoot, withApp } from "./helpers.js";
 
 /*
- * Business flow: sending a message (`ARCHITECTURE.md`, "ASP").
+ * Business flow: sending a message (`docs/architecture.md`, "Relay").
  * The desktop persists a message before it acknowledges; ASP relays it to every
  * participant and deletes the event only after each intended recipient has
  * acknowledged that exact event.

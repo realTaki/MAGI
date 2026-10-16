@@ -11,7 +11,7 @@ import { PiAiClient } from "@magi/providers/client.js";
 import { AGENT_PROMPT, COMPACTION_PROMPT, SYSTEM_PROMPT } from "@magi/agent/prompt_defaults.js";
 
 /*
- * Business flow: one MAGI turn (`ARCHITECTURE.md`, "A MAGI process").
+ * Business flow: one MAGI turn (`docs/architecture.md`, "Three nodes").
  * A message delivery job becomes a `CallLLMJob` and a `RunToolJob`; the answer leaves as
  * another one. Providers and tools answer through the BUS — never by calling
  * each other — and a provider change is verified before it becomes active.

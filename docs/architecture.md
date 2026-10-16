@@ -10,13 +10,17 @@ How the running system fits together. Later work is in [future.md](future.md).
 | `apps/asp` | `@eva-001.magi` | Casper |
 | `apps/eva` | `@eva-002.magi` | Melchior |
 
-The human speaks as `@user.magi` from the shell. Further bots are more `apps/eva` processes.
+The human speaks as `@user.magi` from the shell. Further bots are more `apps/eva` processes. A chat is a `chat`, not a conversation or a session.
 
-Each of the three is the same shape. The entry builds a BUS for that handle, then a `ManagerWorker` runs the workers. Workers do not call each other. They publish a job and whoever owns that work claims it. `ManagerWorker` also runs config and self-replace.
+Electron (`apps/shell/main.mjs`) owns the window and the process supervisor. It starts the Node host `dist/shell.js`. That Node process is Balthasar's BUS and workers. Electron does not run them.
+
+Each of the three is the same shape. The entry builds a BUS for that handle, then a `ManagerWorker` runs the workers. Workers do not call each other. They publish a job and whoever owns that work claims it. `ManagerWorker` also runs config and self-replace. Casper's list includes `TelegramWorker` (`apps/asp/asp.ts`). It stays off until that workspace has a bot token.
 
 ## Relay
 
-MAGIs do not connect to each other. Chat goes through the ASP server in the Casper process: a WebSocket at `/connect` with a bearer token. Events are stored in `~/.magi/asp/asp.sqlite`. Each recipient acks the exact event (`chat.ack`, or `POST /chats/:chat_id/events/ack`). The event stays until every intended recipient has acked it, so delivery resumes after a restart. Casper's own `AspWorker` uses that same local relay.
+MAGIs do not connect to each other. Chat goes through the ASP server in the Casper process: a WebSocket at `/connect` with a bearer token. Events are stored in `~/.magi/asp/asp.sqlite`. That directory is the relay database and Casper's BUS workspace. It is not the name the shell uses for the ASP process: `describeApp` (`apps/shell/app-spec.mjs`) keys that child `@asp.magi`.
+
+Each recipient acks the exact event (`chat.ack`, or `POST /chats/:chat_id/events/ack`). The event stays in SQLite until every intended recipient has acked it (`apps/asp/test/relay.test.ts`). When a handle connects and it had no open socket, the server sends the events it has not seen acked (`packages/asp-server/service.ts` `#onBackOnline`, from `packages/asp-server/transport.ts` `connect`). Casper's own `AspWorker` uses that same local relay.
 
 ASP does not start processes. The shell does.
 
@@ -30,7 +34,7 @@ A node with no `provider.api_key` opens a chat with the operator and posts `card
 
 `replace_self` publishes `ReplaceSelfJob` and returns the id. The replace worker snapshots that app's `dist`, builds, and health-checks the new workers before the job is completed. A supervised process asks the shell to restart it. A hand-run process exits only after the new process is ready.
 
-A failed build, or a new process that is not healthy, restores the previous `dist`, resumes the old workers, fails the job, and tells the operator. If the restored process also fails to start, the shell does not open that app's database. It writes `~/.magi/<handle>/replace-failed.json` (Asp and Shell use `@eva-001.magi` and `@eva-000.magi`) and shows the error. The next successful start fails that `ReplaceSelfJob` and deletes the marker. One process runs one replace.
+A failed build, or a new process that is not healthy, restores the previous `dist`, resumes the old workers, fails the job, and tells the operator. If the restored process also fails to start, the shell does not open that app's database. It writes a marker and shows the error. `replaceFailedPath` (`packages/bus/replaceMarker.ts`) strips `@` and `.magi`, so the files are `~/.magi/eva-000/replace-failed.json`, `~/.magi/eva-001/replace-failed.json`, and `~/.magi/eva-002/replace-failed.json`. The shell maps the `@asp.magi` child to `@eva-001.magi` and the `@shell.magi` child to `@eva-000.magi` before that. The next successful start fails that `ReplaceSelfJob` and deletes the marker. One process runs one replace.
 
 ## Failures
 

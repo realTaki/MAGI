@@ -9,7 +9,7 @@ import { openChatStore } from "@magi/webapp/chat-store.js";
 import { createLocalApi } from "../shell.ts";
 
 /*
- * Business flow: sending a message, desktop side (`ARCHITECTURE.md`, "ASP").
+ * Business flow: sending a message, desktop side (`docs/architecture.md`, "Relay").
  * The transcript is written before the acknowledgment goes out, and receipts
  * that are still pending survive a restart.
  */
