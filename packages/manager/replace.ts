@@ -174,11 +174,16 @@ export class ReplaceWorker extends BaseWorker {
       if (typeof body.error === "string" && body.error !== "") error = body.error;
       if (typeof body.job === "number" && Number.isInteger(body.job)) jobId = body.job;
     } catch {
-      return false;
+      tell(this.bus, "[replace] replace marker could not be read");
+      rmSync(marker, { force: true });
+      return true;
     }
     const board = this.bus.board("ReplaceSelfJob");
-    if (jobId !== null && !board.result(jobId)) board.fail(jobId, error);
-    if (jobId !== null && !board.result(jobId)) return false;
+    if (jobId !== null && !board.result(jobId) && !board.fail(jobId, error)) {
+      tell(this.bus, `[replace] ${error}`);
+      rmSync(marker, { force: true });
+      return true;
+    }
     tell(this.bus, `[replace] ${error}`);
     rmSync(marker, { force: true });
     return true;

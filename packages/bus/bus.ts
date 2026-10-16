@@ -101,6 +101,7 @@ export class Bus {
     }
     const handoff = Boolean(process.env.MAGI_REPLACE_JOB || process.env.MAGI_REPLACE_ERROR);
     // One MAGI owns this workspace. Recover work interrupted by a process exit.
+    // One process runs one replace, so a marker names the only claimed ReplaceSelfJob.
     const open = and(eq(jobs.status, "claimed"), ne(jobs.type, "RunToolJob"));
     this.jobs.update(jobs).set({ status: "pending", worker: null })
       .where(markedJob !== null && !handoff

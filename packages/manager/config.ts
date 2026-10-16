@@ -41,6 +41,8 @@ export class ConfigWorker extends BaseWorker {
     super(bus);
     this.offers = Number(bus.settings.get("provider.card.offers") ?? "0") || 0;
     this.cardStopped = bus.settings.get("provider.card.stopped") === "1";
+    const stored = Number(bus.settings.get("provider.card.job") ?? "");
+    this.cardJob = Number.isInteger(stored) && stored > 0 ? stored : null;
   }
 
   async poll(): Promise<boolean> {
@@ -72,6 +74,7 @@ export class ConfigWorker extends BaseWorker {
         this.bus.settings.set("provider.card.rejections", "0");
         this.bus.settings.set("provider.card.resent", "");
         this.bus.settings.set("provider.card.stopped", "");
+        this.bus.settings.set("provider.card.job", "");
       }
       return;
     }
@@ -79,21 +82,22 @@ export class ConfigWorker extends BaseWorker {
       this.stopCard(this.cardStopped ? null : "provider card was rejected");
       return;
     }
-    if (this.cardJob !== null) {
-      const result = this.bus.board("CardJob").result(this.cardJob);
-      if (!result) return;
-      this.cardJob = null;
-      if (result.status === "completed") {
-        this.announce(result.output?.fields ?? {});
+    const open = this.cardJob === null ? null : this.bus.board("CardJob").result(this.cardJob);
+    if (this.cardJob !== null && !open) return;
+    // The bus fails a card that was still open when the process exited. That is not the user.
+    const restarted = open?.error === CARD_RESTART_ERROR;
+    if (open && !restarted) {
+      this.forgetCard();
+      if (open.status === "completed") {
+        this.announce(open.output?.fields ?? {});
         return;
       }
-      // The bus fails a card that was still open when the process exited. That is not the user.
-      if (result.error !== CARD_RESTART_ERROR && this.noteRejection(result.error ?? "provider card failed")) return;
+      if (this.noteRejection(open.error ?? "provider card failed")) return;
     }
-    if (this.bus.settings.get("provider.card.resent") === "1") return;
+    if (!restarted && this.bus.settings.get("provider.card.resent") === "1") return;
     const chatId = this.ensureOwnerChat();
     if (chatId === null) return;
-    const recovering = this.offers > 0 && this.cardJob === null && this.rejections() === 0;
+    const recovering = restarted || (this.offers > 0 && this.cardJob === null && this.rejections() === 0);
     if (!recovering) {
       this.offers += 1;
       this.bus.settings.set("provider.card.offers", String(this.offers));
@@ -101,7 +105,13 @@ export class ConfigWorker extends BaseWorker {
     }
     const spec = providerCard(this.bus.handle);
     this.cardJob = this.bus.board("CardJob").publish({ spec }, this.worker_name);
+    this.bus.settings.set("provider.card.job", String(this.cardJob));
     messageDelivery.send(this.bus, chatId, `card: ${spec.title}`, MAGI_CONTACT_ID, this.worker_name, { card: spec });
+  }
+
+  private forgetCard(): void {
+    this.cardJob = null;
+    this.bus.settings.set("provider.card.job", "");
   }
 
   private rejections(): number {
