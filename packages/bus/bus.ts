@@ -95,8 +95,12 @@ export class Bus {
       .where(and(eq(jobs.type, "PeerKeyJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
     this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before this config was written" })
       .where(and(eq(jobs.type, "ConfigureJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
-    this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before this replace finished" })
-      .where(and(eq(jobs.type, "ReplaceSelfJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
+    // A supervised replace hands the job to the new process, which completes it
+    // after its own workers are healthy. Any other restart failed the swap.
+    if (!process.env.MAGI_REPLACE_JOB && !process.env.MAGI_REPLACE_ERROR) {
+      this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before this replace finished" })
+        .where(and(eq(jobs.type, "ReplaceSelfJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
+    }
     this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before this ASP command finished" })
       .where(and(eq(jobs.type, "AspCommandJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
     this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before this secret was applied" })

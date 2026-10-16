@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { Bus, messageDelivery } from "@magi/bus";
-import { ManagerWorker } from "@magi/manager";
+import { ManagerWorker, untilHealthy } from "@magi/manager";
 import { AgentWorker } from "@magi/agent/worker.js";
 import { ProvidersWorker } from "@magi/providers/worker.js";
 import type { LLMClient } from "@magi/providers/client.js";
@@ -152,7 +152,12 @@ async function main(): Promise<void> {
 }
 
 async function runHealth(): Promise<void> {
-  const magi = new Magi(process.argv[2] || "@health.magi", { workspace: process.env.MAGI_HEALTH_WORKSPACE });
+  const base = process.env.MAGI_HEALTH_ASP_BASE?.trim();
+  const token = process.env.MAGI_HEALTH_ASP_TOKEN?.trim();
+  const magi = new Magi(process.argv[2] || "@health.magi", {
+    workspace: process.env.MAGI_HEALTH_WORKSPACE,
+    asp: base && token ? { base, token } : undefined,
+  });
   await magi.start();
   const problem = await untilHealthy(() => magi.healthy());
   await magi.stop();
@@ -160,17 +165,6 @@ async function runHealth(): Promise<void> {
     console.error(problem);
     process.exitCode = 1;
   }
-}
-
-async function untilHealthy(read: () => string | null): Promise<string | null> {
-  const deadline = Date.now() + 8_000;
-  let problem: string | null = "workers did not become healthy";
-  while (Date.now() < deadline) {
-    problem = read();
-    if (problem === null) return null;
-    await sleep(50);
-  }
-  return problem;
 }
 
 if (process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])) {

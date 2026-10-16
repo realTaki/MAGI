@@ -13,7 +13,7 @@ import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { ASP_MAGI_HANDLE, ASP_MAGI_NICKNAME, MAGI_CONTACT_ID, Bus } from "@magi/bus";
-import { ManagerWorker } from "@magi/manager";
+import { ManagerWorker, untilHealthy } from "@magi/manager";
 import { AgentWorker } from "@magi/agent/worker.js";
 import { ToolsWorker } from "@magi/built-in-tools/worker.js";
 import { ContactsWorker } from "@magi/contacts/worker.js";
@@ -77,19 +77,6 @@ export class Asp {
     await this.manager.stop();
     this.bus.close();
   }
-}
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-async function untilHealthy(read: () => string | null): Promise<string | null> {
-  const deadline = Date.now() + 8_000;
-  let problem: string | null = "workers did not become healthy";
-  while (Date.now() < deadline) {
-    problem = read();
-    if (problem === null) return null;
-    await sleep(50);
-  }
-  return problem;
 }
 
 async function main(): Promise<void> {

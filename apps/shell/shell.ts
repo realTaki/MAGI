@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { prepareShellWorkspace, secureShellDatabases } from "./workspace.ts";
 import type { ProcessSpec } from "./host.js";
 import { Bus, MAGI_CONTACT_ID, SHELL_MAGI_HANDLE, SHELL_MAGI_NICKNAME } from "@magi/bus";
-import { ManagerWorker } from "@magi/manager";
+import { ManagerWorker, untilHealthy } from "@magi/manager";
 import { AgentWorker } from "@magi/agent/worker.js";
 import { ToolsWorker } from "@magi/built-in-tools/worker.js";
 import { ContactsWorker } from "@magi/contacts/worker.js";
@@ -144,19 +144,6 @@ function requireEnv(name: string): string {
   const value = process.env[name];
   if (value === undefined || value === "") throw new Error(`${name} is not set`);
   return value;
-}
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-async function untilHealthy(read: () => string | null): Promise<string | null> {
-  const deadline = Date.now() + 8_000;
-  let problem: string | null = "workers did not become healthy";
-  while (Date.now() < deadline) {
-    problem = read();
-    if (problem === null) return null;
-    await sleep(50);
-  }
-  return problem;
 }
 
 async function main(): Promise<void> {

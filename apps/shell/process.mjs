@@ -11,7 +11,7 @@ import { dependencyState } from "./dependency-state.mjs";
 import { createProcessOwner } from "./process-owner.mjs";
 import { ensureInstalledDependencies } from "./installation.mjs";
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { cpSync, existsSync, rmSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { createInterface } from "node:readline";
 
@@ -45,6 +45,8 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
   const children = new Map();
   const records = new Map();
   const restarting = new Map();
+  const replaceJobs = new Map();
+  const replaceErrors = new Map();
   let seq = 0;
   let hostSend = null;
   let rebuildHandler = null;
@@ -53,6 +55,15 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
 
   function write(stream, message) {
     stream.write(`${JSON.stringify(message)}\n`);
+  }
+
+  function restoreDist(spec) {
+    const live = resolve(spec.cwd, "dist");
+    const backup = `${live}.rollback`;
+    if (!existsSync(backup)) return;
+    rmSync(live, { recursive: true, force: true });
+    cpSync(backup, live, { recursive: true });
+    rmSync(backup, { recursive: true, force: true });
   }
 
   function notifyHost(message) {
@@ -110,9 +121,19 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
     const isHost = host !== undefined;
     const dependencies = app ? dependencyState(app.root) : null;
     assertOpen();
+    const replaceJob = replaceJobs.get(id);
+    const replaceError = replaceErrors.get(id);
+    replaceJobs.delete(id);
+    replaceErrors.delete(id);
     const child = owner.spawn(node, [spec.entry, ...(spec.args ?? [])], {
       cwd: spec.cwd,
-      env: { ...env, ...spec.env, ...(describeApp(spec)?.kind === "eva" ? { MAGI_SHELL_REBUILD: "ipc" } : {}) },
+      env: {
+        ...env,
+        ...spec.env,
+        ...(describeApp(spec)?.kind === "eva" ? { MAGI_SHELL_REBUILD: "ipc" } : {}),
+        ...(replaceJob ? { MAGI_REPLACE_JOB: replaceJob } : {}),
+        ...(replaceError ? { MAGI_REPLACE_ERROR: replaceError } : {}),
+      },
       stdio: isHost ? ["pipe", "pipe", "pipe", "ipc"] : ["ignore", "pipe", "pipe", "ipc"],
       detached: !isHost,
       windowsHide: true,
@@ -124,9 +145,29 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
       const timer = setTimeout(() => reject(new Error(`App did not become ready: ${spec.cwd}`)), readyTimeoutMs);
       child.on("message", (message) => {
         if (message?.type === "runtime.replace") {
-          if (children.get(id) === entry && entry.ready && !entry.stopping && !entry.replacing && describeApp(spec)) {
-            void restart(id).catch((error) => console.error("runtime.replace failed:", error instanceof Error ? error.message : error));
+          const live = children.get(id) === entry && entry.ready && !entry.stopping && !entry.replacing && describeApp(spec);
+          if (!live) {
+            if (child.connected) child.send({ type: "runtime.replace.accepted", error: "replace was refused" }, () => {});
+            return;
           }
+          if (typeof message.job === "number") replaceJobs.set(id, String(message.job));
+          if (child.connected) child.send({ type: "runtime.replace.accepted" }, () => {});
+          void restart(id).catch((error) => {
+            const text = error instanceof Error ? error.message : String(error);
+            replaceJobs.delete(id);
+            if (child.connected) {
+              child.send({ type: "runtime.replace.accepted", error: text }, () => {});
+              return;
+            }
+            const record = records.get(id);
+            if (!record) return;
+            restoreDist(record.spec);
+            replaceErrors.set(id, text);
+            void start(record.spec, { host: record.host, id, replacing: true }).catch((startError) => {
+              replaceErrors.delete(id);
+              console.error("replace restore failed:", startError instanceof Error ? startError.message : startError);
+            });
+          });
           return;
         }
         if (message?.type === "runtime.rebuild") {

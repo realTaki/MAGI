@@ -105,6 +105,17 @@ export class JobBoard<K extends JobType> {
     }, { behavior: "immediate" });
   }
 
+  /** A failure that was only going to be logged. It is a JobResult, and it is not claimable. */
+  seal(publisher: string, input: JobInput[K], error: string): number {
+    return this.db.insert(jobs).values({
+      type: this.type,
+      publisher,
+      status: "failed",
+      input: JSON.stringify(input),
+      error,
+    }).returning({ id: jobs.id }).get().id;
+  }
+
   submit(worker: string, id: number, outcome: { output?: JobOutput[K]; error?: string }): boolean {
     const completed = this.db.update(jobs)
       .set({

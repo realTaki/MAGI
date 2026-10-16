@@ -29,6 +29,9 @@ export class ConfigWorker extends BaseWorker {
   /** The open-chat job, while ASP is being asked for a home chat. */
   private opening: number | null = null;
   private openAgainAt = 0;
+  /** How many times the startup card has been sent. One rejection gets one resend. */
+  private offers = 0;
+  private cardStopped = false;
   /** Inbound card and sync work, off this worker's poll so config writes can finish. */
   private task: Promise<void> | null = null;
   private unspoken: string | null = null;
@@ -58,7 +61,7 @@ export class ConfigWorker extends BaseWorker {
 
   /** No provider key means this node cannot think. Show the card from here. */
   private async providerSetup(): Promise<void> {
-    if (this.bus.secrets.get("provider.api_key")) return;
+    if (this.cardStopped || this.bus.secrets.get("provider.api_key")) return;
     if (this.cardJob !== null) {
       const result = this.bus.board("CardJob").result(this.cardJob);
       if (!result) return;
@@ -67,9 +70,15 @@ export class ConfigWorker extends BaseWorker {
         this.announce(result.output?.fields ?? {});
         return;
       }
+      if (this.offers >= 2) {
+        this.cardStopped = true;
+        this.tell(`[provider] ${result.error ?? "provider card failed"}. The card will not be shown again.`);
+        return;
+      }
     }
     const chatId = this.ensureOwnerChat();
     if (chatId === null) return;
+    this.offers += 1;
     const spec = providerCard(this.bus.handle);
     this.cardJob = this.bus.board("CardJob").publish({ spec }, this.worker_name);
     messageDelivery.send(this.bus, chatId, `card: ${spec.title}`, MAGI_CONTACT_ID, this.worker_name, { card: spec });
@@ -106,7 +115,7 @@ export class ConfigWorker extends BaseWorker {
       `model: ${fields.model ?? ""}`,
       `base_url: ${fields.base_url ?? ""}`,
       "provider.api_key: updated",
-      "Load provider_setup and continue from step 2. Do not show another card.",
+      "Load provider_setup and continue from step 2.",
     ].join("\n"), SYSTEM_CONTACT_ID, this.worker_name);
   }
 

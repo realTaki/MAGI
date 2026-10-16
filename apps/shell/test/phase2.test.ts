@@ -142,6 +142,43 @@ test("a fresh MAGI shows the provider card on cold start and offers it again aft
     assert.equal(submitted.ok, true);
     await until("provider card was not offered again", () => cards(magi!.bus).length >= 2 && magi!.bus.chats.list().some((candidate) =>
       magi!.bus.messages.list(candidate.id).some((message) => message.content.startsWith("[provider] "))));
+    assert.equal(cards(magi.bus).length, 2);
+    let again = "";
+    await until("the card was not sent a second time", async () => {
+      const events = await fetch(new URL(`/chats/${address}/events`, asp.origin), {
+        headers: { authorization: `Bearer ${asp.operatorToken}` },
+      });
+      if (!events.ok) return false;
+      const listed = await events.json() as { events?: Array<{ payload?: { metadata?: { card?: { id?: string } } } }> };
+      const ids = listed.events?.map((event) => event.payload?.metadata?.card?.id).filter((value): value is string => typeof value === "string") ?? [];
+      const next = ids.find((value) => value !== card);
+      if (!next) return false;
+      again = next;
+      return true;
+    });
+    const againSubmitted = await fetch(new URL(`/chats/${address}/messages`, asp.origin), {
+      method: "POST",
+      headers: { authorization: `Bearer ${asp.operatorToken}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        content: "card filled",
+        metadata: {
+          card_result: {
+            id: again,
+            fields: {
+              provider: "custom",
+              model: "local",
+              base_url: "http://127.0.0.1:9/v1",
+              "provider.api_key": { ciphertext: encryptFor(magi.bus.identity.publicKey, "nope") },
+            },
+          },
+        },
+      }),
+    });
+    assert.equal(againSubmitted.ok, true);
+    await until("the operator was not told the card had stopped", () => magi!.bus.chats.list().some((candidate) =>
+      magi!.bus.messages.list(candidate.id).some((message) => message.content.includes("will not be shown again"))));
+    await sleep(300);
+    assert.equal(cards(magi.bus).length, 2);
     assert.equal(calls, 0);
     assert.equal(magi.bus.secrets.get("provider.api_key"), null);
   } finally {
@@ -218,14 +255,25 @@ test("provider sync stores the key and keeps it out of the message text", async 
   let magi: Magi | null = null;
   try {
     await asp.start();
-    const created = await fetch(new URL("/chats", asp.origin), {
-      method: "POST",
-      headers: { authorization: `Bearer ${asp.operatorToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ kind: "bot" }),
-    });
-    const body = await created.json() as { magi?: { handle?: string; token?: string } };
-    const handle = body.magi?.handle ?? "";
-    const token = body.magi?.token ?? "";
+    const known = new Set(["@eva-000.magi", "@eva-001.magi", "@eva-002.magi"]);
+    const bots: Array<{ handle: string; token: string }> = [];
+    while (bots.length < 2 || !bots.some((bot) => !known.has(bot.handle))) {
+      const created = await fetch(new URL("/chats", asp.origin), {
+        method: "POST",
+        headers: { authorization: `Bearer ${asp.operatorToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ kind: "bot" }),
+      });
+      const body = await created.json() as { magi?: { handle?: string; token?: string } };
+      bots.push({ handle: body.magi?.handle ?? "", token: body.magi?.token ?? "" });
+      if (bots.length > 6) break;
+    }
+    const strangerBot = bots.find((bot) => !known.has(bot.handle));
+    const receiverBot = bots.find((bot) => bot !== strangerBot);
+    assert.ok(strangerBot && receiverBot);
+    const handle = receiverBot.handle;
+    const token = receiverBot.token;
+    const strangerHandle = strangerBot.handle;
+    const strangerToken = strangerBot.token;
     magi = new Magi(handle, {
       workspace: path.join(root, "receiver"),
       asp: { base: asp.origin, token },
@@ -236,6 +284,15 @@ test("provider sync stores the key and keeps it out of the message text", async 
       },
     });
     await magi.start();
+    if (!known.has(handle)) asp.bus.contacts.create({ name: handle, role: "magi", asp_handle: handle });
+    const strangerContact = asp.bus.contacts.list().find((contact) => contact.asp_handle === strangerHandle);
+    if (strangerContact) asp.bus.contacts.update(strangerContact.id, { role: "stranger" });
+    const posted = await fetch(new URL("/profile", asp.origin), {
+      method: "POST",
+      headers: { authorization: `Bearer ${strangerToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ public_key: "not-a-key" }),
+    });
+    assert.equal(posted.ok, true);
     asp.bus.settings.set("provider.name", "openai");
     asp.bus.settings.set("provider.model", "gpt-test");
     asp.bus.secrets.set("provider.api_key", "sync-secret-value");
@@ -245,6 +302,11 @@ test("provider sync stores the key and keeps it out of the message text", async 
     assert.equal(typeof queued.id, "number");
     assert.equal(queued.status, "pending");
     await until("receiver did not store the provider key", () => magi?.bus.secrets.get("provider.api_key") === "sync-secret-value");
+    await until("sync did not finish", () => {
+      const result = asp.bus.board("AspCommandJob").result(queued.id);
+      if (result?.status === "failed") throw new Error(result.error ?? "sync failed");
+      return result?.status === "completed";
+    });
     const leaked = [asp.bus, magi.bus].flatMap((item) =>
       item.chats.list().flatMap((chat) => item.messages.list(chat.id, 100).filter((message) => message.content.includes("sync-secret-value"))));
     assert.equal(leaked.length, 0);

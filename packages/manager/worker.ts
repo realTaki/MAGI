@@ -17,6 +17,18 @@ const FAILURES_BEFORE_NOTICE = 3;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Wait until every wanted worker is up, or return what is still wrong. */
+export async function untilHealthy(read: () => string | null, timeoutMs = 8_000): Promise<string | null> {
+  const deadline = Date.now() + timeoutMs;
+  let problem: string | null = "workers did not become healthy";
+  while (Date.now() < deadline) {
+    problem = read();
+    if (problem === null) return null;
+    await sleep(50);
+  }
+  return problem;
+}
+
 /** A worker the manager can run: `poll()` is the contract, the rest is optional. */
 export type StartableWorker = {
   readonly worker_name: string;
@@ -134,7 +146,7 @@ export class ManagerWorker extends BaseWorker {
     while (this.started) {
       let worked = false;
       try { worked = await this.poll(); }
-      catch (error) { console.error("manager:", error); }
+      catch (error) { this.recordFailure(this.worker_name, message(error)); }
       if (!worked && this.started) await sleep(POLL_MS);
     }
   }
@@ -216,10 +228,16 @@ export class ManagerWorker extends BaseWorker {
   private fail(name: string, error: unknown): void {
     const failures = (this.failures.get(name) ?? 0) + 1;
     this.failures.set(name, failures);
-    console.error(`${name}:`, error);
+    const text = `worker "${name}" failed: ${message(error)}`;
+    if (failures === 1) this.recordFailure(name, text);
     if (failures < FAILURES_BEFORE_NOTICE || this.failing.has(name)) return;
     this.failing.add(name);
     this.report(`worker "${name}" keeps failing: ${message(error)}`);
+  }
+
+  /** A thrown poll is a failed job, not a log line. */
+  private recordFailure(worker: string, text: string): void {
+    this.bus.board("ManageWorkerNotify").seal(this.worker_name, { worker, action: "restart" }, text);
   }
 
   private recovered(name: string): void {

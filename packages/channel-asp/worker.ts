@@ -1,4 +1,4 @@
-import { encryptFor, BaseWorker, ASP_MAGI_HANDLE, EVA_MAGI_HANDLE, MAGI_CONTACT_ID, SHELL_MAGI_HANDLE, SYSTEM_CONTACT_ID, USER_HANDLE, messageDelivery, waitForJob, type AspCommandJob, type Bus, type Contact } from "@magi/bus";
+import { encryptFor, BaseWorker, ASP_MAGI_HANDLE, EVA_MAGI_HANDLE, MAGI_CONTACT_ID, SHELL_MAGI_HANDLE, SYSTEM_CONTACT_ID, USER_HANDLE, messageDelivery, type AspCommandJob, type Bus, type Contact } from "@magi/bus";
 import { AspClient, type AspEvent } from "./client.js";
 
 /** What a MAGI needs to speak on ASP; Shell writes these after the relay is up. */
@@ -339,35 +339,36 @@ export class AspWorker extends BaseWorker {
     const base_url = this.bus.settings.get("provider.base_url")?.trim() ?? "";
     const api_key = this.bus.secrets.get("provider.api_key");
     if (!provider || !model || !api_key) throw new Error("provider is not configured");
-    const client = this.requireClient();
-    const body = await client.call("GET", "/profiles");
-    if (!isRecord(body) || !Array.isArray(body.profiles)) throw new Error("ASP profiles were not a list");
+    const recipients = await this.syncRecipients();
     const synced: string[] = [];
-    for (const row of body.profiles) {
-      if (!isRecord(row) || typeof row.handle !== "string" || row.handle === this.bus.handle) continue;
-      const known = typeof row.public_key === "string" && row.public_key !== "" ? row.public_key : null;
-      const key = await this.publicKey(row.handle, known);
-      const chatId = await this.chatWith(row.handle);
+    for (const recipient of recipients) {
+      const chatId = await this.chatWith(recipient.handle);
       messageDelivery.send(this.bus, chatId, `provider sync: ${provider}, ${model}, key updated`, MAGI_CONTACT_ID, this.worker_name, {
-        envelope: { kind: "provider.sync", provider, model, base_url, ciphertext: encryptFor(key, api_key) },
+        envelope: { kind: "provider.sync", provider, model, base_url, ciphertext: encryptFor(recipient.public_key, api_key) },
       });
-      synced.push(row.handle);
+      synced.push(recipient.handle);
     }
     return { synced };
   }
 
-  private async publicKey(handle: string, known: string | null): Promise<string> {
-    if (known) return known;
-    const chatId = await this.chatWith(handle);
-    const jobId = this.bus.board("PeerKeyJob").publish({ handle }, this.worker_name);
-    messageDelivery.send(this.bus, chatId, "provider sync: public key requested", MAGI_CONTACT_ID, this.worker_name, {
-      envelope: { kind: "identity.key_request" },
-    });
-    const result = await waitForJob(() => this.bus.board("PeerKeyJob").result(jobId), 60_000, `public key for ${handle}`);
-    if (result.status === "failed" || !result.output?.public_key) {
-      throw new Error(result.error ?? `${handle} did not register a public key`);
+  /** Known MAGI peers that already have a public key. A profile without one is not sent the secret. */
+  private async syncRecipients(): Promise<Array<{ handle: string; public_key: string }>> {
+    const deadline = Date.now() + 5_000;
+    let chosen: Array<{ handle: string; public_key: string }> = [];
+    let waiting = true;
+    while (waiting) {
+      const body = await this.requireClient().call("GET", "/profiles");
+      if (!isRecord(body) || !Array.isArray(body.profiles)) throw new Error("ASP profiles were not a list");
+      const magi = body.profiles.flatMap((row) => {
+        if (!isRecord(row) || typeof row.handle !== "string" || !syncTarget(this.bus, row.handle)) return [];
+        const public_key = typeof row.public_key === "string" && row.public_key !== "" ? row.public_key : null;
+        return [{ handle: row.handle, public_key }];
+      });
+      chosen = magi.flatMap((row) => row.public_key === null ? [] : [{ handle: row.handle, public_key: row.public_key }]);
+      waiting = chosen.length < magi.length && Date.now() < deadline;
+      if (waiting) await new Promise((resolve) => setTimeout(resolve, 50));
     }
-    return result.output.public_key;
+    return chosen;
   }
 
   private async chatWith(handle: string): Promise<number> {
@@ -398,6 +399,14 @@ export class AspWorker extends BaseWorker {
     if (!base || !token) return null;
     return { base, token };
   }
+}
+
+/** Who may be sent this MAGI's provider key: a known MAGI, not a stranger profile. */
+function syncTarget(bus: Bus, handle: string): boolean {
+  if (handle === bus.handle || handle === USER_HANDLE) return false;
+  if (KNOWN_MAGI.has(handle)) return true;
+  const known = bus.contacts.list().find((contact) => contact.asp_handle === handle);
+  return known?.role === "magi";
 }
 
 /** Card results come from the operator. A sync comes from a known MAGI, decided before a new handle is stored. */

@@ -13,8 +13,7 @@ export function replaceTools(bus: Bus): ExecutableTool[] {
     input_schema: { type: "object", properties: {} },
     async run() {
       const id = bus.board("ReplaceSelfJob").publish({ swap: true }, "tools");
-      const status = bus.board("ReplaceSelfJob").result(id)?.status ?? "pending";
-      return JSON.stringify({ id, status });
+      return JSON.stringify({ id, status: "pending" });
     },
   }];
 }
