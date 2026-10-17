@@ -51,6 +51,8 @@ export function pragma(db: DatabaseSync, source: string): number | string | null
  * The outermost call is `BEGIN` / `COMMIT`, and an exception runs `ROLLBACK`.
  * A call already inside a transaction uses `SAVEPOINT`, and an exception runs
  * `ROLLBACK TO SAVEPOINT` so the outer transaction stays open.
+ * A thenable return rolls back and throws, so the commit cannot land before
+ * the callback finishes.
  */
 export function transaction<T>(db: DatabaseSync, fn: () => T, behavior: TransactionBehavior = "deferred"): T {
   const depth = depthOf.get(db) ?? 0;
@@ -60,6 +62,7 @@ export function transaction<T>(db: DatabaseSync, fn: () => T, behavior: Transact
   depthOf.set(db, depth + 1);
   try {
     const result = fn();
+    if (isThenable(result)) throw new TypeError("Transaction function cannot return a promise");
     db.exec(nested ? `RELEASE SAVEPOINT ${savepoint}` : "COMMIT");
     return result;
   } catch (error) {
@@ -234,6 +237,12 @@ export function migrate(db: SqliteDb, migrationsFolder: string): void {
     parts.session as never,
     { migrationsFolder },
   );
+}
+
+function isThenable(value: unknown): boolean {
+  return (typeof value === "object" || typeof value === "function")
+    && value !== null
+    && typeof (value as { then?: unknown }).then === "function";
 }
 
 function integer(value: number | bigint): number {
