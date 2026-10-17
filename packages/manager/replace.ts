@@ -37,7 +37,12 @@ export class ReplaceWorker extends BaseWorker {
   readonly worker_name = "replace";
   private task: Promise<void> | null = null;
 
-  constructor(bus: Bus, private readonly build: AppBuild, private readonly host: ReplaceHost) {
+  constructor(
+    bus: Bus,
+    private readonly build: AppBuild,
+    private readonly host: ReplaceHost,
+    private readonly onReplaced?: () => void,
+  ) {
     super(bus);
   }
 
@@ -149,6 +154,8 @@ export class ReplaceWorker extends BaseWorker {
       rmSync(`${dist}.rollback`, { recursive: true, force: true });
       board.submit(this.worker_name, job.id, { output: { replaced: true } });
       tell(this.bus, "[replace] replaced");
+      try { this.onReplaced?.(); }
+      catch { /* The window notice is not the replace itself. */ }
     }
     this.clearHandoff();
     return true;

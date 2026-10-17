@@ -192,3 +192,17 @@ export function useI18n(): I18nContextValue {
 export function useT() {
   return useI18n().t;
 }
+
+/** Translate outside a component. Uses the locale the window already chose. */
+export function translate(key: string): string {
+  const catalog: Catalog = MESSAGES[detectLocale()];
+  let cur: unknown = catalog;
+  for (const part of key.split(".")) {
+    if (cur && typeof cur === "object" && part in (cur as Record<string, unknown>)) {
+      cur = (cur as Record<string, unknown>)[part];
+    } else {
+      return key;
+    }
+  }
+  return typeof cur === "string" ? cur : key;
+}

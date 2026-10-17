@@ -21,6 +21,7 @@ export default {
     start: "启动",
     stop: "停止",
     error: "出错",
+    updatedRestart: "已更新，重启生效",
   },
   plusMenu: {
     aria: "新建",

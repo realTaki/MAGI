@@ -2312,6 +2312,10 @@ body {
   box-shadow: 0 18px 44px -20px rgba(0, 0, 0, 0.5);
 }
 
+.notice.is-status {
+  border-left-color: #3ec5a8;
+}
+
 .notice__mark {
   display: grid;
   place-items: center;

@@ -13,7 +13,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { useT } from "./i18n";
 
-export type Notice = { id: number; text: string };
+export type Notice = { id: number; text: string; kind: "error" | "status" };
 
 /** Long enough to read a build failure, short enough not to pile up. */
 const DISMISS_AFTER_MS = 12_000;
@@ -35,16 +35,25 @@ export function dismissNotice(id: number): void {
   drop(id);
 }
 
+function push(text: string, kind: Notice["kind"]): void {
+  if (text === "") return;
+  if (notices.some((notice) => notice.text === text)) return;
+  const id = nextId++;
+  notices = [...notices, { id, text, kind }];
+  emit();
+  if (kind === "error") setTimeout(() => drop(id), DISMISS_AFTER_MS);
+}
+
 /** Report an error the interface cannot place anywhere better. */
 export function notifyError(error: unknown): void {
   const text = (error instanceof Error ? error.message : String(error ?? "")).trim();
-  if (text === "") return;
   // The same failure twice (a retry, a service that keeps refusing) is one notice.
-  if (notices.some((notice) => notice.text === text)) return;
-  const id = nextId++;
-  notices = [...notices, { id, text }];
-  emit();
-  setTimeout(() => drop(id), DISMISS_AFTER_MS);
+  push(text, "error");
+}
+
+/** The shell node finished a revision switch. It stays until the operator dismisses it. */
+export function notifyStatus(text: string): void {
+  push(text.trim(), "status");
 }
 
 function subscribe(listener: () => void): () => void {
@@ -75,15 +84,23 @@ export function NoticeStack() {
     return null;
   }
   return (
-    <div className="notice-stack" role="alert" aria-live="assertive">
+    <div className="notice-stack" role="region" aria-live="polite">
       {current.map((notice) => (
-        <div key={notice.id} className="notice">
-          <span className="notice__mark" aria-hidden="true">
-            !
-          </span>
+        <div key={notice.id} className={`notice${notice.kind === "status" ? " is-status" : ""}`} role={notice.kind === "status" ? "status" : "alert"}>
+          {notice.kind === "error" ? (
+            <span className="notice__mark" aria-hidden="true">
+              !
+            </span>
+          ) : null}
           <span className="notice__body">
-            <span className="notice__title">{t("common.error")}</span>
-            <span className="notice__text">{notice.text}</span>
+            {notice.kind === "status" ? (
+              <span className="notice__title">{notice.text}</span>
+            ) : (
+              <>
+                <span className="notice__title">{t("common.error")}</span>
+                <span className="notice__text">{notice.text}</span>
+              </>
+            )}
           </span>
           <button
             type="button"

@@ -21,6 +21,7 @@ export default {
     start: "Start",
     stop: "Stop",
     error: "Something went wrong",
+    updatedRestart: "Updated. Restart to apply.",
   },
   plusMenu: {
     aria: "New",
