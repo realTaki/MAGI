@@ -120,8 +120,8 @@ test("every MAGI gets its own branch checked out inside its workspace", async (t
   // Dependencies belong to that checkout, and the process runs from it.
   assert.deepEqual(recorded.npm, [
     // `--ignore-scripts` keeps a desktop install from reaching node-gyp.
+    // The node builds itself; this checkout is not compiled here.
     { args: ["ci", "--ignore-scripts"], cwd: source },
-    { args: ["run", "build"], cwd: source },
   ]);
   assert.equal(recorded.spawns.length, 0);
   assert.deepEqual(runtime.running(), []);
@@ -223,17 +223,6 @@ test(`a conflicting merge is aborted and reported (autocrlf=${autocrlf})`, async
 });
 
 }
-
-test("rebuilding installs and builds in the MAGI's own checkout", async (t) => {
-  const root = mkdtempSync(path.join(tmpdir(), "magi-rebuild-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  const { origin } = await makeOrigin(root);
-  const recorded = recorder();
-  const runtime = runtimeWith(origin, path.join(root, "home"), recorded);
-  await assert.rejects(runtime.rebuild(agent), /replace_self/);
-  assert.equal(recorded.spawns.length, 0);
-  assert.equal(recorded.npm.length, 0);
-});
 
 test("the shell refuses to boot another node's process", async () => {
   const runtime = createMagiRuntime({

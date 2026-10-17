@@ -99,7 +99,7 @@ export function createMagiRuntime({
 
   async function install(root) {
     // A checkout is one workspace now: the packages hang off the root, so that is
-    // where dependencies are installed and where the build is started.
+    // where dependencies are installed. The node builds itself when it replaces itself.
     const cwd = root;
     if (prepareDependencies) await prepareDependencies(cwd);
     if (!prepareDependencies && !existsSync(path.join(cwd, "node_modules", "drizzle-orm"))) {
@@ -111,12 +111,6 @@ export function createMagiRuntime({
         description: `Could not install MAGI dependencies in ${cwd}`,
       });
     }
-    if (existsSync(path.join(cwd, "apps", "eva", "dist", "eva.js"))) return;
-    await npm(["run", "build"], {
-      cwd,
-      env: tools.env,
-      description: `Could not build MAGI in ${cwd}`,
-    });
   }
 
   /**
@@ -261,13 +255,6 @@ export function createMagiRuntime({
     return await start(agent);
   }
 
-  /** This node replaces itself. Shell does not rebuild another process. */
-  async function rebuild(agent) {
-    const { handle } = require(agent);
-    if (isInProcessMagiHandle(handle)) return { handle, rebuilt: false, started: false };
-    throw new Error(`${handle} replaces itself with replace_self. Shell does not rebuild it.`);
-  }
-
   /**
    * Fetch origin and merge its default branch into this MAGI's checkout.
    * A conflict is aborted. This process does not restart the node.
@@ -316,7 +303,6 @@ export function createMagiRuntime({
     stop,
     stopAll,
     restart,
-    rebuild,
     merge,
   };
 }

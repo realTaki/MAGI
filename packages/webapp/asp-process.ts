@@ -7,8 +7,8 @@
  * `start()` spawns only when a checkout is already known: prepare has to
  * create that tree first, so the operator backend calls `ensure` after it.
  * `stop()` kills the child only when the desktop is quitting. A renderer
- * reload stops this worker and must leave the process running. Rebuild calls
- * `stopOwned` while the worker itself stays up.
+ * reload stops this worker and must leave the process running. `stopOwned`
+ * stops a process this worker started while the worker itself stays up.
  */
 
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
@@ -174,7 +174,7 @@ export class AspProcessWorker extends BaseWorker {
       }
       await sleep(200);
     }
-    throw new Error("ASP did not stop; rebuild was cancelled.");
+    throw new Error("ASP did not stop.");
   }
 
   private spawnAsp(aspDir: string): ChildProcess {

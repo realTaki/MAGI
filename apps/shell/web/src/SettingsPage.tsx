@@ -40,7 +40,6 @@ export function SettingsPage() {
   const [shellUpdating, setShellUpdating] = useState(false);
 
   const [runtimeStatus, setRuntimeStatus] = useState("");
-  const [canInstallShellUpdate, setCanInstallShellUpdate] = useState(false);
   const [runtimeMessage, setRuntimeMessage] = useState("");
   const [runtimeBusy, setRuntimeBusy] = useState(false);
 
@@ -49,9 +48,8 @@ export function SettingsPage() {
     let cancelled = false;
     void window.magiDesktop?.invokeLocal?.("runtime.status").then((value) => {
       if (!cancelled) {
-        const state = value as { asp?: string; canInstallShellUpdate?: boolean };
+        const state = value as { asp?: string };
         setRuntimeStatus(state?.asp ?? "");
-        setCanInstallShellUpdate(state?.canInstallShellUpdate === true);
       }
     }).catch((error: unknown) => {
       if (!cancelled) setRuntimeMessage(error instanceof Error ? error.message : String(error));
@@ -78,26 +76,23 @@ export function SettingsPage() {
 
   async function refreshRuntimeStatus() {
     const state = await window.magiDesktop?.invokeLocal?.("runtime.status") as
-      | { asp?: string; canInstallShellUpdate?: boolean }
+      | { asp?: string }
       | undefined;
     setRuntimeStatus(state?.asp ?? "");
-    setCanInstallShellUpdate(state?.canInstallShellUpdate === true);
   }
 
-  /** Stop/start/rebuild ASP and App, and the installer builds. */
+  /** Stop or start ASP. */
   async function runRuntime(method: string): Promise<ActionOutcome> {
     const invoke = window.magiDesktop?.invokeLocal;
     if (!invoke || runtimeBusy) return { ok: false, message: "" };
     setRuntimeBusy(true);
     setRuntimeMessage(t("appSettings.runtimeWorking"));
     try {
-      const result = await invoke(method) as { output?: unknown } | undefined;
+      await invoke(method);
       await refreshRuntimeStatus();
       return report({
         ok: true,
-        message: typeof result?.output === "string"
-          ? t("appSettings.installerBuilt").replace("{path}", result.output)
-          : t("appSettings.runtimeDone"),
+        message: t("appSettings.runtimeDone"),
       });
     } catch (error) {
       return report({ ok: false, message: error instanceof Error ? error.message : String(error) });
@@ -111,7 +106,7 @@ export function SettingsPage() {
    * a partly failed sweep still reads as one line instead of looking like success.
    */
   async function runMagiAll(
-    method: "magi.startAll" | "magi.stopAll" | "magi.rebuildAll" | "magi.syncAll",
+    method: "magi.startAll" | "magi.stopAll" | "magi.syncAll",
   ): Promise<ActionOutcome> {
     const invoke = window.magiDesktop?.invokeLocal;
     if (!invoke || runtimeBusy) return { ok: false, message: "" };
@@ -121,14 +116,12 @@ export function SettingsPage() {
       const result = await invoke(method) as {
         started?: string[];
         stopped?: number;
-        rebuilt?: string[];
         synced?: { module: string; merged: boolean }[];
         failed?: { handle?: string; module?: string; detail: string }[];
       } | undefined;
       const failed = result?.failed ?? [];
       const done =
         (result?.started?.length ?? 0) +
-        (result?.rebuilt?.length ?? 0) +
         (result?.stopped ?? 0) +
         (result?.synced?.length ?? 0);
       const lines = [
@@ -425,11 +418,6 @@ export function SettingsPage() {
                       disabled={runtimeBusy}
                       onRun={() => runSync("runtime.syncAsp")}
                     />
-                    <ActionButton
-                      label={t("appSettings.rebuildAsp")}
-                      disabled={runtimeBusy}
-                      onRun={() => runRuntime("runtime.rebuildAsp")}
-                    />
                   </div>
                 </div>
                 <div className="settings-card">
@@ -450,11 +438,6 @@ export function SettingsPage() {
                       disabled={runtimeBusy}
                       onRun={() => runMagiAll("magi.syncAll")}
                     />
-                    <ActionButton
-                      label={t("appSettings.magiRebuildAll")}
-                      disabled={runtimeBusy}
-                      onRun={() => runMagiAll("magi.rebuildAll")}
-                    />
                   </div>
                 </div>
                 <div className="settings-card">
@@ -464,27 +447,6 @@ export function SettingsPage() {
                       label={t("appSettings.syncButton")}
                       disabled={runtimeBusy}
                       onRun={() => runSync("runtime.syncApp")}
-                    />
-                    <ActionButton
-                      label={t("appSettings.rebuildApp")}
-                      disabled={runtimeBusy}
-                      onRun={() => runRuntime("runtime.rebuildApp")}
-                    />
-                  </div>
-                </div>
-                <div className="settings-card">
-                  <div className="settings-card__label">{t("appSettings.installer")}</div>
-                  <p className="settings-overlay__lede">{t("appSettings.installerHint")}</p>
-                  <div className="settings-card__actions settings-card__actions--wrap">
-                    <ActionButton
-                      label={t("appSettings.buildInstaller")}
-                      disabled={runtimeBusy}
-                      onRun={() => runRuntime("runtime.buildInstaller")}
-                    />
-                    <ActionButton
-                      label={t("appSettings.buildAndUpgradeInstaller")}
-                      disabled={runtimeBusy || !canInstallShellUpdate}
-                      onRun={() => runRuntime("runtime.buildAndInstallInstaller")}
                     />
                   </div>
                 </div>

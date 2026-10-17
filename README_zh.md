@@ -158,9 +158,8 @@ Electron App 启动本地 ASP，并运行本机的每条 MAGI 进程。ASP 负�
 
 安装包提供 Electron 启动壳及仅供 MAGI 使用的 Git、Node.js、npm 工具。首次启动
 会将完整仓库克隆到 `~/.magi/shell/MAGI`；之后从其中的 `magi/`、`asp/`、
-`apps/` 与 `packages/` 运行。用户或 coding agent 可以在这份普通 Git 仓库中修改源码、
-重新构建界面，并用 Git 合并上游更新。`apps/shell/dist/index.html` 变化后，
-桌面端会询问是否重新加载，不会擅自刷新界面。
+`apps/` 与 `packages/` 运行。用户或 coding agent 可以在这份普通 Git 仓库中修改源码，并用 Git 合并上游更新。
+界面、ASP 和每条 MAGI 由各自的节点自己构建并切换修订。
 
 真正留在安装包里的只有启动壳：`apps/shell/` 克隆仓库、从里面加载整个应用
 （界面 `apps/shell/web/` + 操作者进程 `apps/shell/shell.ts`，worker 在 `packages/webapp`），然后只是请这个后端

@@ -104,7 +104,7 @@ type AgentRuntime = {
   branch: string;
   source: string;
 };
-type RuntimeIconName = "start" | "stop" | "restart" | "rebuild" | "merge";
+type RuntimeIconName = "start" | "stop" | "restart" | "merge";
 
 /**
  * The runtime controls are icon-only: start and stop are the same slot, and the
@@ -142,13 +142,6 @@ function RuntimeIcon({ name }: { name: RuntimeIconName }) {
       <svg {...stroke}>
         <path d="M20 12a8 8 0 1 1-2.35-5.65" />
         <path d="M20 4.8v4.6h-4.6" />
-      </svg>
-    );
-  }
-  if (name === "rebuild") {
-    return (
-      <svg {...stroke}>
-        <path d="M14.6 6.2a1 1 0 0 0 0 1.5l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.8 6.8a2.1 2.1 0 0 1-3-3l6.8-6.8a6 6 0 0 1 7.9-7.9Z" />
       </svg>
     );
   }
@@ -723,7 +716,6 @@ export function ChatPage() {
       icon: agentUp ? "stop" : "start",
     },
     { method: "magi.restart", label: "runtimeRestart", icon: "restart" },
-    { method: "magi.rebuild", label: "runtimeRebuild", icon: "rebuild" },
     { method: "magi.merge", label: "runtimeMerge", icon: "merge" },
   ];
   const showPanel = panelOpen;
@@ -1048,7 +1040,7 @@ export function ChatPage() {
     setAgentStatus(Object.fromEntries(listed.map((bot) => [bot.handle, bot.online])));
   }
 
-  /** Start, stop, restart, rebuild or merge this one MAGI, from its profile. */
+  /** Start, stop, restart, or merge this one MAGI, from its profile. */
   async function runAgentRuntime(method: string) {
     const invoke = localInvoke();
     const handle = active?.magiHandle ?? "";
@@ -1056,8 +1048,8 @@ export function ChatPage() {
     setRuntimeBusy(true);
     setRuntimeNote(t("chatSettings.runtimeWorking"));
     try {
-      const result = (await invoke(method, { handle })) as { started?: boolean; rebuilt?: boolean } | null;
-      if (result?.started === true || result?.rebuilt === true) {
+      const result = (await invoke(method, { handle })) as { started?: boolean } | null;
+      if (result?.started === true) {
         await waitForAgentOnline(handle);
       } else {
         setAgentRuntime(await loadAgentRuntime(handle));

@@ -25,7 +25,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   ASP_MAGI_HANDLE,
@@ -700,33 +700,6 @@ export function createLocalApi(context) {
     return existsSync(built) ? built : "http://127.0.0.1:5173";
   }
 
-  /** Rebuild the interface only when explicitly requested. */
-  async function rebuildInterface() {
-    const appDir = path.join(appCheckout, "apps", "shell");
-    const build = (description) =>
-      command(tools.node, [tools.npm, "run", "build:ui"], {
-        cwd: appDir,
-        env: tools.env,
-        description,
-      });
-    try {
-      await build("Could not rebuild the interface");
-    } catch (error) {
-      // A pulled commit can bring a new lockfile: install once, then try again.
-      try {
-        if (context.prepareDependencies) await context.prepareDependencies(appCheckout);
-        else await command(tools.node, [tools.npm, "ci", "--ignore-scripts"], {
-          cwd: appDir,
-          env: tools.env,
-          description: "Could not install the app dependencies",
-        });
-        await build("Could not rebuild the interface");
-      } catch {
-        throw error;
-      }
-    }
-  }
-
   /**
    * Everything this checkout needs before it can run. Only a managed checkout
    * is prepared: a developer's own tree is already theirs to prepare.
@@ -763,14 +736,6 @@ export function createLocalApi(context) {
         cwd: aspCheckout,
         env: tools.env,
         description: "Could not prepare ASP",
-      });
-    }
-    if (managed && !existsSync(path.join(aspDir, "dist", "asp.js"))) {
-      progress?.("Building local ASP…", 0.25);
-      await command(tools.node, [tools.npm, "run", "build"], {
-        cwd: aspCheckout,
-        env: tools.env,
-        description: "Could not build ASP",
       });
     }
     if (managed && !context.prepareDependencies && !existsSync(path.join(magiDir, "node_modules"))) {
@@ -969,8 +934,8 @@ export function createLocalApi(context) {
   }
 
   // Starting a MAGI is this backend's job even for a developer's own checkout:
-  // only the operations that rewrite the checkout (rebuild, merge) need the app
-  // to own it.
+  // merging a managed checkout is the operation that needs the app to own it.
+  // A node builds and switches its own revision.
   async function magiAction(action) {
     if (runtimeBusy) throw new Error("Another runtime operation is still running.");
     runtimeBusy = true;
@@ -1046,11 +1011,6 @@ export function createLocalApi(context) {
     return await magiRuntime.restart(await magiAgent(payload));
   }
 
-  async function magiRebuild(payload) {
-    if ((await aspProcess.probe()) !== "ready") throw new Error("Start ASP before rebuilding this MAGI.");
-    return await magiRuntime.rebuild(await magiAgent(payload));
-  }
-
   async function magiMerge(payload) {
     return await magiRuntime.merge(await magiAgent(payload));
   }
@@ -1069,23 +1029,6 @@ export function createLocalApi(context) {
     return magiRuntime.stopAll();
   }
 
-  async function magiRebuildAll() {
-    if ((await aspProcess.probe()) !== "ready") throw new Error("Start ASP before rebuilding the MAGIs.");
-    const rebuilt = [];
-    const failed = [];
-    for (const agent of await magiRoster()) {
-      try {
-        await magiRuntime.rebuild(agent);
-        rebuilt.push(agent.handle);
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
-        failed.push({ handle: agent.handle, detail });
-        console.error(`[magi] ${agent.handle}: ${detail}`);
-      }
-    }
-    return { rebuilt, failed };
-  }
-
   async function stopOwnedAsp() {
     await aspProcess.stopOwned();
   }
@@ -1102,23 +1045,7 @@ export function createLocalApi(context) {
       asp: health,
       owned: aspProcess.owned(),
       magiOnline,
-      canInstallShellUpdate: shellUpdate?.packaged === true,
     };
-  }
-
-  /** Stop ASP, reinstall from its lockfile, bring it back — and the society with it. */
-  async function rebuildAspBody() {
-    await stopOwnedAsp();
-    await command(tools.node, [tools.npm, "ci"], {
-      cwd: path.join(aspCheckout, "apps", "asp"), env: tools.env,
-      description: "Could not install ASP dependencies",
-    });
-    await start();
-    return await runtimeStatus();
-  }
-
-  async function rebuildAsp() {
-    return await runtimeAction(rebuildAspBody);
   }
 
   async function sourceBranch(cwd = paths.checkout) {
@@ -1244,58 +1171,6 @@ export function createLocalApi(context) {
       }
     }
     return { synced, failed };
-  }
-
-  async function rebuildApp() {
-    return runtimeAction(async () => {
-      await rebuildInterface();
-      emit("app.interface-updated", {});
-      return { ui: uiEntry() };
-    });
-  }
-
-  function installerExtension() {
-    return process.platform === "darwin" ? ".dmg" : process.platform === "win32" ? ".exe" : ".AppImage";
-  }
-
-  /** Build the Electron installer from the Shell source checkout. */
-  async function buildInstallerFiles() {
-    const shellDir = path.join(paths.checkout, "apps", "shell");
-    if (!existsSync(path.join(shellDir, "package-lock.json"))) {
-      throw new Error(`MAGI shell was not found at ${shellDir}`);
-    }
-    await command(tools.node, [tools.npm, "ci"], {
-      cwd: shellDir,
-      env: tools.env,
-      description: "Could not install shell packaging dependencies",
-    });
-    await command(tools.node, [tools.npm, "run", "build"], {
-      cwd: shellDir,
-      env: tools.env,
-      description: "Could not build the local installer",
-    });
-    const output = path.join(shellDir, "release");
-    const extension = installerExtension();
-    const candidates = readdirSync(output)
-      .filter((name) => name.endsWith(extension) && !name.includes(".blockmap"))
-      .sort((left, right) => statSync(path.join(output, right)).mtimeMs - statSync(path.join(output, left)).mtimeMs);
-    const name = candidates.find((candidate) => candidate.includes(`-${process.arch}${extension}`)) ?? candidates[0];
-    if (name === undefined) throw new Error(`The build did not create a ${extension} installer in ${output}`);
-    return { output, installer: path.join(output, name) };
-  }
-
-  async function buildInstaller() {
-    return await runtimeAction(buildInstallerFiles);
-  }
-
-  async function buildAndInstallInstaller() {
-    return await runtimeAction(async () => {
-      if (shellUpdate?.packaged !== true) {
-        throw new Error("Install the new client from a packaged MAGI app.");
-      }
-      const built = await buildInstallerFiles();
-      return { ...built, ...(await shellUpdate.install(built.installer)) };
-    });
   }
 
   function isAgentic(url) {
@@ -1482,22 +1357,16 @@ export function createLocalApi(context) {
     "runtime.status": runtimeStatus,
     "runtime.stopAsp": () => runtimeAction(stopOwnedAsp),
     "runtime.startAsp": () => runtimeAction(() => start()),
-    "runtime.rebuildAsp": rebuildAsp,
     "runtime.syncApp": () => runtimeAction(syncApp),
     "runtime.syncAsp": () => runtimeAction(syncAsp),
     "magi.info": magiInfo,
     "magi.start": (payload) => magiAction(() => magiStart(payload)),
     "magi.stop": (payload) => magiAction(() => magiStop(payload)),
     "magi.restart": (payload) => magiAction(() => magiRestart(payload)),
-    "magi.rebuild": (payload) => runtimeAction(() => magiRebuild(payload)),
     "magi.merge": (payload) => runtimeAction(() => magiMerge(payload)),
     "magi.startAll": () => magiAction(() => magiStartAll()),
     "magi.stopAll": () => magiAction(() => magiStopAll()),
-    "magi.rebuildAll": () => runtimeAction(() => magiRebuildAll()),
     "magi.syncAll": () => runtimeAction(syncMagis),
-    "runtime.rebuildApp": rebuildApp,
-    "runtime.buildInstaller": buildInstaller,
-    "runtime.buildAndInstallInstaller": buildAndInstallInstaller,
     "shell.updateStatus": shellUpdateStatus,
     "shell.installUpdate": installShellUpdate,
     "github.state": currentState,

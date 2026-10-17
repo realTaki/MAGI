@@ -1,6 +1,6 @@
 ---
 name: project
-description: Read and edit this MAGI's source checkout, then ask the desktop app to rebuild this MAGI, the operator UI, or ASP.
+description: Read and edit this MAGI's source checkout, then replace this node with request_rebuild target self.
 version: "1.0"
 ---
 
