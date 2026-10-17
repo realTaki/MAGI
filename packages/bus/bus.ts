@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { magiHome } from "@magi/runtime/home.js";
 import { and, eq, inArray, ne, or } from "drizzle-orm";
-import Database from "better-sqlite3";
+import { openDatabase, pragma } from "./sqlite.js";
 import { workspaceDatabase, migrateBooks, migrateJobs, type BusDb } from "./drizzle/database.js";
 import { contacts, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "./books/contactBook.js";
 import { ChatBook } from "./books/chatBook.js";
@@ -65,8 +65,8 @@ export class Bus {
     const jobsPath = join(this.workspace, "logs", "jobs.db");
     mkdirSync(join(this.workspace, "memories"), { recursive: true });
     mkdirSync(join(this.workspace, "logs"), { recursive: true });
-    const memories = new Database(memoriesPath);
-    const jobDb = new Database(jobsPath);
+    const memories = openDatabase(memoriesPath);
+    const jobDb = openDatabase(jobsPath);
     for (const client of [memories, jobDb]) {
       client.exec("PRAGMA journal_mode = WAL");
       client.exec("PRAGMA busy_timeout = 5000");
@@ -74,16 +74,16 @@ export class Bus {
     // Older migrations rebuild parent tables. Disable checks while they run even if a
     // caller supplied a connection with checks already enabled, then enforce every
     // declared relationship for ordinary Book operations.
-    memories.pragma("foreign_keys = OFF");
+    pragma(memories, "foreign_keys = OFF");
     // Schema history lives in ``bus/drizzle/``, one folder per database.
     this.db = workspaceDatabase(memories);
     migrateBooks(this.db);
     // SQLite recognizes foreign-key declarations only when each connection enables them.
     // Migrations run first because older migrations rebuild parent tables.
-    memories.pragma("foreign_keys = ON");
+    pragma(memories, "foreign_keys = ON");
     this.jobs = workspaceDatabase(jobDb);
     migrateJobs(this.jobs);
-    jobDb.pragma("foreign_keys = ON");
+    pragma(jobDb, "foreign_keys = ON");
     // A marker names the replace the shell could not restore. Leave that claimed
     // job alone so this start can record the marker's error on it. A marker with
     // no job id fails every open replace instead.

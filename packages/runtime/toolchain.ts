@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
@@ -49,11 +50,38 @@ function bundledGit(): string {
   }
 }
 
-/** MAGI_NODE / MAGI_NPM / MAGI_GIT, then the bundled runtime and dugite, then PATH. */
+const nodeVersions = new Map<string, string>();
+
+/** MAGI_NODE / MAGI_NPM / MAGI_GIT, then the bundled runtime and dugite, then PATH. Node must be 24 or newer. */
 export function resolveToolchain(env: NodeJS.ProcessEnv = process.env): { node: string; npm: string; git: string } {
+  const node = env.MAGI_NODE?.trim() || bundledNode() || "node";
+  requireNode24(node);
   return {
-    node: env.MAGI_NODE?.trim() || bundledNode() || "node",
+    node,
     npm: env.MAGI_NPM?.trim() || bundledNpm() || "npm",
     git: env.MAGI_GIT?.trim() || bundledGit() || "git",
   };
+}
+
+function requireNode24(binary: string): void {
+  const version = nodeVersion(binary);
+  const major = Number(version.split(".")[0]);
+  if (!Number.isInteger(major) || major < 24) {
+    throw new Error(`MAGI requires Node >= 24 for node:sqlite (${binary} is ${version})`);
+  }
+}
+
+function nodeVersion(binary: string): string {
+  if (binary === process.execPath) return process.versions.node;
+  const cached = nodeVersions.get(binary);
+  if (cached !== undefined) return cached;
+  let version: string;
+  try {
+    version = execFileSync(binary, ["-p", "process.versions.node"], { encoding: "utf8", timeout: 10_000 }).trim();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`MAGI requires Node >= 24, and ${binary} did not report a version (${message})`);
+  }
+  nodeVersions.set(binary, version);
+  return version;
 }

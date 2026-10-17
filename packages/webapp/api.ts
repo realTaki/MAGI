@@ -750,16 +750,14 @@ export function createLocalApi(context) {
       }
     }
 
-    // ASP and MAGI both depend on better-sqlite3, which ships its compiled binary
-    // inside the package; npm would still run node-gyp for it (the package carries
-    // a binding.gyp) and the desktop ships no C++ toolchain. Skipping lifecycle
-    // scripts is therefore what makes these two installs work on a plain machine.
+    // The desktop ships no C++ toolchain. Lifecycle scripts stay off so these
+    // installs cannot reach node-gyp.
     if (managed && context.prepareDependencies) {
       progress?.("Checking local ASP dependencies…", 0.2);
       await context.prepareDependencies(aspCheckout);
       await context.prepareDependencies(magiDir);
     }
-    if (managed && !context.prepareDependencies && !existsSync(path.join(aspCheckout, "node_modules", "better-sqlite3"))) {
+    if (managed && !context.prepareDependencies && !existsSync(path.join(aspCheckout, "node_modules", "drizzle-orm"))) {
       progress?.("Preparing local ASP…", 0.2);
       await command(tools.node, [tools.npm, "ci", "--ignore-scripts"], {
         cwd: aspCheckout,

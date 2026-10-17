@@ -1,25 +1,24 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Database as SQLiteDatabase } from "better-sqlite3";
-import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import type { DatabaseSync } from "node:sqlite";
+import { drizzle, migrate, type SqliteDb } from "../sqlite.js";
 
 /** Either workspace database. Each Book declares the table it owns. */
-export type BusDb = BetterSQLite3Database & { $client: SQLiteDatabase };
+export type BusDb = SqliteDb & { $client: DatabaseSync };
 
 /** Wrap an already open connection: the caller owns opening it and its PRAGMAs. */
-export function workspaceDatabase(client: SQLiteDatabase): BusDb {
+export function workspaceDatabase(client: DatabaseSync): BusDb {
   return drizzle(client);
 }
 
 /** Bring a workspace database up to the schema the code expects. */
 export function migrateBooks(db: BusDb): void {
-  migrate(db, { migrationsFolder: migrationsFolder("books") });
+  migrate(db, migrationsFolder("books"));
 }
 
 export function migrateJobs(db: BusDb): void {
-  migrate(db, { migrationsFolder: migrationsFolder("jobs") });
+  migrate(db, migrationsFolder("jobs"));
 }
 
 // ``bus/drizzle/`` holds this file next to the migrations; the second shape covers

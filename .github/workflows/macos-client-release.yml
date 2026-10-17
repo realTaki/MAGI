@@ -45,9 +45,9 @@ jobs:
       - name: Install dependencies
         # `npm ci` is faster than `npm install` on a CI cache hit and refuses to
         # silently mutate the lockfile. Scripts stay enabled: Electron's
-        # postinstall is what unpacks its binary, and dugite/better-sqlite3
-        # require their native steps. (Match the Windows workflow so release
-        # builds on either platform reproduce the same dependency state.)
+        # postinstall is what unpacks its binary, and dugite unpacks git.
+        # Match the Windows workflow so release builds on either platform
+        # reproduce the same dependency state.
         working-directory: .
         run: npm ci
 

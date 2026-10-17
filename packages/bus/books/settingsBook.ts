@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 import type { BusDb } from "../drizzle/database.js";
+import { transaction } from "../sqlite.js";
 
 export const settings = sqliteTable("books_settings", {
   key: text("key").primaryKey(),
@@ -18,9 +19,9 @@ export class SettingsBook {
     return this.db.select().from(settings).where(eq(settings.key, key)).get()?.value ?? null;
   }
   setMany(values: Record<string, string>): void {
-    this.db.$client.transaction(() => {
+    transaction(this.db.$client, () => {
       for (const [key, value] of Object.entries(values)) this.set(key, value);
-    })();
+    });
   }
   set(key: string, value: string): void {
     this.db.insert(settings).values({ key, value })

@@ -2,6 +2,7 @@
 
 import { eq } from "drizzle-orm";
 import { BaseWorker, Bus, SYSTEM_CONTACT_ID } from "@magi/bus";
+import { transaction } from "@magi/bus/sqlite.js";
 
 import { LocalDatabase } from "./db/database.js";
 import { aspEvents } from "./db/tables/events.js";
@@ -93,8 +94,8 @@ export class RelayWorker extends BaseWorker {
       }
     }
     const db = this.#db();
-    db.transaction((tx) => {
-      tx.insert(relayPrincipals).values({
+    transaction(db.$client, () => {
+      db.insert(relayPrincipals).values({
         handle: agent.handle,
         token: agent.token,
         inbound_policy: agent.inbound_policy,
@@ -109,15 +110,15 @@ export class RelayWorker extends BaseWorker {
           public_key: agent.public_key,
         },
       }).run();
-      tx.delete(relayAllowlist).where(eq(relayAllowlist.contact_handle, agent.handle)).run();
+      db.delete(relayAllowlist).where(eq(relayAllowlist.contact_handle, agent.handle)).run();
       const allowlist = [...agent.allowlist].sort().map((allowed_handle) => ({
         contact_handle: agent.handle,
         allowed_handle,
       }));
       if (allowlist.length > 0) {
-        tx.insert(relayAllowlist).values(allowlist).run();
+        db.insert(relayAllowlist).values(allowlist).run();
       }
-    }, { behavior: "immediate" });
+    }, "immediate");
   }
 
   saveChat(chat: Chat, nextSequence: number): void {
@@ -165,8 +166,9 @@ export class RelayWorker extends BaseWorker {
     }
     const chatId = event.chat_id;
     const sequence = event.sequence;
-    this.#db().transaction((tx) => {
-      tx.insert(aspEvents).values({
+    const db = this.#db();
+    transaction(db.$client, () => {
+      db.insert(aspEvents).values({
         chat_id: chatId,
         sequence,
         event_id: event.event_id,
@@ -175,12 +177,12 @@ export class RelayWorker extends BaseWorker {
         payload_json: event.payload,
       }).run();
       if (event.type === "chat.message" && recipientHandles.length > 0) {
-        tx.insert(aspMessageRecipients).values(
+        db.insert(aspMessageRecipients).values(
           recipientHandles.map((handle) => ({ event_id: event.event_id, handle })),
         ).run();
       }
-      tx.update(relayChats).set({ next_sequence: sequence + 1 }).where(eq(relayChats.id, chatId)).run();
-    }, { behavior: "immediate" });
+      db.update(relayChats).set({ next_sequence: sequence + 1 }).where(eq(relayChats.id, chatId)).run();
+    }, "immediate");
   }
 
   contactFor(handle: string, name?: string | null) {

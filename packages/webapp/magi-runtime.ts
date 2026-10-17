@@ -102,10 +102,9 @@ export function createMagiRuntime({
     // where dependencies are installed and where the build is started.
     const cwd = root;
     if (prepareDependencies) await prepareDependencies(cwd);
-    if (!prepareDependencies && !existsSync(path.join(cwd, "node_modules", "better-sqlite3"))) {
-      // `--ignore-scripts`: better-sqlite3 ships its compiled binary inside the
-      // package, but npm still runs node-gyp for it (the package carries a
-      // binding.gyp) and the desktop ships no C++ toolchain to build with.
+    if (!prepareDependencies && !existsSync(path.join(cwd, "node_modules", "drizzle-orm"))) {
+      // The desktop ships no C++ toolchain. Lifecycle scripts stay off so an
+      // install cannot reach node-gyp.
       await npm(["ci", "--ignore-scripts"], {
         cwd,
         env: tools.env,

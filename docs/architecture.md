@@ -16,7 +16,7 @@ It starts one child OS process, `packages/node` `child.js`. That child is the BU
 
 The human speaks as `@user.magi` from the shell. Workers do not call each other. They publish a job and whoever owns that work claims it.
 
-Electron (`apps/shell/main.mjs`) owns the window. It starts `eva --role shell`. It does not start ASP or other nodes, and it does not run their workers. The launcher and the child are separate processes so a crash, a Node upgrade, or a native module such as `better-sqlite3` stays in the child. They are not threads in one process.
+Electron (`apps/shell/main.mjs`) owns the window. It starts `eva --role shell`. It does not start ASP or other nodes, and it does not run their workers. The launcher and the child are separate processes so a crash or a Node upgrade stays in the child. They are not threads in one process. The Electron process does not open a database.
 
 `apps/shell` and `apps/asp` are not process entries. Their worker lists live in `@magi/node` and the launcher starts them.
 
@@ -26,7 +26,7 @@ Electron (`apps/shell/main.mjs`) owns the window. It starts `eva --role shell`. 
 
 The launcher remembers the current and previous revision in `$MAGI_HOME/<node>/launcher.json`. A failed switch writes `$MAGI_HOME/eva-000/replace-failed.json`, `eva-001`, or `eva-002` (the handle with `@` and `.magi` removed).
 
-Node, npm, and git resolve in this order: `MAGI_NODE` / `MAGI_NPM` / `MAGI_GIT`, then the bundled runtime under `apps/shell/runtime` and dugite, then `PATH`.
+Node, npm, and git resolve in this order: `MAGI_NODE` / `MAGI_NPM` / `MAGI_GIT`, then the bundled runtime under `apps/shell/runtime` and dugite, then `PATH`. The resolved Node must be 24 or newer (`engines` is `>=24.0.0`, and `resolveToolchain` rejects an older binary). SQLite is Node's built-in `node:sqlite`.
 
 The relay address is `MAGI_ASP`, or `http://$MAGI_ASP_HOST:$MAGI_ASP_PORT` when those are set. The desktop window reads the address from the preload bridge.
 

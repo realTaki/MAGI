@@ -4,16 +4,13 @@ import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 
 import type { Bus } from "@magi/bus";
-import Database from "better-sqlite3";
-import type { Database as SQLiteDatabase } from "better-sqlite3";
+import { drizzle, migrate, openDatabase, pragma, transaction, type SqliteDb } from "@magi/bus/sqlite.js";
 import { and, asc, eq, gt, max } from "drizzle-orm";
-import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
 import { ackThrough, listChats as listDirectory, markAcknowledged as ackChat, saveChats as saveDirectory } from "../directory.js";
 import { appEvents, appOutgoingMessages } from "./tables/chatCache.js";
 
-type AppDb = BetterSQLite3Database & { $client: SQLiteDatabase };
+type AppDb = SqliteDb;
 
 export type OutgoingMessage = {
   id: string;
@@ -27,19 +24,17 @@ export type ChatStore = ReturnType<typeof openChatStore>;
 
 export function openChatStore(file: string, bus: Bus) {
   mkdirSync(path.dirname(file), { recursive: true });
-  const connection = new Database(file);
+  const connection = openDatabase(file);
   const db: AppDb = drizzle(connection);
   try {
-    connection.pragma("foreign_keys = ON");
-    connection.pragma("journal_mode = WAL");
-    connection.pragma("busy_timeout = 5000");
-    migrate(db, { migrationsFolder: migrationsFolder() });
+    pragma(connection, "foreign_keys = ON");
+    pragma(connection, "journal_mode = WAL");
+    pragma(connection, "busy_timeout = 5000");
+    migrate(db, migrationsFolder());
   } catch (error) {
     connection.close();
     throw error;
   }
-
-  const transaction = connection.transaction((write: () => void) => write());
 
   return {
     saveChats(chats: unknown[]) {
@@ -49,7 +44,7 @@ export function openChatStore(file: string, bus: Bus) {
       return listDirectory(bus);
     },
     saveEvents(chatId: string, events: unknown[]): number {
-      transaction(() => {
+      transaction(connection, () => {
         for (const event of events) {
           if (!isEvent(event)) continue;
           db.insert(appEvents).values({ chat_id: chatId, sequence: event.sequence, record_json: event })
@@ -91,7 +86,7 @@ export function openChatStore(file: string, bus: Bus) {
     },
     close(): void {
       try {
-        connection.pragma("wal_checkpoint(TRUNCATE)");
+        pragma(connection, "wal_checkpoint(TRUNCATE)");
       } catch {
         // The connection is already shutting down.
       }

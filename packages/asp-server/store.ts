@@ -2,6 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 
+import { transaction } from "@magi/bus/sqlite.js";
 import { and, eq, gt, notExists, sql } from "drizzle-orm";
 
 import { LocalDatabase, type AspDb } from "./db/database.js";
@@ -193,17 +194,17 @@ export class Store {
     if (db === null) {
       return;
     }
-    db.transaction((tx) => {
+    transaction(db.$client, () => {
       for (const eventId of eventIds) {
-        const event = tx.select({ type: aspEvents.type }).from(aspEvents)
+        const event = db.select({ type: aspEvents.type }).from(aspEvents)
           .where(and(eq(aspEvents.event_id, eventId), eq(aspEvents.chat_id, chatId)))
           .get();
         if (event === undefined) {
           continue;
         }
-        tx.insert(aspEventAcks).values({ event_id: eventId, handle }).onConflictDoNothing().run();
+        db.insert(aspEventAcks).values({ event_id: eventId, handle }).onConflictDoNothing().run();
         if (event.type === "chat.message") {
-          tx.update(aspMessageRecipients).set({ acked: true })
+          db.update(aspMessageRecipients).set({ acked: true })
             .where(and(eq(aspMessageRecipients.event_id, eventId), eq(aspMessageRecipients.handle, handle)))
             .run();
         }
@@ -211,11 +212,11 @@ export class Store {
       // A message event goes away only once no intended recipient is left unacked.
       // ASP is a relay, not the transcript — the desktop keeps the long-term copy,
       // and it is that write which makes its acknowledgment legal.
-      const removable = tx.select({ event_id: aspEvents.event_id }).from(aspEvents)
+      const removable = db.select({ event_id: aspEvents.event_id }).from(aspEvents)
         .where(and(
           eq(aspEvents.chat_id, chatId),
           eq(aspEvents.type, "chat.message"),
-          notExists(tx.select({ one: sql`1` }).from(aspMessageRecipients).where(and(
+          notExists(db.select({ one: sql`1` }).from(aspMessageRecipients).where(and(
             eq(aspMessageRecipients.event_id, aspEvents.event_id),
             eq(aspMessageRecipients.acked, false),
           ))),
@@ -226,11 +227,11 @@ export class Store {
         return;
       }
       for (const eventId of removable) {
-        tx.delete(aspEvents).where(eq(aspEvents.event_id, eventId)).run();
+        db.delete(aspEvents).where(eq(aspEvents.event_id, eventId)).run();
       }
       // An invitation carries the message it was opened with; that message is gone.
       const removed = new Set(removable);
-      for (const row of tx.select({ id: aspEvents.event_id, payload: aspEvents.payload_json }).from(aspEvents)
+      for (const row of db.select({ id: aspEvents.event_id, payload: aspEvents.payload_json }).from(aspEvents)
         .where(and(eq(aspEvents.chat_id, chatId), eq(aspEvents.type, "chat.invited")))
         .all()) {
         const initial = row.payload.initial_message;
@@ -239,9 +240,9 @@ export class Store {
         }
         const payload = { ...row.payload };
         delete payload.initial_message;
-        tx.update(aspEvents).set({ payload_json: payload }).where(eq(aspEvents.event_id, row.id)).run();
+        db.update(aspEvents).set({ payload_json: payload }).where(eq(aspEvents.event_id, row.id)).run();
       }
-    }, { behavior: "immediate" });
+    }, "immediate");
   }
 
   isAcknowledged(handle: string, eventId: string): boolean {

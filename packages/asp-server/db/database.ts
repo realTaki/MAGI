@@ -4,16 +4,14 @@ import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { magiHome } from "@magi/runtime/home.js";
 
-import Database from "better-sqlite3";
-import type { Database as SQLiteDatabase } from "better-sqlite3";
+import type { DatabaseSync } from "node:sqlite";
+import { drizzle, migrate, openDatabase, type SqliteDb } from "@magi/bus/sqlite.js";
 import { eq } from "drizzle-orm";
-import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
 import { aspSettings } from "./tables/settings.js";
 
-/** The relay's drizzle client over a better-sqlite3 connection. */
-export type AspDb = BetterSQLite3Database & { $client: SQLiteDatabase };
+/** The relay's drizzle client over a node:sqlite connection. */
+export type AspDb = SqliteDb;
 
 export function defaultDataDir(): string {
   return path.join(magiHome(), "asp");
@@ -25,7 +23,7 @@ export function defaultDatabasePath(): string {
 
 export class LocalDatabase {
   path: string;
-  connection: SQLiteDatabase | null = null;
+  connection: DatabaseSync | null = null;
   db: AspDb | null = null;
 
   constructor(databasePath: string) {
@@ -37,11 +35,11 @@ export class LocalDatabase {
       return;
     }
     mkdirSync(path.dirname(this.path), { recursive: true });
-    const connection = new Database(this.path);
+    const connection = openDatabase(this.path);
     connection.exec("PRAGMA foreign_keys = ON");
     connection.exec("PRAGMA journal_mode = WAL");
     const db = drizzle(connection);
-    migrate(db, { migrationsFolder: migrationsFolder() });
+    migrate(db, migrationsFolder());
     this.connection = connection;
     this.db = db;
   }

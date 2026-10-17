@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import Database from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
 import { Magi } from "../eva.js";
 import { SYSTEM_CONTACT_ID, messageDelivery, type LLMMessage, type LLMRequest } from "@magi/bus";
 import { PiAiClient } from "@magi/providers/client.js";
@@ -181,13 +181,13 @@ describe("local MAGI agent", () => {
     expect(requests).toHaveLength(2);
     expect(requests[0].messages[0].content).toContain("You are Test MAGI.");
     expect(requests[0].messages[0].content).toContain("Every user-visible reply must be valid Markdown.");
-    const memories = new Database(join(path, "memories/books.db"), { readonly: true });
-    const jobs = new Database(join(path, "logs/jobs.db"), { readonly: true });
+    const memories = new DatabaseSync(join(path, "memories/books.db"), { readOnly: true });
+    const jobs = new DatabaseSync(join(path, "logs/jobs.db"), { readOnly: true });
     const stored = (memories.prepare("SELECT content FROM books_messages ORDER BY id").all() as Array<{ content: string }>).map((row) => row.content);
     expect(stored).toHaveLength(2);
     expect(stored[0]).toBe("save a note");
     expect(stored[1]).toBe("Done.");
-    expect((jobs.prepare("SELECT type, status FROM jobs ORDER BY id").all() as Array<{ type: string; status: string }>)).toEqual([
+    expect(jobs.prepare("SELECT type, status FROM jobs ORDER BY id").all().map((row) => ({ ...row }))).toEqual([
       { type: "MessageDeliveryJob", status: "completed" },
       { type: "CallLLMJob", status: "completed" },
       { type: "RunToolJob", status: "completed" },

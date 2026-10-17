@@ -49,7 +49,7 @@ Edit `<workspace>/prompts/agent/AGENT.md`, `compaction.md`, or
 `skills_block.md` to override the managed agent prompts.
 
 BUS owns SQLite Books, durable Jobs, and the live tool catalog through
-better-sqlite3 and in-memory state. Every Book declares the table it owns right in
+`node:sqlite` and in-memory state. Every Book declares the table it owns right in
 `packages/bus/books/` (the job queue in `packages/bus/jobs/jobBoard.ts`);
 `npm run db:generate` turns a table edit into the SQL under `packages/bus/drizzle/`,
 which the runtime applies on boot, and Books query through Drizzle rather than

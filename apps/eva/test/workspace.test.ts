@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "./test.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import Database from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
 import { Bus, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, messageDelivery } from "@magi/bus";
 
 const workspaces: string[] = [];
@@ -10,7 +10,7 @@ afterEach(async () => { for (const path of workspaces.splice(0)) await rm(path, 
 async function workspace() { const path = await mkdtemp(join(tmpdir(), "magi-workspace-")); workspaces.push(path); return path; }
 
 function tables(path: string, database: string): string[] {
-  const db = new Database(join(path, database), { readonly: true });
+  const db = new DatabaseSync(join(path, database), { readOnly: true });
   const rows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>;
   db.close();
   return rows.map((row) => row.name);

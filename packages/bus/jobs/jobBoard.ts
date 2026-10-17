@@ -1,6 +1,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import type { BusDb } from "../drizzle/database.js";
+import { transaction } from "../sqlite.js";
 import type { AspCommandJob, AspCommandResult } from "./aspCommand.js";
 import type { CallLLMJob, CallLLMResult } from "./callLlm.js";
 import type { CardJob, CardResult } from "./card.js";
@@ -81,8 +82,8 @@ export class JobBoard<K extends JobType> {
   }
 
   claim(worker: string, predicate?: (input: JobInput[K]) => boolean): Job<K> | null {
-    return this.db.transaction((tx) => {
-      const rows = tx.select({ id: jobs.id, input: jobs.input }).from(jobs)
+    return transaction(this.db.$client, () => {
+      const rows = this.db.select({ id: jobs.id, input: jobs.input }).from(jobs)
         .where(and(eq(jobs.type, this.type), eq(jobs.status, "pending")))
         .orderBy(jobs.id)
         .limit(100)
@@ -91,7 +92,7 @@ export class JobBoard<K extends JobType> {
         const input = JSON.parse(row.input) as JobInput[K];
         if (predicate && !predicate(input)) continue;
         // The SQL result is the portable claim signal: ask for the row the update won.
-        const claimed = tx.update(jobs)
+        const claimed = this.db.update(jobs)
           .set({ status: "claimed", worker, updated_at: sql`(CURRENT_TIMESTAMP)` })
           .where(and(eq(jobs.id, row.id), eq(jobs.status, "pending")))
           .returning({ id: jobs.id })
@@ -99,24 +100,24 @@ export class JobBoard<K extends JobType> {
         if (claimed) return { id: row.id, type: this.type, input, status: "claimed" as const, worker };
       }
       return null;
-    }, { behavior: "immediate" });
+    }, "immediate");
   }
 
   /** Claim one pending job by id. A different pending job is left alone. */
   claimId(worker: string, id: number): Job<K> | null {
-    return this.db.transaction((tx) => {
-      const row = tx.select({ id: jobs.id, input: jobs.input }).from(jobs)
+    return transaction(this.db.$client, () => {
+      const row = this.db.select({ id: jobs.id, input: jobs.input }).from(jobs)
         .where(and(eq(jobs.id, id), eq(jobs.type, this.type), eq(jobs.status, "pending")))
         .get();
       if (!row) return null;
-      const claimed = tx.update(jobs)
+      const claimed = this.db.update(jobs)
         .set({ status: "claimed", worker, updated_at: sql`(CURRENT_TIMESTAMP)` })
         .where(and(eq(jobs.id, row.id), eq(jobs.status, "pending")))
         .returning({ id: jobs.id })
         .get();
       if (!claimed) return null;
       return { id: row.id, type: this.type, input: JSON.parse(row.input) as JobInput[K], status: "claimed" as const, worker };
-    }, { behavior: "immediate" });
+    }, "immediate");
   }
 
   /** Fail a job that is still open. A claimed job has no claim left to take. */

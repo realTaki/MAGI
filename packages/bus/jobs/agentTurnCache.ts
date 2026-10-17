@@ -1,6 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { type AnySQLiteColumn, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import type { BusDb } from "../drizzle/database.js";
+import { transaction } from "../sqlite.js";
 import type { LLMMessage, LLMRequest } from "./callLlm.js";
 import { jobs } from "./jobBoard.js";
 
@@ -103,15 +104,15 @@ export class AgentTurnCache {
 
   private append(turn_id: number, kind: "assistant" | "tool_result", payload: { message: LLMMessage }, job_id: number | null = null): void {
     const context = this.get(turn_id);
-    this.db.transaction((tx) => {
-      const previous = tx.select({ id: agentTurnsCache.id, sequence: agentTurnsCache.sequence }).from(agentTurnsCache)
+    transaction(this.db.$client, () => {
+      const previous = this.db.select({ id: agentTurnsCache.id, sequence: agentTurnsCache.sequence }).from(agentTurnsCache)
         .where(eq(agentTurnsCache.turn_id, turn_id)).orderBy(agentTurnsCache.sequence).all().at(-1);
       if (!previous) throw new Error(`agent turn ${turn_id} has no context root`);
-      tx.insert(agentTurnsCache).values({
+      this.db.insert(agentTurnsCache).values({
         turn_id, previous_block_id: previous.id, sequence: previous.sequence + 1, kind, job_id,
         payload: JSON.stringify(payload),
       }).run();
-    }, { behavior: "immediate" });
+    }, "immediate");
     // The durable append happened first; hot contexts only avoid replaying it from disk.
     context.messages.push(payload.message);
   }
