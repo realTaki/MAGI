@@ -3,7 +3,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Magi } from "../eva.js";
-import { messageDelivery } from "@magi/bus";
+import assert from "node:assert/strict";
+import { Bus, messageDelivery } from "@magi/bus";
+import { ManagerWorker } from "@magi/manager";
 import { jsonServer } from "./httpServer.js";
 
 /** Stands in for the Telegram API: it answers slowly, the way long polling does. */
@@ -155,6 +157,44 @@ test("an unknown worker name is refused", async () => {
     expect(result.error).toContain("unknown worker");
   } finally {
     await magi.stop();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("shutdown retires an old poll loop when a concurrent request restarts the same worker", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "magi-manager-drain-"));
+  const bus = new Bus("@drain.magi", workspace);
+  let starts = 0;
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  let first = true;
+  const worker = {
+    worker_name: "drainer",
+    start() { starts++; },
+    async poll() { if (first) { first = false; await held; } return false; },
+  };
+  const manager = new ManagerWorker(bus, [worker], { drain: ["drainer"], build: { app: "eva", script: "build" } });
+  let stopping: Promise<void> | undefined;
+  try {
+    await manager.start();
+    stopping = manager.stop(); // Removes the old generation while its poll is held.
+    bus.board("ManageWorkerNotify").publish({ worker: "drainer", action: "start" }, "test");
+    const deadline = Date.now() + 3000;
+    while (starts < 2 && Date.now() < deadline) await sleep(10);
+    assert.equal(starts, 2, "the supervisor processed the concurrent start");
+    release();
+    let closed = false;
+    void stopping.then(() => { closed = true; });
+    const stopDeadline = Date.now() + 1000;
+    while (!closed && Date.now() < stopDeadline) await sleep(10);
+    assert.equal(closed, true, "an old loop must not adopt the new worker generation");
+  } finally {
+    release();
+    // Also release both loops when demonstrating the pre-fix failure.
+    bus.settings.set("worker.drainer.enabled", "false");
+    bus.board("ManageWorkerNotify").publish({ worker: "drainer", action: "stop" }, "test");
+    await (stopping ?? manager.stop());
+    bus.close();
     await rm(workspace, { recursive: true, force: true });
   }
 });

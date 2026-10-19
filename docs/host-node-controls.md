@@ -104,3 +104,12 @@ still use valid platform syntax. A real foreground regression checks literal
 quotes/braces/spaces, stderr capture and nonzero exit status on each platform.
 Native Windows CI remains the authority for Windows execution. WMI contention
 and timeout investigation is separate; no regression was deleted or skipped.
+
+The first Linux full follow-up run hung in cold-start cleanup and was terminated;
+it is recorded as a failed run, not accepted as green. Investigation found a
+separate manager shutdown race: a concurrent start request can recreate the
+same worker name while shutdown waits for the old poll loop. Name membership
+alone lets that old loop adopt the new generation and never retire. The loop
+now requires its original running-record identity. A controlled regression
+fails against the pre-fix loop and passes with the identity guard. This leaves
+normal graceful draining and replacement semantics intact.
