@@ -30,7 +30,7 @@ test("self_update skill and verifyCheckout call the same verify entry", () => {
   assert.match(verifySource, /VERIFY_NPM_ARGS/);
   assert.match(verifySource, /execFile\(node, \[npm, \.\.\.VERIFY_NPM_ARGS\]/);
   assert.doesNotMatch(verifySource, /VERIFY_TEST_ARGS|VERIFY_BUILD_ARGS|VERIFY_UI_ARGS/);
-  assert.match(verifyScript, /function run\(args, env\) \{\n  const result = spawnNpm\(args, env\);/);
+  assert.match(verifyScript, /function run\(args, env\) \{\r?\n  const result = spawnNpm\(args, env\);/);
   assert.match(verifyScript, /return result.status \?\? 1;/);
   assert.match(verifyScript, /shell: true/);
   assert.match(verifyScript, /windowsHide: true/);

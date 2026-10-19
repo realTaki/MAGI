@@ -16,6 +16,10 @@ import { ReplaceWorker } from '../../../packages/manager/dist/replace.js';
 const repo = path.resolve(import.meta.dirname, '../../..');
 const node = process.execPath;
 const npm = process.env.MAGI_NPM?.trim() || process.env.npm_execpath?.trim() || path.join(repo, 'apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js');
+/** Windows bash is PowerShell 5.1; bare `node` is not a reliable native invocation. */
+function nodeCommand(script: string): string {
+  return process.platform === 'win32' ? `& ${JSON.stringify(node)} ${script}` : `${JSON.stringify(node)} ${script}`;
+}
 function fixture(t, beforeRemove = () => {}) {
   const home = mkdtempSync(path.join(tmpdir(), 'magi-local-revision-'));
   const root = path.join(home, 'MAGI');
@@ -207,7 +211,7 @@ test('bash stays available when Node 24 cannot be resolved', async (t) => {
   });
   assert.throws(() => resolveToolchain(), /did not report a version|requires Node/);
   writeFileSync(path.join(home, 'echo.mjs'), "process.stdout.write('still-here');");
-  const result = await shellTools(home, new ShellManager())[0].run({ command: 'node echo.mjs' });
+  const result = await shellTools(home, new ShellManager())[0].run({ command: nodeCommand('echo.mjs') });
   assert.match(result, /exit_code: 0/);
   assert.match(result, /still-here/);
 });
@@ -216,7 +220,7 @@ test('foreground bash keeps the tail of long output', async (t) => {
   const home = mkdtempSync(path.join(tmpdir(), 'magi-bash-tail-'));
   t.after(() => rmSync(home, { recursive: true, force: true }));
   writeFileSync(path.join(home, 'long.mjs'), `process.stdout.write(${JSON.stringify(`${"H".repeat(10_000)}\nUNIQUE_TAIL_MARKER\n`)});`);
-  const result = await shellTools(home, new ShellManager())[0].run({ command: 'node long.mjs' });
+  const result = await shellTools(home, new ShellManager())[0].run({ command: nodeCommand('long.mjs') });
   assert.match(result, /UNIQUE_TAIL_MARKER/);
   assert.match(result, /…/);
 });
