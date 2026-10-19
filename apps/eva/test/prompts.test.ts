@@ -31,6 +31,21 @@ test("source checkout is this process's tree or an explicit refusal", () => {
     assert.match(sourceCheckout(SHELL_MAGI_HANDLE, workspace, "shell"), new RegExp(`handle: ${SHELL_MAGI_HANDLE.replace(".", "\\.")}`));
     assert.match(sourceCheckout(SHELL_MAGI_HANDLE, workspace, "shell"), /branch: magi\/shell/);
     assert.match(sourceCheckout(ASP_MAGI_HANDLE, workspace, "asp"), /branch: magi\/asp/);
+    rmSync(join(workspace, "MAGI", ".git"), { recursive: true, force: true });
+    const previous = process.env.MAGI_CHECKOUT;
+    const source = mkdtempSync(join(tmpdir(), "magi-source-"));
+    try {
+      mkdirSync(join(source, ".git"));
+      process.env.MAGI_CHECKOUT = source;
+      const fromEnv = sourceCheckout(SHELL_MAGI_HANDLE, workspace, "shell");
+      assert.ok(fromEnv.includes(`checkout: ${source}`));
+      assert.match(fromEnv, /branch: magi\/shell/);
+      assert.match(sourceCheckout(EVA_MAGI_HANDLE, workspace, "agent"), /checkout: none/);
+    } finally {
+      if (previous === undefined) delete process.env.MAGI_CHECKOUT;
+      else process.env.MAGI_CHECKOUT = previous;
+      rmSync(source, { recursive: true, force: true });
+    }
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
