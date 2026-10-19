@@ -45,6 +45,7 @@ test('local rebuild includes unstaged, staged, untracked and removed source with
   writeFileSync(path.join(f.root, 'new.txt'), 'new source'); rmSync(path.join(f.root, 'removed.txt'));
   writeFileSync(path.join(f.root, '.env'), 'fixture-only-secret');
   const before = { head: f.git('rev-parse', 'HEAD'), status: f.git('status', '--porcelain'), refs: f.git('show-ref'), index: readFileSync(path.join(f.root, '.git/index')) };
+  await assert.rejects(reviseCheckout(path.join(f.root, 'apps')), /source checkout root/);
   const result = await reviseCheckout(f.root, undefined);
   assert.notEqual(result.revision, before.head);
   assert.equal(readFileSync(path.join(result.dir, 'dist/proof'), 'utf8'), 'local-v2');

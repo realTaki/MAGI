@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, statSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { magiHome } from "./home.js";
@@ -34,7 +34,16 @@ export async function trackingRef(root: string): Promise<string> {
 async function localRevision(root: string, previous: string): Promise<string> {
   const { git } = resolveToolchain();
   const top = (await run(git, ["rev-parse", "--show-toplevel"], root)).trim();
-  if (realpathSync(top) !== realpathSync(root)) throw new Error("local rebuild requires the source checkout root");
+  const canonical = (value: string) => {
+    const resolved = realpathSync.native(value);
+    return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+  };
+  if (canonical(top) !== canonical(root)) {
+    // Windows Git can expand an 8.3 TEMP path while Node retains the alias.
+    // Verify the directory itself; never accept a child directory as the root.
+    const a = statSync(top, { bigint: true }), b = statSync(root, { bigint: true });
+    if (!a.isDirectory() || !b.isDirectory() || a.ino === 0n || a.ino !== b.ino || a.dev !== b.dev) throw new Error("local rebuild requires the source checkout root");
+  }
   const temporary = mkdtempSync(join(tmpdir(), "magi-source-index-"));
   const env = { ...process.env, GIT_INDEX_FILE: join(temporary, "index") };
   try {
