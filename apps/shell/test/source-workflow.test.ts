@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -8,6 +8,8 @@ import { createLocalApi } from '../../../packages/webapp/dist/api.js';
 
 const env = { ...process.env, GIT_AUTHOR_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@example.invalid', GIT_COMMITTER_NAME: 'Fixture', GIT_COMMITTER_EMAIL: 'fixture@example.invalid' };
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+const gitWith = (cwd, extraEnv, ...args) => execFileSync('git', args, { cwd, env: { ...env, ...extraEnv }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+const inspect = { GIT_OPTIONAL_LOCKS: '0' };
 function fixture(t, { verified = true, managed = false } = {}) {
   const home = mkdtempSync(path.join(tmpdir(), 'magi-source-workflow-'));
   const seed = path.join(home, 'seed'), source = path.join(home, 'source'), revision = path.join(home, 'shell/revisions/old');
@@ -31,13 +33,13 @@ function fixture(t, { verified = true, managed = false } = {}) {
     emit: (event, payload) => events.push({ event, payload }), copy() {}, openExternal: async () => {},
     command: async (file, args, options) => {
       calls.push({ file, args, cwd: options.cwd });
-      if (file === 'git') return git(options.cwd, ...args);
+      if (file === 'git') return gitWith(options.cwd, options.env, ...args);
       throw new Error(`unexpected command: ${file} ${args.join(' ')}`);
     },
   });
   t.after(async () => { await api.dispose(); rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
   const advance = () => { writeFileSync(path.join(seed, 'source.txt'), 'new'); git(seed, 'commit', '-am', 'new'); return git(seed, 'rev-parse', 'HEAD'); };
-  const snapshot = () => ({ head: git(source, 'rev-parse', 'HEAD'), status: git(source, 'status', '--porcelain'), index: readFileSync(path.join(source, '.git/index')) });
+  const snapshot = () => ({ head: gitWith(source, inspect, 'rev-parse', 'HEAD'), status: gitWith(source, inspect, 'status', '--porcelain'), index: readFileSync(path.join(source, '.git/index')) });
   return { api, home, source, seed, revision, old, oldUi, calls, events, advance, snapshot };
 }
 
@@ -85,6 +87,19 @@ for (const kind of ['staged', 'unstaged', 'untracked', 'MERGE_HEAD', 'rebase-mer
   });
 }
 
+test('an unstaged edit whose mtime is past the racy-git window is refused without rewriting the index', async t => {
+  const f = fixture(t); f.advance();
+  const file = path.join(f.source, 'source.txt');
+  writeFileSync(file, 'keep');
+  const past = new Date(Date.now() - 2_000);
+  utimesSync(file, past, past);
+  const before = f.snapshot();
+  const result = await f.api['runtime.syncApp']();
+  assert.equal(result.failed.length, 1);
+  assert.match(result.failed[0].detail, /Local changes/);
+  assert.deepEqual(f.snapshot(), before);
+});
+
 test('divergent commits and detached source are preserved with actionable refusals', async t => {
   const f = fixture(t); f.advance();
   writeFileSync(path.join(f.source, 'local.txt'), 'local commit'); git(f.source, 'add', '.'); git(f.source, 'commit', '-m', 'local');
@@ -104,8 +119,8 @@ test('a local edit made while fetch runs is preserved and stops the merge', asyn
   const api = createLocalApi({
     paths: { home: f.home, checkout: f.source, appCheckout: f.revision }, repository: f.seed, sourceVerified: true,
     tools: { git: 'git', env }, emit() {}, copy() {}, openExternal: async () => {},
-    command: async (_file, args, { cwd }) => {
-      const output = git(cwd, ...args);
+    command: async (_file, args, { cwd, env: extraEnv }) => {
+      const output = gitWith(cwd, extraEnv, ...args);
       if (args[0] === 'fetch') writeFileSync(path.join(f.source, 'new-during-fetch.txt'), 'preserve');
       return output;
     },
