@@ -62,6 +62,37 @@ test('fresh bootstrap tolerates Electron precreating cache; repeat startup leave
   assert.equal(await fs.readFile(path.join(f.shell, 'source.ts'), 'utf8'), 'dirty shell source');
 });
 
+test('fresh packaged startup preserves Electron directories and window state before cloning', async (t) => {
+  const f = await fixture(t); await repository(f, path.join(f.home, 'origin'));
+  for (const directory of ['electron', 'cache', 'logs', 'crash-dumps']) {
+    await fs.mkdir(path.join(f.shellHome, directory), { recursive: true });
+    await fs.writeFile(path.join(f.shellHome, directory, 'receipt'), directory);
+  }
+  for (const name of ['window-state.json', 'window-state.json.tmp']) {
+    await fs.writeFile(path.join(f.shellHome, name), '{"width":1040}');
+  }
+  assert.equal(await f.prepare(), f.shell);
+  assert.equal(await f.prepare(), f.shell);
+  for (const directory of ['electron', 'cache', 'logs', 'crash-dumps']) {
+    assert.equal(await fs.readFile(path.join(f.shellHome, directory, 'receipt'), 'utf8'), directory);
+  }
+  assert.equal(await fs.readFile(path.join(f.shellHome, 'window-state.json'), 'utf8'), '{"width":1040}');
+});
+
+test('fresh bootstrap rejects unrelated files and symlinked Electron directories without replacing them', async (t) => {
+  const f = await fixture(t); await repository(f, path.join(f.home, 'origin'));
+  await fs.mkdir(f.shellHome, { recursive: true });
+  const unrelated = path.join(f.shellHome, 'personal.txt');
+  await fs.writeFile(unrelated, 'preserve');
+  await assert.rejects(f.prepare(), /Shell destination contains existing files/);
+  assert.equal(await fs.readFile(unrelated, 'utf8'), 'preserve');
+  await fs.unlink(unrelated);
+  await fs.symlink(path.join(f.home, 'origin'), path.join(f.shellHome, 'electron'), 'junction');
+  await assert.rejects(f.prepare(), /Shell destination contains existing files/);
+  assert.equal((await fs.lstat(path.join(f.shellHome, 'electron'))).isSymbolicLink(), true);
+  assert.equal(await has(path.join(f.shell, '.git')), false);
+});
+
 test('partial fresh clone resumes by renaming the staged checkout into MAGI', async (t) => {
   const f = await fixture(t); await repository(f, path.join(f.home, 'origin'));
   await assert.rejects(f.prepare({ rename: async () => { throw new Error('simulated bootstrap interruption'); } }), /bootstrap interruption/);

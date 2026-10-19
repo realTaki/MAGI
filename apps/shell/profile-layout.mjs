@@ -14,10 +14,19 @@ async function save(file, value) {
   await fs.writeFile(temporary, JSON.stringify(value));
   await fs.rename(temporary, file);
 }
-async function cacheOnly(directory) {
+async function shellStartupFilesOnly(directory) {
   if (!await exists(directory)) return;
   const stat = await fs.lstat(directory);
-  if (!stat.isDirectory() || stat.isSymbolicLink() || (await fs.readdir(directory)).some((name) => name !== 'cache')) throw new Error(`Shell destination contains existing files: ${directory}`);
+  const reject = () => { throw new Error(`Shell destination contains existing files: ${directory}`); };
+  if (!stat.isDirectory() || stat.isSymbolicLink()) reject();
+  // main.mjs configures Electron storage before preparing the managed clone.
+  // Preserve those owned siblings; never accept unrelated files or redirects.
+  const directories = new Set(['cache', 'electron', 'logs', 'crash-dumps']);
+  const files = new Set(['window-state.json', 'window-state.json.tmp']);
+  for (const name of await fs.readdir(directory)) {
+    const entry = await fs.lstat(path.join(directory, name));
+    if (entry.isSymbolicLink() || !(directories.has(name) && entry.isDirectory() || files.has(name) && entry.isFile())) reject();
+  }
 }
 
 /** Prepare the profile before services run; all Git work uses Shell's owner. */
@@ -50,7 +59,7 @@ export async function prepareShellProfile({ home, repository, tools, command, as
     let state = await exists(journal) ? await json(journal) : null;
     if (state && (state.version !== 1 || state.kind !== 'clone')) throw new Error('Unknown Shell profile journal; no files were replaced');
     if (!state && !await exists(path.join(shell, '.git'))) {
-      await cacheOnly(shellHome);
+      await shellStartupFilesOnly(shellHome);
       if (await exists(staging)) throw new Error('Unjournaled Shell bootstrap directory exists; preserve it for inspection');
       await fs.mkdir(staging);
       progress('Cloning Shell source…', 0.06);
