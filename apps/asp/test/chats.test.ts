@@ -57,8 +57,11 @@ test("new bot registers a magi and hands its runner the credential", async (t) =
     const listed = record(await request(app, "GET", "/chats", { token }).then((response) => response.data));
     const chats = listed.chats;
     assert.ok(Array.isArray(chats));
-    assert.equal(record(chats[0]).chat_id, body.chat_id);
-    assert.deepEqual(record(chats[0]).agents, body.agents);
+    // Casper may still be opening the operator 1:1 after it comes online, so
+    // that room can sort ahead of this bot chat. Look the created id up.
+    const listedBot = recordList(chats).find((chat) => chat.chat_id === body.chat_id);
+    assert.ok(listedBot, "created bot chat is missing from GET /chats");
+    assert.deepEqual(listedBot.agents, body.agents);
   });
 });
 
