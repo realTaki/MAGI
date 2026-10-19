@@ -17,20 +17,35 @@ if (!npm) {
   process.exit(1);
 }
 
+function isJsCli(command) {
+  return /\.js$/i.test(command) || command.includes('npm-cli');
+}
+
+function spawnNpm(args, env) {
+  const opts = { cwd: root, env, stdio: 'inherit' };
+  if (isJsCli(npm)) return spawnSync(node, [npm, ...args], opts);
+  // Windows .cmd/.bat npm cannot be the executable of spawnSync without a
+  // shell (EINVAL). Bare "npm" on Windows is also a .cmd shim.
+  if (process.platform === 'win32') {
+    return spawnSync(npm, args, { ...opts, shell: true, windowsHide: true });
+  }
+  return spawnSync(npm, args, opts);
+}
+
 function run(args, env) {
-  const js = /\.js$/i.test(npm) || npm.includes('npm-cli');
-  const result = js
-    ? spawnSync(node, [npm, ...args], { cwd: root, env, stdio: 'inherit' })
-    : spawnSync(npm, args, { cwd: root, env, stdio: 'inherit' });
+  const result = spawnNpm(args, env);
   if (result.error) {
     console.error(result.error.message);
-    process.exit(1);
+    return 1;
   }
-  if (result.status !== 0) process.exit(result.status ?? 1);
+  return result.status ?? 1;
 }
 
 const role = process.env.MAGI_ROLE;
-if (!existsSync(join(root, 'node_modules'))) run(['ci'], process.env);
+if (!existsSync(join(root, 'node_modules'))) {
+  const ci = run(['ci'], process.env);
+  if (ci !== 0) process.exit(ci);
+}
 
 const home = mkdtempSync(join(tmpdir(), 'magi-verify-'));
 const env = { ...process.env };
@@ -40,18 +55,21 @@ for (const key of Object.keys(env)) {
 env.MAGI_HOME = home;
 env.MAGI_OS_HOME = home;
 delete env.NODE_TEST_CONTEXT;
+// Shell verify must run build:ui; agent/asp skip it. Keep MAGI_ROLE only for that.
 if (role) env.MAGI_ROLE = role;
 
+let code = 0;
 try {
-  run(['test'], env);
-  run(['run', 'build'], env);
-  if (role === 'shell') {
-    run(['run', 'build:ui', '--prefix', 'apps/shell'], env);
-    if (!existsSync(join(root, 'apps', 'shell', 'dist', 'index.html'))) {
+  code = run(['test'], env);
+  if (code === 0) code = run(['run', 'build'], env);
+  if (code === 0 && role === 'shell') {
+    code = run(['run', 'build:ui', '--prefix', 'apps/shell'], env);
+    if (code === 0 && !existsSync(join(root, 'apps', 'shell', 'dist', 'index.html'))) {
       console.error('Shell build produced no UI entry');
-      process.exit(1);
+      code = 1;
     }
   }
 } finally {
   rmSync(home, { recursive: true, force: true });
 }
+process.exit(code);

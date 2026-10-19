@@ -12,6 +12,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, "../../../..");
 const skillPath = resolve(here, "../../../../packages/skills/builtin_skills/self_update/SKILL.md");
 const verifySource = readFileSync(resolve(repo, "packages/runtime/verify.ts"), "utf8");
+const verifyScript = readFileSync(resolve(repo, "scripts/verify.mjs"), "utf8");
 const pkg = JSON.parse(readFileSync(resolve(repo, "package.json"), "utf8")) as { scripts: Record<string, string> };
 
 test("self_update skill and verifyCheckout call the same verify entry", () => {
@@ -24,9 +25,17 @@ test("self_update skill and verifyCheckout call the same verify entry", () => {
   assert.match(skill, /& \$env:MAGI_NODE \$env:MAGI_NPM run verify/);
   assert.match(skill, /run_in_background/);
   assert.match(skill, /bash_output/);
+  assert.match(skill, /verify command exits 0/);
+  assert.doesNotMatch(skill, /every command exits 0/);
   assert.match(verifySource, /VERIFY_NPM_ARGS/);
   assert.match(verifySource, /execFile\(node, \[npm, \.\.\.VERIFY_NPM_ARGS\]/);
   assert.doesNotMatch(verifySource, /VERIFY_TEST_ARGS|VERIFY_BUILD_ARGS|VERIFY_UI_ARGS/);
+  assert.match(verifyScript, /function run\(args, env\) \{\n  const result = spawnNpm\(args, env\);/);
+  assert.match(verifyScript, /return result.status \?\? 1;/);
+  assert.match(verifyScript, /shell: true/);
+  assert.match(verifyScript, /windowsHide: true/);
+  assert.match(verifyScript, /} finally \{\s*rmSync\(home/);
+  assert.match(verifyScript, /process\.exit\(code\)/);
   assert.doesNotMatch(skill, /do not run the whole suite/i);
   assert.doesNotMatch(skill, /magi_rsi|request_rebuild|replace_self/);
   assert.doesNotMatch(skill, /^name: project$/m);

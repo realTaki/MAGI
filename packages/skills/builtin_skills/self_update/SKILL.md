@@ -8,7 +8,7 @@ version: "1.0"
 
 Your state (memory, skills, prompts, logs) is the workspace. The source you may change is the Git checkout at `MAGI/` inside that workspace. The Shell clone normally uses `magi/shell`, ASP uses `magi/asp`, and an agent uses `magi/<name>`; inspect the actual branch before editing. If `MAGI/.git` is missing, this process is not on its own clone: stop and say so. Do not guess another checkout path, and do not request a replace.
 
-Work like a coding agent in this turn: read, edit, compile, and run the full test suite with `bash`. Failures belong in this turn so you can keep fixing. Call `request_replace` only after every command exits 0.
+Work like a coding agent in this turn: read, edit, compile, and run the full test suite with `bash`. Failures belong in this turn so you can keep fixing. Call `request_replace` only after the shared verify command exits 0.
 
 ## Find and read
 
