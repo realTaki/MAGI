@@ -80,7 +80,7 @@ export default {
     magiRebuildAll: "Rebuild all",
     magiAllDone: "{count} done",
     sourceGroup: "Source checkout",
-    sourceHint: "Each clone fetches origin on its own. Press Sync on the ASP, App, and MAGI cards below. This card only updates this checkout from its remote.",
+    sourceHint: "Each clone fetches origin on its own. Press Sync on the shell, ASP, and MAGI cards below. This card only updates this checkout from its remote.",
     sourceUpdate: "Update source from remote",
     syncButton: "Sync",
     syncMerged: "Synced new commits",

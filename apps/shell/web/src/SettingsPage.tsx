@@ -408,6 +408,21 @@ export function SettingsPage() {
                   </div>
                 </div>
                 <div className="settings-card">
+                  <div className="settings-card__label">shell</div>
+                  <div className="settings-card__actions settings-card__actions--wrap">
+                    <ActionButton
+                      label={t("appSettings.syncButton")}
+                      disabled={runtimeBusy}
+                      onRun={() => runSync("runtime.syncApp")}
+                    />
+                    <ActionButton
+                      label={t("appSettings.rebuildApp")}
+                      disabled={runtimeBusy}
+                      onRun={() => runRuntime("runtime.rebuildApp")}
+                    />
+                  </div>
+                </div>
+                <div className="settings-card">
                   <div className="settings-card__label">ASP · {runtimeStatus || "—"}</div>
                   <div className="settings-card__actions settings-card__actions--wrap">
                     <ActionButton
@@ -454,21 +469,6 @@ export function SettingsPage() {
                       label={t("appSettings.magiRebuildAll")}
                       disabled={runtimeBusy}
                       onRun={() => runMagiAll("magi.rebuildAll")}
-                    />
-                  </div>
-                </div>
-                <div className="settings-card">
-                  <div className="settings-card__label">App</div>
-                  <div className="settings-card__actions settings-card__actions--wrap">
-                    <ActionButton
-                      label={t("appSettings.syncButton")}
-                      disabled={runtimeBusy}
-                      onRun={() => runSync("runtime.syncApp")}
-                    />
-                    <ActionButton
-                      label={t("appSettings.rebuildApp")}
-                      disabled={runtimeBusy}
-                      onRun={() => runRuntime("runtime.rebuildApp")}
                     />
                   </div>
                 </div>

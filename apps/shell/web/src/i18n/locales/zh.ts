@@ -80,7 +80,7 @@ export default {
     magiRebuildAll: "重建全部",
     magiAllDone: "完成 {count} 个",
     sourceGroup: "根源码 checkout",
-    sourceHint: "每个 clone 各自从 origin 拉取。在下面 ASP / App / 全部 MAGI 各自的卡片里按「同步」。这里只把当前 checkout 从远程更新。",
+    sourceHint: "每个 clone 各自从 origin 拉取。在下面 shell / ASP / 全部 MAGI 各自的卡片里按「同步」。这里只把当前 checkout 从远程更新。",
     sourceUpdate: "从远程更新根源码",
     syncButton: "同步",
     syncMerged: "已同步新提交",

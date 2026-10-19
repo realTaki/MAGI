@@ -80,7 +80,7 @@ export default {
     magiRebuildAll: "すべて再構築",
     magiAllDone: "{count} 件完了",
     sourceGroup: "ソース checkout",
-    sourceHint: "各 clone は origin から独立して取得します。下の ASP / App / すべての MAGI のカードの「同期」を押してください。ここではこの checkout 自身をリモートから更新するだけです。",
+    sourceHint: "各 clone は origin から独立して取得します。下の shell / ASP / すべての MAGI のカードの「同期」を押してください。ここではこの checkout 自身をリモートから更新するだけです。",
     sourceUpdate: "リモートからソースを更新",
     syncButton: "同期",
     syncMerged: "新しいコミットを同期しました",
