@@ -153,6 +153,8 @@ export default {
     runtimeMerge: "合并 main",
     runtimeWorking: "正在操作…",
     runtimeDone: "已操作。",
+    online: "在线",
+    offline: "离线",
     members: "成员",
     membersEmpty: "还没有成员。稍后邀请 bot。",
     membersInvite: "邀请",

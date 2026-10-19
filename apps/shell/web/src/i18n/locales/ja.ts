@@ -153,6 +153,8 @@ export default {
     runtimeMerge: "main をマージ",
     runtimeWorking: "処理中…",
     runtimeDone: "完了しました。",
+    online: "オンライン",
+    offline: "オフライン",
     members: "メンバー",
     membersEmpty: "まだメンバーがいません。あとから bot を招待できます。",
     membersInvite: "招待",

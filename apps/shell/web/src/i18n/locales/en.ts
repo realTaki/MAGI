@@ -153,6 +153,8 @@ export default {
     runtimeMerge: "Merge main",
     runtimeWorking: "Working…",
     runtimeDone: "Done.",
+    online: "Online",
+    offline: "Offline",
     members: "Members",
     membersEmpty: "No members yet. Invite a bot later.",
     membersInvite: "Invite",
