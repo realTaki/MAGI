@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { expect, sleep } from "./test.js";
 import test from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -49,6 +50,25 @@ test("shell manager shutdown terminates all owned processes", { timeout: 15_000 
     await shells.shutdown();
     await exited;
     expect(shells.list()).toEqual([]);
+  } finally {
+    await shells.shutdown();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+// Exercise actual command parsing and pipe capture on the native CI platform.
+test("foreground shell preserves quoted output and reports nonzero exit", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "magi-shell-quoting-"));
+  const shells = new ShellManager();
+  try {
+    const text = 'literal "quotes", {braces} and spaces';
+    const command = process.platform === "win32"
+      ? `[Console]::Out.WriteLine('${text}'); [Console]::Error.WriteLine('failure detail'); exit 7`
+      : `printf '%s\\n' '${text}'; printf 'failure detail\\n' >&2; exit 7`;
+    const result = await shells.foreground(command, workspace, 10_000);
+    assert.match(result, /^exit_code: 7\n/);
+    assert.ok(result.includes(text), result);
+    assert.ok(result.includes("failure detail"), result);
   } finally {
     await shells.shutdown();
     await rm(workspace, { recursive: true, force: true });

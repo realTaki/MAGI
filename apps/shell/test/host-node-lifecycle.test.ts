@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -84,9 +84,17 @@ test("profile controls pause hosted Shell/Casper durably and stop/restart the re
     const heartbeat = path.join(root, "owned-command.json");
     const code = `const fs=require('node:fs');let count=0;const beat=()=>fs.writeFileSync(${JSON.stringify(heartbeat)},JSON.stringify({pid:process.pid,count:++count}));beat();setInterval(beat,50)`;
     const quote = (value: string) => process.platform === "win32" ? "'" + value.replaceAll("'", "''") + "'" : "'" + value.replaceAll("'", "'\"'\"'") + "'";
-    const command = `${process.platform === "win32" ? "& " : ""}${quote(process.execPath)} -e ${quote(code)}`;
+    const script = path.join(root, "owned heartbeat.cjs");
+    writeFileSync(script, code);
+    // Windows PowerShell 5.1 reparses native arguments; keep JS source out of -e.
+    const command = `${process.platform === "win32" ? "& " : ""}${quote(process.execPath)} ${quote(script)}`;
     const toolId = shell.bus.board("RunToolJob").publish({ call: { tool_call_id: "owned-command", name: "bash", arguments: { command } } }, "test");
-    await until(() => existsSync(heartbeat));
+    await until(() => {
+      if (existsSync(heartbeat)) return true;
+      const result = shell!.bus.board("RunToolJob").result(toolId);
+      if (result) throw new Error(`heartbeat command exited before startup: ${JSON.stringify(result)}`);
+      return false;
+    });
     const room = shell.bus.chats.list("asp")[0];
     await fetch(new URL(`/chats/${room.delivery_address}/messages`, asp.origin), { method: "POST", headers: { authorization: `Bearer ${asp.operatorToken}`, "content-type": "application/json" }, body: JSON.stringify({ content: "synthetic in-flight request" }) });
     await until(() => entered);

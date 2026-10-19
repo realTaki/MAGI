@@ -115,8 +115,9 @@ export class ShellManager {
   }
 }
 
+// Encode the script so Windows argv quoting cannot rewrite PowerShell string literals.
 export function shellInvocation(command: string): string[] {
   return process.platform === "win32"
-    ? ["powershell.exe", "-NoProfile", "-Command", command]
+    ? ["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(command, "utf16le").toString("base64")]
     : ["bash", "-lc", command];
 }

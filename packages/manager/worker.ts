@@ -257,8 +257,9 @@ export class ManagerWorker extends BaseWorker {
   }
 
   private runLoop(name: string, worker: StartableWorker): Promise<void> {
+    const generation = this.running.get(name);
     return (async () => {
-      while (this.started && this.running.has(name) && !(this.nodeWorkers.has(name) && this.bus.settings.get("node.enabled") === "false")) {
+      while (this.started && this.running.get(name) === generation && !(this.nodeWorkers.has(name) && this.bus.settings.get("node.enabled") === "false")) {
         let worked = false;
         try {
           worked = await worker.poll();
