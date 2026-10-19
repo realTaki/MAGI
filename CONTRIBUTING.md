@@ -79,3 +79,28 @@ desktop is `@magi/shell`, ASP is `@magi/asp`, and libraries use `@magi/*`.
 `@user.magi` is operator speech, not an npm workspace or separate process.
 
 Security reports belong in [SECURITY.md](SECURITY.md), not public issue bodies.
+
+## Dependency security maintenance
+
+The root workspace lock is the only install lock. Do not regenerate separate
+`apps/asp` or `apps/shell` locks: npm workspace installation and Electron's
+production dependency collection resolve from the workspace root. Release
+runtime and packaging caches must also use the root lock hash.
+
+The scoped `@esbuild-kit/core-utils` override uses esbuild 0.25.12 to remove
+[GHSA-67mh-4wv8-2f99](https://github.com/advisories/GHSA-67mh-4wv8-2f99)
+from Drizzle's deprecated loader dependency. Its synchronous
+and asynchronous TypeScript transforms are covered by the dependency policy
+test. Remove the override when Drizzle removes or updates that dependency.
+
+As of 2026-10-19, two advisories remain in electron-builder's development-only
+chain through app-builder-lib 26.15.3 and @electron/get 3.1.0:
+
+- http-cache-semantics 4.2.0, [GHSA-ch52-4w7c-c8xp](https://github.com/advisories/GHSA-ch52-4w7c-c8xp): no patched version is listed
+  by GitHub. The report is disputed upstream; 4.3.0 is not a verified fix.
+- sprintf-js 1.1.3, [GHSA-hp3w-g68c-fv3c](https://github.com/advisories/GHSA-hp3w-g68c-fv3c): no patched release is available.
+
+Keep these alerts visible. Do not override @electron/get to v5 just to remove
+its old dependencies: its fetch-based downloader does not preserve the Got
+agent and timeout options passed by the current electron-builder. A supported
+upstream migration or a separately tested downloader change is required.

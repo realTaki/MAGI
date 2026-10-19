@@ -39,8 +39,6 @@ jobs:
           cache: npm
           cache-dependency-path: |
             package-lock.json
-            apps/asp/package-lock.json
-            apps/shell/package-lock.json
 
       - name: Install dependencies
         # `npm ci` is faster than `npm install` on a CI cache hit and refuses to
@@ -54,13 +52,13 @@ jobs:
       - name: Restore prepared runtime
         # The bundled Node binary is arch-specific: an arm64 Node must never
         # ride an x64 DMG (or vice versa), and two matrix jobs sharing one key
-        # would clobber each other. The shell package-lock pins the Node/npm
+        # would clobber each other. The workspace package-lock pins the Node/npm
         # versions, so include its hash too — a dep bump then drops the cache
         # instead of leaving a stale runtime.
         uses: actions/cache@v5
         with:
           path: apps/shell/runtime
-          key: runtime-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('apps/shell/package-lock.json', 'apps/shell/scripts/prepare-runtime.mjs') }}
+          key: runtime-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('package-lock.json', 'apps/shell/scripts/prepare-runtime.mjs') }}
           restore-keys: |
             runtime-${{ runner.os }}-${{ matrix.arch }}-
 

@@ -707,15 +707,13 @@ export function createLocalApi(context) {
    */
   async function prepare(progress?: (message: string, percent: number) => void) {
     await ensureAspCheckout();
-    const aspDir = path.join(aspCheckout, "apps", "asp");
     const appDir = path.join(appCheckout, "apps", "shell");
     // The MAGI runtime is a workspace now: its packages hang off the checkout root,
     // so the root carries their lockfile and their node_modules — the Shell clone
     // installs them for itself, while each MAGI's own clone installs its own.
     const magiDir = appCheckout;
     const required = [
-      path.join(aspDir, "package-lock.json"),
-      path.join(appDir, "package-lock.json"),
+      path.join(aspCheckout, "package-lock.json"),
       path.join(magiDir, "package-lock.json"),
     ];
     for (const file of required) {
@@ -745,14 +743,6 @@ export function createLocalApi(context) {
         cwd: magiDir,
         env: tools.env,
         description: "Could not prepare MAGI",
-      });
-    }
-    if (managed && !context.prepareDependencies && !existsSync(path.join(appDir, "node_modules"))) {
-      progress?.("Installing app dependencies…", 0.6);
-      await command(tools.node, [tools.npm, "ci", "--ignore-scripts"], {
-        cwd: appDir,
-        env: tools.env,
-        description: "Could not install the desktop app dependencies",
       });
     }
     if (managed && !existsSync(path.join(appDir, "dist", "index.html"))) {

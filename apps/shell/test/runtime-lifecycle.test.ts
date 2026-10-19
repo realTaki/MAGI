@@ -20,7 +20,7 @@ function makeOrigin(root) {
   const seed = path.join(root, "seed");
   git(root, ["clone", "--quiet", origin, seed]);
   mkdirSync(path.join(seed, "apps", "asp", "dist"), { recursive: true });
-  writeFileSync(path.join(seed, "apps", "asp", "package-lock.json"), "{}");
+  writeFileSync(path.join(seed, "package-lock.json"), "{}");
   writeFileSync(path.join(seed, "apps", "asp", "dist", "asp.js"), "");
   git(seed, ["config", "user.email", "test@example.invalid"]);
   git(seed, ["config", "user.name", "MAGI test"]);
@@ -311,4 +311,58 @@ test("ensureDefaultMagis reuses an existing owner 1:1 and does not open a second
   assert.equal(chats.filter((chat) => chat.agents[0] === sequentialMagiHandle(9)).length, 1, "unrelated MAGI 1:1 is retained");
   assert.equal(chats.filter((chat) => chat.agents[0] === SHELL_MAGI_HANDLE).length, 1, "default setup creates Shell's 1:1");
   await api.dispose();
+});
+
+
+test("prepare accepts root-only locks for separate source and runtime checkouts", async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-workspace-prepare-"));
+  const checkout = path.join(root, "source");
+  const appCheckout = path.join(root, "runtime");
+  for (const directory of [checkout, appCheckout]) {
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(path.join(directory, "package-lock.json"), "{}");
+  }
+  const ui = path.join(appCheckout, "apps", "shell", "dist", "index.html");
+  mkdirSync(path.dirname(ui), { recursive: true });
+  writeFileSync(ui, "<!doctype html>");
+  const api = createLocalApi({
+    paths: { home: root, userData: path.join(root, "userData"), checkout, appCheckout },
+    tools: { git: "git", env: process.env },
+    emit: () => {}, openExternal: async () => {}, copy: () => {},
+  });
+  t.after(async () => { await api.dispose(); rmSync(root, { recursive: true, force: true }); });
+  assert.deepEqual(await api.prepare(), { ui });
+  rmSync(path.join(checkout, "package-lock.json"));
+  await assert.rejects(api.prepare(), /checkout is incomplete/);
+  writeFileSync(path.join(checkout, "package-lock.json"), "{}");
+  rmSync(path.join(appCheckout, "package-lock.json"));
+  await assert.rejects(api.prepare(), /checkout is incomplete/);
+});
+
+test("managed prepare installs each workspace root without a separate app install", async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-managed-prepare-"));
+  const { origin, seed } = makeOrigin(root);
+  const ui = path.join(seed, "apps", "shell", "dist", "index.html");
+  mkdirSync(path.dirname(ui), { recursive: true });
+  writeFileSync(ui, "<!doctype html>");
+  const installs: string[] = [];
+  const api = createLocalApi({
+    paths: { home: root, userData: path.join(root, "userData"), checkout: seed },
+    repository: origin, managed: true,
+    tools: { git: "git", node: process.execPath, npm: "fixture-npm", env: process.env },
+    command: async (binary, args, options) => {
+      if (binary === "git") return execFileSync(binary, args, { ...options, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+      assert.equal(binary, process.execPath);
+      assert.deepEqual(args, ["fixture-npm", "ci", "--ignore-scripts"]);
+      installs.push(options.cwd);
+      mkdirSync(path.join(options.cwd, "node_modules", "drizzle-orm"), { recursive: true });
+      return "";
+    },
+    emit: () => {}, openExternal: async () => {}, copy: () => {},
+  });
+  t.after(async () => { await api.dispose(); rmSync(root, { recursive: true, force: true }); });
+  assert.deepEqual(await api.prepare(), { ui });
+  assert.deepEqual(installs, [path.join(root, ".magi", magiLocalName(ASP_MAGI_HANDLE), "MAGI"), seed]);
+  await api.prepare();
+  assert.equal(installs.length, 2, "existing root installs are reused without checking app-local node_modules");
 });
