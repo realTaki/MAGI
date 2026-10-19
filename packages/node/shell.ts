@@ -56,7 +56,7 @@ export class Shell {
         env: context.tools.env,
         spawnProcess: context.spawn,
         startProcess: context.startProcess,
-        initialProcess: context.initialProcesses?.find(({ spec }: { spec: ProcessSpec }) => spec.entry.endsWith("asp.js")),
+        initialProcess: context.initialProcesses?.find(({ spec }: { spec: ProcessSpec }) => (spec.entry.endsWith("asp.js") || (spec.entry.endsWith("eva.mjs") && spec.args?.[0] === "--role" && spec.args?.[1] === "asp"))),
       });
       this.worker = new WebappWorker(this.bus, { ...context, aspProcess: this.aspProcess,
         nodeControl: { running: () => this.manager.nodeRunning(), setRunning: (enabled: boolean) => this.manager.setNodeRunning(enabled) },

@@ -13,7 +13,7 @@
 
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { BaseWorker, type Bus } from "@magi/bus";
 import { aspBase } from "@magi/runtime/asp.js";
@@ -62,6 +62,7 @@ export class AspProcessWorker extends BaseWorker {
   private child: ChildProcess | null = null;
   private handle: ProcessHandle | null = null;
   private checkout: string | null = null;
+  private starting: Promise<void> | null = null;
   private wanted = false;
   private wantsShutdown = false;
   private stoppingProcess = false;
@@ -140,6 +141,13 @@ export class AspProcessWorker extends BaseWorker {
   }
 
   async ensure(checkout: string, progress?: AspProgress): Promise<void> {
+    if (this.wantsShutdown) throw new Error("ASP owner is shutting down");
+    if (this.starting) return await this.starting;
+    this.starting = this.ensureOnce(checkout, progress);
+    try { await this.starting; } finally { this.starting = null; }
+  }
+
+  private async ensureOnce(checkout: string, progress?: AspProgress): Promise<void> {
     this.checkout = checkout;
     this.wanted = true;
     progress?.("Checking local ASP…", 0.9);
@@ -151,8 +159,37 @@ export class AspProcessWorker extends BaseWorker {
       this.issue = null;
       return;
     }
-    this.issue = `ASP is not running at ${this.origin.href}. Start it with eva --role asp.`;
-    throw new Error(this.issue);
+    const entry = join(checkout, "apps", "eva", "eva.mjs");
+    if (!existsSync(entry)) throw new Error(`The ASP launcher is missing: ${entry}`);
+    if (this.wantsShutdown) throw new Error("ASP owner is shutting down");
+    this.stoppingProcess = false;
+    progress?.("Starting local ASP…", 0.9);
+    const env = { ...this.env };
+    for (const key of ["NODE_TEST_CONTEXT", "MAGI_CHILD", "MAGI_HEALTH", "MAGI_HEALTH_WORKSPACE", "MAGI_APP_CHECKOUT", "MAGI_PREVIOUS_REVISION"]) delete env[key];
+    Object.assign(env, { MAGI_ROLE: "asp", MAGI_HOST: "0", MAGI_CHECKOUT: checkout,
+      MAGI_NODE: this.nodeBinary(), MAGI_ASP: this.origin.href,
+      MAGI_ASP_HOST: this.origin.hostname, MAGI_ASP_PORT: this.origin.port || "42069" });
+    try {
+      if (!this.owned()) {
+        if (this.startProcess) {
+          const handle = await this.startProcess({ entry, cwd: dirname(entry), args: ["--role", "asp"], env });
+          this.handle = handle;
+          handle.onExit((code, signal) => {
+            if (this.handle !== handle) return;
+            this.handle = null;
+            if (!this.stoppingProcess) this.issue = `ASP exited (${code ?? signal ?? "unknown"})`;
+          });
+        } else this.child = this.spawnAsp(entry, env);
+      }
+      if (this.wantsShutdown) throw new Error("ASP owner is shutting down");
+      await this.waitUntilReady();
+      if (this.wantsShutdown) throw new Error("ASP owner is shutting down");
+      this.issue = null;
+    } catch (error) {
+      this.killOwned();
+      this.issue = error instanceof Error ? error.message : String(error);
+      throw error;
+    }
   }
 
   async stopOwned(): Promise<void> {
@@ -178,16 +215,13 @@ export class AspProcessWorker extends BaseWorker {
     throw new Error("ASP did not stop.");
   }
 
-  private spawnAsp(aspDir: string): ChildProcess {
-    const child = this.spawnProcess(this.nodeBinary(), ["dist/asp.js"], {
-      cwd: aspDir,
-      env: {
-        ...this.env,
-        MAGI_ASP_HOST: this.origin.hostname,
-        MAGI_ASP_PORT: this.origin.port || "42069",
-      },
+  private spawnAsp(entry: string, env: NodeJS.ProcessEnv): ChildProcess {
+    const child = this.spawnProcess(this.nodeBinary(), [entry, "--role", "asp"], {
+      cwd: dirname(entry),
+      env,
       stdio: ["ignore", "pipe", "pipe"],
     });
+    child.once("error", (error) => { if (this.child === child) this.child = null; this.issue = error.message; });
     child.stderr?.on("data", (chunk) => {
       const text = String(chunk).trim();
       if (text) console.error("[asp]", text);
@@ -195,6 +229,7 @@ export class AspProcessWorker extends BaseWorker {
     child.once("exit", (code, signal) => {
       if (this.stoppingProcess) return;
       if (this.child !== child) return;
+      this.child = null;
       this.issue = `ASP exited (${code ?? signal ?? "unknown"})`;
     });
     return child;
@@ -203,6 +238,8 @@ export class AspProcessWorker extends BaseWorker {
   private async waitUntilReady(timeoutMs = 20_000): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
+      if (this.wantsShutdown) throw new Error("ASP owner is shutting down");
+      if (!this.owned()) throw new Error(this.issue || "ASP exited before becoming ready");
       const health = await this.probe();
       if (health === "ready") return;
       if (health === "incompatible") {
