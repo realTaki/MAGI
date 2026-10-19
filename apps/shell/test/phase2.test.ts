@@ -545,34 +545,6 @@ test("a broken shell build is restored and the operator is told", async () => {
   }
 });
 
-test("a finished shell revision switch tells the window to restart", async () => {
-  const root = mkdtempSync(path.join(tmpdir(), "magi-shell-updated-"));
-  const workspace = path.join(root, "workspace");
-  const bus = new Bus("@eva-000.magi", workspace);
-  bus.secrets.set("provider.api_key", "present");
-  const id = bus.board("ReplaceSelfJob").publish({ swap: true, checkout: root }, "test");
-  const previous = process.env.MAGI_REPLACE_JOB;
-  process.env.MAGI_REPLACE_JOB = String(id);
-  delete process.env.MAGI_REPLACE_ERROR;
-  const events: string[] = [];
-  const manager = new ManagerWorker(bus, [], {
-    build: { app: "shell", script: "build:process" },
-    onReplaced: () => { events.push("shell.updated"); },
-  });
-  try {
-    await manager.start();
-    await until("the window was not told the revision is ready", () => events.length === 1);
-    assert.deepEqual(events, ["shell.updated"]);
-    assert.equal(bus.board("ReplaceSelfJob").result(id)?.status, "completed");
-  } finally {
-    if (previous === undefined) delete process.env.MAGI_REPLACE_JOB;
-    else process.env.MAGI_REPLACE_JOB = previous;
-    await manager.stop();
-    bus.close();
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
 test("provider sync stores the key and keeps it out of the message text", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-sync-"));
   const asp = new Asp({

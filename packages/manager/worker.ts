@@ -62,8 +62,6 @@ export type ManagerOptions = {
   drain?: string[];
   /** Which app this process builds and replaces. */
   build: AppBuild;
-  /** The new process is up after a revision switch. Shell uses this to tell the window. */
-  onReplaced?: () => void;
 };
 
 export class ManagerWorker extends BaseWorker {
@@ -86,7 +84,7 @@ export class ManagerWorker extends BaseWorker {
     this.workers = [
       ...workers,
       new ConfigWorker(bus),
-      new ReplaceWorker(bus, options.build, this, options.onReplaced),
+      new ReplaceWorker(bus, options.build, this),
     ];
   }
 

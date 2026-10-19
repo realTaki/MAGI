@@ -62,10 +62,6 @@ export class Shell {
       this.manager = new ManagerWorker(this.bus, shellWorkers(this.bus, this.worker, this.aspProcess), {
         drain: ["agent", "webapp"],
         build: { app: "shell", script: "build:process" },
-        onReplaced: () => {
-          try { context.emit("shell.updated", {}); }
-          catch { /* The window may already be gone. The replace still stands. */ }
-        },
       });
     } catch (error) {
       this.bus.close();

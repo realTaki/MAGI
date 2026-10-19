@@ -48,7 +48,6 @@ export default {
     start: "起動",
     stop: "停止",
     error: "エラー",
-    updatedRestart: "更新しました。再起動で反映されます。",
   },
   plusMenu: {
     aria: "新規",
