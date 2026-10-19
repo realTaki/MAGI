@@ -14,6 +14,8 @@ export type MagiOptions = {
   tools?: Tool[];
   deliver?: (text: string, delivery: ChatDelivery) => void;
   peer?: PeerOptions;
+  /** Parent-owned stdio only. Never enabled by peer wire content. */
+  owner?: boolean;
   /** Legacy explicit relay adapter; standalone EVA no longer needs ASP. */
   asp?: { base: string; token: string };
   telegram?: { token: string; apiBase?: string };

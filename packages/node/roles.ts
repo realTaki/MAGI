@@ -2,6 +2,7 @@
  * The workers for one role. Shell, ASP, and an agent differ only by this list.
  */
 
+import { LocalOwnerWorker } from "./owner.js";
 import type { Bus } from "@magi/bus";
 import { AgentWorker } from "@magi/agent/worker.js";
 import { ToolsWorker, type Tool } from "@magi/built-in-tools/worker.js";
@@ -34,6 +35,7 @@ export function agentWorkers(bus: Bus, options: {
   tools?: Tool[];
   deliver?: (text: string, delivery: ChatDelivery) => void;
   peer?: PeerOptions;
+  owner?: boolean;
   asp?: { base: string; token: string };
   telegram?: { token: string; apiBase?: string };
   mcpConnector?: McpConnector;
@@ -44,6 +46,7 @@ export function agentWorkers(bus: Bus, options: {
     new TaskWorker(bus),
     new McpWorker(bus, options.mcpConnector),
     new PeerWorker(bus, options.peer),
+    ...(options.owner ? [new LocalOwnerWorker(bus)] : []),
     ...(options.asp ? [new AspWorker(bus, options.asp)] : []),
     new TelegramWorker(bus, options.telegram),
   ];

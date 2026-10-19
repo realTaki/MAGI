@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { healthyOrExit, untilHealthy } from "@magi/manager";
 import { resolveToolchain } from "@magi/runtime/toolchain.js";
 import { aspBase } from "@magi/runtime/asp.js";
+import { createOwnerApi } from "./owner.js";
 import { Magi } from "./agent.js";
 import { Asp } from "./asp.js";
 import { sendLauncher, untilShutdown, watchLauncherProtocol } from "./control.js";
@@ -24,17 +25,20 @@ function role(): string {
 async function runAgent(): Promise<{ stop: () => Promise<void>; done: Promise<void> }> {
   const handle = process.env.MAGI_HANDLE?.trim() || process.argv.find((arg, index) => process.argv[index - 1] !== "--role" && arg.startsWith("@"));
   if (!handle) throw new Error("usage: eva --role agent @handle.magi");
-  const magi = new Magi(handle, { peer: {
+  const owner = process.env.MAGI_HOST === "1";
+  const magi = new Magi(handle, { owner, peer: {
     host: process.env.MAGI_PEER_HOST?.trim() || undefined,
     port: process.env.MAGI_PEER_PORT ? Number(process.env.MAGI_PEER_PORT) : undefined,
     reachableURL: process.env.MAGI_PEER_URL?.trim() || undefined,
   } });
   await magi.start();
   await healthyOrExit(() => magi.healthy());
-  const done = process.env.MAGI_SERVER === "1"
+  const host = owner ? connectHost(process.stdin, process.stdout) : null;
+  if (host) host.serve(Object.fromEntries(Object.entries(createOwnerApi(magi.bus)).map(([name, method]) => [name, (input: unknown) => method(input as never)])));
+  const done = owner || process.env.MAGI_SERVER === "1"
     ? new Promise<void>(() => {})
     : readLines(magi);
-  return { stop: () => magi.stop(), done };
+  return { stop: async () => { try { await magi.stop(); } finally { host?.close(); } }, done };
 }
 
 async function readLines(magi: Magi): Promise<void> {
