@@ -31,7 +31,10 @@ On push and pull requests, Linux runs the complete suite, UI build, locale lint
 and launcher integration; Windows retains the complete suite, UI build and
 launcher integration; macOS retains native lifecycle, process and Git-bootstrap
 coverage. The identical extra Shell runs and macOS's duplicate UI build are
-omitted. Native Windows tests are not skipped to accommodate fixture failures.
+omitted. Native Windows tests are not skipped to accommodate fixture failures. The root
+runner caps Windows test-file concurrency at two: each isolated process owns a
+WMI process-table poller, so default file parallelism can overload the shared WMI
+service. All in-file process-ownership and concurrent-start checks still run.
 
 AppImage and unsigned Windows installer build/verification/artifact steps run
 when their validation workflows are started manually with `workflow_dispatch`.

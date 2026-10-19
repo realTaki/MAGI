@@ -13,7 +13,7 @@ test("background bash exposes incremental output and can be killed", async () =>
   const shells = new ShellManager();
   const tools = new Map(builtinTools(magi.bus, shells).map((tool) => [tool.name, tool]));
   try {
-    const command = process.platform === "win32" ? "Write-Output ready; Start-Sleep -Seconds 30" : "printf 'ready\\n'; sleep 30";
+    const command = process.platform === "win32" ? "[Console]::Out.WriteLine('ready'); [Console]::Out.Flush(); Start-Sleep -Seconds 30" : "printf 'ready\\n'; sleep 30";
     const started = await tools.get("bash")!.run({ command, run_in_background: true });
     const id = /Bash ID: ([a-f0-9]+)/.exec(started)?.[1];
     expect(id).toBeTruthy();
