@@ -5,7 +5,7 @@ import { mkdirSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createHash, createPublicKey, randomUUID } from "node:crypto";
 import { discoverPeer, PeerClient } from "@magi/channel-peer/client.js";
-import { loadOrCreateIdentity, type Bus, type ExecutableTool } from "@magi/bus";
+import { loadOrCreateIdentity, messageDelivery, MAGI_CONTACT_ID, type Bus, type ExecutableTool } from "@magi/bus";
 
 async function freePort(): Promise<number> {
   const server = createServer();
@@ -76,11 +76,13 @@ export function localEvaManagement(bus: Bus, runtime): ExecutableTool[] {
     const contact = bus.contacts.forPeer({ principal: discovered.principal, endpoint: url, name: discovered.handle });
     if (contact.peer_trust === "blocked") throw new Error("This peer is blocked");
     const conversation = bus.chats.forPeer(discovered.principal);
+    const hello = `Hello from ${bus.handle}. My EVA URL is ${ownURL}. Please decide whether to accept my contact using your own contact tool.`;
     await new PeerClient(bus.identity).send(url, discovered.principal, {
       messageId: randomUUID(), conversationUUID: conversation.conversation_uuid!,
-      content: `Hello from ${bus.handle}. My EVA URL is ${ownURL}. Please decide whether to accept my contact using your own contact tool.`,
+      content: hello,
       reachableURL: ownURL, handle: bus.handle,
     });
+    messageDelivery.record(bus, conversation.id, hello, MAGI_CONTACT_ID);
     bus.contacts.acceptPeer(contact.id, url);
     return JSON.stringify({ contact_id: contact.id, handle: contact.name, url, hello_sent: true, remote_acceptance: "pending" });
   }

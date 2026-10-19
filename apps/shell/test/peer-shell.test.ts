@@ -92,3 +92,56 @@ test("Local create waits for peer identity before publishing contact and rolls b
   assert.equal(stopped, 1);
   assert.equal(bus.contacts.list().some(c => c.name === "@failed-eva.magi"), false);
 });
+
+test("Local owner adapter exposes sealed provider chat without granting peer ownership", async t => {
+  const { bus } = fixture(t);
+  const { createOwnerApi, LocalOwnerWorker } = await import("@magi/node/owner.js");
+  const api = createOwnerApi(bus);
+  assert.equal(api["owner.profile"]().owner, true);
+  assert.equal(api["owner.profile"]().public_key, bus.identity.publicKey);
+  const receipt = api["owner.chat"]({ content: "", metadata: { card_result: { id: "provider", action: "open" } } });
+  assert.equal(receipt.type, "InboundSecretJob");
+  const room = bus.chats.list("local-owner")[0];
+  const { messageDelivery } = await import("@magi/bus");
+  messageDelivery.send(bus, room.id, "Configure provider", MAGI_CONTACT_ID, "manager", { card: { id: "provider" } });
+  await new LocalOwnerWorker(bus).poll();
+  assert.deepEqual(api["owner.events"]().at(-1)?.metadata, { card: { id: "provider" } });
+  assert.equal("owner.stop" in api, false);
+});
+
+test("Group UI lists signed membership and uses deterministic event identities", async t => {
+  const { bus, context } = fixture(t); const api = createLocalApi(context);
+  bus.settings.set("peer.reachableURL", "http://127.0.0.1:49222");
+  const { groupPrincipal } = await import("@magi/bus/books/groupBook.js");
+  bus.settings.set("peer.principal", groupPrincipal(bus.identity.publicKey));
+  const group = bus.groups.create({ title: "Test group", members: [] });
+  const id = `conversation:${group.conversation_uuid}`;
+  assert.equal(api["peer.conversations"]()[0].title, "Test group");
+  await api["peer.send"]({ id, content: "hello group" });
+  const events = await api["peer.events"]({ id });
+  assert.equal(events[0].content, "hello group");
+  assert.equal(typeof events[0].id, "string");
+  await api.dispose();
+});
+
+test("Remote URL connection sends hello and leaves recipient acceptance independent", async t => {
+  const local = fixture(t); const remote = fixture(t);
+  const { PeerServer } = await import("@magi/channel-peer/server.js");
+  const { messageDelivery } = await import("@magi/bus");
+  const server = new PeerServer(remote.bus.identity, "@remote.magi", (principal, message) => messageDelivery.receivePeer(remote.bus, {
+    principal, endpoint: message.reachableURL, conversationUUID: message.conversationUUID,
+    messageId: message.messageId, content: message.content,
+  }), { host: "127.0.0.1", port: 0 });
+  await server.start(); t.after(() => server.stop());
+  local.bus.settings.set("peer.reachableURL", "http://127.0.0.1:49221");
+  const api = createLocalApi(local.context);
+  const tool = api.localManagement.find(tool => tool.name === "connect_peer")!;
+  await tool.run({ url: server.origin });
+  assert.equal(api["peer.contacts"]().length, 2);
+  assert.equal(api["peer.contacts"]()[1].local, false);
+  const remoteContact = remote.bus.contacts.list().find(contact => contact.peer_id);
+  assert.equal(remoteContact?.peer_trust, "pending");
+  assert.equal(remoteContact?.role, "stranger");
+  assert.equal(local.spawned(), 0);
+  await api.dispose();
+});
