@@ -233,6 +233,7 @@ test("a MAGI's runtime is driven from its own profile methods", async (t) => {
   });
   assert.deepEqual(await api["runtime.status"](), {
     asp: "ready", owned: false, magiOnline: 1, canInstallShellUpdate: false,
+    sourceCheckout: root, runtimeCheckout: root,
   });
   assert.deepEqual(await api["magi.info"]({ handle: SHELL_MAGI_HANDLE }), {
     handle: SHELL_MAGI_HANDLE,
@@ -244,8 +245,8 @@ test("a MAGI's runtime is driven from its own profile methods", async (t) => {
   assert.deepEqual(await api["magi.stop"]({ handle: SHELL_MAGI_HANDLE }), { handle: SHELL_MAGI_HANDLE, stopped: false });
   await assert.rejects(api["magi.start"]({ handle: "@nobody.magi" }), /Unknown MAGI/);
   await assert.rejects(api["magi.start"]({}), /handle is required/);
-  await assert.rejects(api["runtime.buildInstaller"](), /not managed/);
-  await assert.rejects(api["runtime.buildAndInstallInstaller"](), /not managed/);
+  await assert.rejects(api["runtime.buildInstaller"](), /No verified editable MAGI source/);
+  await assert.rejects(api["runtime.buildAndInstallInstaller"](), /requires an app-managed installation/);
   assert.equal(calls.includes("POST /runtime/magi/stop"), false);
   assert.ok(calls.includes("GET /agents"));
   await api.dispose();

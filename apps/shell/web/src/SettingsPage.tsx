@@ -40,6 +40,7 @@ export function SettingsPage() {
   const [shellUpdating, setShellUpdating] = useState(false);
 
   const [runtimeStatus, setRuntimeStatus] = useState("");
+  const [sourceCheckout, setSourceCheckout] = useState("");
   const [canInstallShellUpdate, setCanInstallShellUpdate] = useState(false);
   const [runtimeMessage, setRuntimeMessage] = useState("");
   const [runtimeBusy, setRuntimeBusy] = useState(false);
@@ -49,8 +50,9 @@ export function SettingsPage() {
     let cancelled = false;
     void window.magiDesktop?.invokeLocal?.("runtime.status").then((value) => {
       if (!cancelled) {
-        const state = value as { asp?: string; canInstallShellUpdate?: boolean };
+        const state = value as { asp?: string; canInstallShellUpdate?: boolean; sourceCheckout?: string };
         setRuntimeStatus(state?.asp ?? "");
+        setSourceCheckout(state?.sourceCheckout ?? "");
         setCanInstallShellUpdate(state?.canInstallShellUpdate === true);
       }
     }).catch((error: unknown) => {
@@ -78,9 +80,10 @@ export function SettingsPage() {
 
   async function refreshRuntimeStatus() {
     const state = await window.magiDesktop?.invokeLocal?.("runtime.status") as
-      | { asp?: string; canInstallShellUpdate?: boolean }
+      | { asp?: string; canInstallShellUpdate?: boolean; sourceCheckout?: string }
       | undefined;
     setRuntimeStatus(state?.asp ?? "");
+    setSourceCheckout(state?.sourceCheckout ?? "");
     setCanInstallShellUpdate(state?.canInstallShellUpdate === true);
   }
 
@@ -399,6 +402,7 @@ export function SettingsPage() {
                 <div className="settings-card">
                   <div className="settings-card__label">{t("appSettings.sourceGroup")}</div>
                   <p className="settings-overlay__lede">{t("appSettings.sourceHint")}</p>
+                  {sourceCheckout ? <p className="settings-overlay__lede"><code style={{ overflowWrap: "anywhere" }}>{sourceCheckout}</code></p> : null}
                   <div className="settings-card__actions settings-card__actions--wrap">
                     <ActionButton
                       label={t("appSettings.sourceUpdate")}

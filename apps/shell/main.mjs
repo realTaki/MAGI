@@ -28,10 +28,10 @@ import { createSupervisor, prepareAndStartShell } from "./process.mjs";
 import { createProcessOwner } from "./process-owner.mjs";
 import { ensureInstalledDependencies } from "./installation.mjs";
 import { profilePaths, prepareShellProfile } from "./profile-layout.mjs";
+import { resolveShellCheckout } from "./source-checkout.mjs";
 
 const { resolveGitBinary, setupEnvironment } = dugite;
 const SHELL_DIR = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(SHELL_DIR, "..", "..");
 const MAGI_REPOSITORY =
   process.env.MAGI_REPOSITORY_URL ?? "https://github.com/AgenticSocietyLab/MAGI.git";
 
@@ -124,9 +124,10 @@ let supervisor = null;
 // Where the bundled runtime is, when this build has one. The app starts every
 // child process from this: Node.js and npm for the TypeScript components.
 let localTools = null;
-// Only a checkout this app owns (packaged, or an explicit scratch checkout) may
-// be rewired; a developer's own working tree must stay untouched.
+// Only app-owned installations may automatically install/retarget clones.
+// Verified source launches separately allow explicit source sync/build actions.
 let localCheckoutManaged = false;
+let localSourceVerified = false;
 
 // Unpackaged runs use the source build's MAGI-owned runtime.
 function devTools() {
@@ -134,7 +135,7 @@ function devTools() {
 }
 
 function shellProcessSpec(appCheckout) {
-  const root = app.isPackaged || localCheckoutManaged ? appCheckout : path.join(SHELL_DIR, "..", "..");
+  const root = appCheckout;
   return {
     entry: path.join(root, "apps", "eva", "eva.mjs"),
     cwd: path.join(root, "apps", "eva"),
@@ -171,6 +172,7 @@ async function spawnShell(runtimeRoot, appCheckout) {
         MAGI_USER_DATA: app.getPath("userData"),
         MAGI_REPOSITORY,
         MAGI_MANAGED: localCheckoutManaged ? "1" : "",
+        MAGI_SOURCE_VERIFIED: localSourceVerified ? "1" : "",
         MAGI_PACKAGED: app.isPackaged ? "1" : "",
         MAGI_SHELL_VERSION: app.getVersion(),
         MAGI_GIT: tools.git,
@@ -211,33 +213,22 @@ async function spawnShell(runtimeRoot, appCheckout) {
 
 
 async function resolveRuntimeRoot(progress) {
-  if (!app.isPackaged) {
-    const override = process.env.MAGI_DEV_CHECKOUT ?? "";
-    if (override === "") {
-      // The developer's own working tree: the app runs from it, but no local
-      // capability may rewire it.
-      localCheckoutManaged = false;
-      return REPO_ROOT;
-    }
-    // A scratch checkout keeps local capabilities testable with the source
-    // build's runtime.
-    const checkout = path.resolve(override);
-    if (!existsSync(path.join(checkout, ".git"))) {
-      throw new Error(`MAGI_DEV_CHECKOUT is not a Git checkout: ${checkout}`);
-    }
-    progress(`Using the checkout at ${checkout}`, 0.12);
-    localCheckoutManaged = true;
-    return checkout;
-  }
   if (runtimeRootPromise === null) {
     runtimeRootPromise = (async () => {
-      localTools = packagedTools();
-      const checkout = await prepareShellProfile({
-        home: app.getPath("home"), repository: MAGI_REPOSITORY, tools: localTools,
-        command, assertOpen: processOwner.assertOpen, progress,
+      localTools = app.isPackaged ? packagedTools() : devTools();
+      const source = await resolveShellCheckout({
+        isPackaged: app.isPackaged, shellDirectory: SHELL_DIR,
+        override: process.env.MAGI_DEV_CHECKOUT ?? "",
+        command, git: localTools.git, env: localTools.env,
+        prepareManaged: () => prepareShellProfile({
+          home: app.getPath("home"), repository: MAGI_REPOSITORY, tools: localTools,
+          command, assertOpen: processOwner.assertOpen, progress,
+        }),
       });
-      localCheckoutManaged = true;
-      return checkout;
+      localCheckoutManaged = source.managed;
+      localSourceVerified = source.sourceVerified;
+      progress(`Using the checkout at ${source.checkout}`, 0.12);
+      return source.checkout;
     })().catch((error) => {
       runtimeRootPromise = null;
       throw error;

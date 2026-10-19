@@ -25,7 +25,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   ASP_MAGI_HANDLE,
@@ -215,11 +215,12 @@ function parseGitHubSlug(url) {
 }
 
 export function createLocalApi(context) {
-  const { paths, repository, tools, emit, openExternal, copy, shellUpdate, managed = false, aspProcess, bus } = context;
+  const { paths, repository, tools, emit, openExternal, copy, shellUpdate, managed = false, sourceVerified = false, aspProcess, bus } = context;
   const command = context.command ?? localCommand;
-  // Shell loads this backend from the Shell clone. Each app has its own clone
-  // of MAGI_REPOSITORY_URL on branch magi/<name>.
+  // checkout is fixed editable source authority; appCheckout is the running
+  // revision (including its UI). Never sync or rebuild back into that revision.
   const appCheckout = paths.appCheckout ?? paths.checkout;
+  let rebuiltUi = "";
   let aspCheckout = paths.checkout;
   const spawnProcess = context.spawn ?? spawn;
   const git = { binary: tools.git, env: tools.env };
@@ -257,7 +258,7 @@ export function createLocalApi(context) {
   function requireManaged() {
     if (!managed) {
       throw new Error(
-        "This checkout is not managed by the app. Use the packaged app, or point MAGI_DEV_CHECKOUT at a scratch checkout.",
+        "This operation requires an app-managed installation. A source launch only enables explicit source sync and build actions.",
       );
     }
   }
@@ -696,13 +697,14 @@ export function createLocalApi(context) {
     if (devUrl !== "") {
       return devUrl;
     }
+    if (rebuiltUi) return rebuiltUi;
     const built = path.join(appCheckout, "apps", "shell", "dist", "index.html");
     return existsSync(built) ? built : "http://127.0.0.1:5173";
   }
 
   /** Rebuild the interface only when explicitly requested. */
   async function rebuildInterface() {
-    const appDir = path.join(appCheckout, "apps", "shell");
+    const appDir = path.join(paths.checkout, "apps", "shell");
     const build = (description) =>
       command(tools.node, [tools.npm, "run", "build:ui"], {
         cwd: appDir,
@@ -712,9 +714,10 @@ export function createLocalApi(context) {
     try {
       await build("Could not rebuild the interface");
     } catch (error) {
+      if (!managed) throw error; // Source launches never implicitly reinstall dependencies.
       // A pulled commit can bring a new lockfile: install once, then try again.
       try {
-        if (context.prepareDependencies) await context.prepareDependencies(appCheckout);
+        if (context.prepareDependencies) await context.prepareDependencies(paths.checkout);
         else await command(tools.node, [tools.npm, "ci", "--ignore-scripts"], {
           cwd: appDir,
           env: tools.env,
@@ -969,9 +972,21 @@ export function createLocalApi(context) {
     return await magiAction(action);
   }
 
-  // Starting a MAGI is this backend's job even for a developer's own checkout:
-  // only the operations that rewrite the checkout (rebuild, merge) need the app
-  // to own it.
+  async function sourceAction(action) {
+    if (!managed && !sourceVerified) throw new Error("No verified editable MAGI source checkout. Start Electron from the MAGI source tree or use the installed app.");
+    return await magiAction(async () => {
+      if (sourceVerified) {
+        await assertSourceRoot(paths.checkout);
+        const manifest = JSON.parse(readFileSync(path.join(paths.checkout, "package.json"), "utf8"));
+        const shell = JSON.parse(readFileSync(path.join(paths.checkout, "apps/shell/package.json"), "utf8"));
+        if (manifest.name !== "magi" || shell.name !== "@magi/shell") throw new Error("The verified MAGI source checkout has changed identity; restart from the intended source tree.");
+      }
+      return await action();
+    });
+  }
+
+  // Serialize explicit source and lifecycle actions without granting source
+  // launches the managed installation's clone/configuration privileges.
   async function magiAction(action) {
     if (runtimeBusy) throw new Error("Another runtime operation is still running.");
     runtimeBusy = true;
@@ -1104,6 +1119,8 @@ export function createLocalApi(context) {
       owned: aspProcess.owned(),
       magiOnline,
       canInstallShellUpdate: shellUpdate?.packaged === true,
+      sourceCheckout: paths.checkout,
+      runtimeCheckout: appCheckout,
     };
   }
 
@@ -1135,43 +1152,50 @@ export function createLocalApi(context) {
     return branch;
   }
 
-  async function originDefault(cwd) {
-    return (
-      await command(git.binary, ["rev-parse", "--abbrev-ref", "origin/HEAD"], {
-        ...gitAt(cwd),
-        env: { ...tools.env, GIT_TERMINAL_PROMPT: "0" },
-        description: "Could not read the origin default branch",
-      })
-    ).trim();
-  }
-
-  /** Merge one ref into a checkout; a conflict is aborted, never left half-merged. */
-  async function mergeInto(root, branch, from) {
-    try {
-      const output = await command(git.binary, ["merge", "--no-edit", from], {
-        cwd: root, env: tools.env, description: `Could not merge ${from} into ${branch}`,
-      });
-      return !/already up to date/i.test(output);
-    } catch {
-      try {
-        await command(git.binary, ["merge", "--abort"], {
-          cwd: root, env: tools.env, description: "Could not abort a conflicted merge",
-        });
-      } catch {
-        // Nothing to abort: the merge never started.
-      }
-      throw new Error(`${branch} could not merge ${from}; the merge was aborted.`);
+  async function assertSourceRoot(root) {
+    const top = (await command(git.binary, ["rev-parse", "--show-toplevel"], gitAt(root))).trim();
+    const a = statSync(top, { bigint: true }), b = statSync(root, { bigint: true });
+    const same = realpathSync(top) === realpathSync(root) || (a.isDirectory() && b.isDirectory() && a.ino !== 0n && a.ino === b.ino && a.dev === b.dev);
+    if (!same || path.basename(path.dirname(realpathSync(root))) === "revisions") {
+      throw new Error(`Not an editable source checkout root: ${root}. Runtime revisions cannot be synchronized.`);
     }
   }
 
-  /** Fetch origin and merge its default branch into this clone. */
-  async function syncCheckout(root, branch) {
-    await command(git.binary, ["fetch", "--prune", "origin"], {
+  async function requireCleanSource(root) {
+    await assertSourceRoot(root);
+    for (const marker of ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply", "sequencer"]) {
+      const file = (await command(git.binary, ["rev-parse", "--git-path", marker], gitAt(root))).trim();
+      if (existsSync(path.resolve(root, file))) throw new Error(`A Git operation is in progress in ${root}. Finish or abort it yourself before syncing; nothing was changed.`);
+    }
+    const dirty = (await command(git.binary, ["status", "--porcelain=v1", "--untracked-files=all"], gitAt(root))).trim();
+    if (dirty) throw new Error(`Local changes in ${root}. Commit or stash them before syncing; staged, unstaged and untracked files were preserved.`);
+    return await sourceBranch(root);
+  }
+
+  /** Only fast-forward. Never stash, reset, switch branches or abort a user's merge. */
+  async function mergeInto(root, branch, from) {
+    if (await requireCleanSource(root) !== branch) throw new Error("The source branch changed during sync; retry from the intended branch.");
+    const before = (await command(git.binary, ["rev-parse", "HEAD"], gitAt(root))).trim();
+    try {
+      await command(git.binary, ["merge", "--ff-only", from], {
+        cwd: root, env: tools.env, description: `Could not merge ${from} into ${branch}`,
+      });
+      return before !== (await command(git.binary, ["rev-parse", "HEAD"], gitAt(root))).trim();
+    } catch (error) {
+      throw new Error(`${branch} could not fast-forward from ${from}. Local commits and changes were preserved; resolve divergent history manually. ${describe(error)}`);
+    }
+  }
+
+  /** Explicit main sync; origin/HEAD may be stale or point at another branch. */
+  async function syncCheckout(root) {
+    const branch = await requireCleanSource(root);
+    await command(git.binary, ["fetch", "--no-tags", "origin", "+refs/heads/main:refs/remotes/origin/main"], {
       ...gitAt(root),
       env: { ...tools.env, GIT_TERMINAL_PROMPT: "0" },
       description: "Could not fetch from origin",
     });
-    const from = await originDefault(root);
+    const from = "refs/remotes/origin/main";
+    await command(git.binary, ["rev-parse", "--verify", `${from}^{commit}`], gitAt(root));
     return { branch, from, merged: await mergeInto(root, branch, from) };
   }
 
@@ -1180,26 +1204,26 @@ export function createLocalApi(context) {
    * fetches the same remote independently.
    */
   async function updateSource() {
-    const branch = await sourceBranch();
+    const branch = await requireCleanSource(paths.checkout);
     if ((await gitConfigValue("remote.origin.url")) === "") {
       throw new Error("The source checkout has no origin remote to update from.");
     }
     // Never let a missing credential turn into a prompt nobody can answer.
-    await gitText(["fetch", "--prune", "origin"], "Could not fetch from origin", {
+    await gitText(["fetch", "--no-tags", "origin", `+refs/heads/${branch}:refs/remotes/origin/${branch}`], `Could not fetch origin/${branch}`, {
       ...tools.env, GIT_TERMINAL_PROMPT: "0",
     });
     let behind = 0;
     try {
       behind = Number(
         await gitText(
-          ["rev-list", "--count", `HEAD..origin/${branch}`],
+          ["rev-list", "--count", `HEAD..refs/remotes/origin/${branch}`],
           `Could not compare with origin/${branch}`,
         ),
       ) || 0;
     } catch {
       throw new Error(`origin has no ${branch} branch to update from.`);
     }
-    const merged = behind > 0 ? await mergeInto(paths.checkout, branch, `origin/${branch}`) : false;
+    const merged = behind > 0 ? await mergeInto(paths.checkout, branch, `refs/remotes/origin/${branch}`) : false;
     return { branch, behind, synced: [{ module: "source", merged }], failed: [] };
   }
 
@@ -1212,24 +1236,24 @@ export function createLocalApi(context) {
    * its own button: the operator decides what to move, and a conflict is answered
    * here instead of being buried in a sweep.
    */
-  async function syncModule(module, root, branch) {
+  async function syncModule(module, root) {
     try {
-      const { merged } = await syncCheckout(root, branch);
+      const { merged } = await syncCheckout(root);
       return { synced: [{ module, merged }], failed: [] };
     } catch (error) {
       return { synced: [], failed: [{ module, detail: describe(error) }] };
     }
   }
 
-  /** The operator clone, on the branch the shell checks out for it. */
+  /** Always update editable source, even while the backend runs a revision. */
   function syncApp() {
-    return syncModule("shell", appCheckout, "magi/shell");
+    return syncModule("shell", paths.checkout);
   }
 
   /** The ASP clone, created here if this is the first time it is needed. */
   async function syncAsp() {
     await ensureAspCheckout();
-    return await syncModule("asp", aspCheckout, "magi/asp");
+    return await syncModule("asp", aspCheckout);
   }
 
   /** Every MAGI's own clone; `merge` restarts one whose branch actually moved. */
@@ -1248,9 +1272,12 @@ export function createLocalApi(context) {
   }
 
   async function rebuildApp() {
-    return runtimeAction(async () => {
+    return sourceAction(async () => {
       await rebuildInterface();
-      emit("app.interface-updated", {});
+      const built = path.join(paths.checkout, "apps", "shell", "dist", "index.html");
+      if (!existsSync(built)) throw new Error("The interface build produced no index.html; the current interface was kept.");
+      rebuiltUi = built;
+      emit("app.interface-updated", { ui: uiEntry() });
       return { ui: uiEntry() };
     });
   }
@@ -1286,7 +1313,7 @@ export function createLocalApi(context) {
   }
 
   async function buildInstaller() {
-    return await runtimeAction(buildInstallerFiles);
+    return await sourceAction(buildInstallerFiles);
   }
 
   async function buildAndInstallInstaller() {
@@ -1484,7 +1511,7 @@ export function createLocalApi(context) {
     "runtime.stopAsp": () => runtimeAction(stopOwnedAsp),
     "runtime.startAsp": () => runtimeAction(() => start()),
     "runtime.rebuildAsp": rebuildAsp,
-    "runtime.syncApp": () => runtimeAction(syncApp),
+    "runtime.syncApp": () => sourceAction(syncApp),
     "runtime.syncAsp": () => runtimeAction(syncAsp),
     "magi.info": magiInfo,
     "magi.start": (payload) => magiAction(() => magiStart(payload)),
@@ -1506,7 +1533,7 @@ export function createLocalApi(context) {
     "github.signIn": signIn,
     "github.connect": connect,
     "source.status": sourceStatus,
-    "source.update": () => runtimeAction(updateSource),
+    "source.update": () => sourceAction(updateSource),
     "chat.listChats": async () => (await chatStore()).listChats(),
     "chat.saveChats": async (rows) => (await chatStore()).saveChats(rows),
     "chat.listEvents": async (id) => (await chatStore()).listEvents(id),

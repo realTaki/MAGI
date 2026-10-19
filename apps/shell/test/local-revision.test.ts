@@ -102,13 +102,39 @@ test('both self-rebuild tools bind the editable source to this node workspace, i
   }
 });
 
+test('Shell tools keep startup source across revision switches without exposing it to another node', async (t) => {
+  const home = mkdtempSync(path.join(tmpdir(), 'magi-source-authority-'));
+  const shell = new Bus(SHELL_MAGI_HANDLE, path.join(home, 'shell'));
+  const other = new Bus('@eva-099.magi', path.join(home, 'eva-099'));
+  const previous = { ...process.env };
+  t.after(() => {
+    shell.close(); other.close();
+    for (const key of Object.keys(process.env)) if (!(key in previous)) delete process.env[key];
+    Object.assign(process.env, previous);
+    rmSync(home, { recursive: true, force: true });
+  });
+  process.env.MAGI_ROLE = 'shell';
+  process.env.MAGI_CHECKOUT = path.join(home, 'development-source');
+  process.env.MAGI_APP_CHECKOUT = path.join(home, 'shell/revisions/new');
+  for (const bus of [shell, other]) {
+    for (const tool of [...rebuildTools(bus), ...replaceTools(bus)]) {
+      const { id } = JSON.parse(await tool.run({ target: 'self', checkout: '/unrelated' }));
+      const job = bus.board('ReplaceSelfJob').claimId('test', id);
+      assert.equal(job?.input.checkout, bus === shell ? process.env.MAGI_CHECKOUT : path.join(other.workspace, 'MAGI'));
+    }
+  }
+});
+
 
 test('the actual replace worker builds local tool edits without an upstream and sends the built revision to its launcher', async (t) => {
   let bus: Bus | undefined;
   const f = fixture(t, () => bus?.close());
   f.git('branch', '--unset-upstream');
   writeFileSync(path.join(f.root, 'source.txt'), 'worker-local-v2');
-  bus = new Bus(SHELL_MAGI_HANDLE, f.home);
+  // Source launches need not live under the Shell's persistent data workspace.
+  process.env.MAGI_CHECKOUT = f.root;
+  process.env.MAGI_APP_CHECKOUT = path.join(f.home, 'shell/revisions/old');
+  bus = new Bus(SHELL_MAGI_HANDLE, path.join(f.home, 'node-workspace'));
   const savedSend = process.send, savedConnected = Object.getOwnPropertyDescriptor(process, 'connected');
   let outgoing;
   process.send = (message) => { outgoing = message; setImmediate(() => process.emit('message', { v: 1, type: 'shutdown' })); return true; };
