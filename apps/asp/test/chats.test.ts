@@ -261,7 +261,8 @@ test("opening an owner 1:1 reuses the operator bot chat", async (t) => {
 test("Casper restart and open_owner_chat keep a single owner 1:1", async (t) => {
   const databasePath = path.join(tempRoot(t), "asp.sqlite");
   const workspace = path.join(path.dirname(databasePath), "casper");
-  const firstId = await withApp({ databasePath, workspace }, async (app) => {
+  let firstId = "";
+  await withApp({ databasePath, workspace }, async (app) => {
     const chat = await waitForOwnerAgentChat(app, ASP_MAGI_HANDLE);
     const before = ownerAgentChats(app, ASP_MAGI_HANDLE).length;
     assert.equal(before, 1);
@@ -276,7 +277,7 @@ test("Casper restart and open_owner_chat keep a single owner 1:1", async (t) => 
     })).data);
     assert.equal(operator.chat_id, chat.id);
     assert.equal(ownerAgentChats(app, ASP_MAGI_HANDLE).length, 1);
-    return chat.id;
+    firstId = chat.id;
   });
   await withApp({ databasePath, workspace }, async (app) => {
     const chat = await waitForOwnerAgentChat(app, ASP_MAGI_HANDLE);
