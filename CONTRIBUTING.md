@@ -34,7 +34,8 @@ PATH="$PWD/apps/shell/runtime/bin:$PATH" apps/shell/runtime/bin/node apps/shell/
 
 Dependencies stay inside the workspace. Cache overrides, when needed, belong to
 individual commands. See [Running MAGI](docs/running.md) for the ASP/Electron
-startup order and [Verification](docs/verification.md) for checks.
+startup order and [Testing MAGI](docs/testing.md) for commands and
+[Verification](docs/verification.md) for acceptance boundaries.
 
 ## Code and review
 

@@ -1,11 +1,15 @@
 # Testing MAGI
 
-Run tests with the project-owned Node and bundled npm CLI:
+Run tests with the project-owned Node and bundled npm CLI. Commands below use
+Linux/macOS shell syntax. Windows uses `runtime/bin/node.exe`; see the
+[Windows workflow](../.github/workflows/windows-validation.yml) for its
+process-scoped PATH and PowerShell invocation.
+
 
 ```sh
-apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js test
-apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run build:ui --workspace @magi/shell
-apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run lint:i18n --workspace @magi/shell
+PATH="$PWD/apps/shell/runtime/bin:$PATH" apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js test
+PATH="$PWD/apps/shell/runtime/bin:$PATH" apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run build:ui --workspace @magi/shell
+PATH="$PWD/apps/shell/runtime/bin:$PATH" apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run lint:i18n --workspace @magi/shell
 apps/shell/runtime/bin/node --test apps/shell/integration/self-rebuild.test.mjs
 apps/shell/runtime/bin/node apps/shell/integration/chat-history.browser.mjs
 apps/shell/runtime/bin/node apps/shell/integration/provider-form.browser.mjs
@@ -47,3 +51,7 @@ ordinary green source checks alone do not certify an installer.
 A failing meaningful regression is a defect or a fixture problem to investigate,
 not a reason to delete or skip it. In particular, keep the real cold-start and
 shutdown checks: an unconfigured instance that cannot stop must remain visible.
+
+[Verification](verification.md) separates these checks from native desktop,
+installer and real-provider acceptance. Passing or documenting the commands does
+not certify those outcomes; inspect the actual result at the target revision.

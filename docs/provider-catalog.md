@@ -70,15 +70,8 @@ Agent-callable self-rebuild/synchronization capabilities remain available.
 
 ## Reproducible checks
 
-Use [Verification](verification.md) for the current root build/test entry point.
-The browser fixture, when present, runs with MAGI's bundled Node:
-
-```sh
-apps/shell/runtime/bin/node apps/shell/integration/provider-form.browser.mjs
-```
-
-It uses Chromium (`CHROMIUM` can select its path), a temporary loopback server and
-explicit mocked ASP/encryption boundaries. It does not establish real-provider
-verification. Worker tests separately exercise cryptography with synthetic keys.
-Check the fixture and platform workflow in the current revision before claiming
-that a browser or native acceptance step ran.
+Use [Testing MAGI](testing.md) for the canonical root, browser and UI checks;
+[Verification](verification.md) explains what each kind of evidence establishes.
+The Chromium fixture uses a temporary loopback server and explicit mock
+transport/encryption boundaries; worker tests separately exercise cryptography
+with synthetic keys. Neither establishes real-provider/account acceptance.
