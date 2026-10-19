@@ -2,7 +2,7 @@
 
 import type { IncomingMessage } from "node:http";
 import type { WebSocket } from "ws";
-import { ASP_MAGI_HANDLE, ASP_MAGI_NICKNAME, BaseWorker, type Bus } from "@magi/bus";
+import { ASP_MAGI_HANDLE, ASP_MAGI_NICKNAME, BaseWorker, magiLocalName, type Bus } from "@magi/bus";
 
 import { LocalDatabase, defaultDatabasePath } from "./db/database.js";
 import { bearerHandle, HttpError, listen, optionalInt, optionalString, requireContent, requireObject, Router, type RunningServer } from "./http.js";
@@ -83,7 +83,7 @@ export class AspServer extends BaseWorker {
     const aspMagi = this.store.getAgent(ASP_MAGI_HANDLE);
     if (aspMagi === undefined) {
       const [handle, token] = loadOrCreateAspMagi(this.database);
-      this.store.registerAgent({ handle, token, name: "eva-001", managed: true });
+      this.store.registerAgent({ handle, token, name: magiLocalName(handle), managed: true });
     }
     const casper = this.store.getAgent(ASP_MAGI_HANDLE);
     if (casper !== undefined && casper.nickname !== ASP_MAGI_NICKNAME) {

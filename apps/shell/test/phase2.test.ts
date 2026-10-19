@@ -497,7 +497,7 @@ setInterval(() => {}, 1000);
 test("a broken eva build is restored and the operator is told", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-eva-rollback-"));
   const checkout = writeBrokenApp(root, "eva", "build");
-  const magi = new Magi("@eva-002.magi", { workspace: path.join(root, "workspace"), client: { async complete() { return { role: "assistant" as const, content: "NO_REPLY" }; } } });
+  const magi = new Magi(EVA_MAGI_HANDLE, { workspace: path.join(root, "workspace"), client: { async complete() { return { role: "assistant" as const, content: "NO_REPLY" }; } } });
   magi.bus.secrets.set("provider.api_key", "present");
   try {
     await magi.start();

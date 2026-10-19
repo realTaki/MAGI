@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Magi } from "../eva.js";
-import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "@magi/bus";
+import { EVA_MAGI_HANDLE, MAGI_CONTACT_ID, sequentialMagiHandle, SYSTEM_CONTACT_ID, USER_HANDLE } from "@magi/bus";
 import { nodeHarness } from "./nodeHarness.js";
 import type { WebSocket } from "ws";
 
@@ -33,7 +33,7 @@ test("a replayed event is not taken in twice", async () => {
       },
     },
   });
-  const magi = new Magi("@eva-000.magi", {
+  const magi = new Magi(EVA_MAGI_HANDLE, {
     workspace,
     asp: { base: `http://127.0.0.1:${server.port}`, token: "test-token" },
     client: { async complete() { completions++; return { role: "assistant", content: "heard" } as const; } },
@@ -90,13 +90,13 @@ test("each speaker in a chat is a contact of their own", async () => {
       type: "chat.message", event_id: id, chat_id: "shared", payload: { sender, content },
     }));
     emit("m1", "@user.magi", "morning");
-    emit("m2", "@eva-001.magi", "morning yourself");
+    emit("m2", sequentialMagiHandle(1), "morning yourself");
 
     const senders = () => new Set(magi.bus.messages.list(chat.id).map((message) => message.contact_id));
     for (let i = 0; i < 100 && senders().size < 2; i++) await sleep(10);
     expect(senders()).toContain(SYSTEM_CONTACT_ID);
-    const other = magi.bus.contacts.list().find((contact) => contact.asp_handle === "@eva-001.magi");
-    expect(other).toMatchObject({ name: "@eva-001.magi", role: "magi" });
+    const other = magi.bus.contacts.list().find((contact) => contact.asp_handle === sequentialMagiHandle(1));
+    expect(other).toMatchObject({ name: sequentialMagiHandle(1), role: "magi" });
     expect(senders()).toContain(other!.id);
     // Both of them are members of the chat, in the order they were heard.
     expect(magi.bus.chatMembers.list(chat.id).map((contact) => contact.id))
@@ -182,7 +182,7 @@ test("mentions decide who answers, and everything said is kept", async () => {
       },
     },
   });
-  const magi = new Magi("@eva-000.magi", {
+  const magi = new Magi(EVA_MAGI_HANDLE, {
     workspace,
     asp: { base: `http://127.0.0.1:${server.port}`, token: "test-token" },
     client: { async complete() { completions++; return { role: "assistant", content: "heard" } as const; } },
@@ -197,15 +197,15 @@ test("mentions decide who answers, and everything said is kept", async () => {
       payload: { sender, content, ...(mentions === undefined ? {} : { mentions }) },
     }));
     // Nobody named: for whoever can help, so this MAGI answers.
-    emit("m1", "@eva-001.magi", "I can hear you");
+    emit("m1", sequentialMagiHandle(1), "I can hear you");
     for (let i = 0; i < 100 && completions < 1; i++) await sleep(10);
     // Named someone else: recorded, but not this MAGI's turn.
-    emit("m2", "@eva-002.magi", "Me too", ["@eva-009.magi"]);
+    emit("m2", sequentialMagiHandle(2), "Me too", [sequentialMagiHandle(9)]);
     // Named this MAGI: its turn.
-    emit("m3", "@user.magi", "@eva-000.magi can you hear me?", ["@eva-000.magi"]);
+    emit("m3", USER_HANDLE, `${EVA_MAGI_HANDLE} can you hear me?`, [EVA_MAGI_HANDLE]);
     for (let i = 0; i < 200 && (completions < 2 || sent.length < 2); i++) await sleep(10);
     // Another agent naming someone else again: recorded only.
-    emit("m4", "@eva-001.magi", "@eva-002.magi, you there?", ["@eva-002.magi"]);
+    emit("m4", sequentialMagiHandle(1), `${sequentialMagiHandle(2)}, you there?`, [sequentialMagiHandle(2)]);
     for (let i = 0; i < 200 && acks.length < 4; i++) await sleep(10);
 
     expect(acks.sort()).toEqual(["m1", "m2", "m3", "m4"]);
@@ -218,15 +218,15 @@ test("mentions decide who answers, and everything said is kept", async () => {
     // Nothing is dropped: what the others said stays in the history.
     expect(contents.join("\n")).toContain("I can hear you");
     expect(contents.join("\n")).toContain("Me too");
-    expect(contents.join("\n")).toContain("@eva-002.magi, you there?");
+    expect(contents.join("\n")).toContain(`${sequentialMagiHandle(2)}, you there?`);
     expect(contents.filter((content) => content === "heard")).toHaveLength(2);
 
     const handle = (asp_handle: string) => magi.bus.contacts.list().find((contact) => contact.asp_handle === asp_handle);
     expect(new Set(stored.map((message) => message.contact_id))).toEqual(new Set([
-      SYSTEM_CONTACT_ID, MAGI_CONTACT_ID, handle("@eva-001.magi")!.id, handle("@eva-002.magi")!.id,
+      SYSTEM_CONTACT_ID, MAGI_CONTACT_ID, handle(sequentialMagiHandle(1))!.id, handle(sequentialMagiHandle(2))!.id,
     ]));
     expect(new Set(magi.bus.chatMembers.list(chat.id).map((contact) => contact.asp_handle)))
-      .toEqual(new Set(["@eva-001.magi", "@eva-002.magi", "@user.magi"]));
+      .toEqual(new Set([sequentialMagiHandle(1), sequentialMagiHandle(2), USER_HANDLE]));
   } finally {
     await magi.stop();
     server.stop(true);

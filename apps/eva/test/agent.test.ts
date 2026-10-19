@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Magi } from "../eva.js";
-import { SYSTEM_CONTACT_ID, messageDelivery, type LLMMessage, type LLMRequest } from "@magi/bus";
+import { sequentialMagiHandle, SYSTEM_CONTACT_ID, messageDelivery, type LLMMessage, type LLMRequest } from "@magi/bus";
 import { PiAiClient } from "@magi/providers/client.js";
 import { AGENT_PROMPT, COMPACTION_PROMPT, SYSTEM_PROMPT } from "@magi/agent/prompt_defaults.js";
 
@@ -362,7 +362,7 @@ describe("local MAGI agent", () => {
       client: { async complete(job) { requests.push(job); return { role: "assistant", content: "ok" }; } },
     });
     const chat = magi.bus.chats.forChannel("cli", "terminal");
-    const guest = magi.bus.contacts.forAspHandle("@eva-001.magi");
+    const guest = magi.bus.contacts.forAspHandle(sequentialMagiHandle(1));
     magi.bus.contacts.update(guest.id, { nickname: "EVA" });
     magi.bus.chatMembers.add(chat.id, SYSTEM_CONTACT_ID);
     magi.bus.chatMembers.add(chat.id, guest.id);
@@ -372,7 +372,7 @@ describe("local MAGI agent", () => {
     await magi.chat("who is here?");
     const system = requests[0].messages[0].content;
     expect(system).toContain("## Members");
-    expect(system).toContain(`- id ${guest.id} | @eva-001.magi / EVA | magi`);
+    expect(system).toContain(`- id ${guest.id} | ${sequentialMagiHandle(1)} / EVA | magi`);
     // Being seen twice does not list them twice.
     expect(system.split("\n").filter((line) => line.startsWith(`- id ${guest.id} |`))).toHaveLength(1);
     await magi.stop();

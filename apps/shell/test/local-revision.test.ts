@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync }
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { reviseCheckout, trackingRef } from '@magi/runtime/revise.js';
-import { Bus, SHELL_MAGI_HANDLE } from '@magi/bus';
+import { Bus, magiLocalName, sequentialMagiHandle, SHELL_MAGI_HANDLE } from '@magi/bus';
 import { rebuildTools } from '@magi/built-in-tools/rebuild.js';
 import { replaceTools } from '@magi/built-in-tools/replace.js';
 import { ReplaceWorker } from '../../../packages/manager/dist/replace.js';
@@ -105,7 +105,7 @@ test('both self-rebuild tools bind the editable source to this node workspace, i
 test('Shell tools keep startup source across revision switches without exposing it to another node', async (t) => {
   const home = mkdtempSync(path.join(tmpdir(), 'magi-source-authority-'));
   const shell = new Bus(SHELL_MAGI_HANDLE, path.join(home, 'shell'));
-  const other = new Bus('@eva-099.magi', path.join(home, 'eva-099'));
+  const other = new Bus(sequentialMagiHandle(99), path.join(home, magiLocalName(sequentialMagiHandle(99))));
   const previous = { ...process.env };
   t.after(() => {
     shell.close(); other.close();

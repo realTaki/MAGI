@@ -1,4 +1,4 @@
-/** In-process MAGI identity for the ASP process (Casper, `@eva-001.magi`). */
+/** In-process MAGI identity for the ASP process (Casper, `@asp.magi`). */
 
 import { randomBytes } from "node:crypto";
 

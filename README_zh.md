@@ -79,7 +79,7 @@ MAGI 应当因为持续运行而变得更好。目标是让它们观察工作、
 | 名词 | 含义 |
 | --- | --- |
 | **MAGI** | 一个自主、可治理的智能体，也是 `apps/eva/` 与 `packages/` 里的 Node 24 运行时。 |
-| **EVA** | 句柄的命名规范。默认社会：Balthasar `@shell.magi` 在 Shell 进程，Casper `@eva-001.magi` 在 ASP 进程，Melchior `@eva-002.magi` 是唯一默认拉起的 EVA 子进程。 |
+| **EVA** | 句柄的命名规范。默认社会：Balthasar `@shell.magi` 在 Shell 进程，Casper `@asp.magi` 在 ASP 进程，Melchior `@eva-000.magi` 是唯一默认拉起的 EVA 子进程。 |
 
 桌面 App 是本机的生命周期边界：它拥有每条 MAGI 的分支、检出和进程。ASP 只转发聊天，不决定 MAGI 说什么，也不启动任何进程。
 
@@ -98,8 +98,8 @@ MAGI 应当因为持续运行而变得更好。目标是让它们观察工作、
 ## 当前已具备的能力
 
 - **桌面端**：Electron 壳把仓库克隆到 `~/.magi/shell/MAGI`，安装 `packages/` 和 `apps/`，构建操作界面，并启动 ASP。安装包里有 Node.js 24 和 npm，没有 Python。
-- **ASP**：Node 24 运行 `apps/asp/dist/asp.js`，监听 `127.0.0.1:42069`。聊天和转发事件存在 `~/.magi/asp/asp.sqlite`。同一进程是 Casper（`@eva-001.magi`）。创建 bot 会注册 MAGI；只有需要独立进程的句柄（`@eva-002` 及之后）才会拉起 `eva.js`。创建 group 会开一个操作者可以邀请 MAGI 加入的聊天。
-- **宿主 MAGI 与一条 EVA**：Balthasar（`@shell.magi`）跑在操作者进程里，和 webapp 在一起。Casper 跑在 ASP 里。Melchior（`@eva-002.magi`）跑 `apps/eva/eva.ts`，检出在 `~/.magi/eva-002/MAGI`。之后再创建的 MAGI 也按这条 EVA 路径拉起。
+- **ASP**：Node 24 运行 `apps/asp/dist/asp.js`，监听 `127.0.0.1:42069`。聊天和转发事件存在 `~/.magi/asp/asp.sqlite`。同一进程是 Casper（`@asp.magi`）。创建 bot 会注册 MAGI；独立进程的句柄从 `@eva-000` 起拉起 `eva.js`。创建 group 会开一个操作者可以邀请 MAGI 加入的聊天。
+- **宿主 MAGI 与一条 EVA**：Balthasar（`@shell.magi`）跑在操作者进程里，和 webapp 在一起。Casper 跑在 ASP 里。Melchior（`@eva-000.magi`）跑 `apps/eva/eva.ts`，检出在 `~/.magi/eva-000/MAGI`。之后再创建的 MAGI 也按这条 EVA 路径拉起。
 - **每个 MAGI 内部的 BUS**：对话、消息、记忆、Skills、任务、联系人、提示词和工具都是 Book；聊天、模型调用、工具调用、投递、切换 provider、任务和 MCP 服务器变更都是 Job。
 - **操作者的数据留在桌面端**：聊天记录是 `~/.magi/shell/chat.sqlite`。Provider 和 API key 在操作者 BUS 的 SettingsBook（`~/.magi/shell/memories/books.db`）。ASP 只转发更新，不另存一份 key。
 - **其他通道**：MAGI 进程自己还能走终端、Telegram 和已配置的 MCP 服务器。这些不属于 ASP。
@@ -114,8 +114,8 @@ MAGI 应当因为持续运行而变得更好。目标是让它们观察工作、
 
 **桌面端：**首次打开时，App 将完整仓库克隆到 `~/.magi/shell/MAGI`，准备本地依赖并构建
 WebUI。启动页显示各阶段进度；本地 ASP 就绪后自动进入 WebUI。默认社会是
-**Balthasar**（`@shell.magi`，操作者进程）、**Casper**（`@eva-001.magi`，ASP 进程）
-和 **Melchior**（`@eva-002.magi`，唯一默认拉起的 EVA）。以后启动会保留这份 Git 工作树，不自动覆盖本地修改
+**Balthasar**（`@shell.magi`，操作者进程）、**Casper**（`@asp.magi`，ASP 进程）
+和 **Melchior**（`@eva-000.magi`，唯一默认拉起的 EVA）。以后启动会保留这份 Git 工作树，不自动覆盖本地修改
 或拉取远端更新。
 
 **一个 MAGI：** 在仓库根运行 `npm start --workspace eva -- <handle> <base> <token>`。
@@ -124,7 +124,7 @@ WebUI。启动页显示各阶段进度；本地 ASP 就绪后自动进入 WebUI�
 ## 第一次打开
 
 1. **打开桌面应用。** 壳克隆仓库、安装依赖、构建界面，并等到 ASP 在 42069 端口应答。
-2. **见到默认社会。** Balthasar 是操作者进程（`@shell.magi`，你自己的发言是 `@user.magi`）。Casper 是 ASP（`@eva-001.magi`）。Melchior 是拉起的 EVA（`@eva-002.magi`）。一直没上线的 MAGI 就保持没有昵称。
+2. **见到默认社会。** Balthasar 是操作者进程（`@shell.magi`，你自己的发言是 `@user.magi`）。Casper 是 ASP（`@asp.magi`）。Melchior 是拉起的 EVA（`@eva-000.magi`）。一直没上线的 MAGI 就保持没有昵称。
 3. **对话。** 桌面端先把记录写到本机，再经 ASP 发出去。MAGI 从自己的 WebSocket 回复，桌面端再把回复存下来。
 4. **设置模型。** 设置页写入 operator BUS 的 SettingsBook。ASP 把同一组值交给每个已经连上的 MAGI，由 MAGI 写进自己的 BUS。
 5. **邀请。** 群聊可以加入一个 App 已经启动的 MAGI。对方收到 `chat.invited` 后加入。
@@ -138,9 +138,9 @@ WebUI。启动页显示各阶段进度；本地 ASP 就绪后自动进入 WebUI�
 apps/shell/       Electron + 操作者进程：@user.magi 发言 + Balthasar @shell.magi
    │  启动 Node 24
    ▼
-apps/asp/         127.0.0.1:42069   转发 + Casper @eva-001.magi
+apps/asp/         127.0.0.1:42069   转发 + Casper @asp.magi
    ▲
-apps/eva/         Melchior @eva-002.magi   分支 magi/eva-002   ~/.magi/eva-002/MAGI
+apps/eva/         Melchior @eva-000.magi   分支 magi/eva-000   ~/.magi/eva-000/MAGI
 ```
 
 App 负责启动进程。ASP 转发聊天事件，同时也是 Casper 的宿主。被拉起的 MAGI 在自己的检出旁边有自己的 SQLite 工作区，main 被改坏也不会连累正在运行的 MAGI。操作者的聊天记录和 provider key 留在桌面端。

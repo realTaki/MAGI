@@ -1,7 +1,7 @@
 /** ASP's worker on a BUS: directory lives in Books; relay gaps stay in asp.sqlite. */
 
 import { eq } from "drizzle-orm";
-import { BaseWorker, Bus, SYSTEM_CONTACT_ID } from "@magi/bus";
+import { ASP_MAGI_HANDLE, BaseWorker, Bus, SYSTEM_CONTACT_ID } from "@magi/bus";
 import { transaction } from "@magi/bus/sqlite.js";
 
 import { LocalDatabase } from "./db/database.js";
@@ -13,7 +13,7 @@ import { relayParticipants } from "./db/tables/relayParticipants.js";
 import { OPERATOR_HANDLE } from "./operator.js";
 import type { Agent, Chat, ChatEvent, Participant } from "./store.js";
 
-export const ASP_HANDLE = "@asp.magi";
+export const ASP_HANDLE = ASP_MAGI_HANDLE;
 export const ASP_CHANNEL = "asp";
 
 export class RelayWorker extends BaseWorker {

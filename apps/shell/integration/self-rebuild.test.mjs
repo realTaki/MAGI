@@ -10,12 +10,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
-import { Bus, messageDelivery } from "@magi/bus";
+import { Bus, EVA_MAGI_HANDLE, magiLocalName, messageDelivery } from "@magi/bus";
 import { createSupervisor } from "../process.mjs";
 import { applyInterfaceUpdate } from "../interface.mjs";
 
 const repo = path.resolve(import.meta.dirname, "../../..");
 const launcher = path.join(repo, "apps", "eva", "eva.mjs");
+const node = magiLocalName(EVA_MAGI_HANDLE);
 
 function childAt(home, name, revision, source) {
   const file = path.join(home, name, "revisions", revision, "packages", "node", "dist", "child.js");
@@ -41,9 +42,9 @@ function start(home, args, env, t) {
 test("a switch runs the new revision's child", async (t) => {
   const home = mkdtempSync(path.join(tmpdir(), "magi-switch-"));
   const proof = path.join(home, "proof");
-  const dirB = path.join(home, "eva-002", "revisions", "b");
+  const dirB = path.join(home, node, "revisions", "b");
   const childB = path.join(dirB, "packages", "node", "dist", "child.js");
-  childAt(home, "eva-002", "a", `const { mkdirSync, writeFileSync } = require("node:fs");
+  childAt(home, node, "a", `const { mkdirSync, writeFileSync } = require("node:fs");
 const { dirname } = require("node:path");
 process.send({ v: 1, type: "hello" });
 process.on("message", (message) => { if (message?.type === "shutdown") process.exit(0); });
@@ -57,7 +58,7 @@ setTimeout(() => {
 setInterval(() => {}, 1000);
 `);
   t.after(() => rmSync(home, { recursive: true, force: true }));
-  const { proc, stderr } = start(home, ["--role", "agent", "@eva-002.magi"], { MAGI_REVISION_DIR: path.join(home, "eva-002", "revisions", "a"), MAGI_REVISION: "a" }, t);
+  const { proc, stderr } = start(home, ["--role", "agent", EVA_MAGI_HANDLE], { MAGI_REVISION_DIR: path.join(home, node, "revisions", "a"), MAGI_REVISION: "a" }, t);
   const deadline = Date.now() + 8_000;
   while (Date.now() < deadline && proc.exitCode == null) {
     try {
@@ -67,7 +68,7 @@ setInterval(() => {}, 1000);
         await new Promise((resolve) => setTimeout(resolve, 30));
         continue;
       }
-      const state = JSON.parse(readFileSync(path.join(home, "eva-002", "launcher.json"), "utf8"));
+      const state = JSON.parse(readFileSync(path.join(home, node, "launcher.json"), "utf8"));
       if (state.current === "b" && state.previous === "a") return;
     } catch (error) {
       if (error?.code !== "ENOENT") throw error;
@@ -88,7 +89,7 @@ process.send({ v: 1, type: "ready" });
 setTimeout(() => process.exit(1), 20);
 `);
   t.after(() => rmSync(home, { recursive: true, force: true }));
-  const { proc, stderr } = start(home, ["--role", "agent", "@eva-002.magi"], {
+  const { proc, stderr } = start(home, ["--role", "agent", EVA_MAGI_HANDLE], {
     MAGI_CHILD: child,
     MAGI_CRASH_LIMIT: "3",
     MAGI_CRASH_BACKOFF_MS: "40",
@@ -99,7 +100,7 @@ setTimeout(() => process.exit(1), 20);
   assert.ok(starts[1] - starts[0] >= 35, "first restart waits");
   assert.ok(starts[2] - starts[1] >= 70, "second restart waits longer");
   assert.ok(starts[3] - starts[2] >= 140, "third restart waits longer still");
-  const marker = JSON.parse(readFileSync(path.join(home, "eva-002", "replace-failed.json"), "utf8"));
+  const marker = JSON.parse(readFileSync(path.join(home, node, "replace-failed.json"), "utf8"));
   assert.match(marker.error, /crashed 4 times/);
   assert.match(stderr(), /crashed 4 times/);
   assert.equal(code, 1);
@@ -109,8 +110,8 @@ test("a failed switch starts the previous revision again", async (t) => {
   const home = mkdtempSync(path.join(tmpdir(), "magi-rollback-"));
   const runs = path.join(home, "runs");
   const restored = path.join(home, "restored");
-  const bad = path.join(home, "eva-002", "revisions", "bad");
-  childAt(home, "eva-002", "a", `const { mkdirSync, readFileSync, writeFileSync, existsSync } = require("node:fs");
+  const bad = path.join(home, node, "revisions", "bad");
+  childAt(home, node, "a", `const { mkdirSync, readFileSync, writeFileSync, existsSync } = require("node:fs");
 const { dirname } = require("node:path");
 const n = existsSync(${JSON.stringify(runs)}) ? Number(readFileSync(${JSON.stringify(runs)}, "utf8")) : 0;
 writeFileSync(${JSON.stringify(runs)}, String(n + 1));
@@ -127,15 +128,15 @@ else writeFileSync(${JSON.stringify(restored)}, "previous");
 setInterval(() => {}, 1000);
 `);
   t.after(() => rmSync(home, { recursive: true, force: true }));
-  const { proc, stderr } = start(home, ["--role", "agent", "@eva-002.magi"], {
-    MAGI_REVISION_DIR: path.join(home, "eva-002", "revisions", "a"),
+  const { proc, stderr } = start(home, ["--role", "agent", EVA_MAGI_HANDLE], {
+    MAGI_REVISION_DIR: path.join(home, node, "revisions", "a"),
     MAGI_REVISION: "a",
   }, t);
   const deadline = Date.now() + 8_000;
   while (Date.now() < deadline && proc.exitCode == null) {
     try {
       assert.equal(readFileSync(restored, "utf8"), "previous");
-      const marker = JSON.parse(readFileSync(path.join(home, "eva-002", "replace-failed.json"), "utf8"));
+      const marker = JSON.parse(readFileSync(path.join(home, node, "replace-failed.json"), "utf8"));
       assert.equal(marker.job, 8);
       assert.match(marker.error, /exited 2/);
       return;
@@ -151,9 +152,9 @@ test("a hosted upgrade finishes the job after the old launcher exits", async (t)
   const home = mkdtempSync(path.join(tmpdir(), "magi-hosted-"));
   const oldPid = path.join(home, "old.pid");
   const done = path.join(home, "done");
-  const dir = path.join(home, "eva-002", "revisions", "next");
+  const dir = path.join(home, node, "revisions", "next");
   const nextChild = path.join(dir, "packages", "node", "dist", "child.js");
-  childAt(home, "eva-002", "old", `const { mkdirSync, writeFileSync } = require("node:fs");
+  childAt(home, node, "old", `const { mkdirSync, writeFileSync } = require("node:fs");
 const { dirname } = require("node:path");
 writeFileSync(${JSON.stringify(oldPid)}, String(process.ppid));
 process.send({ v: 1, type: "hello" });
@@ -175,12 +176,12 @@ setInterval(() => {}, 1000);
   const handle = await supervisor.start({
     entry: launcher,
     cwd: path.dirname(launcher),
-    args: ["--role", "agent", "@eva-002.magi"],
+    args: ["--role", "agent", EVA_MAGI_HANDLE],
     env: {
       MAGI_HOME: home,
       MAGI_HOST: "1",
       MAGI_NODE: process.execPath,
-      MAGI_REVISION_DIR: path.join(home, "eva-002", "revisions", "old"),
+      MAGI_REVISION_DIR: path.join(home, node, "revisions", "old"),
       MAGI_REVISION: "old",
     },
   }, { host: {} });
@@ -200,7 +201,7 @@ setInterval(() => {}, 1000);
   const stateDeadline = Date.now() + 4_000;
   let state = {};
   while (Date.now() < stateDeadline) {
-    try { state = JSON.parse(readFileSync(path.join(home, "eva-002", "launcher.json"), "utf8")); }
+    try { state = JSON.parse(readFileSync(path.join(home, node, "launcher.json"), "utf8")); }
     catch { state = {}; }
     if (state.current === "next" && state.previous === "old") break;
     await new Promise((resolve) => setTimeout(resolve, 30));
@@ -214,7 +215,7 @@ test("a failed switch records the switch error on the job", async (t) => {
   const home = mkdtempSync(path.join(tmpdir(), "magi-job-"));
   const previous = process.env.MAGI_HOME;
   process.env.MAGI_HOME = home;
-  const bus = new Bus("@eva-002.magi");
+  const bus = new Bus(EVA_MAGI_HANDLE);
   const chat = bus.chats.forChannel("cli", "operator");
   messageDelivery.setHomeChat(bus, chat.id);
   const id = bus.board("ReplaceSelfJob").publish({ swap: true }, "test");
@@ -224,10 +225,10 @@ test("a failed switch records the switch error on the job", async (t) => {
   if (previous === undefined) delete process.env.MAGI_HOME;
   else process.env.MAGI_HOME = previous;
   const resultFile = path.join(home, "result.json");
-  const badDir = path.join(home, "eva-002", "revisions", "bad");
+  const badDir = path.join(home, node, "revisions", "bad");
   const busModule = pathToFileURL(path.join(repo, "packages/bus/dist/index.js")).href;
   const replaceModule = pathToFileURL(path.join(repo, "packages/manager/dist/replace.js")).href;
-  childAt(home, "eva-002", "a", `const { mkdirSync, writeFileSync } = require("node:fs");
+  childAt(home, node, "a", `const { mkdirSync, writeFileSync } = require("node:fs");
 const { dirname } = require("node:path");
 async function main() {
   process.on("message", (message) => { if (message?.type === "shutdown") process.exit(0); });
@@ -238,7 +239,7 @@ async function main() {
       const failure = process.env.MAGI_REPLACE_ERROR;
       const { Bus } = await import(${JSON.stringify(busModule)});
       const { ReplaceWorker } = await import(${JSON.stringify(replaceModule)});
-      const bus = new Bus("@eva-002.magi");
+      const bus = new Bus(${JSON.stringify(EVA_MAGI_HANDLE)});
       const worker = new ReplaceWorker(bus, { app: "eva", script: "build" }, { healthy: () => null, async suspendForReplace() {}, async resume() {} });
       await worker.poll();
       writeFileSync(${JSON.stringify(resultFile)}, JSON.stringify({ job: jobId, error: failure, result: bus.board("ReplaceSelfJob").result(jobId) }));
@@ -260,8 +261,8 @@ async function main() {
 main();
 `);
   t.after(() => rmSync(home, { recursive: true, force: true }));
-  const { proc, stderr } = start(home, ["--role", "agent", "@eva-002.magi"], {
-    MAGI_REVISION_DIR: path.join(home, "eva-002", "revisions", "a"),
+  const { proc, stderr } = start(home, ["--role", "agent", EVA_MAGI_HANDLE], {
+    MAGI_REVISION_DIR: path.join(home, node, "revisions", "a"),
     MAGI_REVISION: "a",
   }, t);
   const deadline = Date.now() + 8_000;

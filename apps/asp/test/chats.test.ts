@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { ASP_MAGI_HANDLE, SHELL_MAGI_HANDLE, USER_HANDLE } from "@magi/bus";
+import {
+  ASP_MAGI_HANDLE,
+  ASP_MAGI_NICKNAME,
+  magiNodeName,
+  sequentialMagiHandle,
+  SHELL_MAGI_HANDLE,
+  USER_HANDLE,
+} from "@magi/bus";
 import { Asp } from "../asp.js";
 import { connect, isRecord, receiveInvite, request, tempRoot, withApp } from "./helpers.js";
 
@@ -25,11 +32,11 @@ test("new bot registers a magi and hands its runner the credential", async (t) =
     const body = record(created.data);
     assert.equal(body.kind, "bot");
     assert.equal(typeof body.chat_id, "string");
-    assert.equal(body.name, "eva-000");
-    assert.deepEqual(body.agents, ["@eva-000.magi"]);
+    assert.equal(body.name, magiNodeName(0));
+    assert.deepEqual(body.agents, [sequentialMagiHandle(0)]);
     const magi = record(body.magi);
-    assert.equal(magi.name, "eva-000");
-    assert.equal(magi.handle, "@eva-000.magi");
+    assert.equal(magi.name, magiNodeName(0));
+    assert.equal(magi.handle, sequentialMagiHandle(0));
     assert.equal(typeof magi.token, "string");
     // ASP registers the agent; starting it belongs to the desktop app.
     assert.equal("spawned" in body, false);
@@ -38,9 +45,9 @@ test("new bot registers a magi and hands its runner the credential", async (t) =
       roster.filter((agent) => agent.managed === true && agent.handle !== ASP_MAGI_HANDLE),
       [
         {
-          handle: "@eva-000.magi",
+          handle: sequentialMagiHandle(0),
           token: magi.token,
-          name: "eva-000",
+          name: magiNodeName(0),
           nickname: null,
           managed: true,
           online: false,
@@ -119,8 +126,8 @@ test("create chat rejects a missing kind and ignores a requested name", async (t
     assert.equal(extra.status, 201);
     const body = record(extra.data);
     assert.equal(body.kind, "bot");
-    assert.equal(body.name, "eva-000");
-    assert.deepEqual(body.agents, ["@eva-000.magi"]);
+    assert.equal(body.name, magiNodeName(0));
+    assert.deepEqual(body.agents, [sequentialMagiHandle(0)]);
   });
 });
 
@@ -130,7 +137,7 @@ test("bots lists spawned magi not a static roster", async (t) => {
     const seeded = await request(app, "GET", "/bots", { token });
     assert.equal(seeded.status, 200);
     assert.deepEqual(seeded.data, {
-      bots: [{ handle: "@eva-001.magi", name: "CASPER", online: true }],
+      bots: [{ handle: ASP_MAGI_HANDLE, name: ASP_MAGI_NICKNAME, online: true }],
     });
     const first = await request(app, "POST", "/chats", { token, body: { kind: "bot" } });
     const second = await request(app, "POST", "/chats", { token, body: { kind: "bot" } });
@@ -138,24 +145,24 @@ test("bots lists spawned magi not a static roster", async (t) => {
     assert.equal(second.status, 201);
     const firstBody = record(first.data);
     const secondBody = record(second.data);
-    assert.equal(firstBody.name, "eva-000");
-    assert.equal(secondBody.name, "eva-002");
-    assert.deepEqual(firstBody.agents, ["@eva-000.magi"]);
-    assert.deepEqual(secondBody.agents, ["@eva-002.magi"]);
+    assert.equal(firstBody.name, magiNodeName(0));
+    assert.equal(secondBody.name, magiNodeName(1));
+    assert.deepEqual(firstBody.agents, [sequentialMagiHandle(0)]);
+    assert.deepEqual(secondBody.agents, [sequentialMagiHandle(1)]);
     const listed = record((await request(app, "GET", "/bots", { token })).data).bots;
     assert.ok(Array.isArray(listed));
     assert.deepEqual(
       new Set(listed.map((row) => record(row).handle)),
-      new Set(["@eva-000.magi", "@eva-001.magi", "@eva-002.magi"]),
+      new Set([sequentialMagiHandle(0), ASP_MAGI_HANDLE, sequentialMagiHandle(1)]),
     );
     assert.deepEqual(
       new Set(listed.map((row) => record(row).name)),
-      new Set(["eva-000", "CASPER", "eva-002"]),
+      new Set([magiNodeName(0), ASP_MAGI_NICKNAME, magiNodeName(1)]),
     );
     const byHandle = Object.fromEntries(listed.map((row) => [record(row).handle, record(row)]));
-    assert.equal(byHandle["@eva-000.magi"]?.online, false);
-    assert.equal(byHandle["@eva-001.magi"]?.online, true);
-    assert.equal(byHandle["@eva-002.magi"]?.online, false);
+    assert.equal(byHandle[sequentialMagiHandle(0)]?.online, false);
+    assert.equal(byHandle[ASP_MAGI_HANDLE]?.online, true);
+    assert.equal(byHandle[sequentialMagiHandle(1)]?.online, false);
     assert.equal(listed.some((row) => record(row).handle === "@user.magi"), false);
     assert.equal((await request(app, "GET", "/bots")).status, 401);
   });
@@ -171,8 +178,8 @@ test("group can add a listed bot", async (t) => {
     const picker = await request(app, "GET", `/bots?chat_id=${groupId}`, { token });
     assert.equal(picker.status, 200);
     assert.deepEqual(record(picker.data).bots, [
-      { handle, name: "eva-000", online: false, in_chat: false },
-      { handle: "@eva-001.magi", name: "CASPER", online: true, in_chat: false },
+      { handle, name: magiNodeName(0), online: false, in_chat: false },
+      { handle: ASP_MAGI_HANDLE, name: ASP_MAGI_NICKNAME, online: true, in_chat: false },
     ]);
     const added = await request(app, "POST", `/chats/${groupId}/members`, {
       token,
@@ -184,8 +191,8 @@ test("group can add a listed bot", async (t) => {
     assert.equal(addedBody.kind, "group");
     const after = await request(app, "GET", `/bots?chat_id=${groupId}`, { token });
     assert.deepEqual(record(after.data).bots, [
-      { handle, name: "eva-000", online: false, in_chat: true },
-      { handle: "@eva-001.magi", name: "CASPER", online: true, in_chat: false },
+      { handle, name: magiNodeName(0), online: false, in_chat: true },
+      { handle: ASP_MAGI_HANDLE, name: ASP_MAGI_NICKNAME, online: true, in_chat: false },
     ]);
     const unknown = await request(app, "POST", `/chats/${groupId}/members`, {
       token,
@@ -223,7 +230,7 @@ test("magi joins the group when it receives the invite", async (t) => {
     const online = record((await request(app, "GET", `/bots?chat_id=${groupId}`, { token })).data).bots;
     assert.deepEqual(online, [
       { handle, name: bot.name, online: true, in_chat: false },
-      { handle: "@eva-001.magi", name: "CASPER", online: true, in_chat: false },
+      { handle: ASP_MAGI_HANDLE, name: ASP_MAGI_NICKNAME, online: true, in_chat: false },
     ]);
     const added = await request(app, "POST", `/chats/${groupId}/members`, { token, body: { handle } });
     assert.equal(added.status, 200);
@@ -336,10 +343,10 @@ test("Shell owner API, concurrent recovery and restart preserve the same room an
   });
 });
 
-test("renaming the Shell handle can retain two named Balthasars with distinct identities", async (t) => {
+test("two MAGIs can share a nickname with distinct identities", async (t) => {
   const root = tempRoot(t);
   const options = { databasePath: databasePath(root), workspace: path.join(root, "casper") };
-  const legacy = "@eva-000.magi";
+  const other = sequentialMagiHandle(1);
   let oldId: unknown;
   async function openNamed(app: Asp, handle: string) {
     const result = await request(app, "POST", "/chats", {
@@ -353,7 +360,7 @@ test("renaming the Shell handle can retain two named Balthasars with distinct id
     app.store.updateAgent(agent);
     return record(result.data).chat_id;
   }
-  await withApp(options, async (app) => { oldId = await openNamed(app, legacy); });
+  await withApp(options, async (app) => { oldId = await openNamed(app, other); });
   await withApp(options, async (app) => {
     const newId = await openNamed(app, SHELL_MAGI_HANDLE);
     assert.notEqual(newId, oldId);
@@ -361,9 +368,9 @@ test("renaming the Shell handle can retain two named Balthasars with distinct id
     const listed = await request(app, "GET", "/chats", { token: app.operatorToken });
     const balthasars = recordList(record(listed.data).chats).filter((chat) => chat.name === "BALTHASAR");
     assert.equal(balthasars.length, 2);
-    assert.deepEqual(new Set(balthasars.flatMap((chat) => chat.agents as string[])), new Set([legacy, SHELL_MAGI_HANDLE]));
+    assert.deepEqual(new Set(balthasars.flatMap((chat) => chat.agents as string[])), new Set([other, SHELL_MAGI_HANDLE]));
     assert.ok(balthasars.some((chat) => chat.chat_id === oldId));
-    assert.ok(app.store.getAgent(legacy));
+    assert.ok(app.store.getAgent(other));
     assert.ok(app.store.getAgent(SHELL_MAGI_HANDLE));
   });
 });

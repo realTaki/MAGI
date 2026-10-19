@@ -539,7 +539,7 @@ export class ChatService {
    * Who a message is addressed to.
    *
    * A chat holds several participants, so a message may name some of them —
-   * `@eva-001.magi` or just `@eva-001`. A MAGI treats a message as its own work only when
+   * `@eva-000.magi` or just `@eva-000`. A MAGI treats a message as its own work only when
    * it is named, which is what keeps a room full of them from answering each other
    * forever; a message that names nobody is for whoever wants to answer.
    */

@@ -1,22 +1,23 @@
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
+import { EVA_MAGI_HANDLE, SHELL_MAGI_HANDLE, USER_HANDLE } from "@magi/bus/identity.js";
 import { ChatPage } from "../web/src/ChatPage";
 import { I18nProvider } from "../web/src/i18n";
 
 const rows = [
-  { chat_id: "greeting", kind: "bot", name: "BALTHASAR", agents: ["@shell.magi"], created_at: 1 },
-  { chat_id: "provider", kind: "bot", name: "BALTHASAR", agents: ["@shell.magi"], created_at: 2 },
-  { chat_id: "different-identity", kind: "bot", name: "BALTHASAR", agents: ["@eva-000.magi"], created_at: 3 },
+  { chat_id: "greeting", kind: "bot", name: "BALTHASAR", agents: [SHELL_MAGI_HANDLE], created_at: 1 },
+  { chat_id: "provider", kind: "bot", name: "BALTHASAR", agents: [SHELL_MAGI_HANDLE], created_at: 2 },
+  { chat_id: "different-identity", kind: "bot", name: "BALTHASAR", agents: [EVA_MAGI_HANDLE], created_at: 3 },
 ].map((row) => ({ ...row, state: "active", participants: [
-  { handle: "@user.magi", status: "joined" }, { handle: row.agents[0], status: "joined" },
+  { handle: USER_HANDLE, status: "joined" }, { handle: row.agents[0], status: "joined" },
 ] }));
 let remoteRows = structuredClone(rows);
 let rosterHandles = new Set(rows.map((row) => row.agents[0]));
 const sequences: Record<string, number> = {};
 const events = (id: string) => [{ type: "chat.message", sequence: sequences[id] ?? 1, event_id: `${id}-event`, payload: {
-  sender: "@shell.magi", content: id === "greeting" ? "provider.api_key is missing" : "[manager] worker asp recovered",
+  sender: SHELL_MAGI_HANDLE, content: id === "greeting" ? "provider.api_key is missing" : "[manager] worker asp recovered",
   ...(id === "provider" ? { metadata: { card: {
-    id: "synthetic-card", handle: "@shell.magi", purpose: "provider", title: "Synthetic provider card",
+    id: "synthetic-card", handle: SHELL_MAGI_HANDLE, purpose: "provider", title: "Synthetic provider card",
     submit: "Save", fields: [],
   } } } : {}),
 } }];
@@ -78,18 +79,18 @@ async function run() {
   flushSync(() => root.render(<I18nProvider><ChatPage /></I18nProvider>));
   await until(() => Boolean(select()));
   check(document.querySelectorAll(".chat-page__bot-row").length === 2, "one entry per exact handle, not per display name or room");
-  check(document.querySelector(".chat-page__bot-list")?.textContent?.includes("@eva-000.magi"), "same names show distinct handles");
+  check(document.querySelector(".chat-page__bot-list")?.textContent?.includes(EVA_MAGI_HANDLE), "same names show distinct handles");
   await until(() => Boolean(select()) && thread().includes("provider.api_key is missing"));
   check(select()?.options.length === 2, "both original rooms remain accessible");
   const bounds = select().getBoundingClientRect();
   check(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2) === select(), "history selector is visible and clickable below the topbar");
   check(thread().includes("provider.api_key is missing"), "greeting transcript is intact");
-  await until(() => document.querySelector('[title="@shell.magi"]')?.getAttribute("data-unread") === "true");
+  await until(() => document.querySelector(`[title="${SHELL_MAGI_HANDLE}"]`)?.getAttribute("data-unread") === "true");
   choose("provider");
   await until(() => Boolean(document.querySelector(".chat-page__thread .chat-page__form")));
   check(Boolean(document.querySelector(".chat-page__thread .chat-page__form")), "provider card remains accessible in its own room");
   check(!thread().includes("provider.api_key is missing"), "transcripts do not blend");
-  await until(() => document.querySelector('[title="@shell.magi"]')?.getAttribute("data-unread") === "false");
+  await until(() => document.querySelector(`[title="${SHELL_MAGI_HANDLE}"]`)?.getAttribute("data-unread") === "false");
   const cancel = [...document.querySelectorAll<HTMLButtonElement>(".chat-page__form button")].find((button) => button.textContent === "Cancel")!;
   flushSync(() => cancel.click());
   await until(() => sends.length === 1);
@@ -110,11 +111,11 @@ async function run() {
   await until(() => thread().includes("provider.api_key is missing"));
   check(thread().includes("provider.api_key is missing") && !document.querySelector(".chat-page__thread .chat-page__form"), "switching back preserves separate history");
   sequences.provider = 2;
-  await until(() => document.querySelector('[title="@shell.magi"]')?.getAttribute("data-unread") === "true");
+  await until(() => document.querySelector(`[title="${SHELL_MAGI_HANDLE}"]`)?.getAttribute("data-unread") === "true");
   check(select().value === "greeting", "new unread events do not switch the selected room");
   check([...select().options].find((option) => option.value === "provider")?.textContent?.includes("Unread"), "unread history is identifiable in the selector");
   choose("provider");
-  await until(() => document.querySelector('[title="@shell.magi"]')?.getAttribute("data-unread") === "false");
+  await until(() => document.querySelector(`[title="${SHELL_MAGI_HANDLE}"]`)?.getAttribute("data-unread") === "false");
   flushSync(() => root.render(<I18nProvider key="reload"><ChatPage /></I18nProvider>));
   await until(() => Boolean(select()));
   check(document.querySelectorAll(".chat-page__bot-row").length === 2 && select().options.length === 2, "remount retains both histories in one identity entry");
@@ -130,10 +131,10 @@ async function run() {
   check(thread().includes("Model provider"), "remote-absent room keeps its own cached history");
   remoteRows = structuredClone(rows);
   await until(() => Boolean(select()));
-  rosterHandles.delete("@shell.magi");
+  rosterHandles.delete(SHELL_MAGI_HANDLE);
   await until(() => document.querySelectorAll(".chat-page__bot-row").length === 3);
   check(!select(), "unregistered handle is not treated as a current shared identity");
-  rosterHandles.add("@shell.magi");
+  rosterHandles.add(SHELL_MAGI_HANDLE);
   await until(() => Boolean(select()));
   root.unmount();
 }

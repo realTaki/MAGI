@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Magi } from "../eva.js";
+import { sequentialMagiHandle } from "@magi/bus";
 import { contactTools } from "@magi/contacts/tools.js";
 
 test("contact tools persist, search, update, and delete notes", async () => {
@@ -52,9 +53,9 @@ test("a channel identity belongs to one contact, learned when it first speaks", 
   const workspace = await mkdtemp(join(tmpdir(), "magi-contact-identity-"));
   const magi = new Magi("@identity.magi", { workspace, client: { async complete() { return { role: "assistant", content: "unused" }; } } });
   try {
-    const other = magi.bus.contacts.forAspHandle("@eva-001.magi");
-    expect(other).toMatchObject({ name: "@eva-001.magi", asp_handle: "@eva-001.magi", role: "magi" });
-    expect(magi.bus.contacts.forAspHandle("@eva-001.magi").id).toBe(other.id);
+    const other = magi.bus.contacts.forAspHandle(sequentialMagiHandle(1));
+    expect(other).toMatchObject({ name: sequentialMagiHandle(1), asp_handle: sequentialMagiHandle(1), role: "magi" });
+    expect(magi.bus.contacts.forAspHandle(sequentialMagiHandle(1)).id).toBe(other.id);
 
     const person = magi.bus.contacts.forTg("12345");
     expect(person).toMatchObject({ name: "tg:12345", tg_id: "12345", role: "stranger" });
@@ -67,9 +68,9 @@ test("a channel identity belongs to one contact, learned when it first speaks", 
 
     // A workspace from before identities were stored has the contact named after the
     // handle: it is remembered there instead of being duplicated.
-    const named = magi.bus.contacts.create({ name: "@eva-002.magi", role: "magi" });
-    expect(magi.bus.contacts.forAspHandle("@eva-002.magi").id).toBe(named.id);
-    expect(magi.bus.contacts.get(named.id)?.asp_handle).toBe("@eva-002.magi");
+    const named = magi.bus.contacts.create({ name: sequentialMagiHandle(2), role: "magi" });
+    expect(magi.bus.contacts.forAspHandle(sequentialMagiHandle(2)).id).toBe(named.id);
+    expect(magi.bus.contacts.get(named.id)?.asp_handle).toBe(sequentialMagiHandle(2));
   } finally {
     await magi.stop();
     await rm(workspace, { recursive: true, force: true });
@@ -81,7 +82,7 @@ test("chat membership is a set, not a log", async () => {
   const magi = new Magi("@members.magi", { workspace, client: { async complete() { return { role: "assistant", content: "unused" }; } } });
   try {
     const chat = magi.bus.chats.forChannel("cli", "terminal");
-    const guest = magi.bus.contacts.forAspHandle("@eva-001.magi");
+    const guest = magi.bus.contacts.forAspHandle(sequentialMagiHandle(1));
     magi.bus.chatMembers.add(chat.id, guest.id);
     magi.bus.chatMembers.add(chat.id, guest.id);
     expect(magi.bus.chatMembers.list(chat.id).map((contact) => contact.id)).toEqual([guest.id]);

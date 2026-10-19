@@ -11,8 +11,8 @@ It starts one child OS process, `packages/node` `child.js`. That child is the BU
 | Role | Handle | Name | Workers added |
 | --- | --- | --- | --- |
 | `shell` | `@shell.magi` | Balthasar | Webapp, the Electron UI backend |
-| `asp` | `@eva-001.magi` | Casper | AspServer, the relay |
-| `agent` | `@eva-002.magi` and later handles | Melchior | the agent workers |
+| `asp` | `@asp.magi` | Casper | AspServer, the relay |
+| `agent` | `@eva-000.magi` and later handles | Melchior | the agent workers |
 
 The human speaks as `@user.magi` from the shell. Workers do not call each other. They publish a job and whoever owns that work claims it.
 
@@ -24,7 +24,7 @@ Electron (`apps/shell/main.mjs`) owns the window. It starts `eva --role shell`. 
 
 `MAGI_HOME` is the data root. The default is `~/.magi`. A container mounts that path and runs the launcher as its main process. `MAGI_OS_HOME` is the operating-system home when a caller still needs it. The shell workspace is `$MAGI_HOME/shell`. Casper's relay database and BUS workspace are `$MAGI_HOME/asp` (`asp.sqlite`). Those are not process names.
 
-The launcher remembers the current and previous revision in `$MAGI_HOME/<node>/launcher.json`. A failed switch writes `$MAGI_HOME/shell/replace-failed.json`, `eva-001`, or `eva-002` (the handle with `@` and `.magi` removed).
+The launcher remembers the current and previous revision in `$MAGI_HOME/<node>/launcher.json`. A failed switch writes `$MAGI_HOME/shell/replace-failed.json`, `asp`, or `eva-000` (the handle with `@` and `.magi` removed).
 
 Node, npm, and git resolve in this order: `MAGI_NODE` / `MAGI_NPM` / `MAGI_GIT`, then the bundled runtime under `apps/shell/runtime` and dugite, then `PATH`. The resolved Node must be 24 or newer (`engines` is `>=24.0.0`, and `resolveToolchain` rejects an older binary). SQLite is Node's built-in `node:sqlite`.
 

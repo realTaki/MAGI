@@ -9,14 +9,14 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { isInProcessMagiHandle } from "@magi/bus";
+import { isInProcessMagiHandle, magiLocalName } from "@magi/bus";
 import { ensureManagedClone } from "./clone.js";
 
-/** Branch per MAGI: `magi/<name>` (`magi/shell` for Balthasar). */
+/** Branch per MAGI: `magi/<name>` (`magi/shell` for Balthasar, `magi/asp` for Casper). */
 export const AGENT_BRANCH_PREFIX = "magi/";
 
 export function agentName(handle) {
-  return String(handle ?? "").replace(/^@/, "").replace(/\.magi$/, "");
+  return magiLocalName(handle);
 }
 
 /** `~/.magi/<name>` — the workspace the MAGI's own state lives in. */

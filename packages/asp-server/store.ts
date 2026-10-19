@@ -2,6 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 
+import { magiHandle, nextMagiName } from "@magi/bus";
 import { transaction } from "@magi/bus/sqlite.js";
 import { and, eq, gt, notExists, sql } from "drizzle-orm";
 
@@ -326,18 +327,11 @@ export class Store {
   }
 
   static magiHandle(name: string): string {
-    return `@${name}.magi`;
+    return magiHandle(name);
   }
 
   nextMagiName(): string {
-    let index = 0;
-    for (;;) {
-      const name = `eva-${String(index).padStart(3, "0")}`;
-      if (!this.agents.has(Store.magiHandle(name))) {
-        return name;
-      }
-      index += 1;
-    }
+    return nextMagiName(this.agents.keys());
   }
 
   createChat(input: {

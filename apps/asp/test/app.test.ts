@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
+import { ASP_MAGI_HANDLE, USER_HANDLE } from "@magi/bus";
 import { isRecord, request, tempRoot, withApp } from "./helpers.js";
 
 test("health creates the versioned local database", async (t) => {
@@ -57,7 +58,7 @@ test("the agent roster is operator only and carries the runner credentials", asy
     // The operator itself is not a managed MAGI. Casper is the ASP host MAGI.
     assert.deepEqual(
       rows.map((agent) => agent.handle),
-      ["@user.magi", "@eva-001.magi"],
+      [USER_HANDLE, ASP_MAGI_HANDLE],
     );
     assert.equal(rows[0]?.managed, false);
     assert.equal(rows[1]?.managed, true);

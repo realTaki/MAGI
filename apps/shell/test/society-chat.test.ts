@@ -8,6 +8,7 @@ import {
   ASP_MAGI_HANDLE,
   EVA_MAGI_HANDLE,
   MAGI_CONTACT_ID,
+  magiLocalName,
   SHELL_MAGI_HANDLE,
   messageDelivery,
 } from "@magi/bus";
@@ -24,7 +25,7 @@ import { Magi } from "../../eva/eva.ts";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function fakeClient(handle: string) {
-  const name = handle.replace(/^@/, "").replace(/\.magi$/, "");
+  const name = magiLocalName(handle);
   return {
     async complete(job: { messages: Array<{ role: string; content?: string }> }) {
       const text = [...job.messages].reverse().find((message) => message.role === "user")?.content ?? "";
@@ -138,22 +139,22 @@ test("operator DMs each MAGI and MAGIs deliver to each other through ASP", async
   const casper = await bot(ASP_MAGI_HANDLE);
   const melchior = await bot(EVA_MAGI_HANDLE);
 
-  const magi000 = new Magi(SHELL_MAGI_HANDLE, {
-    workspace: path.join(root, "shell"),
+  const shellMagi = new Magi(SHELL_MAGI_HANDLE, {
+    workspace: path.join(root, magiLocalName(SHELL_MAGI_HANDLE)),
     client: fakeClient(SHELL_MAGI_HANDLE),
   });
-  const magi002 = new Magi(EVA_MAGI_HANDLE, {
-    workspace: path.join(root, "eva-002"),
+  const evaMagi = new Magi(EVA_MAGI_HANDLE, {
+    workspace: path.join(root, magiLocalName(EVA_MAGI_HANDLE)),
     asp: { base: origin, token: melchior.magiToken },
     client: fakeClient(EVA_MAGI_HANDLE),
   });
-  await magi000.start();
-  t.after(() => magi000.stop());
-  magi000.bus.settings.set("asp.base", origin);
-  magi000.bus.settings.set("asp.token", balthasar.magiToken);
-  await notify(magi000, "start");
-  await magi002.start();
-  t.after(() => magi002.stop());
+  await shellMagi.start();
+  t.after(() => shellMagi.stop());
+  shellMagi.bus.settings.set("asp.base", origin);
+  shellMagi.bus.settings.set("asp.token", balthasar.magiToken);
+  await notify(shellMagi, "start");
+  await evaMagi.start();
+  t.after(() => evaMagi.stop());
 
   await until("Balthasar online", () => online(origin, token, SHELL_MAGI_HANDLE));
   await until("Melchior online", () => online(origin, token, EVA_MAGI_HANDLE));
@@ -162,18 +163,18 @@ test("operator DMs each MAGI and MAGIs deliver to each other through ASP", async
   await until("Melchior joined 1:1", () => joined(origin, token, melchior.chatId, EVA_MAGI_HANDLE));
 
   assert.equal((await request(origin, "POST", `/chats/${balthasar.chatId}/messages`, {
-    token, body: { content: "@shell.magi ping" },
+    token, body: { content: `${SHELL_MAGI_HANDLE} ping` },
   })).status, 201);
   assert.equal((await request(origin, "POST", `/chats/${casper.chatId}/messages`, {
-    token, body: { content: "@eva-001.magi ping" },
+    token, body: { content: `${ASP_MAGI_HANDLE} ping` },
   })).status, 201);
   assert.equal((await request(origin, "POST", `/chats/${melchior.chatId}/messages`, {
-    token, body: { content: "@eva-002.magi ping" },
+    token, body: { content: `${EVA_MAGI_HANDLE} ping` },
   })).status, 201);
 
-  await waitForContent(origin, token, balthasar.chatId, SHELL_MAGI_HANDLE, "ok:shell");
-  await waitForContent(origin, token, casper.chatId, ASP_MAGI_HANDLE, "ok:eva-001");
-  await waitForContent(origin, token, melchior.chatId, EVA_MAGI_HANDLE, "ok:eva-002");
+  await waitForContent(origin, token, balthasar.chatId, SHELL_MAGI_HANDLE, `ok:${magiLocalName(SHELL_MAGI_HANDLE)}`);
+  await waitForContent(origin, token, casper.chatId, ASP_MAGI_HANDLE, `ok:${magiLocalName(ASP_MAGI_HANDLE)}`);
+  await waitForContent(origin, token, melchior.chatId, EVA_MAGI_HANDLE, `ok:${magiLocalName(EVA_MAGI_HANDLE)}`);
 
   const group = record((await request(origin, "POST", "/chats", { token, body: { kind: "group" } })).data);
   const groupId = String(group.chat_id);
@@ -185,15 +186,15 @@ test("operator DMs each MAGI and MAGIs deliver to each other through ASP", async
   await until("Melchior joined group", () => joined(origin, token, groupId, EVA_MAGI_HANDLE));
 
   assert.equal((await request(origin, "POST", `/chats/${groupId}/messages`, {
-    token, body: { content: "@eva-002.magi group ping" },
+    token, body: { content: `${EVA_MAGI_HANDLE} group ping` },
   })).status, 201);
-  await waitForContent(origin, token, groupId, EVA_MAGI_HANDLE, "ok:eva-002");
+  await waitForContent(origin, token, groupId, EVA_MAGI_HANDLE, `ok:${magiLocalName(EVA_MAGI_HANDLE)}`);
 
   const casperChat = asp.bus.chats.forChannel("asp", groupId);
-  messageDelivery.send(asp.bus, casperChat.id, "@shell.magi from casper", MAGI_CONTACT_ID, "asp");
-  await waitForContent(origin, token, groupId, SHELL_MAGI_HANDLE, "ok:shell");
+  messageDelivery.send(asp.bus, casperChat.id, `${SHELL_MAGI_HANDLE} from casper`, MAGI_CONTACT_ID, "asp");
+  await waitForContent(origin, token, groupId, SHELL_MAGI_HANDLE, `ok:${magiLocalName(SHELL_MAGI_HANDLE)}`);
 
-  const balthasarChat = magi000.bus.chats.forChannel("asp", groupId);
-  messageDelivery.send(magi000.bus, balthasarChat.id, "@eva-002.magi from balthasar", MAGI_CONTACT_ID, "asp");
-  await waitForContent(origin, token, groupId, EVA_MAGI_HANDLE, "ok:eva-002");
+  const balthasarChat = shellMagi.bus.chats.forChannel("asp", groupId);
+  messageDelivery.send(shellMagi.bus, balthasarChat.id, `${EVA_MAGI_HANDLE} from balthasar`, MAGI_CONTACT_ID, "asp");
+  await waitForContent(origin, token, groupId, EVA_MAGI_HANDLE, `ok:${magiLocalName(EVA_MAGI_HANDLE)}`);
 });

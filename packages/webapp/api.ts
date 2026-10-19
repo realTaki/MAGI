@@ -37,10 +37,10 @@ import {
 } from "@magi/bus";
 import { ASP_ORIGIN } from "./asp-process.js";
 import { ensureManagedClone } from "./clone.js";
-import { agentBranch, agentSource, createMagiRuntime } from "./magi-runtime.js";
+import { agentBranch, agentName, agentSource, createMagiRuntime } from "./magi-runtime.js";
 import { downloadShellInstaller, installerPath, shellRelease } from "./shell-update.js";
-// Host MAGIs live in Shell (@shell Balthasar) and ASP (@eva-001 Casper).
-// Only Melchior (@eva-002) is a spawned eva.js child.
+// Host MAGIs live in Shell (Balthasar) and ASP (Casper).
+// Only Melchior is a spawned eva.js child.
 const DEFAULT_SOCIETY = [
   { handle: SHELL_MAGI_HANDLE, nickname: SHELL_MAGI_NICKNAME },
   { handle: ASP_MAGI_HANDLE, nickname: ASP_MAGI_NICKNAME },
@@ -268,13 +268,13 @@ export function createLocalApi(context) {
    */
   async function ensureAspCheckout() {
     if (!managed) return aspCheckout;
-    const destination = path.join(paths.home, ".magi", "asp", "MAGI");
+    const destination = path.join(paths.home, ".magi", agentName(ASP_MAGI_HANDLE), "MAGI");
     await ensureManagedClone({
       run: (args, gitOptions) => command(git.binary, args, gitOptions),
       env: tools.env,
       url: repository,
       destination,
-      branch: "magi/asp",
+      branch: agentBranch(ASP_MAGI_HANDLE),
     });
     await configureClone(destination);
     aspCheckout = destination;

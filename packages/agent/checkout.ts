@@ -5,9 +5,10 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { magiLocalName } from "@magi/bus";
 
 export function sourceCheckout(handle: string, workspace: string, role = process.env.MAGI_ROLE): string {
-  const name = handle.replace(/^@/, "").replace(/\.magi$/, "");
+  const name = magiLocalName(handle);
   const branch = role === "shell" || role === "asp" ? `magi/${role}` : `magi/${name}`;
   const present = existsSync(join(workspace, "MAGI", ".git"));
   return present

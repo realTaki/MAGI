@@ -8,12 +8,12 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-import { ASP_MAGI_HANDLE, EVA_MAGI_HANDLE, SHELL_MAGI_HANDLE } from "@magi/bus";
+import { ASP_MAGI_HANDLE, EVA_MAGI_HANDLE, magiLocalName, SHELL_MAGI_HANDLE } from "@magi/bus";
 import { agentBranch, agentSource, createMagiRuntime } from "@magi/webapp/magi-runtime.js";
 
 const exec = promisify(execFile);
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
-const agent = { handle: "@eva-002.magi", token: "tok" };
+const agent = { handle: EVA_MAGI_HANDLE, token: "tok" };
 
 /** Resolve an explicit MAGI-owned Node/npm pair, never a system executable. */
 function projectRuntime() {
@@ -112,11 +112,11 @@ test("every MAGI gets its own branch checked out inside its workspace", async (t
   await assert.rejects(runtime.start(agent), /eva --role agent/);
 
   const source = agentSource(home, agent.handle);
-  assert.equal(source, path.join(home, ".magi", "eva-002", "MAGI"));
+  assert.equal(source, path.join(home, ".magi", magiLocalName(agent.handle), "MAGI"));
   assert.equal(existsSync(path.join(source, ".git")), true, "the clone has its own .git directory");
   assert.equal((await git(source, ["rev-parse", "--abbrev-ref", "HEAD"])).trim(), agentBranch(agent.handle));
   assert.equal((await git(source, ["rev-parse", "--is-inside-work-tree"])).trim(), "true");
-  assert.equal((await git(origin, ["branch", "--list", "magi/eva-002"])).trim(), "");
+  assert.equal((await git(origin, ["branch", "--list", agentBranch(agent.handle)])).trim(), "");
 
   // Dependencies belong to that checkout, and the process runs from it.
   assert.deepEqual(recorded.npm, [

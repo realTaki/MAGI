@@ -7,6 +7,11 @@ export {
   ASP_MAGI_NICKNAME,
   EVA_MAGI_HANDLE,
   EVA_MAGI_NICKNAME,
+  magiLocalName,
+  magiHandle,
+  magiNodeName,
+  sequentialMagiHandle,
+  nextMagiName,
   isInProcessMagiHandle,
 } from "./identity.js";
 export { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "./books/contactBook.js";

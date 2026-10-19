@@ -12,7 +12,7 @@ How the three nodes, the relay, provider setup, and self-replace actually work i
 
 ## Run
 
-Open the Electron app in [`apps/shell/`](apps/shell/). It starts `eva --role shell`. Start Casper with `node apps/eva/eva.mjs --role asp` and Melchior with `node apps/eva/eva.mjs --role agent @eva-002.magi`. State lives under `MAGI_HOME` (default `~/.magi`). The relay address is `MAGI_ASP`.
+Open the Electron app in [`apps/shell/`](apps/shell/). It starts `eva --role shell`. Start Casper with `node apps/eva/eva.mjs --role asp` and Melchior with `node apps/eva/eva.mjs --role agent @eva-000.magi`. State lives under `MAGI_HOME` (default `~/.magi`). The relay address is `MAGI_ASP`.
 
 Build from the repository root with `npm run build`. Tests run with the bundled Node 24 runtime under `apps/shell/runtime/bin`.
 
