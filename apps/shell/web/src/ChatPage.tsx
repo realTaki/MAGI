@@ -1,4 +1,4 @@
-import { groupChatRooms } from "./chat-list";
+import { groupChatRooms, type CurrentChats } from "./chat-list";
 import { FormCardView } from "./FormCardView";
 import { cardStateFromEvents, cardWithReceipt } from "./provider-form";
 import { Button } from "./Button";
@@ -96,6 +96,8 @@ type ChatView = ChatSummary & {
   members: ChatMember[];
   remoteId?: string;
   magiHandle?: string;
+  state?: "active" | "ended";
+  participantsKnown?: boolean;
   savedName: string;
   lastSequence: number;
   unread: boolean;
@@ -271,6 +273,8 @@ function fromAspChat(remote: CreatedChat): ChatView {
   bot.id = remote.chat_id;
   bot.remoteId = remote.chat_id;
   bot.magiHandle = remote.agents[0];
+  bot.state = remote.state;
+  bot.participantsKnown = Array.isArray(remote.participants) && remote.agents.length === 1;
   bot.description = remote.description ?? "";
   bot.savedName = name;
   bot.members = membersFromChat(remote, []);
@@ -576,6 +580,7 @@ function OnboardThread({
 export function ChatPage() {
   const t = useT();
   const [bots, setBots] = useState<ChatView[]>([]);
+  const [currentChats, setCurrentChats] = useState<CurrentChats>({ registeredHandles: new Set(), chatIds: new Set() });
   const [activeId, setActiveId] = useState(storedActiveChat);
   const [loadError, setLoadError] = useState("");
   const [panelOpen, setPanelOpen] = useState(false);
@@ -632,7 +637,7 @@ export function ChatPage() {
     );
   }, [active, extra, outgoing]);
 
-  const chatGroups = useMemo(() => groupChatRooms(bots, OPERATOR.handle), [bots]);
+  const chatGroups = useMemo(() => groupChatRooms(bots, OPERATOR.handle, currentChats), [bots, currentChats]);
   const activeRooms = chatGroups.find((group) => group.rooms.some((room) => room.id === active?.id))?.rooms ?? [];
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -682,9 +687,11 @@ export function ChatPage() {
         setBots(restored);
         setActiveId((current) => restored.some((bot) => bot.id === current)
           ? current : restored[0]?.id || current);
-        const remote = await listAspChats();
+        const [remote, roster] = await Promise.all([listAspChats(), listAspBots()]);
         if (cancelled) return;
         await saveChats(remote);
+        if (cancelled) return;
+        setCurrentChats({ registeredHandles: new Set(roster.map((agent) => agent.handle)), chatIds: new Set(remote.map((room) => room.chat_id)) });
         const known = new Map(local.map((row) => [row.chat_id, row]));
         for (const row of remote) known.set(row.chat_id, row);
         setBots((current) => [...known.values()].map((row) => {
@@ -728,11 +735,30 @@ export function ChatPage() {
       const events = await syncAspEvents(chatId);
       if (!cancelled) applyChatEvents(chatId, events);
     }
-    async function refreshAgentStatus() {
-      const listed = await listAspBots();
-      // An empty answer means "ASP did not say", not "everyone went offline".
-      if (cancelled || listed.length === 0) return;
-      setAgentStatus(Object.fromEntries(listed.map((bot) => [bot.handle, bot.online])));
+    async function refreshChatsAndStatus() {
+      try {
+        const [listed, remote] = await Promise.all([listAspBots(), listAspChats()]);
+        if (cancelled) return;
+        await saveChats(remote);
+        if (cancelled) return;
+        setCurrentChats({ registeredHandles: new Set(listed.map((agent) => agent.handle)), chatIds: new Set(remote.map((room) => room.chat_id)) });
+        if (listed.length > 0) setAgentStatus(Object.fromEntries(listed.map((bot) => [bot.handle, bot.online])));
+        setBots((current) => {
+          const known = new Map(current.map((room) => [room.id, room]));
+          for (const row of remote) {
+            const previous = known.get(row.chat_id);
+            const next = fromAspChat(row);
+            known.set(row.chat_id, previous ? {
+              ...previous, state: next.state, kind: next.kind, members: next.members,
+              magiHandle: next.magiHandle, participantsKnown: next.participantsKnown,
+            } : next);
+          }
+          return [...known.values()];
+        });
+      } catch (error) {
+        if (!cancelled) setCurrentChats({ registeredHandles: new Set(), chatIds: new Set() });
+        throw error;
+      }
     }
     async function refreshAll() {
       if (!flushingOutgoingRef.current) {
@@ -755,7 +781,7 @@ export function ChatPage() {
       }
       const results = await Promise.allSettled([
         ...chatIds.map(refreshChat),
-        refreshAgentStatus(),
+        refreshChatsAndStatus(),
       ]);
       const failure = results.find((result) => result.status === "rejected");
       if (!cancelled && failure?.status === "rejected") setLoadError(String(failure.reason));

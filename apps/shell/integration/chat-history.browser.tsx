@@ -7,7 +7,11 @@ const rows = [
   { chat_id: "greeting", kind: "bot", name: "BALTHASAR", agents: ["@shell.magi"], created_at: 1 },
   { chat_id: "provider", kind: "bot", name: "BALTHASAR", agents: ["@shell.magi"], created_at: 2 },
   { chat_id: "different-identity", kind: "bot", name: "BALTHASAR", agents: ["@eva-000.magi"], created_at: 3 },
-];
+].map((row) => ({ ...row, state: "active", participants: [
+  { handle: "@user.magi", status: "joined" }, { handle: row.agents[0], status: "joined" },
+] }));
+let remoteRows = structuredClone(rows);
+let rosterHandles = new Set(rows.map((row) => row.agents[0]));
 const sequences: Record<string, number> = {};
 const events = (id: string) => [{ type: "chat.message", sequence: sequences[id] ?? 1, event_id: `${id}-event`, payload: {
   sender: "@shell.magi", content: id === "greeting" ? "provider.api_key is missing" : "[manager] worker asp recovered",
@@ -41,8 +45,8 @@ const before = JSON.stringify(rows);
 window.fetch = async (input, options) => {
   const url = new URL(String(input));
   if (url.pathname === "/operator") return Response.json({ handle: "@user.magi", token: "synthetic" });
-  if (url.pathname === "/chats") return Response.json({ chats: rows });
-  if (url.pathname === "/bots") return Response.json({ bots: rows.map((row) => ({ handle: row.agents[0], online: true })) });
+  if (url.pathname === "/chats") return Response.json({ chats: remoteRows });
+  if (url.pathname === "/bots") return Response.json({ bots: [...rosterHandles].map((handle) => ({ handle, online: true })) });
   if (url.pathname.endsWith("/events")) return Response.json({ events: [] });
   if (url.pathname.endsWith("/events/ack")) return Response.json({});
   if (url.pathname.endsWith("/messages")) {
@@ -72,7 +76,7 @@ function choose(id: string) {
 }
 async function run() {
   flushSync(() => root.render(<I18nProvider><ChatPage /></I18nProvider>));
-  await until(() => document.querySelectorAll(".chat-page__bot-row").length >= 2);
+  await until(() => Boolean(select()));
   check(document.querySelectorAll(".chat-page__bot-row").length === 2, "one entry per exact handle, not per display name or room");
   check(document.querySelector(".chat-page__bot-list")?.textContent?.includes("@eva-000.magi"), "same names show distinct handles");
   await until(() => Boolean(select()) && thread().includes("provider.api_key is missing"));
@@ -116,6 +120,21 @@ async function run() {
   check(document.querySelectorAll(".chat-page__bot-row").length === 2 && select().options.length === 2, "remount retains both histories in one identity entry");
   check(select().value === "provider", "remount restores the selected historical room");
   check(JSON.stringify(saved) === before, "storage retains all original room records");
+  remoteRows = remoteRows.map((row) => row.chat_id === "provider" ? { ...row, state: "ended" } : row);
+  await until(() => document.querySelectorAll(".chat-page__bot-row").length === 3);
+  check(!select(), "ended room is not hidden inside the active identity entry");
+  remoteRows = structuredClone(rows);
+  await until(() => Boolean(select()));
+  remoteRows = remoteRows.filter((row) => row.chat_id !== "provider");
+  await until(() => document.querySelectorAll(".chat-page__bot-row").length === 3);
+  check(thread().includes("Model provider"), "remote-absent room keeps its own cached history");
+  remoteRows = structuredClone(rows);
+  await until(() => Boolean(select()));
+  rosterHandles.delete("@shell.magi");
+  await until(() => document.querySelectorAll(".chat-page__bot-row").length === 3);
+  check(!select(), "unregistered handle is not treated as a current shared identity");
+  rosterHandles.add("@shell.magi");
+  await until(() => Boolean(select()));
   root.unmount();
 }
 run().then(() => { document.body.dataset.result = "PASS"; }).catch((error) => {

@@ -260,6 +260,7 @@ test("ensureDefaultMagis reuses an existing owner 1:1 and does not open a second
   const originalFetch = globalThis.fetch;
   const createdHandles = [];
   const chats = [
+    { chat_id: "old-balthasar", name: "BALTHASAR", kind: "bot", agents: ["@eva-000.magi"], created_at: 0 },
     { chat_id: "casper-1", kind: "bot", agents: [ASP_MAGI_HANDLE], created_at: 1 },
   ];
   globalThis.fetch = async (url, options = {}) => {
@@ -307,5 +308,7 @@ test("ensureDefaultMagis reuses an existing owner 1:1 and does not open a second
   assert.equal(chats.filter((chat) => chat.agents[0] === ASP_MAGI_HANDLE).length, 1);
   assert.equal(createdHandles.includes(SHELL_MAGI_HANDLE), true);
   assert.equal(createdHandles.includes(EVA_MAGI_HANDLE), true);
+  assert.equal(chats.filter((chat) => chat.agents[0] === "@eva-000.magi").length, 1, "old Shell identity is retained");
+  assert.equal(chats.filter((chat) => chat.agents[0] === SHELL_MAGI_HANDLE).length, 1, "default setup creates the renamed handle separately");
   await api.dispose();
 });

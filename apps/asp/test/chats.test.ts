@@ -336,6 +336,38 @@ test("Shell owner API, concurrent recovery and restart preserve the same room an
   });
 });
 
+test("renaming the Shell handle can retain two named Balthasars with distinct identities", async (t) => {
+  const root = tempRoot(t);
+  const options = { databasePath: databasePath(root), workspace: path.join(root, "casper") };
+  const legacy = "@eva-000.magi";
+  let oldId: unknown;
+  async function openNamed(app: Asp, handle: string) {
+    const result = await request(app, "POST", "/chats", {
+      token: app.operatorToken, body: { kind: "bot", handle },
+    });
+    assert.equal(result.status, 201);
+    // Seed an already-named identity; no Shell process runs in this relay test.
+    const agent = app.store.getAgent(handle);
+    assert.ok(agent);
+    agent.nickname = "BALTHASAR";
+    app.store.updateAgent(agent);
+    return record(result.data).chat_id;
+  }
+  await withApp(options, async (app) => { oldId = await openNamed(app, legacy); });
+  await withApp(options, async (app) => {
+    const newId = await openNamed(app, SHELL_MAGI_HANDLE);
+    assert.notEqual(newId, oldId);
+    assert.equal(await openNamed(app, SHELL_MAGI_HANDLE), newId, "opening the new handle again is idempotent");
+    const listed = await request(app, "GET", "/chats", { token: app.operatorToken });
+    const balthasars = recordList(record(listed.data).chats).filter((chat) => chat.name === "BALTHASAR");
+    assert.equal(balthasars.length, 2);
+    assert.deepEqual(new Set(balthasars.flatMap((chat) => chat.agents as string[])), new Set([legacy, SHELL_MAGI_HANDLE]));
+    assert.ok(balthasars.some((chat) => chat.chat_id === oldId));
+    assert.ok(app.store.getAgent(legacy));
+    assert.ok(app.store.getAgent(SHELL_MAGI_HANDLE));
+  });
+});
+
 test("a one-shot owner chat does not reuse or end the 1:1", async (t) => {
   await withApp({ databasePath: databasePath(tempRoot(t)) }, async (app) => {
     const token = operatorToken(await request(app, "GET", "/operator"));
