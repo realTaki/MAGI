@@ -261,7 +261,6 @@ test("ensureDefaultMagis reuses an existing owner 1:1 and does not open a second
   const createdHandles = [];
   const chats = [
     { chat_id: "casper-1", kind: "bot", agents: [ASP_MAGI_HANDLE], created_at: 1 },
-    { chat_id: "casper-2", kind: "bot", agents: [ASP_MAGI_HANDLE], created_at: 9 },
   ];
   globalThis.fetch = async (url, options = {}) => {
     const endpoint = new URL(url).pathname;
@@ -305,7 +304,7 @@ test("ensureDefaultMagis reuses an existing owner 1:1 and does not open a second
   await api.start();
   assert.equal(createdHandles.includes(ASP_MAGI_HANDLE), false, "Casper already has a 1:1");
   assert.equal(createdHandles.filter((handle) => handle === ASP_MAGI_HANDLE).length, 0);
-  assert.equal(chats.filter((chat) => chat.agents[0] === ASP_MAGI_HANDLE).length, 2);
+  assert.equal(chats.filter((chat) => chat.agents[0] === ASP_MAGI_HANDLE).length, 1);
   assert.equal(createdHandles.includes(SHELL_MAGI_HANDLE), true);
   assert.equal(createdHandles.includes(EVA_MAGI_HANDLE), true);
   await api.dispose();

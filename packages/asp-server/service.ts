@@ -80,7 +80,7 @@ export class ChatService {
       }
 
       // One agent and the owner keep a single 1:1. An ended or group chat is
-      // not that room. Extra duplicate 1:1s are left as history.
+      // not that room.
       if (!input.endAfterSend) {
         const existing = this.#existingOwnerAgentChat(seen);
         if (existing !== undefined) {
@@ -445,9 +445,8 @@ export class ChatService {
   }
 
   /**
-   * The oldest active owner↔agent 1:1 for this pair, if any. Groups are never
-   * reused as that room. Extra 1:1s stay; their transcripts are not moved or
-   * deleted.
+   * An active owner↔agent 1:1 for this pair, if any. Groups are never reused
+   * as that room.
    */
   #existingOwnerAgentChat(members: Set<string>): Chat | undefined {
     if (members.size !== 2 || !members.has(OPERATOR_HANDLE)) {
@@ -457,7 +456,6 @@ export class ChatService {
     if (agent === undefined || this.store.getAgent(agent) === undefined) {
       return undefined;
     }
-    const matches: Chat[] = [];
     for (const chat of this.store.chats.values()) {
       if (chat.state !== "active" || chat.kind === "group") {
         continue;
@@ -469,10 +467,9 @@ export class ChatService {
       if (people.length !== 2 || people.some((handle) => !members.has(handle))) {
         continue;
       }
-      matches.push(chat);
+      return chat;
     }
-    matches.sort((left, right) => left.created_at - right.created_at || left.id.localeCompare(right.id));
-    return matches[0];
+    return undefined;
   }
 
   async #reuseChat(

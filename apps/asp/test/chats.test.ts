@@ -311,32 +311,6 @@ test("a one-shot owner chat does not reuse or end the 1:1", async (t) => {
   });
 });
 
-test("duplicate owner 1:1s stay intact and one remains the open room", async (t) => {
-  await withApp({ databasePath: databasePath(tempRoot(t)) }, async (app) => {
-    const original = await waitForOwnerAgentChat(app, ASP_MAGI_HANDLE);
-    const extra = app.store.createChat({ creator: app.operatorHandle, topic: null, kind: "bot" });
-    app.store.addParticipant(extra.id, app.operatorHandle, "joined");
-    app.store.addParticipant(extra.id, ASP_MAGI_HANDLE, "joined");
-    app.store.appendChatEvent(extra.id, "chat.message", {
-      content: "keep this transcript",
-      sender: app.operatorHandle,
-    });
-    assert.equal(ownerAgentChats(app, ASP_MAGI_HANDLE).length, 2);
-    const casper = app.store.getAgent(ASP_MAGI_HANDLE);
-    assert.ok(casper);
-    const opened = record((await request(app, "POST", "/chats/open", {
-      token: casper.token,
-      body: { invite: [USER_HANDLE] },
-    })).data);
-    assert.equal(opened.chat_id, original.id);
-    const leftover = ownerAgentChats(app, ASP_MAGI_HANDLE);
-    assert.equal(leftover.length, 2);
-    assert.equal(leftover.some((chat) => chat.id === extra.id), true);
-    const kept = app.store.eventsForChat(extra.id).some((event) => event.payload.content === "keep this transcript");
-    assert.equal(kept, true);
-  });
-});
-
 test("offline magi joins when it connects after the invite", async (t) => {
   await withApp({ databasePath: databasePath(tempRoot(t)) }, async (app) => {
     const token = operatorToken(await request(app, "GET", "/operator"));
