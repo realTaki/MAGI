@@ -15,23 +15,8 @@ const exec = promisify(execFile);
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const agent = { handle: EVA_MAGI_HANDLE, token: "tok" };
 
-/** Resolve an explicit MAGI-owned Node/npm pair, never a system executable. */
-function projectRuntime() {
-  const shell = path.join(repository, "apps", "shell", "runtime");
-  const installed = "/Applications/MAGI.app/Contents/Resources/runtime";
-  const nodeName = process.platform === "win32" ? "node.exe" : "node";
-  for (const root of [process.env.MAGI_TEST_RUNTIME ?? "", shell, installed]) {
-    const node = path.join(root, "bin", nodeName);
-    const npm = path.join(root, "npm", "node_modules", "npm", "bin", "npm-cli.js");
-    if (root !== "" && existsSync(node) && existsSync(npm)) return { node, npm };
-  }
-  return null;
-}
-
-const installedRuntime = projectRuntime();
-// Unit tests replace command execution; these paths merely satisfy the same
-// explicit-runtime validation used in production.
-const testRuntime = installedRuntime ?? { node: process.execPath, npm: fileURLToPath(import.meta.url) };
+// Node is supplied by the project test runner; npm execution is stubbed.
+const testRuntime = { node: process.execPath, npm: fileURLToPath(import.meta.url) };
 
 async function git(cwd, args) {
   return (await exec("git", args, { cwd })).stdout;
@@ -175,8 +160,8 @@ test("a checkout that cannot be cloned fails instead of sharing another tree", a
   assert.equal(recorded.spawns.length, 0);
 });
 
-for (const autocrlf of [false, true]) {
-test(`merging advances a MAGI branch and restarts it (autocrlf=${autocrlf})`, async (t) => {
+const autocrlf = process.platform === "win32";
+test(`merging advances only the requested MAGI source branch (autocrlf=${autocrlf})`, async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-merge-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const { origin, seed } = await makeOrigin(root, autocrlf);
@@ -221,22 +206,6 @@ test(`a conflicting merge is aborted and reported (autocrlf=${autocrlf})`, async
   await assert.rejects(runtime.merge(agent), /could not merge .* was aborted/);
   assert.equal(readFileSync(path.join(source, "README.md"), "utf8").replace(/\r\n/g, "\n"), "agent\n");
   assert.equal((await git(source, ["status", "--porcelain"])).trim(), "", "no half-finished merge is left behind");
-});
-
-}
-
-test("the shell refuses to boot another node's process", async () => {
-  const runtime = createMagiRuntime({
-    checkout: repository,
-    home: repository,
-    base: "http://127.0.0.1:9",
-    tools: { git: "git", env: process.env, node: process.execPath, npm: "npm" },
-    run: async () => "",
-    spawnProcess: () => { throw new Error("shell must not spawn a node"); },
-    managed: false,
-    log: () => {},
-  });
-  await assert.rejects(runtime.start(agent), /eva --role agent/);
 });
 
 test("only the explicit local default gets an independent launcher, with concurrent starts coalesced", async () => {

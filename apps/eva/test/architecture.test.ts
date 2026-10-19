@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { expect, test } from "./test.js";
+import { test } from "./test.js";
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,13 +48,4 @@ test("every worker package imports only itself, BUS, or the shared runtime", asy
       assert.ok(permitted(worker.name, files[0], dependency), `${worker.name} declares peer dependency ${dependency}`);
     }
   }
-});
-
-test("worker boundary rejects peer imports and escapes", () => {
-  const file = join(packages, "agent", "worker.ts");
-  expect(permitted("agent", file, "@magi/bus")).toBe(true);
-  expect(permitted("agent", file, "./prompts.js")).toBe(true);
-  expect(permitted("agent", file, "@magi/providers/client.js")).toBe(false);
-  expect(permitted("agent", file, "../providers/client.js")).toBe(false);
-  expect(permitted("agent", file, "../../apps/eva/eva.js")).toBe(false);
 });

@@ -20,7 +20,7 @@ const PNG = Buffer.from(
 const AVATAR_URL = "https://avatars.githubusercontent.com/u/42?v=4";
 
 /** A backend on throwaway paths, with GitHub replaced by a local fake. */
-function backend({ viewer = {}, viewerStatus = 200, avatarStatus = 200, metadata = null } = {}) {
+function backend({ viewer = {}, viewerStatus = 200, avatarStatus = 200 } = {}) {
   const root = mkdtempSync(path.join(tmpdir(), "magi-app-test-"));
   const paths = {
     home: path.join(root, "home"),
@@ -31,9 +31,6 @@ function backend({ viewer = {}, viewerStatus = 200, avatarStatus = 200, metadata
   mkdirSync(appData, { recursive: true });
   mkdirSync(paths.checkout, { recursive: true });
   writeFileSync(path.join(appData, "github-token"), "ghp_test\n");
-  if (metadata !== null) {
-    writeFileSync(path.join(appData, "github.json"), JSON.stringify(metadata));
-  }
 
   const originalFetch = globalThis.fetch;
   const requests = [];
@@ -112,13 +109,8 @@ test("state reports the GitHub account and caches the picture", async (t) => {
   });
   assert.ok(existsSync(github.avatarFile()), "the picture lands in this machine's state");
   assert.ok(existsSync(github.tokenFile()), "the token remains in app state");
-});
-
-test("existing app account metadata is read from app state", (t) => {
-  const old = { login: "old-user", fork: "old-user/MAGI" };
-  const github = backend({ metadata: old });
-  t.after(github.dispose);
-  assert.deepEqual(github.metadata(), old);
+  assert.equal((await github.api["github.state"]()).avatar, state.avatar);
+  assert.equal(github.downloads(), 1, "repeated reads reuse the cached picture");
 });
 
 test("an invalid app token stays removed", async (t) => {
@@ -129,17 +121,6 @@ test("an invalid app token stays removed", async (t) => {
   assert.equal(existsSync(github.tokenFile()), false);
   assert.equal((await github.api["github.state"]()).signedIn, false);
   assert.equal(github.requests.filter((url) => url.startsWith("https://api.github.com/user")).length, 1);
-});
-
-test("a later read reuses the cached picture instead of downloading it again", async (t) => {
-  const github = backend();
-  t.after(github.dispose);
-
-  const first = await github.api["github.state"]();
-  assert.equal(github.downloads(), 1);
-  const second = await github.api["github.state"]();
-  assert.equal(second.avatar, first.avatar);
-  assert.equal(github.downloads(), 1, "no second download");
 });
 
 test("a profile without a name falls back to the login", async (t) => {

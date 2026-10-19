@@ -77,18 +77,6 @@ jobs:
           fi
           npm version "$version" --no-git-tag-version --allow-same-version
 
-      - name: Test app
-        # `magi-runtime.test.ts` covers clone creation, failure fallback,
-        # merge/restart and rebuild flows — none of which run elsewhere today
-        # (this repo has no PR workflow that re-executes them). The single test
-        # that's expensive on the Windows runner is the live "a real MAGI boots
-        # from its own checkout" integration test, which clones the repo and
-        # runs `npm ci` + `npm run build` inside it. Gate just that one test
-        # off via an env var so the rest of the file keeps running.
-        env:
-          MAGI_SKIP_LIVE_INTEGRATION: '1'
-        run: npm test
-
       - name: Build shell
         env:
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
@@ -115,6 +103,9 @@ jobs:
             --x64 \
             --publish never \
             --config.artifactName='${productName}-${version}-${arch}.${ext}'
+
+      - name: Test built app with its owned runtime
+        run: runtime/bin/node.exe runtime/npm/node_modules/npm/bin/npm-cli.js test
 
       - name: Upload packaged app
         uses: actions/upload-artifact@v6

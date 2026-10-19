@@ -1078,7 +1078,13 @@ export function createLocalApi(context) {
       const file = (await command(git.binary, ["rev-parse", "--git-path", marker], gitAt(root))).trim();
       if (existsSync(path.resolve(root, file))) throw new Error(`A Git operation is in progress in ${root}. Finish or abort it yourself before syncing; nothing was changed.`);
     }
-    const dirty = (await command(git.binary, ["status", "--porcelain=v1", "--untracked-files=all"], gitAt(root))).trim();
+    // Dirty-check only. `git status` otherwise rewrites `.git/index` stat cache
+    // (racy-git) even when porcelain is unchanged, which mutates the user's
+    // checkout and breaks index-preserving sync refusals.
+    const dirty = (await command(git.binary, ["status", "--porcelain=v1", "--untracked-files=all"], {
+      ...gitAt(root),
+      env: { ...tools.env, GIT_OPTIONAL_LOCKS: "0" },
+    })).trim();
     if (dirty) throw new Error(`Local changes in ${root}. Commit or stash them before syncing; staged, unstaged and untracked files were preserved.`);
     return await sourceBranch(root);
   }
