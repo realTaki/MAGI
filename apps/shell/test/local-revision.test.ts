@@ -13,13 +13,13 @@ import { ReplaceWorker } from '../../../packages/manager/dist/replace.js';
 const repo = path.resolve(import.meta.dirname, '../../..');
 const node = process.execPath;
 const npm = path.join(repo, 'apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js');
-function fixture(t) {
+function fixture(t, beforeRemove = () => {}) {
   const home = mkdtempSync(path.join(tmpdir(), 'magi-local-revision-'));
   const root = path.join(home, 'MAGI');
   const previous = { ...process.env };
   Object.assign(process.env, { MAGI_HOME: home, MAGI_NODE: node, MAGI_NPM: npm, MAGI_GIT: 'git', MAGI_NODE_NAME: 'eva-000', MAGI_ROLE: 'shell', PATH: `${path.dirname(node)}${path.delimiter}${process.env.PATH}` });
   delete process.env.MAGI_REVISION; delete process.env.MAGI_PREVIOUS_REVISION;
-  t.after(() => { for (const key of Object.keys(process.env)) if (!(key in previous)) delete process.env[key]; Object.assign(process.env, previous); rmSync(home, { recursive: true, force: true }); });
+  t.after(() => { beforeRemove(); for (const key of Object.keys(process.env)) if (!(key in previous)) delete process.env[key]; Object.assign(process.env, previous); rmSync(home, { recursive: true, force: true }); });
   mkdirSync(root);
   const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' } }).trim();
   git('init', '--initial-branch=main'); git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--allow-empty', '-m', 'initial');
@@ -94,15 +94,16 @@ test('both self-rebuild tools bind the editable source to this node workspace, i
 
 
 test('the actual replace worker builds local tool edits without an upstream and sends the built revision to its launcher', async (t) => {
-  const f = fixture(t);
+  let bus: Bus | undefined;
+  const f = fixture(t, () => bus?.close());
   f.git('branch', '--unset-upstream');
   writeFileSync(path.join(f.root, 'source.txt'), 'worker-local-v2');
-  const bus = new Bus('@eva-000.magi', f.home);
+  bus = new Bus('@eva-000.magi', f.home);
   const savedSend = process.send, savedConnected = Object.getOwnPropertyDescriptor(process, 'connected');
   let outgoing;
   process.send = (message) => { outgoing = message; setImmediate(() => process.emit('message', { v: 1, type: 'shutdown' })); return true; };
   Object.defineProperty(process, 'connected', { configurable: true, value: true });
-  t.after(() => { process.send = savedSend; if (savedConnected) Object.defineProperty(process, 'connected', savedConnected); else delete process.connected; bus.close(); });
+  t.after(() => { process.send = savedSend; if (savedConnected) Object.defineProperty(process, 'connected', savedConnected); else delete process.connected; });
   const worker = new ReplaceWorker(bus, { app: 'shell', script: 'build:process' }, { healthy: () => null, suspendForReplace: async () => {}, resume: async () => {} });
   const { id } = JSON.parse(await rebuildTools(bus)[0].run({ target: 'self' }));
   await worker.poll();
