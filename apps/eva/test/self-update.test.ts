@@ -34,6 +34,9 @@ test("self_update skill and verifyCheckout call the same verify entry", () => {
   assert.match(verifyScript, /return result.status \?\? 1;/);
   assert.match(verifyScript, /shell: true/);
   assert.match(verifyScript, /windowsHide: true/);
+  assert.match(verifyScript, /spawnSync\(`"\$\{npm\}"`/);
+  assert.doesNotMatch(verifyScript, /if \(role\) env\.MAGI_ROLE = role/);
+  assert.match(verifyScript, /run\(\['run', 'build:ui', '--prefix', 'apps\/shell'\], \{ \.\.\.env, MAGI_ROLE: role \}\)/);
   assert.match(verifyScript, /} finally \{\s*rmSync\(home/);
   assert.match(verifyScript, /process\.exit\(code\)/);
   assert.doesNotMatch(skill, /do not run the whole suite/i);

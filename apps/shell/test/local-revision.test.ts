@@ -39,7 +39,7 @@ function fixture(t, beforeRemove = () => {}) {
   writeFileSync(path.join(root, 'source.txt'), 'upstream-v1');
   writeFileSync(path.join(root, 'removed.txt'), 'remove this source');
   writeFileSync(path.join(root, 'staged.txt'), 'original');
-  writeFileSync(path.join(root, 'build.mjs'), `import{readFileSync,mkdirSync,writeFileSync}from'node:fs';import{dirname,basename}from'node:path';import{fileURLToPath}from'node:url';process.chdir(dirname(fileURLToPath(import.meta.url)));const value=readFileSync('source.txt','utf8');if(value==='INVALID')throw Error('candidate rejected');if(process.argv[2]==='test'){mkdirSync('dist',{recursive:true});writeFileSync('dist/test-env',JSON.stringify({home:process.env.MAGI_HOME,dirName:basename(process.cwd()),token:process.env.MAGI_ASP_TOKEN!==undefined,replace:process.env.MAGI_REPLACE_JOB!==undefined}))}else if(process.argv[2]==='ui'){mkdirSync('apps/shell/dist',{recursive:true});writeFileSync('apps/shell/dist/index.html',value)}else if(process.argv[2]==='build'){mkdirSync('dist',{recursive:true});writeFileSync('dist/proof',value)}`);
+  writeFileSync(path.join(root, 'build.mjs'), `import{readFileSync,mkdirSync,writeFileSync}from'node:fs';import{dirname,basename}from'node:path';import{fileURLToPath}from'node:url';process.chdir(dirname(fileURLToPath(import.meta.url)));const value=readFileSync('source.txt','utf8');if(value==='INVALID')throw Error('candidate rejected');if(process.argv[2]==='test'){mkdirSync('dist',{recursive:true});writeFileSync('dist/test-env',JSON.stringify({home:process.env.MAGI_HOME,dirName:basename(process.cwd()),token:process.env.MAGI_ASP_TOKEN!==undefined,replace:process.env.MAGI_REPLACE_JOB!==undefined,role:process.env.MAGI_ROLE??''}))}else if(process.argv[2]==='ui'){mkdirSync('apps/shell/dist',{recursive:true});writeFileSync('apps/shell/dist/index.html',value)}else if(process.argv[2]==='build'){mkdirSync('dist',{recursive:true});writeFileSync('dist/proof',value)}`);
   mkdirSync(path.join(root, 'apps/shell'), { recursive: true });
   writeFileSync(path.join(root, 'apps/shell/package.json'), JSON.stringify({ scripts: { 'build:ui': 'node ../../build.mjs ui' } }));
   git('add', '.'); git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'fixture');
@@ -62,6 +62,7 @@ test('local rebuild includes unstaged, staged, untracked and removed source with
   assert.equal(validation.dirName, result.revision, "validation runs at the permanent revision path");
   assert.notEqual(validation.home, f.home, 'candidate tests must not open the running node data root');
   assert.equal(validation.token, false); assert.equal(validation.replace, false);
+  assert.equal(validation.role, '');
   assert.notEqual(result.revision, before.head);
   const object = path.join('.git/objects', result.revision.slice(0, 2), result.revision.slice(2));
   const originalObject = statSync(path.join(f.root, object), { bigint: true }), copiedObject = statSync(path.join(result.dir, object), { bigint: true });
@@ -185,6 +186,7 @@ process.exit(result.status ?? 1);
   if (!result.startsWith('exit_code: 0')) assert.fail(result);
   const validation = JSON.parse(readFileSync(path.join(clone, 'dist/test-env'), 'utf8'));
   assert.notEqual(validation.home, f.home);
+  assert.equal(validation.role, '');
   assert.equal(readFileSync(path.join(clone, 'dist/proof'), 'utf8'), 'upstream-v1');
   assert.equal(readFileSync(path.join(clone, 'apps/shell/dist/index.html'), 'utf8'), 'upstream-v1');
 });
@@ -380,6 +382,15 @@ test('non-swap dist build failure says build failure, not crash', async (t) => {
   assert.match(last!.content, /build failure/);
   assert.doesNotMatch(last!.content, /launcher rollback or crash/);
   assert.equal(bus.messages.list(operatorChat.id).length, 0);
+});
+
+test('verify.mjs does not leak MAGI_ROLE into test or build', (t) => {
+  const f = fixture(t);
+  assert.equal(process.env.MAGI_ROLE, 'shell');
+  const result = spawnSync(node, [npm, 'run', 'verify'], { cwd: f.root, env: process.env, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const validation = JSON.parse(readFileSync(path.join(f.root, 'dist/test-env'), 'utf8'));
+  assert.equal(validation.role, '');
 });
 
 test('verify.mjs removes temp MAGI_HOME after a failed test', (t) => {

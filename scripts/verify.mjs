@@ -27,7 +27,7 @@ function spawnNpm(args, env) {
   // Windows .cmd/.bat npm cannot be the executable of spawnSync without a
   // shell (EINVAL). Bare "npm" on Windows is also a .cmd shim.
   if (process.platform === 'win32') {
-    return spawnSync(npm, args, { ...opts, shell: true, windowsHide: true });
+    return spawnSync(`"${npm}"`, args, { ...opts, shell: true, windowsHide: true });
   }
   return spawnSync(npm, args, opts);
 }
@@ -56,14 +56,13 @@ env.MAGI_HOME = home;
 env.MAGI_OS_HOME = home;
 delete env.NODE_TEST_CONTEXT;
 // Shell verify must run build:ui; agent/asp skip it. Keep MAGI_ROLE only for that.
-if (role) env.MAGI_ROLE = role;
 
 let code = 0;
 try {
   code = run(['test'], env);
   if (code === 0) code = run(['run', 'build'], env);
   if (code === 0 && role === 'shell') {
-    code = run(['run', 'build:ui', '--prefix', 'apps/shell'], env);
+    code = run(['run', 'build:ui', '--prefix', 'apps/shell'], { ...env, MAGI_ROLE: role });
     if (code === 0 && !existsSync(join(root, 'apps', 'shell', 'dist', 'index.html'))) {
       console.error('Shell build produced no UI entry');
       code = 1;
