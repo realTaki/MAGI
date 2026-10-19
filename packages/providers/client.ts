@@ -14,6 +14,38 @@ export interface LLMClient {
 
 export type ProviderSettings = { provider?: string; api_key?: string; model?: string; base_url?: string };
 
+/** Classify only known structured transport codes. Never copy error text, URLs or headers. */
+export function transportFailureCode(error: unknown): ProviderFailureCode {
+  const codes: Record<string, ProviderFailureCode> = {
+    ENOTFOUND: "dns", EAI_AGAIN: "dns",
+    ECONNREFUSED: "connection_refused",
+    ETIMEDOUT: "timeout", UND_ERR_CONNECT_TIMEOUT: "timeout",
+    UND_ERR_HEADERS_TIMEOUT: "timeout", UND_ERR_BODY_TIMEOUT: "timeout",
+    CERT_HAS_EXPIRED: "tls", CERT_NOT_YET_VALID: "tls", DEPTH_ZERO_SELF_SIGNED_CERT: "tls",
+    SELF_SIGNED_CERT_IN_CHAIN: "tls", UNABLE_TO_VERIFY_LEAF_SIGNATURE: "tls",
+    UNABLE_TO_GET_ISSUER_CERT: "tls", UNABLE_TO_GET_ISSUER_CERT_LOCALLY: "tls",
+    ERR_TLS_CERT_ALTNAME_INVALID: "tls", ERR_SSL_WRONG_VERSION_NUMBER: "tls",
+    ERR_SSL_TLSV1_ALERT_PROTOCOL_VERSION: "tls", ERR_SSL_SSLV3_ALERT_HANDSHAKE_FAILURE: "tls",
+  };
+  const pending: unknown[] = [error];
+  const seen = new Set<object>();
+  const found = new Set<ProviderFailureCode>();
+  // Node fetch wraps socket errors in cause, including AggregateError for dual-stack attempts.
+  // Bound traversal and return generic connection for conflicting or incomplete evidence.
+  let inspected = 0;
+  while (pending.length && inspected++ < 16) {
+    const value = pending.shift();
+    if (!value || typeof value !== "object" || seen.has(value)) continue;
+    seen.add(value);
+    const detail = value as { code?: unknown; name?: unknown; cause?: unknown; errors?: unknown };
+    if (typeof detail.code === "string" && Object.hasOwn(codes, detail.code)) found.add(codes[detail.code]!);
+    if (detail.name === "AbortError" || detail.name === "TimeoutError") found.add("timeout");
+    if (detail.cause) pending.push(detail.cause);
+    if (Array.isArray(detail.errors)) pending.push(...detail.errors.slice(0, 16));
+  }
+  return !pending.length && found.size === 1 ? [...found][0]! : "connection";
+}
+
 function providerId(value: string): string {
   if (value === "claude") return "anthropic";
   // pi-ai calls MiniMax Global `minimax`; MAGI exposes the region explicitly.
@@ -111,7 +143,7 @@ export class PiAiClient implements LLMClient {
           failure = response.status === 401 || response.status === 403 ? "authentication"
             : response.status === 429 || response.status === 402 ? "rate_limit"
             : response.status === 408 || response.status === 504 ? "timeout"
-            : response.status >= 500 ? "connection" : "configuration";
+            : response.status >= 500 && response.status <= 599 ? "server" : "configuration";
           // Inspect only error semantics; never surface or persist a body, URL, header or key.
           try {
             const body = await response.clone().json() as { error?: { type?: string; code?: string; message?: string } };
@@ -121,7 +153,7 @@ export class PiAiClient implements LLMClient {
         }
         return response;
       } catch (error) {
-        failure = signal?.aborted || (error instanceof Error && /timeout|timed out|abort/i.test(error.name + error.message)) ? "timeout" : "connection";
+        failure = signal?.aborted ? "timeout" : transportFailureCode(error);
         throw providerFailure(failure);
       }
     };

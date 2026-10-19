@@ -1,6 +1,10 @@
 /** Stable, safe diagnostics across job and UI boundaries. Never persist provider response bodies. */
 export const PROVIDER_FAILURES = {
   connection: "Cannot connect to the model provider. Check network access, DNS, proxy and the selected region, then retry.",
+  dns: "The provider hostname could not be resolved. Check DNS and network access, then retry.",
+  connection_refused: "The connection was refused by the provider or an intermediary. Check endpoint and proxy availability.",
+  tls: "A secure connection could not be established. Check the system clock and certificate trust; do not disable certificate verification.",
+  server: "The provider or gateway returned an HTTP 5xx server error. Retry later; this does not establish that the API key is wrong.",
   authentication: "The provider rejected the credentials or account permission. Check the API key and region, then retry.",
   model: "The selected model is unsupported or unavailable to this account. Choose a supported model, then retry.",
   configuration: "The provider rejected the request configuration. Check the model and endpoint.",
