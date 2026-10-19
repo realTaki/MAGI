@@ -79,6 +79,15 @@ export class ChatService {
         invitees.push(handle);
       }
 
+      // One agent and the owner keep a single 1:1. An ended or group chat is
+      // not that room. Extra duplicate 1:1s are left as history.
+      if (!input.endAfterSend) {
+        const existing = this.#existingOwnerAgentChat(seen);
+        if (existing !== undefined) {
+          return this.#reuseChat(existing, input.creator, input.initialMessage, idempotencyKey);
+        }
+      }
+
       const chat = this.store.createChat({ creator: input.creator, topic: input.topic });
       this.store.addParticipant(chat.id, input.creator, "joined");
       for (const handle of invitees) {
@@ -433,6 +442,81 @@ export class ChatService {
 
   #intranetInviteFields(): Record<string, unknown> {
     return { intranet: true };
+  }
+
+  /**
+   * The oldest active owner↔agent 1:1 for this pair, if any. Groups are never
+   * reused as that room. Extra 1:1s stay; their transcripts are not moved or
+   * deleted.
+   */
+  #existingOwnerAgentChat(members: Set<string>): Chat | undefined {
+    if (members.size !== 2 || !members.has(OPERATOR_HANDLE)) {
+      return undefined;
+    }
+    const agent = [...members].find((handle) => handle !== OPERATOR_HANDLE);
+    if (agent === undefined || this.store.getAgent(agent) === undefined) {
+      return undefined;
+    }
+    const matches: Chat[] = [];
+    for (const chat of this.store.chats.values()) {
+      if (chat.state !== "active" || chat.kind === "group") {
+        continue;
+      }
+      const people = this.store
+        .participantsIn(chat.id)
+        .filter((participant) => participant.status === "invited" || participant.status === "joined")
+        .map((participant) => participant.handle);
+      if (people.length !== 2 || people.some((handle) => !members.has(handle))) {
+        continue;
+      }
+      matches.push(chat);
+    }
+    matches.sort((left, right) => left.created_at - right.created_at || left.id.localeCompare(right.id));
+    return matches[0];
+  }
+
+  async #reuseChat(
+    chat: Chat,
+    creator: string,
+    initialMessage: MessageInput | null,
+    idempotencyKey: string | null,
+  ): Promise<CreateChatResult> {
+    if (chat.kind === null) {
+      chat.kind = "bot";
+      this.store.updateChat(chat);
+    }
+    const participant = this.store.getParticipant(chat.id, creator);
+    if (participant?.status === "invited") {
+      this.store.setStatus(chat.id, creator, "joined");
+      this.store.appendChatEvent(chat.id, "chat.joined", { agent: creator });
+    }
+    let sequence: number | null = null;
+    if (initialMessage !== null) {
+      const payload: Record<string, unknown> = {
+        id: makeId("msg"),
+        chat_id: chat.id,
+        sender: creator,
+        sequence: this.store.chatSeq.get(chat.id),
+        content: initialMessage.content,
+        created_at: nowMs(),
+      };
+      if ("metadata" in initialMessage) {
+        payload.metadata = initialMessage.metadata;
+      }
+      const mentions = this.#mentions(chat.id, initialMessage.content);
+      if (mentions.length > 0) {
+        payload.mentions = mentions;
+      }
+      const event = this.store.appendChatEvent(chat.id, "chat.message", payload);
+      payload.sequence = event.sequence;
+      sequence = event.sequence;
+    }
+    await this.#fanOut(chat.id);
+    const result = { chatId: chat.id, sequence };
+    if (idempotencyKey !== null) {
+      this.store.recordIdempotentChat(creator, idempotencyKey, result.chatId, result.sequence);
+    }
+    return result;
   }
 
   #requireActiveChat(chatId: string): Chat {

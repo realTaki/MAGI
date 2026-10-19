@@ -867,11 +867,17 @@ export function createLocalApi(context) {
     for (const chat of chats) {
       if (chat?.kind !== "bot" || !Array.isArray(chat.agents) || chat.agents.length !== 1) continue;
       const handle = chat.agents[0];
-      if (typeof handle === "string" && typeof chat.chat_id === "string") haveChat.set(handle, chat.chat_id);
+      if (typeof handle !== "string" || typeof chat.chat_id !== "string") continue;
+      const createdAt = Number(chat.created_at ?? 0);
+      const current = haveChat.get(handle);
+      // Duplicate 1:1s: keep the oldest as the open room. Leave extra transcripts.
+      if (!current || createdAt < current.createdAt || (createdAt === current.createdAt && chat.chat_id < current.chatId)) {
+        haveChat.set(handle, { chatId: chat.chat_id, createdAt });
+      }
     }
     const created = [];
     for (const member of DEFAULT_SOCIETY) {
-      let chatId = haveChat.get(member.handle);
+      let chatId = haveChat.get(member.handle)?.chatId;
       if (typeof chatId !== "string") {
         progress?.("Creating default MAGIs…", 0.98);
         const chat = await aspJson("/chats", {

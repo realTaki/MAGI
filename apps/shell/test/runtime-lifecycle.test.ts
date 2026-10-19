@@ -7,6 +7,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { ASP_MAGI_HANDLE, EVA_MAGI_HANDLE, SHELL_MAGI_HANDLE } from "@magi/bus";
 import { createLocalApi } from "../shell.ts";
 
 function git(cwd, args) {
@@ -247,5 +248,65 @@ test("a MAGI's runtime is driven from its own profile methods", async (t) => {
   await assert.rejects(api["runtime.buildAndInstallInstaller"](), /not managed/);
   assert.equal(calls.includes("POST /runtime/magi/stop"), false);
   assert.ok(calls.includes("GET /agents"));
+  await api.dispose();
+});
+
+test("ensureDefaultMagis reuses an existing owner 1:1 and does not open a second", async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-default-1to1-"));
+  let api;
+  const checkout = path.join(root, "checkout");
+  mkdirSync(path.join(checkout, "apps", "asp", "dist"), { recursive: true });
+  writeFileSync(path.join(checkout, "apps", "asp", "dist", "asp.js"), "");
+  const originalFetch = globalThis.fetch;
+  const createdHandles = [];
+  const chats = [
+    { chat_id: "casper-1", kind: "bot", agents: [ASP_MAGI_HANDLE], created_at: 1 },
+    { chat_id: "casper-2", kind: "bot", agents: [ASP_MAGI_HANDLE], created_at: 9 },
+  ];
+  globalThis.fetch = async (url, options = {}) => {
+    const endpoint = new URL(url).pathname;
+    const method = options.method ?? "GET";
+    if (endpoint === "/health") return Response.json({ status: "ok", runtime: "typescript" });
+    if (endpoint === "/operator") return Response.json({ token: "operator-token" });
+    if (endpoint === "/agents") {
+      return Response.json({
+        agents: [
+          { handle: SHELL_MAGI_HANDLE, token: "tok-0", name: "eva-000", managed: true, online: true },
+          { handle: ASP_MAGI_HANDLE, token: "tok-1", name: "CASPER", managed: true, online: true },
+        ],
+      });
+    }
+    if (endpoint === "/chats" && method === "GET") return Response.json({ chats });
+    if (endpoint === "/chats" && method === "POST") {
+      const body = JSON.parse(String(options.body ?? "{}"));
+      createdHandles.push(body.handle);
+      const chat_id = `new-${body.handle}`;
+      chats.push({ chat_id, kind: "bot", agents: [body.handle], created_at: Date.now() });
+      return Response.json({ chat_id, kind: "bot", agents: [body.handle] });
+    }
+    if (endpoint === "/bots") return Response.json({ bots: [] });
+    if (method === "PATCH" && endpoint.startsWith("/bots/")) return Response.json({ ok: true });
+    if (method === "POST" && endpoint.endsWith("/messages")) return Response.json({ ok: true });
+    throw new Error(`unexpected request: ${method} ${url}`);
+  };
+  t.after(async () => {
+    await api?.dispose();
+    globalThis.fetch = originalFetch;
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
+  api = createLocalApi({
+    paths: { home: root, userData: path.join(root, "userData"), checkout },
+    repository: "https://github.com/AgenticSocietyLab/MAGI.git",
+    tools: { git: "git", env: process.env },
+    emit: () => {},
+    openExternal: async () => {},
+    copy: () => {},
+  });
+  await api.start();
+  assert.equal(createdHandles.includes(ASP_MAGI_HANDLE), false, "Casper already has a 1:1");
+  assert.equal(createdHandles.filter((handle) => handle === ASP_MAGI_HANDLE).length, 0);
+  assert.equal(chats.filter((chat) => chat.agents[0] === ASP_MAGI_HANDLE).length, 2);
+  assert.equal(createdHandles.includes(SHELL_MAGI_HANDLE), true);
+  assert.equal(createdHandles.includes(EVA_MAGI_HANDLE), true);
   await api.dispose();
 });
