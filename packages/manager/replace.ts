@@ -23,7 +23,7 @@ import { resolveToolchain } from "@magi/runtime/toolchain.js";
 const GATE_TRIES = 3;
 const LOG_TAIL = 8_000;
 const FAILURES_KEY = "replace.gate_failures";
-type ReplaceFailKind = "gate" | "crash";
+type ReplaceFailKind = "gate" | "crash" | "build";
 
 export type AppBuild = {
   app: "eva" | "asp" | "shell";
@@ -93,7 +93,7 @@ export class ReplaceWorker extends BaseWorker {
         catch (resumeError) { text = `${text}; ${message(resumeError)}`; }
       }
       board.submit(this.worker_name, id, { error: text });
-      failReplace(this.bus, text, chatId, "crash");
+      failReplace(this.bus, text, chatId, suspended ? "crash" : "build");
     }
   }
 
@@ -347,29 +347,39 @@ function gateSuccess(bus: Bus, chatId?: number): void {
   }
 }
 
+function failCopy(kind: ReplaceFailKind, attempt?: number): string {
+  if (kind === "gate") {
+    return attempt === undefined
+      ? `safety gate failed after ${GATE_TRIES} attempts. The running process was not replaced.`
+      : `safety gate failed (attempt ${attempt}/${GATE_TRIES}). The running process was not replaced.`;
+  }
+  if (kind === "build") {
+    return attempt === undefined
+      ? `the process was not replaced after ${GATE_TRIES} attempts (build failure).`
+      : `the process was not replaced (build failure, attempt ${attempt}/${GATE_TRIES}).`;
+  }
+  return attempt === undefined
+    ? `the process was not replaced after ${GATE_TRIES} attempts (launcher rollback or crash).`
+    : `the process was not replaced (launcher rollback or crash, attempt ${attempt}/${GATE_TRIES}).`;
+}
+
 function failReplace(bus: Bus, error: string, chatId: number | undefined, kind: ReplaceFailKind): void {
   const tail = error.length > LOG_TAIL ? error.slice(-LOG_TAIL) : error;
   const chat = typeof chatId === "number" && Number.isInteger(chatId) && chatId > 0 ? chatId : 0;
   const live = chat > 0 ? bus.chats.get(chat) : null;
-  if (kind === "crash") {
-    if (live) {
-      messageDelivery.send(bus, chat, `[replace] the process was not replaced (launcher rollback or crash).\n\n${tail}`, SYSTEM_CONTACT_ID, "replace");
-      return;
-    }
-    tell(bus, `[replace] ${tail}`);
-    return;
-  }
   if (!live) {
-    tell(bus, `[replace] ${tail}`);
+    // No requesting chat: crash keeps the original operator marker text.
+    if (kind === "build") tell(bus, `[replace] the process was not replaced (build failure).\n\n${tail}`);
+    else tell(bus, `[replace] ${tail}`);
     return;
   }
   const attempt = (Number(bus.settings.get(failuresKey(chat))) || 0) + 1;
   bus.settings.set(failuresKey(chat), String(attempt));
   if (attempt <= GATE_TRIES) {
-    messageDelivery.send(bus, chat, `[replace] safety gate failed (attempt ${attempt}/${GATE_TRIES}). The running process was not replaced.\n\n${tail}`, SYSTEM_CONTACT_ID, "replace");
+    messageDelivery.send(bus, chat, `[replace] ${failCopy(kind, attempt)}\n\n${tail}`, SYSTEM_CONTACT_ID, "replace");
     return;
   }
-  tell(bus, `[replace] safety gate failed after ${GATE_TRIES} attempts. The running process was not replaced.\n\n${tail}`);
+  tell(bus, `[replace] ${failCopy(kind)}\n\n${tail}`);
 }
 
 function tell(bus: Bus, text: string): void {

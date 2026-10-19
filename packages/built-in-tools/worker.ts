@@ -68,23 +68,20 @@ export class ToolsWorker extends BaseWorker {
     const board = this.bus.board("RunToolJob");
     const job = board.claim(this.worker_name, (input) => this.own.has(input.call.name));
     if (!job) return false;
-    // Requester chat is job context for request_replace only. Model-facing
-    // chat_id on send_message / search_chat_messages / set_home_chat stays intact.
-    const args = job.input.call.name === "request_replace" && job.input.chat_id !== undefined
-      ? { ...job.input.call.arguments, chat_id: job.input.chat_id }
-      : job.input.call.arguments;
-    const task = this.run(job.id, job.input.call.name, args);
+    // Requester chat stays job context, never a model-facing argument. send_message
+    // / search_chat_messages / set_home_chat keep their own chat_id fields.
+    const task = this.run(job.id, job.input.call.name, job.input.call.arguments, { chat_id: job.input.chat_id });
     this.pending.add(task);
     void task.finally(() => this.pending.delete(task));
     return true;
   }
 
-  private async run(id: number, name: string, args: Record<string, unknown>): Promise<void> {
+  private async run(id: number, name: string, args: Record<string, unknown>, context?: { chat_id?: number }): Promise<void> {
     const board = this.bus.board("RunToolJob");
     try {
       const tool = this.own.get(name);
       if (!tool) throw new Error(`unknown tool ${name}`);
-      board.submit(this.worker_name, id, { output: { content: await abortable(tool.run(args, this.controller.signal), this.controller.signal) } });
+      board.submit(this.worker_name, id, { output: { content: await abortable(tool.run(args, this.controller.signal, context), this.controller.signal) } });
     } catch (error) {
       board.submit(this.worker_name, id, { error: error instanceof Error ? error.message : String(error) });
     }

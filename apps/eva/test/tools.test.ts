@@ -33,6 +33,33 @@ test("message search includes archived history and send_message uses delivery jo
   }
 });
 
+test("request_replace uses the job chat, not arguments.chat_id", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "magi-replace-chat-id-"));
+  const bus = new Bus("@replace-chat.magi", workspace);
+  const worker = new ToolsWorker(bus);
+  const from = bus.chats.forChannel("cli", "from");
+  const spoof = bus.chats.forChannel("cli", "spoof");
+  try {
+    const id = bus.board("RunToolJob").publish({
+      call: { tool_call_id: "call-replace", name: "request_replace", arguments: { chat_id: spoof.id } },
+      chat_id: from.id,
+    }, "test");
+    expect(await worker.poll()).toBeTrue();
+    let result = bus.board("RunToolJob").result(id);
+    for (let i = 0; i < 100 && !result; i++) {
+      await sleep(10);
+      result = bus.board("RunToolJob").result(id);
+    }
+    expect(result).toMatchObject({ status: "completed" });
+    const replace = bus.board("ReplaceSelfJob").claim("test");
+    expect(replace?.input.chat_id).toBe(from.id);
+  } finally {
+    await worker.stop();
+    bus.close();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("send_message to another chat is not rewritten to the requester chat", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-tools-chat-id-"));
   const bus = new Bus("@tools-chat.magi", workspace);

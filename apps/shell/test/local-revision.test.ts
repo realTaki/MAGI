@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { execFileSync } from 'node:child_process';
-import { copyFileSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { reviseCheckout, trackingRef } from '@magi/runtime/revise.js';
@@ -288,7 +288,7 @@ test('swap:true safety-gate failure goes through reviseCheckout and wakes the re
   assert.equal(leftover, null);
 });
 
-test('launcher rollback copy is distinct from a safety-gate failure and uses the job chat_id', async (t) => {
+test('launcher rollback copy is distinct from a safety-gate failure, uses the job chat_id, and caps per chat', async (t) => {
   const home = mkdtempSync(path.join(tmpdir(), 'magi-replace-crash-'));
   const bus = new Bus('@crash.magi', home);
   t.after(() => { bus.close(); rmSync(home, { recursive: true, force: true }); });
@@ -298,13 +298,96 @@ test('launcher rollback copy is distinct from a safety-gate failure and uses the
   messageDelivery.setHomeChat(bus, operatorChat.id);
   bus.settings.set('replace.gate_failures.999', '3');
   const worker = new ReplaceWorker(bus, { app: 'eva', script: 'build' }, { healthy: () => null, suspendForReplace: async () => {}, resume: async () => {} });
-  const id = bus.board('ReplaceSelfJob').publish({ checkout: path.join(home, 'absent'), swap: true, chat_id: agentChat.id }, 'test');
+  async function failOnce(chatId: number) {
+    const id = bus.board('ReplaceSelfJob').publish({ checkout: path.join(home, 'absent'), swap: true, chat_id: chatId }, 'test');
+    return finishReplace(worker, bus, id, 5_000);
+  }
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const result = await failOnce(agentChat.id);
+    assert.equal(result.status, 'failed');
+    const last = bus.messages.list(agentChat.id).at(-1);
+    assert.equal(last?.contact_id, SYSTEM_CONTACT_ID);
+    assert.match(last!.content, /launcher rollback or crash/);
+    assert.match(last!.content, new RegExp(`attempt ${attempt}/3`));
+    assert.doesNotMatch(last!.content, /safety gate failed/);
+    assert.equal(bus.messages.list(operatorChat.id).length, 0);
+    claimWake(bus);
+  }
+  const other = await failOnce(otherChat.id);
+  assert.equal(other.status, 'failed');
+  assert.match(bus.messages.list(otherChat.id).at(-1)!.content, /attempt 1\/3/);
+  claimWake(bus);
+  const fourth = await failOnce(agentChat.id);
+  assert.equal(fourth.status, 'failed');
+  assert.equal(bus.messages.list(agentChat.id).filter((row) => row.contact_id === SYSTEM_CONTACT_ID).length, 3);
+  const operator = bus.messages.list(operatorChat.id).at(-1);
+  assert.equal(operator?.contact_id, MAGI_CONTACT_ID);
+  assert.match(operator!.content, /after 3 attempts/);
+  assert.match(operator!.content, /launcher rollback or crash/);
+  const leftover = bus.board('MessageDeliveryJob').claim('agent', (input) => bus.messages.get(input.message_id)?.contact_id !== MAGI_CONTACT_ID);
+  assert.equal(leftover, null);
+});
+
+test('MAGI_REPLACE_ERROR finishHandoff rolls back through the crash path', async (t) => {
+  const home = mkdtempSync(path.join(tmpdir(), 'magi-replace-error-'));
+  const bus = new Bus('@handoff.magi', home);
+  const previousJob = process.env.MAGI_REPLACE_JOB;
+  const previousError = process.env.MAGI_REPLACE_ERROR;
+  t.after(() => {
+    if (previousJob === undefined) delete process.env.MAGI_REPLACE_JOB;
+    else process.env.MAGI_REPLACE_JOB = previousJob;
+    if (previousError === undefined) delete process.env.MAGI_REPLACE_ERROR;
+    else process.env.MAGI_REPLACE_ERROR = previousError;
+    bus.close();
+    rmSync(home, { recursive: true, force: true });
+  });
+  const agentChat = bus.chats.forChannel('cli', 'agent');
+  const operatorChat = bus.chats.forChannel('cli', 'home');
+  messageDelivery.setHomeChat(bus, operatorChat.id);
+  const worker = new ReplaceWorker(bus, { app: 'eva', script: 'build' }, { healthy: () => null, suspendForReplace: async () => {}, resume: async () => {} });
+  const id = bus.board('ReplaceSelfJob').publish({ checkout: path.join(home, 'MAGI'), swap: true, chat_id: agentChat.id }, 'test');
+  process.env.MAGI_REPLACE_JOB = String(id);
+  process.env.MAGI_REPLACE_ERROR = 'launcher rolled the process back';
+  const result = await finishReplace(worker, bus, id, 5_000);
+  assert.equal(result.status, 'failed');
+  assert.equal(result.error, 'launcher rolled the process back');
+  const last = bus.messages.list(agentChat.id).at(-1);
+  assert.equal(last?.contact_id, SYSTEM_CONTACT_ID);
+  assert.match(last!.content, /launcher rollback or crash/);
+  assert.match(last!.content, /launcher rolled the process back/);
+  assert.equal(bus.messages.list(operatorChat.id).length, 0);
+  assert.equal(process.env.MAGI_REPLACE_JOB, undefined);
+  assert.equal(process.env.MAGI_REPLACE_ERROR, undefined);
+});
+
+test('non-swap dist build failure says build failure, not crash', async (t) => {
+  const home = mkdtempSync(path.join(tmpdir(), 'magi-replace-build-'));
+  const bus = new Bus('@build.magi', home);
+  t.after(() => { bus.close(); rmSync(home, { recursive: true, force: true }); });
+  const agentChat = bus.chats.forChannel('cli', 'agent');
+  const operatorChat = bus.chats.forChannel('cli', 'home');
+  messageDelivery.setHomeChat(bus, operatorChat.id);
+  const worker = new ReplaceWorker(bus, { app: 'eva', script: 'build' }, { healthy: () => null, suspendForReplace: async () => {}, resume: async () => {} });
+  const id = bus.board('ReplaceSelfJob').publish({ checkout: path.join(home, 'absent'), swap: false, chat_id: agentChat.id }, 'test');
   const result = await finishReplace(worker, bus, id, 5_000);
   assert.equal(result.status, 'failed');
   const last = bus.messages.list(agentChat.id).at(-1);
   assert.equal(last?.contact_id, SYSTEM_CONTACT_ID);
-  assert.match(last!.content, /launcher rollback or crash/);
-  assert.doesNotMatch(last!.content, /safety gate failed/);
-  assert.equal(bus.messages.list(otherChat.id).length, 0);
+  assert.match(last!.content, /build failure/);
+  assert.doesNotMatch(last!.content, /launcher rollback or crash/);
   assert.equal(bus.messages.list(operatorChat.id).length, 0);
+});
+
+test('verify.mjs removes temp MAGI_HOME after a failed test', (t) => {
+  const f = fixture(t);
+  writeFileSync(path.join(f.root, 'build.mjs'), `import { mkdirSync, writeFileSync } from 'node:fs';
+mkdirSync('dist', { recursive: true });
+writeFileSync('dist/test-env', process.env.MAGI_HOME ?? '');
+process.exit(2);
+`);
+  const result = spawnSync(node, [npm, 'run', 'verify'], { cwd: f.root, env: process.env, encoding: 'utf8' });
+  assert.notEqual(result.status, 0);
+  const isolated = readFileSync(path.join(f.root, 'dist/test-env'), 'utf8');
+  assert.notEqual(isolated, '');
+  assert.equal(existsSync(isolated), false);
 });

@@ -15,8 +15,8 @@ export function replaceTools(bus: Bus): ExecutableTool[] {
         type: "object",
         properties: {},
       },
-      async run(args) {
-        const chat_id = typeof args.chat_id === "number" && Number.isInteger(args.chat_id) && args.chat_id > 0 ? args.chat_id : undefined;
+      async run(_args, _signal, context) {
+        const chat_id = typeof context?.chat_id === "number" && Number.isInteger(context.chat_id) && context.chat_id > 0 ? context.chat_id : undefined;
         const id = bus.board("ReplaceSelfJob").publish({
           checkout: editableSource(bus),
           swap: true,

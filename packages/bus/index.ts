@@ -26,7 +26,7 @@ export type { ContactNote, NoteKind } from "./books/contactNoteBook.js";
 export type { McpConnectionType, McpServerConfig } from "./books/mcpServerBook.js";
 export type { PromptSection, PromptSource } from "./books/promptBook.js";
 export type { Setting } from "./books/settingsBook.js";
-export type { ExecutableTool, LLMTool, ToolSource } from "./books/toolBook.js";
+export type { ExecutableTool, LLMTool, ToolRunContext, ToolSource } from "./books/toolBook.js";
 // One file per job; `types.js` is only the board contract that binds them.
 export type { MessageDeliveryJob } from "./jobs/messageDelivery.js";
 export type { CallLLMJob, CallLLMResult, LLMMessage, LLMRequest } from "./jobs/callLlm.js";
