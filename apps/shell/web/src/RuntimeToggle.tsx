@@ -43,7 +43,7 @@ export function RuntimeToggle({ handle, invoke }: { handle: string; invoke?: (me
     } catch { if (generation.current === current) { setInfo(null); setError(true); } }
     finally { if (generation.current === current) { lock.current = false; setTransition(null); } }
   }
-  const label = transition ? t(`providerForm.${transition}`) : !info ? t("providerForm.checkingRuntime") : t(up ? "chatSettings.runtimeStop" : "chatSettings.runtimeStart");
+  const label = !invoke ? t("providerForm.runtimeUnavailable") : transition ? t(`providerForm.${transition}`) : !info ? t("providerForm.checkingRuntime") : t(up ? "chatSettings.runtimeStop" : "chatSettings.runtimeStart");
   return <span className="chat-page__avatar-control">
     <button type="button" className="chat-page__runtime-action" aria-label={`${label} ${handle}`} title={label} disabled={!invoke || !info || !!transition} aria-busy={!!transition} onClick={() => void toggle()}>{label}</button>
     <span role="status">{transition ? label : info ? t(info.online ? "chatSettings.online" : info.running ? "providerForm.running" : "chatSettings.offline") : ""}</span>

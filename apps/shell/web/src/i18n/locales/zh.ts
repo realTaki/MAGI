@@ -1,6 +1,7 @@
 export default {
   chatHistory: { sessions: "会话历史" },
   providerForm: {
+    runtimeUnavailable: "请在本机客户端启动／停止",
     title: "模型供应商配置",
     provider: "供应商",
     model: "模型",

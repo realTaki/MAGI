@@ -1,6 +1,7 @@
 export default {
   chatHistory: { sessions: "Conversation history" },
   providerForm: {
+    runtimeUnavailable: "Use the desktop app for Start/Stop",
     title: "Model provider",
     provider: "Provider",
     model: "Model",

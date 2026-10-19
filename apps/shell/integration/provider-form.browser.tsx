@@ -100,6 +100,9 @@ async function run() {
   finish(); await tick();
   check(document.querySelector("button")?.textContent === "Start", "confirmed stopped runtime offers start");
   check(runtimeCalls.every((call) => call.endsWith(":@one.magi")), "runtime commands target the profile MAGI");
+  flushSync(() => root.render(<I18nProvider><RuntimeToggle handle="@remote.magi" /></I18nProvider>));
+  await tick();
+  check(document.querySelector("button")?.disabled && document.body.textContent?.includes("Use the desktop app"), "plain browser does not pretend local runtime control is available");
   flushSync(() => root.render(<I18nProvider><ProviderProfile handle="@two.magi" chatId="two-chat" message={{ type: "form", text: "", chatId: "wrong-chat", card: { ...card, handle: "@one.magi" } }} /></I18nProvider>));
   await tick();
   check(!document.querySelector("form"), "profile never shows another MAGI's credential form");

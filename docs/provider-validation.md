@@ -47,7 +47,8 @@ The former independent provider slider button is removed.
 There is one Start/Stop control beside the profile avatar. It obtains real runtime
 state, disables duplicate actions while transitioning, rechecks the backend after
 commands and ignores results belonging to an old profile. The Runtime icon row and
-source-path display are removed. Agent-callable rebuild, update and synchronization
+source-path display are removed. A plain browser without the native local bridge shows an explicit disabled control
+instead of pretending to start or stop a local process. Agent-callable rebuild, update and synchronization
 capabilities remain in the backend. No code-block copy button is included.
 
 No old-data migration or compatibility layer is introduced. Each automated test
@@ -74,3 +75,8 @@ Use MAGI's owned Node runtime. Root acceptance includes the tests below.
 
 An account's actual network connectivity, entitlement and key validity remain
 operator-side checks; these tests make no paid model call and inspect no real key.
+
+Validation snapshot: root acceptance after merging `dbe805b9` passed **191/191**;
+Shell UI typecheck/build, all three locale catalogs and the Chromium interaction
+check passed. Runtime data is created under temporary directories and removed by
+the checks; no real credential or paid API is used.
