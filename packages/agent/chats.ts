@@ -89,7 +89,7 @@ export class Chat {
         if (response.content) messageDelivery.send(this.bus, this.chat_id, response.content, MAGI_CONTACT_ID, "agent");
         // A name the catalog does not have is answered here: no worker would claim its job.
         const calls = response.tool_calls.map((call) => this.bus.tools.get(call.name)
-          ? { call, jobId: this.bus.board("RunToolJob").publish({ call }, "agent") as number | null }
+          ? { call, jobId: this.bus.board("RunToolJob").publish({ call, chat_id: this.chat_id }, "agent") as number | null }
           : { call, jobId: null });
         for (const pending of calls) {
           if (pending.jobId === null) {

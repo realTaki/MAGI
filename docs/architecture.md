@@ -105,20 +105,25 @@ A missing authorized source is an error, not permission to guess another path.
 Source synchronization, building a candidate and activating it are distinct.
 Neither a Git fetch nor saving a file changes the loaded process.
 
-`replace_self` and `request_rebuild` with `target: self` queue `ReplaceSelfJob`.
+An agent changing its own code loads the `self_update` skill, edits its checkout,
+and runs the same compile and test commands as `verifyCheckout` (`npm test`,
+`npm run build`, and Shell's UI build) with `MAGI_NODE` / `MAGI_NPM`.
+`request_replace` with `target: self` only queues `ReplaceSelfJob`.
 The revision builder snapshots saved local source using a temporary Git index,
 including tracked edits and non-ignored additions/deletions. It does not commit,
 push or change the editable tree's index, HEAD or refs. Candidate tests use new
 disposable node/OS-home paths and do not inherit live MAGI credentials. The
-candidate is installed, tested and built in its revision directory before the
+candidate is installed, then that same `verifyCheckout` gate runs, before the
 launcher is asked to switch. Runtime code also supports committed-ref revision
-builds; this is not an extra argument on the public self-rebuild tool.
+builds; this is not an extra argument on the public replace tool.
 
 The launcher stops the old child before starting the candidate against that
-workspace. A failed build leaves the old child running. A candidate that fails
-readiness is retired and the launcher attempts the previous revision, recording
-a failure marker/job result. This is process revision recovery, not a guarantee
-of rollback of arbitrary database changes or external side effects.
+workspace. A failed safety gate leaves the old child running and wakes the
+requesting agent with the error summary and log tail (at most three times);
+after that cap the operator is told. A candidate that fails readiness is retired
+and the launcher attempts the previous revision, recording a failure marker/job
+result. This is process revision recovery, not a guarantee of rollback of
+arbitrary database changes or external side effects. Dist rollback is unchanged.
 
 If the launcher itself changed, the launcher upgrade protocol hands off after
 the old child exits. For Shell, a successful active revision includes its built
@@ -135,8 +140,10 @@ or complete desktop-demo acceptance; see [Verification](verification.md).
 
 ## Failure signals
 
-Jobs carry failures in their results. Workers deliver notices through the
-operator's home chat when available; startup and missing-home failures may still
-be logged. `worker "asp" recovered` is a health transition, not by itself a failed
-request. Source verification, process readiness, provider verification and GUI
-acceptance are separate states.
+Jobs carry failures in their results. A replace safety-gate failure wakes the
+requesting agent (error summary and log tail, cap 3) before the operator's home
+chat. Workers otherwise deliver notices through the operator's home chat when
+available; startup and missing-home failures may still be logged.
+`worker "asp" recovered` is a health transition, not by itself a failed request.
+Source verification, process readiness, provider verification and GUI acceptance
+are separate states.

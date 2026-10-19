@@ -6,6 +6,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { ExecutableTool } from "@magi/bus";
+import { toolchainEnv } from "@magi/runtime/toolchain.js";
 import { stringArg } from "./args.js";
 import { ShellManager, shellInvocation } from "./shellManager.js";
 
@@ -22,13 +23,13 @@ export function shellTools(workspace: string, shells: ShellManager): ExecutableT
       async run(args) {
         const command = stringArg(args, "command");
         if (args.run_in_background === true) {
-          const shell = shells.start(command, workspace);
+          const shell = shells.start(command, workspace, toolchainEnv());
           return `Command started in background. Use bash_output to monitor (bash_id='${shell.id}').\n\nCommand: ${command}\nBash ID: ${shell.id}`;
         }
         const timeout = typeof args.timeout === "number" ? Math.max(1, Math.min(600, args.timeout)) : 120;
         try {
           const [executable, ...parameters] = shellInvocation(command);
-          const { stdout, stderr } = await runCommand(executable, parameters, { cwd: workspace, timeout: timeout * 1000, maxBuffer: 256 * 1024 });
+          const { stdout, stderr } = await runCommand(executable, parameters, { cwd: workspace, env: toolchainEnv(), timeout: timeout * 1000, maxBuffer: 256 * 1024 });
           return `exit_code: 0\n${stdout}${stderr}`.slice(0, 8192);
         } catch (error) {
           const failed = error as Error & { code?: number | string; stdout?: string; stderr?: string };

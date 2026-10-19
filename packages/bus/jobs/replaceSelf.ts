@@ -12,6 +12,8 @@ export type ReplaceSelfJob = {
   ref?: string;
   /** After a healthy build, hand this process to its supervisor or a new one. */
   swap?: boolean;
+  /** Chat that requested the replace; a safety-gate failure wakes this chat. */
+  chat_id?: number;
 };
 
 export type ReplaceSelfResult = { replaced: true };

@@ -6,7 +6,7 @@
  *   files.ts     read_file / list_files / search_files / write_file / edit_file
  *   messages.ts  search_chat_messages / search_contact_messages /
  *                send_message / set_home_chat
- *   rebuild.ts   request_rebuild — queue a replace of this node
+ *   rebuild.ts   request_replace — queue a replace of this node
  *
  * `load_skill` is not here: it reads the SKILL.md files that `@magi/skills`
  * owns, so that package's worker registers the tool itself. The contact tools
@@ -25,7 +25,6 @@ import { cardTools } from "./card.js";
 import { fileTools } from "./files.js";
 import { messageTools } from "./messages.js";
 import { rebuildTools } from "./rebuild.js";
-import { replaceTools } from "./replace.js";
 import { shellTools } from "./shell.js";
 import { syncTools } from "./sync.js";
 import { ShellManager } from "./shellManager.js";
@@ -40,7 +39,6 @@ export function builtinTools(bus: Bus, shells = new ShellManager()): Tool[] {
     ...messageTools(bus),
     ...cardTools(bus),
     ...syncTools(bus),
-    ...replaceTools(bus),
     ...rebuildTools(bus),
   ];
 }
@@ -63,7 +61,10 @@ export class ToolsWorker extends BaseWorker {
     const board = this.bus.board("RunToolJob");
     const job = board.claim(this.worker_name, (input) => this.own.has(input.call.name));
     if (!job) return false;
-    const task = this.run(job.id, job.input.call.name, job.input.call.arguments);
+    const args = job.input.chat_id === undefined
+      ? job.input.call.arguments
+      : { ...job.input.call.arguments, chat_id: job.input.chat_id };
+    const task = this.run(job.id, job.input.call.name, args);
     this.pending.add(task);
     void task.finally(() => this.pending.delete(task));
     return true;

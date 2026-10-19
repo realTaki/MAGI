@@ -14,10 +14,10 @@ type ShellState = {
 export class ShellManager {
   private readonly shells = new Map<string, ShellState>();
 
-  start(command: string, cwd: string): ShellState {
+  start(command: string, cwd: string, env: NodeJS.ProcessEnv = process.env): ShellState {
     const id = crypto.randomUUID().replaceAll("-", "").slice(0, 12);
     const [file, ...args] = shellInvocation(command);
-    const process = spawn(file, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const process = spawn(file, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
     const state: ShellState = { id, command, process, output: "", cursor: 0, exitCode: null, status: "running" };
     this.shells.set(id, state);
     void this.capture(state, process.stdout);

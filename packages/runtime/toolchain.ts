@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { dirname, join, delimiter } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -60,6 +60,18 @@ export function resolveToolchain(env: NodeJS.ProcessEnv = process.env): { node: 
     node,
     npm: env.MAGI_NPM?.trim() || bundledNpm() || "npm",
     git: env.MAGI_GIT?.trim() || bundledGit() || "git",
+  };
+}
+
+/** Env for agent bash and the replace safety gate: same Node/npm/git, Node's directory on PATH. */
+export function toolchainEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const { node, npm, git } = resolveToolchain(env);
+  return {
+    ...env,
+    MAGI_NODE: node,
+    MAGI_NPM: npm,
+    MAGI_GIT: git,
+    PATH: `${dirname(node)}${delimiter}${env.PATH ?? ""}`,
   };
 }
 
