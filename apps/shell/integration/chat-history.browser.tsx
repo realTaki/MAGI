@@ -6,7 +6,7 @@ import { I18nProvider } from "../web/src/i18n";
 
 const rows = [
   { chat_id: "greeting", kind: "bot", name: "BALTHASAR", agents: [SHELL_MAGI_HANDLE], created_at: 1 },
-  { chat_id: "provider", kind: "bot", name: "BALTHASAR", agents: [SHELL_MAGI_HANDLE], created_at: 2 },
+  { chat_id: "form", kind: "bot", name: "BALTHASAR", agents: [SHELL_MAGI_HANDLE], created_at: 2 },
   { chat_id: "different-identity", kind: "bot", name: "BALTHASAR", agents: [EVA_MAGI_HANDLE], created_at: 3 },
 ].map((row) => ({ ...row, state: "active", participants: [
   { handle: USER_HANDLE, status: "joined" }, { handle: row.agents[0], status: "joined" },
@@ -15,9 +15,9 @@ let remoteRows = structuredClone(rows);
 let rosterHandles = new Set(rows.map((row) => row.agents[0]));
 const sequences: Record<string, number> = {};
 const events = (id: string) => [{ type: "chat.message", sequence: sequences[id] ?? 1, event_id: `${id}-event`, payload: {
-  sender: SHELL_MAGI_HANDLE, content: id === "greeting" ? "provider.api_key is missing" : "[manager] worker asp recovered",
-  ...(id === "provider" ? { metadata: { card: {
-    id: "synthetic-card", handle: SHELL_MAGI_HANDLE, purpose: "provider", title: "Synthetic provider card",
+  sender: SHELL_MAGI_HANDLE, content: id === "greeting" ? "hello from Balthasar" : "[manager] worker asp recovered",
+  ...(id === "form" ? { metadata: { card: {
+    id: "synthetic-card", handle: SHELL_MAGI_HANDLE, purpose: "task", title: "Synthetic history form",
     submit: "Save", fields: [],
   } } } : {}),
 } }];
@@ -57,7 +57,7 @@ window.fetch = async (input, options) => {
   throw Error(`unexpected fetch ${url.pathname}`);
 };
 localStorage.setItem("magi.locale", "en");
-localStorage.setItem("magi.chats.read-through.v1", JSON.stringify({ greeting: 0, provider: 0, "different-identity": 0 }));
+localStorage.setItem("magi.chats.read-through.v1", JSON.stringify({ greeting: 0, form: 0, "different-identity": 0 }));
 const interval = window.setInterval.bind(window);
 window.setInterval = ((handler: TimerHandler, timeout?: number, ...args: unknown[]) => interval(handler, timeout === 3000 ? 100 : timeout, ...args)) as typeof window.setInterval;
 const root = createRoot(document.getElementById("root")!);
@@ -80,55 +80,51 @@ async function run() {
   await until(() => Boolean(select()));
   check(document.querySelectorAll(".chat-page__bot-row").length === 2, "one entry per exact handle, not per display name or room");
   check(document.querySelector(".chat-page__bot-list")?.textContent?.includes(EVA_MAGI_HANDLE), "same names show distinct handles");
-  await until(() => Boolean(select()) && thread().includes("provider.api_key is missing"));
+  await until(() => Boolean(select()) && thread().includes("hello from Balthasar"));
   check(select()?.options.length === 2, "both original rooms remain accessible");
   const bounds = select().getBoundingClientRect();
   check(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2) === select(), "history selector is visible and clickable below the topbar");
-  check(thread().includes("provider.api_key is missing"), "greeting transcript is intact");
+  check(thread().includes("hello from Balthasar"), "greeting transcript is intact");
   await until(() => document.querySelector(`[title="${SHELL_MAGI_HANDLE}"]`)?.getAttribute("data-unread") === "true");
-  choose("provider");
+  choose("form");
   await until(() => Boolean(document.querySelector(".chat-page__thread .chat-page__form")));
-  check(Boolean(document.querySelector(".chat-page__thread .chat-page__form")), "provider card remains accessible in its own room");
-  check(!thread().includes("provider.api_key is missing"), "transcripts do not blend");
+  check(Boolean(document.querySelector(".chat-page__thread .chat-page__form")), "task form remains accessible in its own room");
+  check(!thread().includes("hello from Balthasar"), "transcripts do not blend");
   await until(() => document.querySelector(`[title="${SHELL_MAGI_HANDLE}"]`)?.getAttribute("data-unread") === "false");
   const cancel = [...document.querySelectorAll<HTMLButtonElement>(".chat-page__form button")].find((button) => button.textContent === "Cancel")!;
   flushSync(() => cancel.click());
   await until(() => sends.length === 1);
-  check(sends[0].id === "provider" && (sends[0].body as any).metadata.card_reject.id === "synthetic-card", "card receipt targets its original chat ID");
-  const button = document.querySelector(".chat-page__provider-btn") as HTMLButtonElement;
-  flushSync(() => button.click());
-  await tick();
-  check(sends.length === 2 && sends[1].id === "provider", "actions target the explicitly selected room");
+  check(sends[0].id === "form" && (sends[0].body as any).metadata.card_reject.id === "synthetic-card", "card receipt targets its original chat ID");
   const composer = document.querySelector(".chat-page__composer input") as HTMLInputElement;
   flushSync(() => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(composer, "synthetic normal message");
     composer.dispatchEvent(new Event("input", { bubbles: true }));
   });
   flushSync(() => (document.querySelector(".chat-page__send") as HTMLButtonElement).click());
-  await until(() => sends.length === 3);
-  check(sends[2].id === "provider" && (sends[2].body as any).content === "synthetic normal message", "ordinary messages retain the selected original chat ID");
+  await until(() => sends.length === 2);
+  check(sends[1].id === "form" && (sends[1].body as any).content === "synthetic normal message", "ordinary messages retain the selected original chat ID");
   choose("greeting");
-  await until(() => thread().includes("provider.api_key is missing"));
-  check(thread().includes("provider.api_key is missing") && !document.querySelector(".chat-page__thread .chat-page__form"), "switching back preserves separate history");
-  sequences.provider = 2;
+  await until(() => thread().includes("hello from Balthasar"));
+  check(thread().includes("hello from Balthasar") && !document.querySelector(".chat-page__thread .chat-page__form"), "switching back preserves separate history");
+  sequences.form = 2;
   await until(() => document.querySelector(`[title="${SHELL_MAGI_HANDLE}"]`)?.getAttribute("data-unread") === "true");
   check(select().value === "greeting", "new unread events do not switch the selected room");
-  check([...select().options].find((option) => option.value === "provider")?.textContent?.includes("Unread"), "unread history is identifiable in the selector");
-  choose("provider");
+  check([...select().options].find((option) => option.value === "form")?.textContent?.includes("Unread"), "unread history is identifiable in the selector");
+  choose("form");
   await until(() => document.querySelector(`[title="${SHELL_MAGI_HANDLE}"]`)?.getAttribute("data-unread") === "false");
   flushSync(() => root.render(<I18nProvider key="reload"><ChatPage /></I18nProvider>));
   await until(() => Boolean(select()));
   check(document.querySelectorAll(".chat-page__bot-row").length === 2 && select().options.length === 2, "remount retains both histories in one identity entry");
-  check(select().value === "provider", "remount restores the selected historical room");
+  check(select().value === "form", "remount restores the selected historical room");
   check(JSON.stringify(saved) === before, "storage retains all original room records");
-  remoteRows = remoteRows.map((row) => row.chat_id === "provider" ? { ...row, state: "ended" } : row);
+  remoteRows = remoteRows.map((row) => row.chat_id === "form" ? { ...row, state: "ended" } : row);
   await until(() => document.querySelectorAll(".chat-page__bot-row").length === 3);
   check(!select(), "ended room is not hidden inside the active identity entry");
   remoteRows = structuredClone(rows);
   await until(() => Boolean(select()));
-  remoteRows = remoteRows.filter((row) => row.chat_id !== "provider");
+  remoteRows = remoteRows.filter((row) => row.chat_id !== "form");
   await until(() => document.querySelectorAll(".chat-page__bot-row").length === 3);
-  check(thread().includes("Model provider"), "remote-absent room keeps its own cached history");
+  check(thread().includes("Synthetic history form"), "remote-absent room keeps its own cached history");
   remoteRows = structuredClone(rows);
   await until(() => Boolean(select()));
   rosterHandles.delete(SHELL_MAGI_HANDLE);

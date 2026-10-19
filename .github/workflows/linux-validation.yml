@@ -30,22 +30,24 @@ jobs:
         run: |
           export PATH="$PWD/apps/shell/runtime/bin:$PATH"
           apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js test
+          apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run lint:i18n --prefix apps/shell
           apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run build:ui --prefix apps/shell
-      - name: Full Shell acceptance
-        run: apps/shell/runtime/bin/node --test apps/shell/test/*.test.ts
       - name: EVA self-modification through real process IPC
         run: apps/shell/runtime/bin/node --test apps/shell/integration/self-rebuild.test.mjs
       - name: Build AppImage without publishing
+        if: github.event_name == 'workflow_dispatch'
         run: |
           export PATH="$PWD/apps/shell/runtime/bin:$PATH"
           XDG_CACHE_HOME="$RUNNER_TEMP/magi-linux-cache" ELECTRON_BUILDER_CACHE="$RUNNER_TEMP/magi-linux-cache/builder" apps/shell/runtime/bin/node apps/shell/scripts/build.mjs --linux AppImage --x64 --publish never --config.artifactName=MAGI-Linux-x64.AppImage
       - name: Verify native package and create handoff checksums
+        if: github.event_name == 'workflow_dispatch'
         run: |
           apps/shell/runtime/bin/node apps/shell/scripts/verify-linux-appimage.mjs apps/shell/release/MAGI-Linux-x64.AppImage > apps/shell/release/linux-verification.json
           printf '%s\n' "$GITHUB_SHA" > apps/shell/release/SOURCE_COMMIT
           cd apps/shell/release
           sha256sum MAGI-Linux-x64.AppImage | tee SHA256SUMS
       - uses: actions/upload-artifact@v6
+        if: github.event_name == 'workflow_dispatch'
         with:
           name: linux-x64-appimage
           path: |

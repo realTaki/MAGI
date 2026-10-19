@@ -14,9 +14,7 @@ import { createLocalApi } from "../shell.ts";
  * that are still pending survive a restart.
  */
 
-test("desktop chat history and pending receipts survive a restart", {
-  skip: Number(process.versions.node.split(".")[0]) < 22,
-}, async (t) => {
+test("desktop chat history and pending receipts survive a restart", async (t) => {
   const directory = mkdtempSync(path.join(tmpdir(), "magi-chat-"));
   const file = path.join(directory, "shell", "chat.sqlite");
   const chat = { chat_id: "sess_1", kind: "group", agents: [] };

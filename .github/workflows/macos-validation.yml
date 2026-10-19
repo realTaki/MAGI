@@ -24,9 +24,8 @@ jobs:
         run: |
           npm ci
           npm_execpath="$(npm root -g)/npm/bin/npm-cli.js" node_modules/node/bin/node apps/shell/scripts/prepare-runtime.mjs
-      - name: Build runtime and exercise native lifecycle and Git migrations
+      - name: Build runtime and exercise native lifecycle and Git bootstrap
         run: |
           export PATH="$PWD/apps/shell/runtime/bin:$PATH"
           apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run build
-          apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run build:ui --prefix apps/shell
           apps/shell/runtime/bin/node --test apps/shell/test/process-table.test.mjs apps/shell/test/shutdown.test.mjs apps/shell/test/profile-layout.test.mjs

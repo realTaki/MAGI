@@ -73,9 +73,6 @@ jobs:
           fi
           npm version "$version" --no-git-tag-version --allow-same-version
 
-      - name: Test app
-        run: npm test
-
       - name: Build shell
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -109,6 +106,9 @@ jobs:
             app_dir=release/mac
           fi
           codesign --verify --deep --strict "$app_dir/MAGI.app"
+
+      - name: Test built app with its owned runtime
+        run: runtime/bin/node runtime/npm/node_modules/npm/bin/npm-cli.js test
 
       - name: Upload packaged app
         uses: actions/upload-artifact@v6

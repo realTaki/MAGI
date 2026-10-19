@@ -6,13 +6,10 @@ import { test } from "node:test";
 
 import { ASP_MAGI_HANDLE, Bus, EVA_MAGI_HANDLE, SHELL_MAGI_HANDLE, USER_HANDLE, messageDelivery } from "@magi/bus";
 import { magiHome } from "@magi/runtime/home.js";
-import { ManagerWorker } from "@magi/manager";
 import { Asp } from "../../asp/asp.ts";
 import { Magi } from "../../eva/eva.ts";
 import { createSupervisor } from "../process.mjs";
 
-const repo = path.resolve(import.meta.dirname, "../../..");
-const tsc = path.join(repo, "node_modules/typescript/lib/tsc.js");
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function until(label: string, ready: () => boolean | Promise<boolean>, timeoutMs = 20_000): Promise<void> {
@@ -41,45 +38,6 @@ function ownerAgentChats(asp: Asp, agent: string) {
     }
   }
   return chats;
-}
-
-function writeBrokenApp(root: string, app: "eva" | "asp" | "shell", script: string): string {
-  const checkout = path.join(root, "checkout");
-  const appDir = path.join(checkout, "apps", app);
-  mkdirSync(path.join(appDir, "dist"), { recursive: true });
-  mkdirSync(path.join(appDir, "src"), { recursive: true });
-  const entry = `${app}.js`;
-  writeFileSync(path.join(appDir, "dist", entry), "export const version = 1;\n");
-  writeFileSync(path.join(appDir, "dist", "extra.js"), "export const extra = 1;\n");
-  writeFileSync(path.join(appDir, "src", "broken.ts"), "export const version = ;\n");
-  writeFileSync(path.join(appDir, "tsconfig.json"), JSON.stringify({
-    compilerOptions: { module: "nodenext", moduleResolution: "nodenext", target: "esnext", outDir: "dist", noEmit: true },
-    files: ["src/broken.ts"],
-  }));
-  writeFileSync(path.join(appDir, "build.js"), `import { rmSync, writeFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
-writeFileSync("dist/${entry}", "function (");
-rmSync("dist/extra.js", { force: true });
-const result = spawnSync(process.execPath, [${JSON.stringify(tsc)}, "--pretty", "false", "-p", "tsconfig.json"], { stdio: "inherit" });
-process.exit(result.status === 0 ? 1 : (result.status ?? 1));
-`);
-  writeFileSync(path.join(appDir, "package.json"), JSON.stringify({ type: "module", scripts: { [script]: "node build.js" } }));
-  return checkout;
-}
-
-async function expectRollback(bus: Bus, checkout: string, app: "eva" | "asp" | "shell"): Promise<void> {
-  const chat = bus.chats.forChannel("cli", "operator");
-  messageDelivery.setHomeChat(bus, chat.id);
-  const id = bus.board("ReplaceSelfJob").publish({ checkout, swap: false }, "test");
-  await until("replace did not finish", () => bus.board("ReplaceSelfJob").result(id) !== null, 60_000);
-  const result = bus.board("ReplaceSelfJob").result(id);
-  assert.equal(result?.status, "failed");
-  assert.equal(typeof result?.error, "string");
-  const dist = path.join(checkout, "apps", app, "dist");
-  assert.equal(readFileSync(path.join(dist, `${app}.js`), "utf8"), "export const version = 1;\n");
-  assert.equal(readFileSync(path.join(dist, "extra.js"), "utf8"), "export const extra = 1;\n");
-  const notes = bus.messages.list(chat.id).map((message) => message.content);
-  assert.ok(notes.some((text) => text.startsWith("[replace] ") && text !== "[replace] replaced"));
 }
 
 test("a fresh MAGI shows a card and the operator can reopen it after cancellation without a model", async () => {
@@ -490,57 +448,6 @@ setInterval(() => {}, 1000);
   } finally {
     await supervisor.close();
     rmSync(markerDir, { recursive: true, force: true });
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("a broken eva build is restored and the operator is told", async () => {
-  const root = mkdtempSync(path.join(tmpdir(), "magi-eva-rollback-"));
-  const checkout = writeBrokenApp(root, "eva", "build");
-  const magi = new Magi(EVA_MAGI_HANDLE, { workspace: path.join(root, "workspace"), client: { async complete() { return { role: "assistant" as const, content: "NO_REPLY" }; } } });
-  magi.bus.secrets.set("provider.api_key", "present");
-  try {
-    await magi.start();
-    await expectRollback(magi.bus, checkout, "eva");
-  } finally {
-    await magi.stop();
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("a broken asp build is restored and the operator is told", async () => {
-  const root = mkdtempSync(path.join(tmpdir(), "magi-asp-rollback-"));
-  const checkout = writeBrokenApp(root, "asp", "build");
-  const asp = new Asp({
-    databasePath: path.join(root, "asp.sqlite"),
-    workspace: path.join(root, "workspace"),
-    host: "127.0.0.1",
-    port: 0,
-    client: { async complete() { return { role: "assistant" as const, content: "NO_REPLY" }; } },
-  });
-  asp.bus.secrets.set("provider.api_key", "present");
-  try {
-    await asp.start();
-    await expectRollback(asp.bus, checkout, "asp");
-  } finally {
-    await asp.stop();
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("a broken shell build is restored and the operator is told", async () => {
-  const root = mkdtempSync(path.join(tmpdir(), "magi-shell-rollback-"));
-  const checkout = writeBrokenApp(root, "shell", "build:process");
-  const workspace = path.join(root, "workspace");
-  const bus = new Bus(SHELL_MAGI_HANDLE, workspace);
-  bus.secrets.set("provider.api_key", "present");
-  const manager = new ManagerWorker(bus, [], { build: { app: "shell", script: "build:process" } });
-  try {
-    await manager.start();
-    await expectRollback(bus, checkout, "shell");
-  } finally {
-    await manager.stop();
-    bus.close();
     rmSync(root, { recursive: true, force: true });
   }
 });

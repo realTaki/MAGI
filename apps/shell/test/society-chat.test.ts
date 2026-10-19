@@ -112,9 +112,16 @@ async function waitForContent(
 
 test("operator DMs each MAGI and MAGIs deliver to each other through ASP", async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), "society-chat-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  t.after(async () => {
+    await Promise.all([shellMagi?.stop(), evaMagi?.stop()]);
+    await asp?.stop();
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
+  let asp: Asp | undefined;
+  let shellMagi: Magi | undefined;
+  let evaMagi: Magi | undefined;
 
-  const asp = new Asp({
+  asp = new Asp({
     databasePath: path.join(root, "asp.sqlite"),
     workspace: path.join(root, "asp"),
     host: "127.0.0.1",
@@ -122,7 +129,6 @@ test("operator DMs each MAGI and MAGIs deliver to each other through ASP", async
     client: fakeClient(ASP_MAGI_HANDLE),
   });
   await asp.start();
-  t.after(() => asp.stop());
   const origin = asp.origin;
   const token = asp.operatorToken;
   await until("Casper online", () => asp.transport.isOnline(ASP_MAGI_HANDLE));
@@ -139,22 +145,20 @@ test("operator DMs each MAGI and MAGIs deliver to each other through ASP", async
   const casper = await bot(ASP_MAGI_HANDLE);
   const melchior = await bot(EVA_MAGI_HANDLE);
 
-  const shellMagi = new Magi(SHELL_MAGI_HANDLE, {
+  shellMagi = new Magi(SHELL_MAGI_HANDLE, {
     workspace: path.join(root, magiLocalName(SHELL_MAGI_HANDLE)),
     client: fakeClient(SHELL_MAGI_HANDLE),
   });
-  const evaMagi = new Magi(EVA_MAGI_HANDLE, {
+  evaMagi = new Magi(EVA_MAGI_HANDLE, {
     workspace: path.join(root, magiLocalName(EVA_MAGI_HANDLE)),
     asp: { base: origin, token: melchior.magiToken },
     client: fakeClient(EVA_MAGI_HANDLE),
   });
   await shellMagi.start();
-  t.after(() => shellMagi.stop());
   shellMagi.bus.settings.set("asp.base", origin);
   shellMagi.bus.settings.set("asp.token", balthasar.magiToken);
   await notify(shellMagi, "start");
   await evaMagi.start();
-  t.after(() => evaMagi.stop());
 
   await until("Balthasar online", () => online(origin, token, SHELL_MAGI_HANDLE));
   await until("Melchior online", () => online(origin, token, EVA_MAGI_HANDLE));
