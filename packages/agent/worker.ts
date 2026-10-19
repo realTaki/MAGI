@@ -43,7 +43,7 @@ export class AgentWorker extends BaseWorker {
       if (generation !== this.generation) { board.submit(this.worker_name, job.id, { error: "MAGI stopped" }); return; }
       const controller = new AbortController();
       this.active.add(controller);
-      try { await new Chat(this.bus, id, controller.signal).run(job.id); }
+      try { await new Chat(this.bus, id, controller.signal).run(job.id, message.id); }
       finally { this.active.delete(controller); }
     });
     this.queues.set(id, next);

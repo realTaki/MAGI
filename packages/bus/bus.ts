@@ -19,7 +19,7 @@ import { PromptBook } from "./books/promptBook.js";
 import { ToolBook } from "./books/toolBook.js";
 import { JobBoard, jobs, type JobInput, type JobType } from "./jobs/jobBoard.js";
 import { AgentTurnCache } from "./jobs/agentTurnCache.js";
-import { USER_HANDLE } from "./identity.js";
+import { USER_HANDLE, defaultDisplayName } from "./identity.js";
 import { loadOrCreateIdentity, type Identity } from "./identityKeys.js";
 import { SecretStore } from "./secrets.js";
 import { CARD_RESTART_ERROR } from "./jobs/card.js";
@@ -151,8 +151,8 @@ export class Bus {
     this.db.insert(contacts).values({ id: SYSTEM_CONTACT_ID, name: "system", role: "system", asp_handle: systemHandle })
       .onConflictDoUpdate({ target: contacts.id, set: { asp_handle: systemHandle } })
       .run();
-    this.db.insert(contacts).values({ id: MAGI_CONTACT_ID, name: handle, role: "magi", asp_handle: handle })
-      .onConflictDoUpdate({ target: contacts.id, set: { name: handle, asp_handle: handle } })
+    this.db.insert(contacts).values({ id: MAGI_CONTACT_ID, name: defaultDisplayName(handle), role: "magi", asp_handle: handle })
+      .onConflictDoUpdate({ target: contacts.id, set: { name: defaultDisplayName(handle), asp_handle: handle } })
       .run();
   }
 

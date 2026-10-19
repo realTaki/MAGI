@@ -1,4 +1,4 @@
-import { encryptFor, BaseWorker, ASP_MAGI_HANDLE, EVA_MAGI_HANDLE, MAGI_CONTACT_ID, SHELL_MAGI_HANDLE, SYSTEM_CONTACT_ID, USER_HANDLE, messageDelivery, type AspCommandJob, type Bus, type Contact } from "@magi/bus";
+import { chat as receiveChat, type ChatInput, encryptFor, BaseWorker, ASP_MAGI_HANDLE, EVA_MAGI_HANDLE, MAGI_CONTACT_ID, SHELL_MAGI_HANDLE, SYSTEM_CONTACT_ID, USER_HANDLE, messageDelivery, type AspCommandJob, type Bus, type Contact } from "@magi/bus";
 import { AspClient, type AspEvent } from "./client.js";
 
 /** What a MAGI needs to speak on ASP; Shell writes these after the relay is up. */
@@ -9,7 +9,9 @@ const KNOWN_MAGI = new Set([SHELL_MAGI_HANDLE, ASP_MAGI_HANDLE, EVA_MAGI_HANDLE]
 export class AspWorker extends BaseWorker {
   readonly worker_name = "asp";
   private client: AspClient | null = null;
-  private nickname: string | null;
+  private profilePending = true;
+  private profileTask: Promise<void> | null = null;
+  private profileRetryAt = 0;
   private command: Promise<void> | null = null;
   private keyTask: Promise<void> | null = null;
   private keyReady = false;
@@ -20,7 +22,6 @@ export class AspWorker extends BaseWorker {
   /** `override` is for running a MAGI by hand; normally the settings have the token. */
   constructor(bus: Bus, private readonly override?: Credentials) {
     super(bus);
-    this.nickname = bus.contacts.get(MAGI_CONTACT_ID)?.nickname ?? null;
   }
 
   /** No relay address, nothing to do. A throwaway health check must not connect or register a key. */
@@ -36,6 +37,7 @@ export class AspWorker extends BaseWorker {
     return client.connect(
       (event) => this.client === client ? this.handle(event, client) : Promise.resolve(),
       (error) => { if (this.client === client) this.report(error); },
+      () => { this.profilePending = true; },
     );
   }
   close(): void {
@@ -63,6 +65,7 @@ export class AspWorker extends BaseWorker {
     this.kickKey();
     // Leave messages and commands pending until the socket is up.
     if (!this.client?.connected) return false;
+    this.announceProfile();
     if (!this.command && await this.pollCommand()) return true;
     return this.pollDelivery();
   }
@@ -99,10 +102,11 @@ export class AspWorker extends BaseWorker {
       if (!chat?.delivery_address) throw new Error("delivery has no ASP chat");
       const client = this.client;
       if (!client) throw new Error("ASP is not connected");
-      await client.send(chat.delivery_address, message.content, job.input.metadata);
+      const self = this.bus.contacts.get(MAGI_CONTACT_ID)!;
+      await client.send(chat.delivery_address, message.content, { ...job.input.metadata, profile: { name: self.name, nickname: self.nickname } });
       board.submit(this.worker_name, job.id, { output: {} });
     } catch (error) {
-      if (job.input.metadata?.card_status || job.input.metadata?.card) {
+      if (job.input.metadata?.card_status || job.input.metadata?.card || job.input.metadata?.profile) {
         board.release(this.worker_name, job.id);
         this.nextCardDelivery = Date.now() + 1_000;
       } else board.submit(this.worker_name, job.id, { error: error instanceof Error ? error.message : String(error) });
@@ -155,15 +159,6 @@ export class AspWorker extends BaseWorker {
   }
 
   private async onEvent(event: AspEvent): Promise<Record<string, unknown> | void> {
-    if (event.type === "agent.nickname.read") return { type: "agent.nickname.current", nickname: this.nickname };
-    if (event.type === "agent.nickname.update") {
-      const updated = typeof event.nickname === "string" && !!event.nickname.trim();
-      if (updated) {
-        this.nickname = event.nickname!.trim();
-        this.bus.contacts.update(MAGI_CONTACT_ID, { nickname: this.nickname });
-      }
-      return { type: "agent.nickname.updated", request_id: event.request_id, ok: updated };
-    }
     const id = event.chat_id;
     if (!id) return;
     const payload = event.payload ?? {};
@@ -182,7 +177,8 @@ export class AspWorker extends BaseWorker {
         const message = initial as Record<string, unknown>;
         // The same message also arrives as an event of its own: whichever comes first wins.
         if (!this.taken(id, message.sequence)) {
-          if (this.asked(message)) this.ingest(id, message);
+          if (await this.structured(id, message)) { /* handled without a model */ }
+          else if (this.asked(message)) this.ingest(id, message);
           else this.record(id, message);
         }
       }
@@ -255,7 +251,8 @@ export class AspWorker extends BaseWorker {
     if (contact?.id === SYSTEM_CONTACT_ID && messageDelivery.homeChat(this.bus) === null) {
       messageDelivery.setHomeChat(this.bus, chat.id);
     }
-    messageDelivery.send(this.bus, chat.id, text, contact?.id, this.worker_name);
+    if (!contact) throw new Error("chat requires an authenticated sender");
+    receiveChat(this.bus, chat.id, contact.id, { content: text }, this.worker_name);
   }
 
   /** Only record it: it was addressed to someone else, but the history keeps it. */
@@ -292,37 +289,33 @@ export class AspWorker extends BaseWorker {
   private async structured(chatId: string, payload: Record<string, unknown>): Promise<boolean> {
     const metadata = payload.metadata;
     if (!isRecord(metadata)) return false;
-    const sender = typeof payload.sender === "string" ? payload.sender : "";
-    if (metadata.card_result !== undefined || metadata.card_reject !== undefined) {
-      const rejected = metadata.card_reject !== undefined;
-      const body = rejected ? metadata.card_reject : metadata.card_result;
-      if (!trusted(this.bus, sender, "card_result")) {
-        this.report(new Error(`ignored card ${rejected ? "rejection" : "result"} from ${sender || "unknown"}`), chatId);
-      } else {
-        this.publishSecret(chatId, sender, rejected ? "card_reject" : "card_result", isRecord(body) ? body : {});
-      }
-      this.record(chatId, { sender: payload.sender, content: this.content(payload) || (rejected ? "card rejected" : "card filled") });
-      return true;
+    if (metadata.card_result === undefined && metadata.card_reject === undefined && metadata.envelope === undefined) {
+      // Identity announcements are deliveries, not requests for another model turn.
+      if (metadata.profile !== undefined && !this.content(payload)) return true;
+      return false;
     }
-    const envelope = metadata.envelope;
-    if (!isRecord(envelope) || typeof envelope.kind !== "string") return false;
-    if (envelope.kind === "provider.sync") {
-      if (!trusted(this.bus, sender, "provider.sync")) {
-        this.report(new Error(`ignored provider sync from ${sender || "unknown"}`), chatId);
-        this.record(chatId, { sender: payload.sender, content: "provider sync ignored" });
-        return true;
-      }
-      this.publishSecret(chatId, sender, "provider.sync", envelope);
-      const summary = this.content(payload) || syncSummary(envelope);
-      this.ingest(chatId, { sender: payload.sender, content: summary });
-      return true;
-    }
-    return false;
+    const contact = this.remember(chatId, payload.sender);
+    if (!contact) throw new Error("structured chat requires an authenticated sender");
+    const chat = this.bus.chats.forChannel("asp", chatId);
+    receiveChat(this.bus, chat.id, contact.id, { content: "", metadata: metadata as ChatInput["metadata"] }, this.worker_name);
+    return true;
   }
 
-  private publishSecret(chatId: string, sender: string, kind: "card_result" | "card_reject" | "provider.sync", body: Record<string, unknown>): void {
-    const chat = this.bus.chats.forChannel("asp", chatId);
-    this.bus.board("InboundSecretJob").publish({ sender, chat_id: chat.id, kind, body }, this.worker_name);
+  /** Publish identity through an ordinary delivery after each connection. */
+  private announceProfile(): void {
+    if (!this.profilePending || this.profileTask || Date.now() < this.profileRetryAt) return;
+    this.profilePending = false;
+    const client = this.client;
+    this.profileTask = (async () => {
+      try {
+        const { chat_id } = await this.openOwner();
+        if (this.client !== client) return;
+        const self = this.bus.contacts.get(MAGI_CONTACT_ID)!;
+        messageDelivery.send(this.bus, chat_id, "", MAGI_CONTACT_ID, this.worker_name, { profile: { name: self.name, nickname: self.nickname } });
+      } catch {
+        if (this.client === client) { this.profilePending = true; this.profileRetryAt = Date.now() + 1_000; }
+      }
+    })().finally(() => { this.profileTask = null; });
   }
 
   private async openOwner(): Promise<{ chat_id: number }> {
@@ -400,26 +393,9 @@ export class AspWorker extends BaseWorker {
 function syncTarget(bus: Bus, handle: string): boolean {
   if (handle === bus.handle || handle === USER_HANDLE) return false;
   if (KNOWN_MAGI.has(handle)) return true;
-  const known = bus.contacts.list().find((contact) => contact.asp_handle === handle);
-  return known?.role === "magi";
-}
-
-/** Card results come from the operator. A sync comes from a known MAGI, decided before a new handle is stored. */
-function trusted(bus: Bus, sender: string, kind: "card_result" | "provider.sync"): boolean {
-  if (sender === "") return false;
-  if (kind === "card_result") return sender === USER_HANDLE;
-  if (sender === USER_HANDLE || sender === bus.handle) return sender === USER_HANDLE;
-  if (KNOWN_MAGI.has(sender)) return true;
-  const known = bus.contacts.list().find((contact) => contact.asp_handle === sender);
-  return known?.role === "magi";
+  return false;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function syncSummary(envelope: Record<string, unknown>): string {
-  const provider = typeof envelope.provider === "string" ? envelope.provider : "provider";
-  const model = typeof envelope.model === "string" ? envelope.model : "model";
-  return `provider sync: ${provider}, ${model}, key updated`;
 }

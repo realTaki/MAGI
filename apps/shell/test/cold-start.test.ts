@@ -16,7 +16,7 @@ const bundledNpm = path.join(repository, "apps/shell/runtime/npm/node_modules/np
 const npm = [process.env.MAGI_NPM?.trim(), process.env.npm_execpath?.trim(), bundledNpm].find((candidate) => candidate && existsSync(candidate));
 if (!npm) throw new Error("MAGI's bundled npm runtime is missing");
 
-test("a new Shell starts its local Melchior launcher before naming the default society", async () => {
+test("a new Shell starts its local Melchior launcher and receives the default society profiles", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "magi-cold-start-"));
   const oldHome = process.env.MAGI_HOME;
   const oldOsHome = process.env.MAGI_OS_HOME;
@@ -50,11 +50,14 @@ test("a new Shell starts its local Melchior launcher before naming the default s
     const startedAt = Date.now();
     await shell.worker.methods.start();
     console.log(`cold start completed in ${Date.now() - startedAt}ms`);
-    assert.ok(Date.now() - startedAt < 15_000, "startup must not wait for the 30-second offline naming timeout");
+    assert.ok(Date.now() - startedAt < 15_000, "startup must not wait for an offline naming control");
     assert.equal(launched.length, 1, "only the explicitly seeded local agent gets a launcher");
-    for (const [handle, nickname] of [[SHELL_MAGI_HANDLE, "BALTHASAR"], [ASP_MAGI_HANDLE, "CASPER"], [EVA_MAGI_HANDLE, "MELCHIOR"]]) {
+    for (const [handle, name] of [[SHELL_MAGI_HANDLE, "BALTHASAR"], [ASP_MAGI_HANDLE, "CASPER"], [EVA_MAGI_HANDLE, "MELCHIOR"]]) {
+      const deadline = Date.now() + 10_000;
+      while ((!asp.transport.isOnline(handle) || asp.store.getAgent(handle)?.name !== name) && Date.now() < deadline) await sleep(20);
       assert.equal(asp.transport.isOnline(handle), true, handle);
-      assert.equal(asp.store.getAgent(handle)?.nickname, nickname);
+      assert.equal(asp.store.getAgent(handle)?.name, name);
+      assert.equal(asp.store.getAgent(handle)?.nickname, null);
     }
     await shell.worker.methods.start();
     assert.equal(launched.length, 1, "repeated startup reuses the online node");

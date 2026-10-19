@@ -16,6 +16,8 @@ export type CardSpec = {
   title: string;
   handle: string;
   submit: string;
+  /** Public encryption key supplied by the receiving EVA, never a credential. */
+  public_key?: string;
   fields: CardField[];
   purpose?: "provider";
   /** Public defaults only. Never include a secret. */

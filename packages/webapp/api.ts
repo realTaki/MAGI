@@ -29,11 +29,8 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSyn
 import path from "node:path";
 import {
   ASP_MAGI_HANDLE,
-  ASP_MAGI_NICKNAME,
   EVA_MAGI_HANDLE,
-  EVA_MAGI_NICKNAME,
   SHELL_MAGI_HANDLE,
-  SHELL_MAGI_NICKNAME,
 } from "@magi/bus";
 import { ASP_ORIGIN } from "./asp-process.js";
 import { ensureManagedClone } from "./clone.js";
@@ -42,11 +39,10 @@ import { downloadShellInstaller, installerPath, shellRelease } from "./shell-upd
 // Host MAGIs live in Shell (Balthasar) and ASP (Casper).
 // Only Melchior is a spawned eva.js child.
 const DEFAULT_SOCIETY = [
-  { handle: SHELL_MAGI_HANDLE, nickname: SHELL_MAGI_NICKNAME },
-  { handle: ASP_MAGI_HANDLE, nickname: ASP_MAGI_NICKNAME },
-  { handle: EVA_MAGI_HANDLE, nickname: EVA_MAGI_NICKNAME },
+  { handle: SHELL_MAGI_HANDLE },
+  { handle: ASP_MAGI_HANDLE },
+  { handle: EVA_MAGI_HANDLE },
 ];
-const MAGI_ONLINE_TIMEOUT_MS = 30_000;
 const GITHUB_API = "https://api.github.com";
 const GITHUB_WEB = "https://github.com";
 const GITHUB_DEVICE_URL = `${GITHUB_WEB}/login/device`;
@@ -786,35 +782,10 @@ export function createLocalApi(context) {
     return data;
   }
 
-  /** A freshly spawned MAGI answers on its socket only after it has booted. */
-  async function nameWhenOnline(handle, nickname, token) {
-    const deadline = Date.now() + MAGI_ONLINE_TIMEOUT_MS;
-    let lastError = null;
-    while (Date.now() < deadline) {
-      try {
-        await aspJson(`/bots/${encodeURIComponent(handle)}/nickname`, {
-          token,
-          method: "PATCH",
-          body: { nickname },
-        });
-        return true;
-      } catch (error) {
-        // 503/504 mean "not connected yet"; anything else is a real answer.
-        if (error?.status !== 503 && error?.status !== 504) {
-          throw error;
-        }
-        lastError = error;
-        await delay(1_000);
-      }
-    }
-    throw new Error(`Could not name ${handle} ${nickname}: ${lastError?.message ?? "timed out"}`);
-  }
-
   /**
    * Seeds Balthasar, Casper, and Melchior. Shell and ASP already host the first
    * two; this registers missing handles, opens a 1:1 with each, and spawns
-   * Melchior. Naming is best effort: an unnamed MAGI is cosmetic, and failing
-   * startup over it would not be.
+   * Melchior. Each node publishes its own profile through chat delivery.
    */
   async function ensureDefaultMagis(progress) {
     const { token } = await aspJson("/operator");
@@ -838,7 +809,7 @@ export function createLocalApi(context) {
         });
         chatId = chat?.chat_id;
         if (typeof chatId === "string") {
-          created.push({ handle: member.handle, nickname: member.nickname, chatId });
+          created.push({ handle: member.handle, chatId });
         }
       }
     }
@@ -851,12 +822,11 @@ export function createLocalApi(context) {
       if (bus?.settings.get("magi.local.enabled") !== "false") await magiRuntime.startLocal(local);
     }
     await Promise.all(
-      created.map(async ({ handle, nickname, chatId }) => {
+      created.map(async ({ handle, chatId }) => {
         try {
           if (handle === SHELL_MAGI_HANDLE && context.nodeControl && !context.nodeControl.running()) return;
           if (handle === ASP_MAGI_HANDLE && !(await hostedState(handle)).running) return;
           if (handle === EVA_MAGI_HANDLE && bus?.settings.get("magi.local.enabled") === "false") return;
-          await nameWhenOnline(handle, nickname, token);
           await greet(chatId, token);
         } catch (error) {
           console.error(

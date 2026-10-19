@@ -93,8 +93,8 @@ key for transport; local secrets are not encrypted at rest by this mechanism.
 The model sees configuration status rather than a secret field's value.
 
 Provider sync is an explicit job, not a global operator-settings broadcast.
-`AspWorker` sends encrypted configuration only to known MAGIs or contacts with
-the `magi` role and an available public key. See the [provider catalog](provider-catalog.md),
+`AspWorker` sends encrypted configuration only to built-in society identities with
+an available public key. See the [provider catalog](provider-catalog.md),
 [configuration worker](../packages/manager/config.ts) and [security limits](../SECURITY.md).
 
 ## Source edits and activation
@@ -147,3 +147,29 @@ available; startup and missing-home failures may still be logged.
 `worker "asp" recovered` is a health transition, not by itself a failed request.
 Source verification, process readiness, provider verification and GUI acceptance
 are separate states.
+
+## EVA conversational boundary
+
+A running EVA accepts chat and emits deliveries. The shared `@magi/bus` chat
+entry point authenticates the adapter-supplied contact and routes typed provider
+card submissions, cancellations, and encrypted provider envelopes without an LLM.
+`Magi.chat` accepts text or `{ content, metadata }`; its delivery callback receives
+text and a `ChatDelivery` containing the destination address, message/chat IDs,
+cards, their public encryption key, and status receipts. Structured
+secret-bearing inputs become fixed history summaries, never raw message text or
+model context. Ordinary text is never parsed as a privileged configuration command.
+
+Nickname requests are ordinary owner chat, interpreted by the agent through the
+internal `set_self_profile` tool. The tool checks the stored triggering message's
+author and chat, rather than trusting model arguments or chat membership. EVA's
+base role name and user nickname remain separate. Authenticated outgoing deliveries
+carry the current profile; ASP projects only the sending node's own identity after
+membership validation. A profile-only delivery refreshes the directory after
+reconnection. There is no nickname HTTP endpoint or WebSocket control protocol.
+
+These are runtime conversation boundaries, not process-launch interfaces. Shell
+still launches the owned local EVA with `eva.mjs --role agent @handle.magi`, and
+owns host process start/stop/readiness. Handle is identity; role selects workers;
+nickname is a display preference. Provider sharing is restricted to the owner and
+built-in society identities; observing an arbitrary `.magi` handle does not grant
+permission to send or receive provider credentials.

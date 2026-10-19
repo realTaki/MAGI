@@ -1,5 +1,6 @@
 /** Chat lifecycle and event fan-out. */
 
+import { requireContent } from "./http.js";
 import { OPERATOR_HANDLE } from "./operator.js";
 import type { Participant, Chat, ChatEvent, Store } from "./store.js";
 import { eventToWire, makeId, nowMs } from "./store.js";
@@ -112,6 +113,8 @@ export class ChatService {
 
       let messagePayload: Record<string, unknown> | null = null;
       if (input.initialMessage !== null) {
+        this.#requireJoined(chat.id, input.creator);
+        this.#projectProfile(input.creator, input.initialMessage.metadata);
         messagePayload = {
           id: initialMessageId,
           chat_id: chat.id,
@@ -251,12 +254,17 @@ export class ChatService {
     return this.#lock.run(async () => {
       this.#requireActiveChat(chatId);
       this.#requireJoined(chatId, sender);
+      // Empty deliveries are reserved for a valid, authenticated node profile.
+      if (!(content === "" && sender !== OPERATOR_HANDLE && this.store.getAgent(sender) !== undefined && deliveryProfile(metadata) !== null)) {
+        requireContent(content);
+      }
       if (idempotencyKey !== null) {
         const cached = this.store.getIdempotentMessage(chatId, sender, idempotencyKey);
         if (cached !== undefined) {
           return { messageId: cached[0], sequence: cached[1] };
         }
       }
+      this.#projectProfile(sender, metadata);
       const messageId = makeId("msg");
       const payload: Record<string, unknown> = {
         id: messageId,
@@ -290,6 +298,18 @@ export class ChatService {
       }
       return { messageId, sequence: event.sequence };
     });
+  }
+
+  /** A delivery can describe only its authenticated sender, never a metadata target. */
+  #projectProfile(sender: string, metadata: unknown): void {
+    const profile = deliveryProfile(metadata);
+    if (profile === null) return;
+    const { name, nickname } = profile;
+    const agent = this.store.getAgent(sender);
+    if (agent === undefined) return;
+    agent.name = name;
+    agent.nickname = nickname;
+    this.store.updateAgent(agent);
   }
 
   leave(handle: string, chatId: string): Promise<void> {
@@ -489,6 +509,8 @@ export class ChatService {
     }
     let sequence: number | null = null;
     if (initialMessage !== null) {
+      this.#requireJoined(chat.id, creator);
+      this.#projectProfile(creator, initialMessage.metadata);
       const payload: Record<string, unknown> = {
         id: makeId("msg"),
         chat_id: chat.id,
@@ -688,3 +710,15 @@ function eligibleNow(participant: Participant, event: ChatEvent): boolean {
   return false;
 }
 
+
+/** Invalid optional profiles never partially update the directory. */
+function deliveryProfile(metadata: unknown): { name: string; nickname: string | null } | null {
+  if (typeof metadata !== "object" || metadata === null || Array.isArray(metadata)) return null;
+  const profile = (metadata as Record<string, unknown>).profile;
+  if (typeof profile !== "object" || profile === null || Array.isArray(profile)) return null;
+  const { name, nickname } = profile as Record<string, unknown>;
+  const validName = (value: unknown): value is string =>
+    typeof value === "string" && value.trim() !== "" && value.length <= 80 && !/[\u0000-\u001f\u007f]/u.test(value);
+  if (!validName(name) || (nickname !== null && !validName(nickname))) return null;
+  return { name, nickname };
+}

@@ -1,31 +1,11 @@
 /** WebSocket connection registry and event fan-out. */
 
-import { randomUUID } from "node:crypto";
 import type { WebSocket } from "ws";
 
 import type { ChatEvent, Store } from "./store.js";
 import { eventToWire } from "./store.js";
 
 const GRACE_MS = 30_000;
-const CONTROL_TIMEOUT_MS = 5_000;
-
-export class ConnectionError extends Error {
-  constructor() {
-    super("MAGI is offline");
-  }
-}
-
-export class TimeoutError extends Error {
-  constructor() {
-    super("MAGI did not confirm");
-  }
-}
-
-type Pending = {
-  handle: string;
-  resolve: (ok: boolean) => void;
-};
-
 type LifecycleHooks = {
   onWentOffline: (handle: string) => Promise<void>;
   onBackOnline: (handle: string) => Promise<void>;
@@ -36,7 +16,6 @@ export class Transport {
   readonly #connections = new Map<string, Set<WebSocket>>();
   readonly #cursors = new Map<string, number>();
   readonly #disconnectTimers = new Map<string, NodeJS.Timeout>();
-  readonly #nicknameRequests = new Map<string, Pending>();
   #hooks: LifecycleHooks | null = null;
   readonly store: Store;
 
@@ -54,7 +33,6 @@ export class Transport {
     const next = peers ?? new Set<WebSocket>();
     next.add(socket);
     this.#connections.set(handle, next);
-    socket.send(JSON.stringify({ type: "agent.nickname.read" }));
     const timer = this.#disconnectTimers.get(handle);
     if (timer !== undefined) {
       clearTimeout(timer);
@@ -88,36 +66,6 @@ export class Transport {
 
   isOnline(handle: string): boolean {
     return (this.#connections.get(handle)?.size ?? 0) > 0;
-  }
-
-  updateNickname(handle: string, nickname: string): Promise<boolean> {
-    return this.#controlRequest(
-      handle,
-      { type: "agent.nickname.update", nickname },
-      this.#nicknameRequests,
-    );
-  }
-
-  receiveControl(handle: string, message: Record<string, unknown>): void {
-    const kind = message.type;
-    if (kind === "agent.nickname.current") {
-      const agent = this.store.getAgent(handle);
-      const nickname = message.nickname;
-      if (agent !== undefined && (nickname === null || typeof nickname === "string")) {
-        agent.nickname = nickname;
-        this.store.updateAgent(agent);
-      }
-      return;
-    }
-    const pendingRequests = kind === "agent.nickname.updated" ? this.#nicknameRequests : null;
-    if (pendingRequests === null || typeof message.request_id !== "string") {
-      return;
-    }
-    const pending = pendingRequests.get(message.request_id);
-    if (pending !== undefined && pending.handle === handle) {
-      pending.resolve(message.ok === true);
-      pendingRequests.delete(message.request_id);
-    }
   }
 
   async deliver(handle: string, event: ChatEvent): Promise<void> {
@@ -163,35 +111,6 @@ export class Transport {
       } catch {
         // Already gone.
       }
-    }
-  }
-
-  async #controlRequest(
-    handle: string,
-    payload: Record<string, unknown>,
-    pendingRequests: Map<string, Pending>,
-  ): Promise<boolean> {
-    const peers = this.#connections.get(handle);
-    const socket = peers?.values().next().value;
-    if (peers === undefined || peers.size === 0 || socket === undefined) {
-      throw new ConnectionError();
-    }
-    const requestId = randomUUID().replaceAll("-", "");
-    let settle: (ok: boolean) => void = () => undefined;
-    const response = new Promise<boolean>((resolve) => {
-      settle = resolve;
-    });
-    pendingRequests.set(requestId, { handle, resolve: settle });
-    try {
-      socket.send(JSON.stringify({ ...payload, request_id: requestId }));
-      return await Promise.race([
-        response,
-        new Promise<boolean>((_resolve, reject) => {
-          setTimeout(() => reject(new TimeoutError()), CONTROL_TIMEOUT_MS);
-        }),
-      ]);
-    } finally {
-      pendingRequests.delete(requestId);
     }
   }
 

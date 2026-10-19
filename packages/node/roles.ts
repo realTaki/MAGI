@@ -15,7 +15,7 @@ import { TelegramWorker } from "@magi/channel-telegram/worker.js";
 import { CliWorker } from "@magi/channel-cli/worker.js";
 import { TaskWorker } from "@magi/channel-tasks/worker.js";
 import { McpWorker, type McpConnector } from "@magi/mcp/worker.js";
-import type { BaseWorker } from "@magi/bus";
+import type { ChatDelivery, BaseWorker } from "@magi/bus";
 
 function shared(bus: Bus, client?: LLMClient, tools?: Tool[]): BaseWorker[] {
   return [
@@ -31,7 +31,7 @@ function shared(bus: Bus, client?: LLMClient, tools?: Tool[]): BaseWorker[] {
 export function agentWorkers(bus: Bus, options: {
   client?: LLMClient;
   tools?: Tool[];
-  deliver?: (text: string) => void;
+  deliver?: (text: string, delivery: ChatDelivery) => void;
   asp?: { base: string; token: string };
   telegram?: { token: string; apiBase?: string };
   mcpConnector?: McpConnector;

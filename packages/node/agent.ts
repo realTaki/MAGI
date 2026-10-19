@@ -1,4 +1,4 @@
-import { Bus, messageDelivery } from "@magi/bus";
+import { Bus, chat as receiveChat, SYSTEM_CONTACT_ID, messageDelivery, type ChatInput, type ChatDelivery } from "@magi/bus";
 import { ManagerWorker } from "@magi/manager";
 import type { LLMClient } from "@magi/providers/client.js";
 import type { Tool } from "@magi/built-in-tools/worker.js";
@@ -11,7 +11,7 @@ export type MagiOptions = {
   workspace?: string;
   client?: LLMClient;
   tools?: Tool[];
-  deliver?: (text: string) => void;
+  deliver?: (text: string, delivery: ChatDelivery) => void;
   asp?: { base: string; token: string };
   telegram?: { token: string; apiBase?: string };
   mcpConnector?: McpConnector;
@@ -42,13 +42,14 @@ export class Magi {
     this.bus.close();
   }
 
-  async chat(text: string, address = "terminal"): Promise<number> {
+  async chat(input: string | ChatInput, address = "terminal"): Promise<number> {
     if (!this.manager.up) throw new Error("MAGI is not running");
     const chat = this.bus.chats.forChannel("cli", address);
     if (messageDelivery.homeChat(this.bus) === null) messageDelivery.setHomeChat(this.bus, chat.id);
-    const id = messageDelivery.send(this.bus, chat.id, text);
+    const receipt = receiveChat(this.bus, chat.id, SYSTEM_CONTACT_ID, typeof input === "string" ? { content: input } : input, "cli");
+    const { id } = receipt;
     while (this.manager.up) {
-      if (this.bus.board("MessageDeliveryJob").result(id)) return id;
+      if (this.bus.board(receipt.type).result(id)) return id;
       await sleep(20);
     }
     throw new Error("MAGI stopped before completing the turn");

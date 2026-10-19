@@ -56,3 +56,11 @@ const IN_PROCESS_MAGI_HANDLES = new Set([SHELL_MAGI_HANDLE, ASP_MAGI_HANDLE]);
 export function isInProcessMagiHandle(handle: string): boolean {
   return IN_PROCESS_MAGI_HANDLES.has(handle);
 }
+
+/** Built-in role names are defaults, independent of a user-selected nickname. */
+export function defaultDisplayName(handle: string): string {
+  if (handle === SHELL_MAGI_HANDLE) return SHELL_MAGI_NICKNAME;
+  if (handle === ASP_MAGI_HANDLE) return ASP_MAGI_NICKNAME;
+  if (handle === EVA_MAGI_HANDLE) return EVA_MAGI_NICKNAME;
+  return handle;
+}

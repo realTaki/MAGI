@@ -20,12 +20,12 @@ export class Chat {
     private readonly signal?: AbortSignal,
   ) {}
 
-  async run(jobId: number): Promise<void> {
+  async run(jobId: number, messageId?: number): Promise<void> {
     const chatBoard = this.bus.board("MessageDeliveryJob");
     try {
       this.signal?.throwIfAborted();
-      if (!this.bus.agentTurns.has(jobId)) await this.initialize(jobId);
-      await this.execute(jobId);
+      if (!this.bus.agentTurns.has(jobId)) await this.initialize(jobId, messageId);
+      await this.execute(jobId, messageId);
     } catch (error) {
       // What went wrong is said in the chat itself: the Job result is for
       // whoever published the turn, not for whoever is waiting for an answer.
@@ -38,7 +38,7 @@ export class Chat {
     }
   }
 
-  private async initialize(jobId: number): Promise<void> {
+  private async initialize(jobId: number, messageId?: number): Promise<void> {
       const record = this.bus.chats.get(this.chat_id);
       if (!record) throw new Error("chat does not exist");
       const agentPrompt = this.bus.prompts.get("agent/AGENT") ?? "You are a helpful assistant.";
@@ -57,15 +57,15 @@ export class Chat {
       // A turn receives one fixed catalog.  A worker starting midway through a turn
       // becomes available on the next turn instead of changing the model's contract.
       const tools = this.bus.tools.catalog();
-      const summary = await this.compact(jobId, record.summary, [agentPrompt, SYSTEM_PROMPT, beforeSummary, chat].filter(Boolean).join("\n\n"), tools);
+      const summary = await this.compact(jobId, record.summary, [agentPrompt, SYSTEM_PROMPT, beforeSummary, chat].filter(Boolean).join("\n\n"), tools, messageId);
       const system = [agentPrompt, SYSTEM_PROMPT, beforeSummary, this.context([["Prior chat summary", summary]]), chat].filter(Boolean).join("\n\n");
-      const history: LLMMessage[] = this.bus.messages.list(this.chat_id, COMPACT_KEEP_RECENT).map(toLLMMessage);
+      const history: LLMMessage[] = this.bus.messages.list(this.chat_id, COMPACT_KEEP_RECENT, messageId).map(toLLMMessage);
       // Keep the cacheable instruction/context prefix byte-for-byte stable through a
       // tool loop.  Step metadata is a separate trailing system message.
       this.bus.agentTurns.ensure(jobId, { messages: [{ role: "system", content: system }, { role: "system", content: "" }, ...history], tools });
   }
 
-  private async execute(jobId: number): Promise<void> {
+  private async execute(jobId: number, messageId?: number): Promise<void> {
       const chatBoard = this.bus.board("MessageDeliveryJob");
       const { messages } = this.bus.agentTurns.get(jobId);
       // No step limit is enforced: the model is told which step it is on and that it
@@ -92,7 +92,7 @@ export class Chat {
         if (response.content) messageDelivery.send(this.bus, this.chat_id, response.content, MAGI_CONTACT_ID, "agent");
         // A name the catalog does not have is answered here: no worker would claim its job.
         const calls = response.tool_calls.map((call) => this.bus.tools.get(call.name)
-          ? { call, jobId: this.bus.board("RunToolJob").publish({ call, chat_id: this.chat_id }, "agent") as number | null }
+          ? { call, jobId: this.bus.board("RunToolJob").publish({ call, chat_id: this.chat_id, message_id: messageId }, "agent") as number | null }
           : { call, jobId: null });
         for (const pending of calls) {
           this.signal?.throwIfAborted();
@@ -110,8 +110,8 @@ export class Chat {
       }
   }
 
-  private async compact(turnId: number, previousSummary: string, staticContext: string, tools: unknown): Promise<string> {
-    const active = this.bus.messages.list(this.chat_id, 10_000);
+  private async compact(turnId: number, previousSummary: string, staticContext: string, tools: unknown, messageId?: number): Promise<string> {
+    const active = this.bus.messages.list(this.chat_id, 10_000, messageId);
     // We cannot use one tokenizer for all providers, but every stable input part
     // must count.  The previous estimate considered only stored chat rows, which
     // understated large prompt blocks and tool catalogs.

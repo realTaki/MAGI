@@ -35,9 +35,9 @@ export class MessageBook {
     return this.db.select().from(messages).where(eq(messages.id, id)).get();
   }
 
-  list(chatId: number, lastN = 20): Message[] {
+  list(chatId: number, lastN = 20, throughId?: number): Message[] {
     return this.db.select().from(messages)
-      .where(and(eq(messages.chat_id, chatId), eq(messages.archived, false)))
+      .where(and(eq(messages.chat_id, chatId), eq(messages.archived, false), throughId === undefined ? undefined : lte(messages.id, throughId)))
       .orderBy(desc(messages.id))
       .limit(lastN)
       .all()

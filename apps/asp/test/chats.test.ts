@@ -57,8 +57,9 @@ test("new bot registers a magi and hands its runner the credential", async (t) =
     const listed = record(await request(app, "GET", "/chats", { token }).then((response) => response.data));
     const chats = listed.chats;
     assert.ok(Array.isArray(chats));
-    assert.equal(record(chats[0]).chat_id, body.chat_id);
-    assert.deepEqual(record(chats[0]).agents, body.agents);
+    const listedChat = chats.find((chat) => record(chat).chat_id === body.chat_id);
+    assert.ok(listedChat, "the newly created chat is listed");
+    assert.deepEqual(record(listedChat).agents, body.agents);
   });
 });
 

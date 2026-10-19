@@ -1,8 +1,8 @@
-import { BaseWorker, MAGI_CONTACT_ID, type Bus, type MessageDeliveryJob } from "@magi/bus";
+import { BaseWorker, MAGI_CONTACT_ID, type Bus, type ChatDelivery } from "@magi/bus";
 
 export class CliWorker extends BaseWorker {
   readonly worker_name = "cli";
-  constructor(bus: Bus, private readonly deliver: (text: string, delivery: MessageDeliveryJob) => void = (text) => console.log(text)) { super(bus); }
+  constructor(bus: Bus, private readonly deliver: (text: string, delivery: ChatDelivery) => void = (text) => console.log(text)) { super(bus); }
 
   async poll(): Promise<boolean> {
     const board = this.bus.board("MessageDeliveryJob");
@@ -16,7 +16,8 @@ export class CliWorker extends BaseWorker {
     try {
       const message = this.bus.messages.get(job.input.message_id);
       if (!message) throw new Error(`message ${job.input.message_id} does not exist`);
-      this.deliver(message.content, job.input);
+      const chat = this.bus.chats.get(message.chat_id);
+      this.deliver(message.content, { ...job.input, chat_id: message.chat_id, address: chat?.delivery_address ?? null });
       board.submit(this.worker_name, job.id, { output: {} });
     } catch (error) {
       board.submit(this.worker_name, job.id, { error: error instanceof Error ? error.message : String(error) });

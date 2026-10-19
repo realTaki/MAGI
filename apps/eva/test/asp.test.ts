@@ -142,7 +142,7 @@ test("ASP invite opens the message delivery job and the reply is delivered to th
     expect(socket).not.toBeNull();
     socket!.send(JSON.stringify({
       type: "chat.invited", event_id: "event-1", chat_id: "s1",
-      payload: { invitee: "@alice.magi", initial_message: { content: "hello" } },
+      payload: { invitee: "@alice.magi", initial_message: { sender: "@user.magi", content: "hello" } },
     }));
     const posted = () => requests.find((item) => item.path === "/chats/s1/messages" && (item.body as { content?: string } | null)?.content === "hello back");
     for (let i = 0; i < 200 && (posted() === undefined || replies.length < 1); i++) await sleep(10);
@@ -256,7 +256,7 @@ test("a stopped ASP connection ignores late callbacks without hiding live errors
     expect(bus.messages.list(chat.id).some(message => message.content.includes("live connection failure"))).toBe(true);
     worker.stop(); bus.close(); closed = true;
     assert.doesNotThrow(() => onError(new Error("late request failure")));
-    await assert.doesNotReject(() => onEvent({ type: "agent.nickname.update", nickname: "late update" }));
+    await assert.doesNotReject(() => onEvent({ type: "chat.message", chat_id: "late", payload: { sender: "@user.magi", content: "late update" } }));
   } finally {
     worker.stop(); if (!closed) bus.close();
     await rm(workspace, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });

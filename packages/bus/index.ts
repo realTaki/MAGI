@@ -48,3 +48,6 @@ export { encryptFor, decryptWith, loadOrCreateIdentity } from "./identityKeys.js
 export type { Identity } from "./identityKeys.js";
 // The message job also exports how its text is recorded and delivered.
 export { messageDelivery } from "./jobs/messageDelivery.js";
+
+export { chat } from "./chat.js";
+export type { ChatInput, ChatDelivery, ChatReceipt, CardSubmission, ProviderEnvelope } from "./chat.js";

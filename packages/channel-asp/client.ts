@@ -3,9 +3,8 @@ import WebSocket, { type MessageEvent as WsMessageEvent } from "ws";
 
 export type AspEvent = {
   type?: string; event_id?: string; chat_id?: string; payload?: Record<string, unknown>;
-  /** Chat events are numbered; control events (nickname, provider) are not. */
+  /** Chat events carry replay sequence numbers. */
   sequence?: number;
-  request_id?: string; nickname?: string;
 };
 
 export class AspClient {
@@ -19,12 +18,12 @@ export class AspClient {
     return this.socket !== null && this.socket.readyState === WebSocket.OPEN;
   }
 
-  async connect(onEvent: (event: AspEvent) => Promise<Record<string, unknown> | void>, onError: (error: unknown) => void = () => {}): Promise<void> {
+  async connect(onEvent: (event: AspEvent) => Promise<Record<string, unknown> | void>, onError: (error: unknown) => void = () => {}, onConnected: () => void = () => {}): Promise<void> {
     if (this.listener) return;
     this.stopped = false;
     let markReady: (() => void) | null = null;
     const ready = new Promise<void>((resolve) => { markReady = resolve; });
-    this.listener = this.listen(onEvent, () => markReady?.(), onError);
+    this.listener = this.listen(onEvent, () => { onConnected(); markReady?.(); }, onError);
     await ready;
   }
 

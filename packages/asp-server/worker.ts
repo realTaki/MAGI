@@ -2,7 +2,7 @@
 
 import type { IncomingMessage } from "node:http";
 import type { WebSocket } from "ws";
-import { ASP_MAGI_HANDLE, ASP_MAGI_NICKNAME, BaseWorker, magiLocalName, type Bus } from "@magi/bus";
+import { ASP_MAGI_HANDLE, ASP_MAGI_NICKNAME, BaseWorker, type Bus } from "@magi/bus";
 
 import { LocalDatabase, defaultDatabasePath } from "./db/database.js";
 import { bearerHandle, HttpError, listen, optionalInt, optionalString, requireContent, requireObject, Router, type RunningServer } from "./http.js";
@@ -12,7 +12,7 @@ import { OperatorService } from "./operator-service.js";
 import { RelayWorker } from "./relayWorker.js";
 import { Conflict, NotAllowed, NotFound, ChatService } from "./service.js";
 import { type AgentSeed, Store } from "./store.js";
-import { ConnectionError, TimeoutError, Transport } from "./transport.js";
+import { Transport } from "./transport.js";
 
 export { defaultDatabasePath };
 export { ASP_HANDLE } from "./relayWorker.js";
@@ -86,13 +86,9 @@ export class AspServer extends BaseWorker {
     const aspMagi = this.store.getAgent(ASP_MAGI_HANDLE);
     if (aspMagi === undefined) {
       const [handle, token] = loadOrCreateAspMagi(this.database);
-      this.store.registerAgent({ handle, token, name: magiLocalName(handle), managed: true });
+      this.store.registerAgent({ handle, token, name: ASP_MAGI_NICKNAME, managed: true });
     }
     const casper = this.store.getAgent(ASP_MAGI_HANDLE);
-    if (casper !== undefined && casper.nickname !== ASP_MAGI_NICKNAME) {
-      casper.nickname = ASP_MAGI_NICKNAME;
-      this.store.updateAgent(casper);
-    }
     const router = new Router();
     registerRoutes(router, this);
     this.#running = await listen(router, (request, socket) => this.#accept(request, socket), this.#host, this.#port);
@@ -145,7 +141,6 @@ export class AspServer extends BaseWorker {
           }
           return;
         }
-        this.transport.receiveControl(agent.handle, parsed);
       } catch {
         socket.close();
       }
@@ -284,39 +279,6 @@ function registerRoutes(router: Router, app: AspServer): void {
       hideChatError(error);
     }
   });
-  router.add("PATCH", "/bots/:handle/nickname", async (context) => {
-    operatorOnly(context.headers);
-    const handle = requiredParam(context.params, "handle");
-    const agent = app.store.getAgent(handle);
-    if (agent === undefined || handle === app.operatorHandle) {
-      throw new HttpError(404, "MAGI not found");
-    }
-    const body = requireObject(context.body);
-    if (typeof body.nickname !== "string") {
-      throw new HttpError(422, "nickname is required");
-    }
-    const nickname = body.nickname.trim();
-    if (nickname === "" || nickname.length > 80 || nickname.includes("\r") || nickname.includes("\n")) {
-      throw new HttpError(400, "nickname must be one line and 1–80 characters");
-    }
-    try {
-      const updated = await app.transport.updateNickname(handle, nickname);
-      if (!updated) {
-        throw new HttpError(502, "MAGI could not update nickname");
-      }
-    } catch (error) {
-      if (error instanceof ConnectionError) {
-        throw new HttpError(503, "MAGI is offline");
-      }
-      if (error instanceof TimeoutError) {
-        throw new HttpError(504, "MAGI did not confirm nickname");
-      }
-      throw error;
-    }
-    agent.nickname = nickname;
-    app.store.updateAgent(agent);
-    return { body: { handle, nickname } };
-  });
   router.add("POST", "/profile", (context) => {
     const handle = auth(context.headers);
     const body = requireObject(context.body ?? {});
@@ -391,7 +353,6 @@ function registerRoutes(router: Router, app: AspServer): void {
     if (!("content" in body)) {
       throw new HttpError(422, "content is required");
     }
-    requireContent(body.content);
     try {
       const result = await app.chats.sendMessage(
         auth(context.headers),

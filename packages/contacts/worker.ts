@@ -7,7 +7,7 @@
  * asks this worker for the identity and member blocks as well.
  */
 
-import { BaseWorker, MAGI_CONTACT_ID, type Bus, type Contact, type ExecutableTool } from "@magi/bus";
+import { BaseWorker, MAGI_CONTACT_ID, type Bus, type Contact, type ExecutableTool, type RunToolJob } from "@magi/bus";
 import { contactTools } from "./tools.js";
 
 export class ContactsWorker extends BaseWorker {
@@ -32,16 +32,17 @@ export class ContactsWorker extends BaseWorker {
     const board = this.bus.board("RunToolJob");
     const job = board.claim(this.worker_name, (input) => this.own.some((tool) => tool.name === input.call.name));
     if (!job) return false;
-    const task = this.run(job.id, job.input.call.name, job.input.call.arguments);
+    const task = this.run(job.id, job.input);
     this.pending.add(task);
     void task.finally(() => this.pending.delete(task));
     return true;
   }
 
-  private async run(id: number, name: string, args: Record<string, unknown>): Promise<void> {
+  private async run(id: number, input: RunToolJob): Promise<void> {
     const board = this.bus.board("RunToolJob");
     try {
-      const tool = this.own.find((candidate) => candidate.name === name);
+      const { name, arguments: args } = input.call;
+      const tool = contactTools(this.bus, { chat_id: input.chat_id, message_id: input.message_id }).find((candidate) => candidate.name === name);
       if (!tool) throw new Error(`unknown tool ${name}`);
       board.submit(this.worker_name, id, { output: { content: await tool.run(args) } });
     } catch (error) {

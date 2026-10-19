@@ -84,6 +84,7 @@ export class ConfigWorker extends BaseWorker {
       model: this.bus.settings.get("provider.model") ?? undefined,
       base_url: this.bus.settings.get("provider.base_url") ?? undefined,
     });
+    spec.public_key = this.bus.identity.publicKey;
     this.bus.settings.set("provider.card.spec", JSON.stringify(spec));
     this.cardJob = this.bus.board("CardJob").publish({ spec }, this.worker_name);
     this.bus.settings.set("provider.card.job", String(this.cardJob));
@@ -198,6 +199,7 @@ export class ConfigWorker extends BaseWorker {
           this.cardReceipt(input.chat_id, old, "cancelled", old.values ?? {});
         }
       }
+      spec.public_key = this.bus.identity.publicKey;
       this.bus.settings.set("provider.card.spec", JSON.stringify(spec));
       const id = this.bus.board("CardJob").publish({ spec }, this.worker_name);
       this.cardJob = id;
@@ -321,6 +323,7 @@ export class ConfigWorker extends BaseWorker {
       base_url: stringField(envelope.base_url),
       api_key,
     });
+    this.tell("provider sync: key updated", input.chat_id);
   }
 
   /** Verify, then store. The providers worker rejects a bad key before ConfigureJob runs. */

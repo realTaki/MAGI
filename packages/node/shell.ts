@@ -28,7 +28,7 @@ function secureShellDatabases(workspace: string): void {
     }
   }
 }
-import { Bus, MAGI_CONTACT_ID, SHELL_MAGI_HANDLE, SHELL_MAGI_NICKNAME } from "@magi/bus";
+import { Bus, SHELL_MAGI_HANDLE } from "@magi/bus";
 import { ManagerWorker, healthyOrExit } from "@magi/manager";
 import { AspProcessWorker, WebappWorker } from "@magi/webapp";
 import { shellWorkers, HOSTED_NODE_WORKERS } from "./roles.js";
@@ -47,7 +47,6 @@ export class Shell {
     const workspace = prepareShellWorkspace(context.paths.home);
     secureShellDatabases(workspace);
     this.bus = new Bus(SHELL_MAGI_HANDLE, workspace);
-    this.bus.contacts.update(MAGI_CONTACT_ID, { nickname: SHELL_MAGI_NICKNAME });
     try {
       secureShellDatabases(workspace);
       this.aspProcess = new AspProcessWorker(this.bus, {

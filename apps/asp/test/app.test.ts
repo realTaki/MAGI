@@ -62,7 +62,8 @@ test("the agent roster is operator only and carries the runner credentials", asy
     );
     assert.equal(rows[0]?.managed, false);
     assert.equal(rows[1]?.managed, true);
-    assert.equal(rows[1]?.nickname, "CASPER");
+    assert.equal(rows[1]?.name, "CASPER");
+    assert.equal(rows[1]?.nickname, null);
   });
 });
 

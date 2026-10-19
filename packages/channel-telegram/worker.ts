@@ -1,3 +1,4 @@
+import { chat as receiveChat } from "@magi/bus";
 import { Chat, type Logger, type Message, type Thread } from "chat";
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { createMemoryState } from "@chat-adapter/state-memory";
@@ -109,7 +110,7 @@ export class TelegramWorker extends BaseWorker {
     // but only while nothing has established that yet: home is set once, and it moves by
     // the tool the operator asks for, not by whoever spoke last.
     if (direct && messageDelivery.homeChat(this.bus) === null) messageDelivery.setHomeChat(this.bus, chat.id);
-    messageDelivery.send(this.bus, chat.id, text, contact.id, this.worker_name);
+    receiveChat(this.bus, chat.id, contact.id, { content: text }, this.worker_name);
   }
 
   /**

@@ -4,7 +4,7 @@
  */
 
 import { dirname } from "node:path";
-import { ASP_MAGI_HANDLE, ASP_MAGI_NICKNAME, MAGI_CONTACT_ID, Bus } from "@magi/bus";
+import { ASP_MAGI_HANDLE, Bus } from "@magi/bus";
 import { ManagerWorker } from "@magi/manager";
 import type { LLMClient } from "@magi/providers/client.js";
 import { AspServer, defaultDatabasePath, type CreateAppOptions } from "@magi/asp-server";
@@ -21,7 +21,6 @@ export class Asp {
   constructor(options: AspOptions = {}) {
     const databasePath = options.databasePath ?? defaultDatabasePath();
     this.bus = new Bus(ASP_MAGI_HANDLE, options.workspace ?? dirname(databasePath));
-    this.bus.contacts.update(MAGI_CONTACT_ID, { nickname: ASP_MAGI_NICKNAME });
     this.server = new AspServer(this.bus, { ...options, databasePath,
       nodeControl: { running: () => this.manager.nodeRunning(), setRunning: (enabled) => this.manager.setNodeRunning(enabled) },
     });

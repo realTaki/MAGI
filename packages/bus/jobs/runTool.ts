@@ -2,7 +2,12 @@
 export type LLMToolCall = { tool_call_id: string; name: string; arguments: Record<string, unknown> };
 
 /** Run one tool call the model asked for. */
-export type RunToolJob = { call: LLMToolCall; chat_id?: number };
+export type RunToolJob = {
+  call: LLMToolCall;
+  chat_id?: number;
+  /** Actual message that triggered this turn; never supplied by the model. */
+  message_id?: number;
+};
 
 /** The tool's answer, folded back into the chat as a tool message. */
 export type RunToolResult = { content: string };
