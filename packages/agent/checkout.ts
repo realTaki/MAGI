@@ -10,8 +10,16 @@ import { magiLocalName } from "@magi/bus";
 export function sourceCheckout(handle: string, workspace: string, role = process.env.MAGI_ROLE): string {
   const name = magiLocalName(handle);
   const branch = role === "shell" || role === "asp" ? `magi/${role}` : `magi/${name}`;
-  const present = existsSync(join(workspace, "MAGI", ".git"));
-  return present
-    ? `handle: ${handle}\ncheckout: MAGI/\nbranch: ${branch}\nThis is the only tree you may edit.`
-    : `handle: ${handle}\ncheckout: none\nThis process has no source checkout. Do not edit product source and do not request a replace.`;
+  const managed = join(workspace, "MAGI");
+  const envCheckout = process.env.MAGI_CHECKOUT?.trim() ?? "";
+  const root = existsSync(join(managed, ".git"))
+    ? managed
+    : (role === "shell" || role === "asp") && envCheckout !== "" && existsSync(join(envCheckout, ".git"))
+      ? envCheckout
+      : "";
+  if (root === "") {
+    return `handle: ${handle}\ncheckout: none\nThis process has no source checkout. Do not edit product source and do not request a replace.`;
+  }
+  const checkout = root === managed ? "MAGI/" : root;
+  return `handle: ${handle}\ncheckout: ${checkout}\nbranch: ${branch}\nThis is the only tree you may edit.`;
 }
