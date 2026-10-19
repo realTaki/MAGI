@@ -1,9 +1,12 @@
+import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { integer, sqliteTable, text, unique } from "drizzle-orm/sqlite-core";
 import type { BusDb } from "../drizzle/database.js";
 
 export const chats = sqliteTable("books_chats", {
   id: integer("id").primaryKey(),
+  peer_id: text("peer_id"),
+  conversation_uuid: text("conversation_uuid"),
   channel: text("channel").notNull(),
   delivery_address: text("delivery_address").notNull(),
   instruction: text("instruction").notNull().default(""),
@@ -33,6 +36,14 @@ export class ChatBook {
     return this.db.select().from(chats)
       .where(and(eq(chats.channel, channel), eq(chats.delivery_address, address)))
       .get()!;
+  }
+
+  forPeer(principal: string, conversationUUID: string = randomUUID()): Chat {
+    if (!/^[a-f0-9]{64}$/.test(principal)) throw new Error("invalid peer principal");
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(conversationUUID)) throw new Error("invalid conversation UUID");
+    const address = `${principal}/${conversationUUID}`;
+    this.db.insert(chats).values({ channel: "peer", delivery_address: address, peer_id: principal, conversation_uuid: conversationUUID }).onConflictDoNothing().run();
+    return this.forChannel("peer", address);
   }
 
   updateSummary(id: number, summary: string): void {

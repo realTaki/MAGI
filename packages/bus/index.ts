@@ -14,7 +14,7 @@ export {
   nextMagiName,
   isInProcessMagiHandle,
 } from "./identity.js";
-export { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "./books/contactBook.js";
+export { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, validatePeerEndpoint, validatePeerPrincipal } from "./books/contactBook.js";
 export { BaseWorker } from "./baseWorker.js";
 export type { Chat } from "./books/chatBook.js";
 export type { Message } from "./books/messageBook.js";
@@ -51,3 +51,5 @@ export { messageDelivery } from "./jobs/messageDelivery.js";
 
 export { chat } from "./chat.js";
 export type { ChatInput, ChatDelivery, ChatReceipt, CardSubmission, ProviderEnvelope } from "./chat.js";
+
+export type { PeerInbound, PeerReceipt } from "./jobs/messageDelivery.js";

@@ -61,6 +61,7 @@ export type JobResult<K extends JobType> = { id: number; status: "completed" | "
 export const jobs = sqliteTable("jobs", {
   id: integer("id").primaryKey(),
   type: text("type").$type<JobType>().notNull(),
+  delivery_key: text("delivery_key").unique(),
   publisher: text("publisher").notNull(),
   status: text("status").$type<JobStatus>().notNull().default("pending"),
   worker: text("worker"),
@@ -79,6 +80,14 @@ export class JobBoard<K extends JobType> {
       .values({ type: this.type, publisher, input: JSON.stringify(input) })
       .returning({ id: jobs.id })
       .get().id;
+  }
+
+  /** Cross-database reconciliation may repeat this after a crash or lost ACK. */
+  publishOnce(key: string, input: JobInput[K], publisher: string): number {
+    this.db.insert(jobs).values({ type: this.type, publisher, input: JSON.stringify(input), delivery_key: key }).onConflictDoNothing().run();
+    const row = this.db.select().from(jobs).where(eq(jobs.delivery_key, key)).get();
+    if (!row || row.type !== this.type) throw new Error("delivery key collision");
+    return row.id;
   }
 
   claim(worker: string, predicate?: (input: JobInput[K]) => boolean): Job<K> | null {

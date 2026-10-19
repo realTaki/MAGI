@@ -4,7 +4,7 @@
 import type { Bus } from "./bus.js";
 import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "./books/contactBook.js";
 import { ASP_MAGI_HANDLE, EVA_MAGI_HANDLE, SHELL_MAGI_HANDLE } from "./identity.js";
-import { messageDelivery, type MessageDeliveryJob } from "./jobs/messageDelivery.js";
+import { messageDelivery, type MessageDeliveryJob, type PeerInbound, type PeerReceipt } from "./jobs/messageDelivery.js";
 
 export type SealedField = { ciphertext: string };
 export type CardSubmission = {
@@ -35,11 +35,20 @@ export type ChatReceipt = { type: "MessageDeliveryJob" | "InboundSecretJob"; id:
 /** Reserved structured fields are handled without a model, even before bootstrap.
  * Their content is never copied to ordinary history: record only fixed summaries.
  */
-export function chat(bus: Bus, chat_id: number, contact_id: number, input: ChatInput, publisher = "channel"): ChatReceipt {
+export function chat(bus: Bus, chat_id: number, contact_id: number, input: ChatInput, publisher?: string): ChatReceipt;
+export function chat(bus: Bus, chat_id: number, contact_id: number, input: ChatInput, publisher: string, peer: PeerInbound): PeerReceipt;
+export function chat(bus: Bus, chat_id: number, contact_id: number, input: ChatInput, publisher = "channel", peer?: PeerInbound): ChatReceipt | PeerReceipt {
   if (!bus.chats.get(chat_id)) throw new Error("chat does not exist");
   const contact = bus.contacts.get(contact_id);
   if (!contact || contact_id === MAGI_CONTACT_ID) throw new Error("chat requires an authenticated sender");
   if (typeof input.content !== "string") throw new Error("chat content must be text");
+  if (peer) {
+    const target = bus.chats.get(chat_id)!;
+    if (input.metadata || contact.peer_principal !== peer.principal || target.peer_id !== peer.principal || target.conversation_uuid !== peer.conversationUUID || contact.peer_trust === "blocked") throw new Error("invalid authenticated peer context");
+    const metadata = { peer: { messageId: peer.messageId, conversationUUID: peer.conversationUUID, ...(peer.replyTo ? { replyTo: peer.replyTo } : {}) } };
+    const stored = bus.deliveries.persist({ chat_id, contact_id, content: input.content, publisher, key: `peer:${peer.principal}:${peer.messageId}`, metadata, enqueue: !peer.replyTo });
+    return { message_id: stored.delivery.message_id, job_id: bus.deliveries.enqueue(bus, stored.delivery), duplicate: stored.duplicate, chat_id };
+  }
   const metadata = input.metadata;
   if (metadata !== undefined && !record(metadata)) throw new Error("chat metadata must be an object");
   const kinds = ["card_result", "card_reject", "envelope"].filter(key => metadata && key in metadata);

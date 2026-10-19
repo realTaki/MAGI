@@ -30,7 +30,7 @@ export class Chat {
       // What went wrong is said in the chat itself: the Job result is for
       // whoever published the turn, not for whoever is waiting for an answer.
       const message = error instanceof Error ? error.message : String(error);
-      messageDelivery.send(this.bus, this.chat_id, message, MAGI_CONTACT_ID, "agent");
+      messageDelivery.send(this.bus, this.chat_id, message, MAGI_CONTACT_ID, "agent", messageDelivery.replyMetadata(this.bus, messageId));
       chatBoard.submit("agent", jobId, { error: message });
     } finally {
       // Keep the cold append-only trace, but release this process's materialized context.
@@ -84,12 +84,12 @@ export class Chat {
           if (reply.toUpperCase() !== NO_REPLY) {
             // A Notify is published and not awaited: a channel that cannot deliver reports
             // its own trouble, and there is nothing the agent could do about it here.
-            messageDelivery.send(this.bus, this.chat_id, reply || "处理完毕。", MAGI_CONTACT_ID, "agent");
+            messageDelivery.send(this.bus, this.chat_id, reply || "处理完毕。", MAGI_CONTACT_ID, "agent", messageDelivery.replyMetadata(this.bus, messageId));
           }
           chatBoard.submit("agent", jobId, { output: {} });
           return;
         }
-        if (response.content) messageDelivery.send(this.bus, this.chat_id, response.content, MAGI_CONTACT_ID, "agent");
+        if (response.content) messageDelivery.send(this.bus, this.chat_id, response.content, MAGI_CONTACT_ID, "agent", messageDelivery.replyMetadata(this.bus, messageId));
         // A name the catalog does not have is answered here: no worker would claim its job.
         const calls = response.tool_calls.map((call) => this.bus.tools.get(call.name)
           ? { call, jobId: this.bus.board("RunToolJob").publish({ call, chat_id: this.chat_id, message_id: messageId }, "agent") as number | null }

@@ -5,6 +5,7 @@ import { and, eq, inArray, ne, or } from "drizzle-orm";
 import { openDatabase, pragma } from "./sqlite.js";
 import { workspaceDatabase, migrateBooks, migrateJobs, type BusDb } from "./drizzle/database.js";
 import { contacts, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "./books/contactBook.js";
+import { DeliveryBook } from "./books/deliveryBook.js";
 import { ChatBook } from "./books/chatBook.js";
 import { MessageBook } from "./books/messageBook.js";
 import { MemoryBook } from "./books/memoryBook.js";
@@ -37,6 +38,7 @@ import { replaceFailedPath } from "./replaceMarker.js";
 export class Bus {
   readonly workspace: string;
   readonly chats: ChatBook;
+  readonly deliveries: DeliveryBook;
   readonly messages: MessageBook;
   readonly memoryBook: MemoryBook;
   readonly skills: SkillsBook;
@@ -130,6 +132,7 @@ export class Bus {
     this.secrets = SecretStore.open(this.workspace);
     this.identity = loadOrCreateIdentity(this.workspace);
     this.chats = new ChatBook(this.db);
+    this.deliveries = new DeliveryBook(this.db);
     this.messages = new MessageBook(this.db);
     this.memoryBook = new MemoryBook(this.db);
     this.skills = new SkillsBook();
@@ -154,6 +157,7 @@ export class Bus {
     this.db.insert(contacts).values({ id: MAGI_CONTACT_ID, name: defaultDisplayName(handle), role: "magi", asp_handle: handle })
       .onConflictDoUpdate({ target: contacts.id, set: { name: defaultDisplayName(handle), asp_handle: handle } })
       .run();
+    this.deliveries.reconcile(this);
   }
 
   board<K extends JobType>(type: K): JobBoard<K> {

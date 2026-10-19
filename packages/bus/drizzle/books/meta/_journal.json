@@ -78,6 +78,13 @@
       "when": 1791824707996,
       "tag": "0010_message_plain_content",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1792454000000,
+      "tag": "0011_peer_delivery",
+      "breakpoints": true
     }
   ]
 }
