@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { ASP_MAGI_HANDLE } from "@magi/bus";
+import { ASP_MAGI_HANDLE, USER_HANDLE } from "@magi/bus";
+import { Asp } from "../asp.js";
 import { connect, isRecord, receiveInvite, request, tempRoot, withApp } from "./helpers.js";
 
 /*
@@ -237,6 +238,104 @@ test("magi joins the group when it receives the invite", async (t) => {
   });
 });
 
+test("opening an owner 1:1 reuses the operator bot chat", async (t) => {
+  await withApp({ databasePath: databasePath(tempRoot(t)) }, async (app) => {
+    const token = operatorToken(await request(app, "GET", "/operator"));
+    const created = record((await request(app, "POST", "/chats", { token, body: { kind: "bot" } })).data);
+    const magi = record(created.magi);
+    const magiToken = String(magi.token);
+    const opened = record((await request(app, "POST", "/chats/open", {
+      token: magiToken,
+      body: { invite: [USER_HANDLE] },
+    })).data);
+    const again = record((await request(app, "POST", "/chats/open", {
+      token: magiToken,
+      body: { invite: [USER_HANDLE] },
+    })).data);
+    assert.equal(opened.chat_id, created.chat_id);
+    assert.equal(again.chat_id, created.chat_id);
+    assert.equal(ownerAgentChats(app, String(magi.handle)).length, 1);
+  });
+});
+
+test("Casper restart and open_owner_chat keep a single owner 1:1", async (t) => {
+  const databasePath = path.join(tempRoot(t), "asp.sqlite");
+  const workspace = path.join(path.dirname(databasePath), "casper");
+  const firstId = await withApp({ databasePath, workspace }, async (app) => {
+    const chat = await waitForOwnerAgentChat(app, ASP_MAGI_HANDLE);
+    const before = ownerAgentChats(app, ASP_MAGI_HANDLE).length;
+    assert.equal(before, 1);
+    const job = app.bus.board("AspCommandJob").publish({ name: "open_owner_chat" }, "test");
+    await until("open_owner_chat finished", () => app.bus.board("AspCommandJob").result(job) !== null);
+    const result = app.bus.board("AspCommandJob").result(job);
+    assert.equal(result?.status, "completed");
+    assert.equal(ownerAgentChats(app, ASP_MAGI_HANDLE).length, 1);
+    const operator = record((await request(app, "POST", "/chats", {
+      token: app.operatorToken,
+      body: { kind: "bot", handle: ASP_MAGI_HANDLE },
+    })).data);
+    assert.equal(operator.chat_id, chat.id);
+    assert.equal(ownerAgentChats(app, ASP_MAGI_HANDLE).length, 1);
+    return chat.id;
+  });
+  await withApp({ databasePath, workspace }, async (app) => {
+    const chat = await waitForOwnerAgentChat(app, ASP_MAGI_HANDLE);
+    assert.equal(chat.id, firstId);
+    assert.equal(ownerAgentChats(app, ASP_MAGI_HANDLE).length, 1);
+    const job = app.bus.board("AspCommandJob").publish({ name: "open_owner_chat" }, "test");
+    await until("open_owner_chat after restart", () => app.bus.board("AspCommandJob").result(job) !== null);
+    assert.equal(app.bus.board("AspCommandJob").result(job)?.status, "completed");
+    assert.equal(ownerAgentChats(app, ASP_MAGI_HANDLE).length, 1);
+  });
+});
+
+test("a one-shot owner chat does not reuse or end the 1:1", async (t) => {
+  await withApp({ databasePath: databasePath(tempRoot(t)) }, async (app) => {
+    const token = operatorToken(await request(app, "GET", "/operator"));
+    const created = record((await request(app, "POST", "/chats", { token, body: { kind: "bot" } })).data);
+    const magiToken = String(record(created.magi).token);
+    const shot = record((await request(app, "POST", "/chats/open", {
+      token: magiToken,
+      body: {
+        invite: [USER_HANDLE],
+        end_after_send: true,
+        initial_message: { content: "bye" },
+      },
+    })).data);
+    assert.notEqual(shot.chat_id, created.chat_id);
+    const lasting = record((await request(app, "GET", `/chats/${String(created.chat_id)}`, { token })).data);
+    assert.equal(lasting.state, "active");
+    const ended = record((await request(app, "GET", `/chats/${String(shot.chat_id)}`, { token })).data);
+    assert.equal(ended.state, "ended");
+  });
+});
+
+test("duplicate owner 1:1s stay intact and one remains the open room", async (t) => {
+  await withApp({ databasePath: databasePath(tempRoot(t)) }, async (app) => {
+    const original = await waitForOwnerAgentChat(app, ASP_MAGI_HANDLE);
+    const extra = app.store.createChat({ creator: app.operatorHandle, topic: null, kind: "bot" });
+    app.store.addParticipant(extra.id, app.operatorHandle, "joined");
+    app.store.addParticipant(extra.id, ASP_MAGI_HANDLE, "joined");
+    app.store.appendChatEvent(extra.id, "chat.message", {
+      content: "keep this transcript",
+      sender: app.operatorHandle,
+    });
+    assert.equal(ownerAgentChats(app, ASP_MAGI_HANDLE).length, 2);
+    const casper = app.store.getAgent(ASP_MAGI_HANDLE);
+    assert.ok(casper);
+    const opened = record((await request(app, "POST", "/chats/open", {
+      token: casper.token,
+      body: { invite: [USER_HANDLE] },
+    })).data);
+    assert.equal(opened.chat_id, original.id);
+    const leftover = ownerAgentChats(app, ASP_MAGI_HANDLE);
+    assert.equal(leftover.length, 2);
+    assert.equal(leftover.some((chat) => chat.id === extra.id), true);
+    const kept = app.store.eventsForChat(extra.id).some((event) => event.payload.content === "keep this transcript");
+    assert.equal(kept, true);
+  });
+});
+
 test("offline magi joins when it connects after the invite", async (t) => {
   await withApp({ databasePath: databasePath(tempRoot(t)) }, async (app) => {
     const token = operatorToken(await request(app, "GET", "/operator"));
@@ -300,4 +399,37 @@ function participantStatus(view: Record<string, unknown>, handle: string): strin
     }
   }
   return undefined;
+}
+
+function ownerAgentChats(app: Asp, agent: string) {
+  const owner = app.operatorHandle;
+  const chats = [];
+  for (const chat of app.store.chats.values()) {
+    const people = app.store
+      .participantsIn(chat.id)
+      .filter((participant) => participant.status === "invited" || participant.status === "joined")
+      .map((participant) => participant.handle);
+    if (people.length === 2 && people.includes(owner) && people.includes(agent)) {
+      chats.push(chat);
+    }
+  }
+  return chats.sort((left, right) => left.created_at - right.created_at || left.id.localeCompare(right.id));
+}
+
+async function waitForOwnerAgentChat(app: Asp, agent: string) {
+  await until(`owner 1:1 with ${agent}`, () => ownerAgentChats(app, agent).length > 0);
+  const chat = ownerAgentChats(app, agent)[0];
+  if (chat === undefined) {
+    throw new Error(`no owner 1:1 with ${agent}`);
+  }
+  return chat;
+}
+
+async function until(label: string, ready: () => boolean, timeoutMs = 8_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (ready()) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(label);
 }

@@ -333,6 +333,7 @@ function registerRoutes(router: Router, app: AspServer): void {
     if (endAfterSend && initial === null) {
       throw new HttpError(400, "end_after_send requires initial_message");
     }
+    // Owner↔agent 1:1s are reused; createChat only opens a room when none exists.
     const result = await app.chats.createChat({
       creator,
       invite: stringList(body.invite),
