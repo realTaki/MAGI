@@ -10,6 +10,7 @@ import { rebuildTools } from '@magi/built-in-tools/rebuild.js';
 import { shellTools } from '@magi/built-in-tools/shell.js';
 import { ShellManager } from '@magi/built-in-tools/shellManager.js';
 import { resolveToolchain } from '@magi/runtime/toolchain.js';
+import { VERIFY_BUILD_ARGS, VERIFY_TEST_ARGS, VERIFY_UI_ARGS } from '@magi/runtime/verify.js';
 import { ReplaceWorker } from '../../../packages/manager/dist/replace.js';
 
 const repo = path.resolve(import.meta.dirname, '../../..');
@@ -159,15 +160,22 @@ test('the actual replace worker builds local tool edits without an upstream and 
 test('agent bash uses the same toolchain as the replace safety gate and can finish compile and test', async (t) => {
   const f = fixture(t);
   const bash = shellTools(f.home, new ShellManager())[0];
-  const printed = await bash.run({ command: 'printf "%s\\n%s" "$MAGI_NODE" "$MAGI_NPM"' });
+  // Windows `bash` is PowerShell, so the agent command cannot be a bash-only snippet.
+  writeFileSync(path.join(f.home, 'print-toolchain.mjs'), 'process.stdout.write(`${process.env.MAGI_NODE}\\n${process.env.MAGI_NPM}`);');
+  const printed = await bash.run({ command: 'node print-toolchain.mjs' });
   assert.match(printed, /^exit_code: 0\n/);
   const { node: resolvedNode, npm: resolvedNpm } = resolveToolchain();
   assert.match(printed, new RegExp(resolvedNode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(printed, new RegExp(resolvedNpm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  const result = await bash.run({
-    command: 'cd MAGI && "$MAGI_NODE" "$MAGI_NPM" test && "$MAGI_NODE" "$MAGI_NPM" run build && "$MAGI_NODE" "$MAGI_NPM" run build:ui --prefix apps/shell',
-    timeout: 60,
-  });
+  writeFileSync(path.join(f.home, 'run-verify.mjs'), `import { spawnSync } from 'node:child_process';
+process.chdir('MAGI');
+const node = process.env.MAGI_NODE, npm = process.env.MAGI_NPM;
+for (const args of ${JSON.stringify([VERIFY_TEST_ARGS, VERIFY_BUILD_ARGS, VERIFY_UI_ARGS])}) {
+  const result = spawnSync(node, [npm, ...args], { stdio: 'inherit' });
+  if ((result.status ?? 1) !== 0) process.exit(result.status ?? 1);
+}
+`);
+  const result = await bash.run({ command: 'node run-verify.mjs', timeout: 60 });
   if (!result.startsWith('exit_code: 0')) assert.fail(result);
   assert.equal(readFileSync(path.join(f.root, 'dist/proof'), 'utf8'), 'upstream-v1');
   assert.equal(readFileSync(path.join(f.root, 'apps/shell/dist/index.html'), 'utf8'), 'upstream-v1');
