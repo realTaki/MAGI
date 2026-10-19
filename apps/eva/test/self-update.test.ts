@@ -17,6 +17,7 @@ test("self_update skill teaches the same compile and test commands as verifyChec
   assert.match(skill, new RegExp(`"\\$MAGI_NODE" "\\$MAGI_NPM" ${VERIFY_TEST_ARGS.join(" ")}`));
   assert.match(skill, new RegExp(`"\\$MAGI_NODE" "\\$MAGI_NPM" ${VERIFY_BUILD_ARGS.join(" ")}`));
   assert.match(skill, new RegExp(VERIFY_UI_ARGS.join(" ").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(skill, /& \$env:MAGI_NODE \$env:MAGI_NPM run verify/);
   assert.match(skill, /request_replace/);
   assert.doesNotMatch(skill, /do not run the whole suite/i);
   assert.doesNotMatch(skill, /magi_rsi|request_rebuild|replace_self/);

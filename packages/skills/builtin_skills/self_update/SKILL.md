@@ -56,6 +56,13 @@ If `MAGI_ROLE` is `shell`, also:
 "$MAGI_NODE" "$MAGI_NPM" run build:ui --prefix apps/shell
 ```
 
+On Windows the `bash` tool is PowerShell, so the same gate is:
+
+```powershell
+cd MAGI
+& $env:MAGI_NODE $env:MAGI_NPM run verify
+```
+
 Read the log in this turn. If a command fails, fix the source and run the same commands again. Do not `request_replace` until they all exit 0.
 
 ## Replace
