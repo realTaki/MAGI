@@ -48,11 +48,15 @@ A node with no `provider.api_key` opens a chat with the operator and posts `card
 
 ## Self-replace
 
-`replace_self`, and `request_rebuild` with target `self`, publish `ReplaceSelfJob`. On `swap`, the child checks the target revision out under `$MAGI_HOME/<node>/revisions/<sha>`, installs, tests, and builds there, then asks the launcher to run that directory. The launcher stops the old child before starting the new one, so two processes do not open the same database. The new child is that revision's `packages/node/dist/child.js`.
+`replace_self`, and `request_rebuild` with target `self`, publish `ReplaceSelfJob` bound to the calling node’s editable `<workspace>/MAGI`. With no ref, the revision is a private Git snapshot of saved local source, including staged/unstaged changes and non-ignored new files/deletions. A temporary index preserves the source index, HEAD and refs; no branch commit or push is performed. An explicit ref instead fetches and builds that committed revision for a remote upgrade. On `swap`, the child checks the target revision out under `$MAGI_HOME/<node>/revisions/<sha>`, installs, tests, and builds there, then asks the launcher to run that directory. The launcher stops the old child before starting the new one, so two processes do not open the same database. The new child is that revision's `packages/node/dist/child.js`.
 
 A failed checkout or build fails the job and tells the operator. A new child that does not become ready is killed. The launcher starts the previous revision directory again, writes the replace-failed marker, and that child fails the job. One process runs one replace.
 
 If the new revision's `apps/eva/eva.mjs` differs, the child asks for an upgrade. A launcher started by Electron tells Electron and exits after stopping its child; Electron starts the new `eva.mjs`. A launcher with no host starts the new launcher itself, and only after the old child has exited. A failed upgrade starts the previous child and writes the marker. A child that keeps crashing is restarted with backoff, then the launcher writes the marker and tells the operator. The window shows that failure.
+
+For Shell, the launcher keeps `MAGI_CHECKOUT` as the editable Git/source authority and sets `MAGI_APP_CHECKOUT` to the active child revision. After the new Shell child becomes ready, it notifies Electron that the interface changed. The existing renderer confirmation remains required. Accepting it asks the current backend for `runtime.interface().ui`, then Electron loads that file/URL; simply reloading the previous file URL would keep the old UI. Failed builds/health checks do not offer UI activation.
+
+To independently verify a UI self-edit, start an isolated instance from the updated Electron source/preload, open Balthasar (`@eva-000.magi`), and allow a bounded edit only under its own `MAGI/apps/shell/web/src`. Ask it to test its edit and call `request_rebuild` with `target: self` (no commit or push needed). Inspect the replace job/result and `eva-000/launcher.json`; after confirming the reload, the window should use `revisions/<sha>/apps/shell/dist/index.html`. Declining keeps the current page. A failed candidate must keep the previous current revision and offer no success reload. The actual demo feature and recording are performed by the operator/MAGI, not by this change.
 
 ## Failures
 

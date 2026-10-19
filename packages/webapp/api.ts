@@ -1496,6 +1496,7 @@ export function createLocalApi(context) {
     "magi.rebuildAll": () => runtimeAction(() => magiRebuildAll()),
     "magi.syncAll": () => runtimeAction(syncMagis),
     "runtime.rebuildApp": rebuildApp,
+    "runtime.interface": () => ({ ui: uiEntry() }),
     "runtime.buildInstaller": buildInstaller,
     "runtime.buildAndInstallInstaller": buildAndInstallInstaller,
     "shell.updateStatus": shellUpdateStatus,

@@ -8,7 +8,7 @@
 export type ReplaceSelfJob = {
   /** The checkout to build. Omitted, the running app's own checkout is used. */
   checkout?: string;
-  /** Commit or ref to check out. Omitted, the checkout's tracking branch is used. */
+  /** Commit or ref to check out. Omitted, snapshot the checkout’s saved local source. An explicit ref fetches a committed remote upgrade. */
   ref?: string;
   /** After a healthy build, hand this process to its supervisor or a new one. */
   swap?: boolean;

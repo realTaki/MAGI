@@ -6,10 +6,11 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-export function sourceCheckout(handle: string, workspace: string): string {
+export function sourceCheckout(handle: string, workspace: string, role = process.env.MAGI_ROLE): string {
   const name = handle.replace(/^@/, "").replace(/\.magi$/, "");
+  const branch = role === "shell" || role === "asp" ? `magi/${role}` : `magi/${name}`;
   const present = existsSync(join(workspace, "MAGI", ".git"));
   return present
-    ? `handle: ${handle}\ncheckout: MAGI/\nbranch: magi/${name}\nThis is the only tree you may edit.`
+    ? `handle: ${handle}\ncheckout: MAGI/\nbranch: ${branch}\nThis is the only tree you may edit.`
     : `handle: ${handle}\ncheckout: none\nThis process has no source checkout. Do not edit product source and do not request a rebuild.`;
 }

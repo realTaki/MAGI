@@ -21,6 +21,7 @@ import dugite from "dugite";
 import { app, BrowserWindow, Menu, clipboard, ipcMain, screen, shell } from "electron";
 
 import { shellArtifactPath } from "./shell-path.mjs";
+import { loadApp, reloadInterface } from "./interface.mjs";
 import { prependRuntimePath } from "./runtime-environment.mjs";
 import { updateScript } from "./update-script.mjs";
 import { createSupervisor, prepareAndStartShell } from "./process.mjs";
@@ -288,14 +289,6 @@ async function loadStartup(win) {
   await win.loadFile(path.join(SHELL_DIR, "boot", "index.html"));
 }
 
-// The app reports its own entry point: a built file or a dev server URL.
-async function loadApp(win, ui) {
-  if (ui.startsWith("http")) {
-    await win.loadURL(ui);
-    return;
-  }
-  await win.loadFile(ui);
-}
 
 function savedWindowState() {
   try {
@@ -443,6 +436,11 @@ ipcMain.handle("startup:retry", async () => {
     await loadStartup(mainWindow);
     void launchLocalOperator(mainWindow);
   }
+});
+
+ipcMain.handle("shell:reload-interface", async () => {
+  processOwner.assertOpen();
+  return reloadInterface(localApi, mainWindow);
 });
 
 ipcMain.handle("shell:copy-text", (_event, text) => {

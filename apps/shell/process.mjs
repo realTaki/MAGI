@@ -209,6 +209,10 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
           });
           return;
         }
+        if (message?.type === "interface-updated" && isHost && entry.ready && !entry.stopping && message.v === LAUNCHER_PROTOCOL && typeof message.ui === "string") {
+          void host.emit?.({ event: "app.interface-updated", payload: { ui: message.ui } });
+          return;
+        }
         if (message?.type === "failed") {
           const error = typeof message.error === "string" && message.error !== "" ? message.error : "launcher failed";
           notifyHost({ type: "event", event: "launcher.failed", payload: { error } });
