@@ -20,6 +20,8 @@ function makeOrigin(root) {
   const seed = path.join(root, "seed");
   git(root, ["clone", "--quiet", origin, seed]);
   mkdirSync(path.join(seed, "apps", "asp", "dist"), { recursive: true });
+  mkdirSync(path.join(seed, "apps", "eva"), { recursive: true });
+  writeFileSync(path.join(seed, "apps", "eva", "eva.mjs"), "");
   writeFileSync(path.join(seed, "package-lock.json"), "{}");
   writeFileSync(path.join(seed, "apps", "asp", "dist", "asp.js"), "");
   git(seed, ["config", "user.email", "test@example.invalid"]);
@@ -186,6 +188,7 @@ test("the operator process creates and runs ASP from its own magi/asp clone", as
     tools: { git: "git", env: process.env }, emit: () => {}, openExternal: async () => {}, copy: () => {},
     managed: true,
     spawn(_binary, _args, options) {
+      assert.deepEqual(_args, [path.join(root, ".magi", "asp", "MAGI", "apps", "eva", "eva.mjs"), "--role", "asp"]);
       spawnedCwd = options.cwd;
       queueMicrotask(() => { healthy = true; child.emit("spawn"); });
       return child;
@@ -193,8 +196,8 @@ test("the operator process creates and runs ASP from its own magi/asp clone", as
   });
   t.after(async () => { await api?.dispose(); globalThis.fetch = originalFetch; rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
 
-  await assert.rejects(api.start(), /eva --role asp/);
-  assert.equal(spawnedCwd, "");
+  await api.start();
+  assert.equal(spawnedCwd, path.join(root, ".magi", "asp", "MAGI", "apps", "eva"));
   const aspClone = path.join(root, ".magi", "asp", "MAGI");
   assert.equal(git(aspClone, ["rev-parse", "--abbrev-ref", "HEAD"]).trim(), "magi/asp");
 });
