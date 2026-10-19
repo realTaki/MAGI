@@ -6,15 +6,23 @@
 
 [中文 README](README_zh.md)
 
-MAGI is a local multi-agent runtime. Each node is the `eva` launcher plus one child process, with its own workspace and provider credentials. The nodes talk through ASP. The desktop app starts only the shell launcher.
+MAGI is a local multi-agent runtime. Each node is the `eva` launcher plus one child process, with its own workspace and provider credentials. The nodes talk through ASP. Electron starts the Shell launcher. Shell attaches to a separately started ASP relay and starts the explicit default local agent through its own launcher.
 
-How the three nodes, the relay, provider setup, and self-replace actually work is in [docs/architecture.md](docs/architecture.md). Later work is in [docs/future.md](docs/future.md).
+MAGI studies persistent agents that can inspect and improve their own software.
+Self-edit, validation and revision switching are implementation mechanisms;
+measured recursive improvement remains a research goal. The project is experimental.
 
-## Run
+## Start here
 
-Open the Electron app in [`apps/shell/`](apps/shell/). It starts `eva --role shell`. Start Casper with `node apps/eva/eva.mjs --role asp` and Melchior with `node apps/eva/eva.mjs --role agent @eva-000.magi`. State lives under `MAGI_HOME` (default `~/.magi`). The relay address is `MAGI_ASP`.
+- [Run the desktop, ASP and agents](docs/running.md)
+- [Prepare a development checkout](CONTRIBUTING.md)
+- [Architecture and self-replacement](docs/architecture.md)
+- [Verification and acceptance boundaries](docs/verification.md)
+- [All documentation](docs/README.md), [future work](docs/future.md)
 
-Build from the repository root with `npm run build`. Tests run with the bundled Node 24 runtime under `apps/shell/runtime/bin`.
+Use MAGI's bundled Node 24 and the root lockfile. ASP must be reachable before
+the desktop initializes its default society: Balthasar `@shell.magi`, Casper
+`@asp.magi` and Melchior `@eva-000.magi`. State belongs to each node's workspace.
 
 ## Contributing
 

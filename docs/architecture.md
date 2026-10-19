@@ -1,63 +1,137 @@
 # Architecture
 
-How the running system fits together. Later work is in [future.md](future.md).
+This describes the current TypeScript runtime. [Running MAGI](running.md) contains
+commands; [future work](future.md) separates research goals from implementation.
 
-## Launcher and child
+## Process and role boundaries
 
-`eva` is the launcher (`apps/eva/eva.mjs`). It is one OS process. It does not open a BUS.
+`apps/eva/eva.mjs` is a launcher process without a BUS. It starts one
+`packages/node/dist/child.js` process with a BUS, `ManagerWorker` and role workers.
+[Role composition](../packages/node/roles.ts) shares the agent, provider, tool,
+contact, skill and memory workers; roles add their interfaces:
 
-It starts one child OS process, `packages/node` `child.js`. That child is the BUS, one `ManagerWorker`, and the workers for its role. Shell, ASP, and a cloud agent are the same pair. They differ by `--role`:
+| Role | Handle | Additional responsibility |
+| --- | --- | --- |
+| `shell` | `@shell.magi` / Balthasar | Webapp backend and local startup coordination |
+| `asp` | `@asp.magi` / Casper | ASP HTTP/WebSocket relay |
+| `agent` | Default `@eva-000.magi` / Melchior | Independent agent interfaces, including CLI/tasks/MCP |
 
-| Role | Handle | Name | Workers added |
-| --- | --- | --- | --- |
-| `shell` | `@shell.magi` | Balthasar | Webapp, the Electron UI backend |
-| `asp` | `@asp.magi` | Casper | AspServer, the relay |
-| `agent` | `@eva-000.magi` and later handles | Melchior | the agent workers |
+The human speaks as `@user.magi`; there is no separate User node. Additional
+independent agent names number from `eva-000`. The package entry files under
+`apps/eva` and `apps/asp` export classes; the launcher is the executable entry.
 
-The human speaks as `@user.magi` from the shell. Workers do not call each other. They publish a job and whoever owns that work claims it.
+Electron owns the window and starts the Shell launcher over its host bridge.
+ASP must be started separately. Shell checks it, opens default operator chats,
+attaches its ASP worker and starts the explicitly seeded local Melchior through
+another launcher. It waits for that launcher before naming the new agent.
+Startup does not boot arbitrary registered remote nodes. The default local
+launcher is deduplicated/restored by its process record and stopped on desktop
+shutdown. See [startup policy](../packages/webapp/api.ts),
+[local agent runtime](../packages/webapp/magi-runtime.ts) and
+[Electron supervisor](../apps/shell/process.mjs).
 
-Electron (`apps/shell/main.mjs`) owns the window. It starts `eva --role shell`. It does not start ASP or other nodes, and it does not run their workers. The launcher and the child are separate processes so a crash or a Node upgrade stays in the child. They are not threads in one process. The Electron process does not open a database.
+Each child's workers communicate through BUS Books and durable Jobs, rather than
+calling peer workers. The manager initializes configured workers before polling
+recovered work, so the agent sees its provider, prompts and tool catalog.
 
-`apps/shell` and `apps/asp` are not process entries. Their worker lists live in `@magi/node` and the launcher starts them.
+## Workspaces and source
 
-## State and toolchain
+`MAGI_HOME` defaults to `~/.magi`. Shell uses `shell/`, Casper uses `asp/`, and an
+agent uses its handle's local name, such as `eva-000/`. Books, jobs, prompts,
+skills, identity keys and the node's `secrets.json` belong to that workspace.
+Casper also owns `asp.sqlite`. Electron renderer storage is separate.
 
-`MAGI_HOME` is the data root. The default is `~/.magi`. A container mounts that path and runs the launcher as its main process. `MAGI_OS_HOME` is the operating-system home when a caller still needs it. The shell workspace is `$MAGI_HOME/shell`. Casper's relay database and BUS workspace are `$MAGI_HOME/asp` (`asp.sqlite`). Those are not process names.
+Managed nodes have an independent Git clone at `<workspace>/MAGI` with branch
+`magi/<name>` (`magi/shell`, `magi/asp`, `magi/eva-000`). A source-launched Shell
+instead has a verified editable source checkout. Development agents may run the
+same built source without owning an editable clone; that does not give them
+source-edit authority over another node.
 
-The launcher remembers the current and previous revision in `$MAGI_HOME/<node>/launcher.json`. A failed switch writes `$MAGI_HOME/shell/replace-failed.json`, `asp`, or `eva-000` (the handle with `@` and `.magi` removed).
+For Shell, `MAGI_CHECKOUT` is the fixed editable source and `MAGI_APP_CHECKOUT`
+is the currently loaded backend/UI source. Tested artifacts under
+`<workspace>/revisions/<revision>` are not a new editable source authority.
+The [source selector](../apps/shell/source-checkout.mjs) checks an attached Git
+branch, the exact repository root and tracked MAGI entries. It is a structural
+check, not authentication of a remote repository owner.
 
-Node, npm, and git resolve in this order: `MAGI_NODE` / `MAGI_NPM` / `MAGI_GIT`, then the bundled runtime under `apps/shell/runtime` and dugite, then `PATH`. The resolved Node must be 24 or newer (`engines` is `>=24.0.0`, and `resolveToolchain` rejects an older binary). SQLite is Node's built-in `node:sqlite`.
+Use the MAGI-owned Node 24/npm/Git toolchain. Internal resolution supports
+explicit `MAGI_NODE`, `MAGI_NPM`, `MAGI_GIT`, bundled paths and a final PATH lookup;
+repository development instructions require a MAGI-owned runtime rather than
+silently accepting an unrelated system executable. SQLite uses `node:sqlite`.
 
-The relay address is `MAGI_ASP`, or `http://$MAGI_ASP_HOST:$MAGI_ASP_PORT` when those are set. The desktop window reads the address from the preload bridge.
+## Relay, chat identities and history
 
-## Relay
+ASP authenticates registered handles with bearer tokens. Nodes connect to
+`/connect`; the operator uses HTTP APIs. Casper participates through its own
+`AspWorker`. ASP stores relay events and each recipient acknowledges exact event
+IDs. Unacknowledged eligible events replay after reconnection. Acknowledgement
+permits relay cleanup; the desktop keeps its own durable chat history.
 
-MAGIs do not connect to each other. Chat goes through the ASP server in the Casper child: a WebSocket at `/connect` with a bearer token. Events are stored in `~/.magi/asp/asp.sqlite`.
+Owner/agent open-chat requests reuse an existing active two-person chat. UI
+entries can group such rooms only with current ASP chat membership, an active
+state and a registered exact handle. Ended, unknown and cached-only rooms remain
+independent. Histories, read positions, cards and outbound chat IDs are not
+merged. Display names do not identify nodes. The current protocol identifies an
+agent by handle; it does not expose an immutable registration-generation ID.
 
-Each recipient acks the exact event (`chat.ack`, or `POST /chats/:chat_id/events/ack`). The event stays in SQLite until every intended recipient has acked it (`apps/asp/test/relay.test.ts`). When a handle connects and it had no open socket, the server sends the events it has not seen acked (`packages/asp-server/service.ts` `#onBackOnline`, from `packages/asp-server/transport.ts` `connect`). Casper's own `AspWorker` uses that same local relay.
+See [chat service](../packages/asp-server/service.ts),
+[relay persistence](../packages/asp-server/relayWorker.ts) and
+[sidebar eligibility](../apps/shell/web/src/chat-list.ts).
 
-ASP does not start processes. The shell does not start them either. Each node is its own launcher.
+## Provider configuration
 
-Casper's list includes `TelegramWorker`. It stays off until that workspace has a bot token.
+Provider configuration belongs to the receiving node. Its manager verifies a
+candidate through the providers worker before applying it. A failed candidate
+does not replace a working configuration. Public settings and private secrets
+have different stores. UI secret fields are encrypted to the recipient's public
+key for transport; local secrets are not encrypted at rest by this mechanism.
+The model sees configuration status rather than a secret field's value.
 
-## Provider
+Provider sync is an explicit job, not a global operator-settings broadcast.
+`AspWorker` sends encrypted configuration only to known MAGIs or contacts with
+the `magi` role and an available public key. See the [provider catalog](provider-catalog.md),
+[configuration worker](../packages/manager/config.ts) and [security limits](../SECURITY.md).
 
-A node with no `provider.api_key` opens a chat with the operator and posts `card: Provider`. Submitting the card verifies the key, then stores it in that node's secret store. "Not now" offers the card once more. A second rejection, or a failed verification, stops the card and tells the operator. A restart while a card is still open is not a rejection: the card is offered again and the offer count does not increase.
+## Source edits and activation
 
-`sync_provider` publishes a job. The ASP worker sends the key only to a known MAGI, or to a contact whose role is already `magi`, and only when that profile has a public key.
+Each node changes only its authorized editable source. Shell's self-rebuild tools
+use its fixed startup checkout; other nodes use their workspace's `MAGI/`.
+A missing authorized source is an error, not permission to guess another path.
+Source synchronization, building a candidate and activating it are distinct.
+Neither a Git fetch nor saving a file changes the loaded process.
 
-## Self-replace
+`replace_self` and `request_rebuild` with `target: self` queue `ReplaceSelfJob`.
+The revision builder snapshots saved local source using a temporary Git index,
+including tracked edits and non-ignored additions/deletions. It does not commit,
+push or change the editable tree's index, HEAD or refs. Candidate tests use new
+disposable node/OS-home paths and do not inherit live MAGI credentials. The
+candidate is installed, tested and built in its revision directory before the
+launcher is asked to switch. Runtime code also supports committed-ref revision
+builds; this is not an extra argument on the public self-rebuild tool.
 
-`replace_self`, and `request_rebuild` with target `self`, publish `ReplaceSelfJob` bound to the calling node’s editable `<workspace>/MAGI`. With no ref, the revision is a private Git snapshot of saved local source, including staged/unstaged changes and non-ignored new files/deletions. A temporary index preserves the source index, HEAD and refs; no branch commit or push is performed. Candidate tests use a disposable MAGI_HOME/OS home and receive only the MAGI toolchain variables, not the running node’s MAGI credentials or replacement markers. An explicit ref instead fetches and builds that committed revision for a remote upgrade. On `swap`, the child checks the target revision out under `$MAGI_HOME/<node>/revisions/<sha>`, installs, tests, and builds there, then asks the launcher to run that directory. The launcher stops the old child before starting the new one, so two processes do not open the same database. The new child is that revision's `packages/node/dist/child.js`.
+The launcher stops the old child before starting the candidate against that
+workspace. A failed build leaves the old child running. A candidate that fails
+readiness is retired and the launcher attempts the previous revision, recording
+a failure marker/job result. This is process revision recovery, not a guarantee
+of rollback of arbitrary database changes or external side effects.
 
-A failed checkout or build fails the job and tells the operator. A new child that does not become ready is killed. The launcher starts the previous revision directory again, writes the replace-failed marker, and that child fails the job. One process runs one replace.
+If the launcher itself changed, the launcher upgrade protocol hands off after
+the old child exits. For Shell, a successful active revision includes its built
+UI and notifies Electron to load that UI. Electron main/preload/native startup
+code is outside that child replacement: it requires a complete Electron restart,
+and a packaged installation requires an updated package for packaged files.
 
-If the new revision's `apps/eva/eva.mjs` differs, the child asks for an upgrade. A launcher started by Electron tells Electron and exits after stopping its child; Electron starts the new `eva.mjs`. A launcher with no host starts the new launcher itself, and only after the old child has exited. A failed upgrade starts the previous child and writes the marker. A child that keeps crashing is restarted with backoff, then the launcher writes the marker and tells the operator. The window shows that failure.
+Implementation: [source authority](../packages/built-in-tools/source.ts),
+[replace worker](../packages/manager/replace.ts),
+[revision builder](../packages/runtime/revise.ts),
+[launcher](../apps/eva/eva.mjs), [interface activation](../apps/shell/interface.mjs).
+Controlled self-edit tests establish mechanics, not measured recursive improvement
+or complete desktop-demo acceptance; see [Verification](verification.md).
 
-For Shell, the launcher keeps `MAGI_CHECKOUT` as the editable Git/source authority and sets `MAGI_APP_CHECKOUT` to the active child revision under `$MAGI_HOME/shell/revisions/<sha>`. After the new Shell child becomes ready, it notifies Electron (`app.interface-updated` with the revision UI path). While the window is open, Electron `loadFile`s that path immediately. Simply reloading the previous file URL would keep the old UI. Failed builds/health checks roll back to the previous revision and do not emit a success reload.
+## Failure signals
 
-To independently verify a UI self-edit, start an isolated instance from the updated Electron source/preload, open Balthasar (`@shell.magi`), and allow a bounded edit only under its own `MAGI/apps/shell/web/src`. Ask it to test its edit and call `request_rebuild` with `target: self` (no commit or push needed). Inspect the replace job/result and `shell/launcher.json`; the window should load `revisions/<sha>/apps/shell/dist/index.html`. A failed candidate must keep the previous current revision and offer no success reload. The actual demo feature and recording are performed by the operator/MAGI, not by this change.
-
-## Failures
-
-A failure is a job result (`status` `failed`, with `error`) or a message to the operator. It is not left only in a log.
+Jobs carry failures in their results. Workers deliver notices through the
+operator's home chat when available; startup and missing-home failures may still
+be logged. `worker "asp" recovered` is a health transition, not by itself a failed
+request. Source verification, process readiness, provider verification and GUI
+acceptance are separate states.

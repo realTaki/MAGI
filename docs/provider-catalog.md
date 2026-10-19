@@ -24,66 +24,48 @@ Official sources:
 - https://platform.minimaxi.com/docs/api-reference/text-anthropic-api
 - https://api-docs.deepseek.com/
 
-The OpenAI documentation now advertises a larger context capacity and GPT-6.1
-Sol; this change does not override the locked backend's metadata or add an
-unresolvable ID. GPT-6 Sol is retained from the verified backend catalog.
-Likewise MiniMax-M3.1-Flash and Claude Sonnet/Haiku 5.5 are not offered because
-this locked catalog lacks them. MiniMax-M2.7 is omitted because the current
-Anthropic compatibility documentation lists M3 and M3.1 Flash instead.
-MiniMax CN documentation has moved to `platform.minimax.cn`; the actual backend
-endpoint remains the catalog value above. Global and CN credentials are not
-interchangeable. No OAuth behavior is added here.
+The source of the shipped picker is
+[`PROVIDER_CATALOG`](../packages/bus/jobs/providerCatalog.ts), checked against the
+lockfile-installed backend by the provider catalog test. Vendor documentation
+can describe models or capacities newer than that dependency. A table entry is
+not a promise of account entitlement or current vendor availability. MiniMax
+China and Global use different endpoints/credentials; no OAuth behavior is
+implied by this catalog.
 
 Known providers use their backend catalog endpoint; the card submits an empty
 custom URL and the manager clears any previous custom URL. Custom uses the
 existing URL validation (HTTPS, or localhost HTTP, without embedded credentials,
 query or fragment). Changing provider clears the draft model, URL and password.
-Unknown old model IDs remain visible with an explanation and must be replaced
-with a supported selection; no existing settings change merely by opening a card.
+Unsupported model IDs require an explicit supported selection; opening the
+configuration interface alone does not change saved settings.
 
-The chat's **Model provider** button sends an operator-authenticated structured
-request directly to the config worker, without asking an LLM to call a tool.
-Failed validation does not count as a rejection or remove this entry. Cards have
-persisted acknowledgements; transport acceptance means “verifying,” not “saved.”
-Reopening uses a new card and retains public fields only. Replayed submissions
-and repeated reopen requests do not verify/save twice. Only the receiving MAGI's
-acknowledgement can mark its card as saved in the UI.
+Configuration requests go to the receiving MAGI's config worker without requiring
+a working LLM turn. Transport acceptance is not successful verification or a
+saved configuration. Public receipt fields may be replayed; secret inputs must
+not be prefilled or included in receipts. See the
+[configuration worker](../packages/manager/config.ts) and [security limits](../SECURITY.md).
 
-## Manual acceptance (isolated test instance)
+## Manual acceptance with synthetic verification
 
-1. Switch UI language between Chinese, English and Japanese; open Model provider
-   from a direct chat header before any working provider exists.
-2. Select each provider. Confirm a model is selected, no base URL is editable,
-   and MiniMax China/Global are distinct. Select Custom and confirm both fields
-   become editable. Switch back: previous URL, model and password are cleared.
-3. With synthetic/mock verification, reject at least three saves, reopening each
-   time. The configuration entry stays available. Cancel and open it again.
-4. Double-click Save while verification is delayed. Expect one encrypted
-   submission; only the worker acknowledgement changes “verifying” to “saved.”
-5. Reopen a saved configuration: public selections remain; the password is blank.
-   Load a fixture with `MinimaxM3`: show the unsupported value and require a
-   supported selection (`MiniMax-M3`) instead of silently rewriting saved state.
-6. Refresh/replay chat events after success, failure and cancellation: old cards
-   remain terminal. Retry transport errors without leaking request/error bodies.
-
-Use only synthetic credentials in automated tests. A real account acceptance
-check is a separate operator action; never put a key in chat or test fixtures.
+Check the actual configuration interface in the revision being tested; do not
+infer its entry point from an old screenshot. For each language and provider,
+verify defaults, custom endpoints, clearing secret drafts, failure/retry,
+cancellation and reopening. Delay verification to check duplicate submission
+handling. Confirm only the receiving node's acknowledgement marks a request as
+saved, and refresh/replay does not leak a secret or blend another node's state.
+A real-provider/account test is separate from synthetic worker or browser checks.
 
 ## Reproducible checks
 
-Use the project's bundled Node 24 and the lockfile-installed dependencies:
+Use [Verification](verification.md) for the current root build/test entry point.
+The browser fixture, when present, runs with MAGI's bundled Node:
 
 ```sh
-apps/shell/runtime/bin/node node_modules/typescript/bin/tsc -b
-apps/shell/runtime/bin/node node_modules/typescript/bin/tsc --noEmit -p apps/shell/web/tsconfig.json
-apps/shell/runtime/bin/node apps/shell/scripts/i18n-lint.ts
-MAGI_HOME=/tmp/magi-provider-tests apps/shell/runtime/bin/node --test apps/eva/dist/test/*.test.js apps/asp/dist/test/*.test.js apps/shell/test/*.test.mjs apps/shell/test/*.test.ts
 apps/shell/runtime/bin/node apps/shell/integration/provider-form.browser.mjs
 ```
 
-The browser check uses local Chromium (`CHROMIUM` can select its path), a temporary
-loopback server and mocked ASP/encryption boundaries. It never connects to a
-provider or reads credentials. The worker integration test separately exercises
-real RSA encryption/decryption with synthetic keys in a temporary BUS workspace.
-Only run generated tests corresponding to source tests in the checked-out revision;
-TypeScript does not remove orphaned output left by older branches.
+It uses Chromium (`CHROMIUM` can select its path), a temporary loopback server and
+explicit mocked ASP/encryption boundaries. It does not establish real-provider
+verification. Worker tests separately exercise cryptography with synthetic keys.
+Check the fixture and platform workflow in the current revision before claiming
+that a browser or native acceptance step ran.

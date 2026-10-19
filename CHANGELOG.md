@@ -1,6 +1,10 @@
 # Changelog
 
-## [Unreleased]
+This file preserves earlier Python-runtime release and design history. It is not
+a current TypeScript feature list or startup guide. See [current architecture](docs/architecture.md)
+and [future work](docs/future.md) for implementation status.
+
+## Historical unreleased work (Python runtime)
 
 ### Added
 - **BUS-centric Hook subsystem** (planned plugin/hook surface).

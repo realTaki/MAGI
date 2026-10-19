@@ -2,11 +2,11 @@
 
 The Electron window. Balthasar (`@shell.magi`) is the shell child of the eva launcher. The human speaks as `@user.magi`.
 
-Open the app. Electron starts `eva --role shell`. It does not start ASP or other nodes. Operator files are under `$MAGI_HOME/shell` (default `~/.magi/shell`).
+Start ASP separately, then open the app. Electron starts `eva --role shell`; the Shell backend attaches Balthasar and starts the explicit default local Melchior through a separate launcher. It does not start arbitrary remote nodes. Operator files are under `$MAGI_HOME/shell` (default `~/.magi/shell`).
 
 GitHub sign-in is optional and happens in Settings after startup. The device-flow token is stored at `~/.magi/shell/github-token`.
 
-How the three nodes share one relay, and how a node replaces itself, is in [docs/architecture.md](../../docs/architecture.md).
+Runnable commands and configuration are in [Running MAGI](../../docs/running.md). Process and self-replace boundaries are in [Architecture](../../docs/architecture.md).
 
 ## Source authority and normal source launches
 
@@ -46,21 +46,19 @@ process handoff fields, not required user configuration. Revision switching
 changes the latter and preserves the former. Shell's self-rebuild tools use its
 fixed source; other nodes continue to rebuild their own workspace's `MAGI/`.
 
-Settings shows the editable source path. **Update source** fetches the current
-branch from its origin; **Shell Sync** fetches `origin/main` explicitly and
-fast-forwards the current source branch. Neither action checks out a different
-branch, resets, stashes, commits, pushes, builds or activates code. Staged,
-unstaged and untracked changes, an unfinished Git operation, detached HEAD or
-divergent history stop synchronization with a preservation message. Commit or
-stash changes, or resolve the history manually, then retry. Local source builds
-may include saved edits without committing them.
+Source synchronization and activation are distinct. The backend's explicit source
+sync operations fetch and fast-forward the selected source branch; they do not
+reset, stash, commit, push, build or activate code. Dirty trees, unfinished Git
+operations, detached HEAD or divergent history stop synchronization. A node can
+also use ordinary authorized Git operations in its own editable source. Ask the
+target node to explain and validate its change before requesting self-replacement.
+A local source snapshot may include saved edits without a branch commit.
 
 ## What an update activates
 
-- **Rebuild interface** builds `apps/shell/web` from the fixed editable source
-  and reloads the resulting UI. It does not switch the Node backend or Electron
-  main process. If a build fails, no interface-update event is sent. A source
-  launch does not silently reinstall dependencies after that failure.
+- **Static UI build** produces `apps/shell/dist`. Building it alone does not
+  replace the backend or Electron main process. A source launch does not silently
+  reinstall dependencies after a build failure.
 - **Node self-rebuild** snapshots its editable source, tests/builds the candidate
   and asks its EVA launcher to switch to the built revision. The Shell revision's
   UI follows the successful switch. This replaces that node process, while
