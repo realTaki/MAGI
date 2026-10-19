@@ -12,6 +12,9 @@ import { Asp } from "../../asp/asp.ts";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const repository = path.resolve(import.meta.dirname, "../../..");
+const bundledNpm = path.join(repository, "apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js");
+const npm = [process.env.MAGI_NPM?.trim(), process.env.npm_execpath?.trim(), bundledNpm].find((candidate) => candidate && existsSync(candidate));
+if (!npm) throw new Error("MAGI's bundled npm runtime is missing");
 async function until(read: () => boolean | Promise<boolean>, timeout = 8000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) { if (await read()) return; await sleep(20); }
@@ -37,7 +40,7 @@ test("profile controls pause hosted Shell/Casper durably and stop/restart the re
     shell = new Shell({
       paths: { home: process.env.MAGI_OS_HOME, userData: path.join(root, "electron"), checkout: repository },
       repository: "https://github.com/realTaki/MAGI.git", managed: false,
-      tools: { git: "git", node: process.execPath, npm: path.join(repository, "apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js"), env: process.env },
+      tools: { git: "git", node: process.execPath, npm, env: process.env },
       emit: () => {}, openExternal: async () => {}, copy: () => {},
       client: { complete(_job, signal) { entered = true; requestSignal = signal; return pending; } },
       spawn(file, args, options) { const child = spawn(file, args, options); children.push(child); return child; },
