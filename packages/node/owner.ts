@@ -7,7 +7,7 @@ export function createOwnerApi(bus: Bus) {
   return {
     "owner.chat": (input: { content: string; metadata?: Parameters<typeof chat>[3]["metadata"] }) => chat(bus, room.id, SYSTEM_CONTACT_ID, input, "local-owner"),
     "owner.profile": () => ({ handle: bus.handle, owner: true, public_key: bus.identity.publicKey,
-      provider: bus.settings.get("provider.provider") ?? "", model: bus.settings.get("provider.model") ?? "" }),
+      provider: bus.settings.get("provider.name") ?? "", model: bus.settings.get("provider.model") ?? "" }),
     "owner.events": () => bus.messages.list(room.id, 500).map(message => ({ id: message.id, content: message.content,
       role: message.contact_id === SYSTEM_CONTACT_ID ? "user" : "assistant", created_at: message.created_at,
       metadata: JSON.parse(bus.settings.get(`owner.message.${message.id}`) ?? "null") ?? undefined })),

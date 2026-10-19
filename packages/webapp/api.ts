@@ -722,6 +722,13 @@ export function createLocalApi(context) {
   async function peerEvents({ id }) {
     const local = localOwned(id);
     if (local) return await magiRuntime.invokeOwner(local.handle, "owner.events", {});
+    if (typeof id === "string" && id.startsWith("conversation:")) {
+      return bus.groups.history(id.slice("conversation:".length), 500).map(({ payload }) => ({
+        id: payload.eventId, content: payload.content, role: payload.author === bus.settings.get("peer.principal") ? "user" : "assistant",
+        sender: bus.contacts.list().find(c => c.peer_principal === payload.author)?.nickname ?? payload.author,
+        created_at: "", lamport: payload.lamport,
+      }));
+    }
     const room = conversation(id);
     return bus.messages.list(room.id, 500).map(m => ({ id: m.id, content: m.content,
       role: (id === "shell" ? m.contact_id === SYSTEM_CONTACT_ID : m.contact_id === MAGI_CONTACT_ID) ? "user" : "assistant",
@@ -778,7 +785,7 @@ export function createLocalApi(context) {
     if (local) return await magiRuntime.invokeOwner(local.handle, "owner.profile", {});
     if (id !== "shell") return { ...peerContacts().find(c => c.id === id), owner: false };
     return { handle: SHELL_MAGI_HANDLE, owner: true, public_key: loadOrCreateIdentity(bus.workspace).publicKey,
-      provider: bus.settings.get("provider.provider") ?? "", model: bus.settings.get("provider.model") ?? "" };
+      provider: bus.settings.get("provider.name") ?? "", model: bus.settings.get("provider.model") ?? "" };
   }
 
   async function dispose() {

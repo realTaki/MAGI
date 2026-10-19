@@ -22,7 +22,8 @@
   "dependencies": {
     "@magi/bus": "*",
     "@magi/runtime": "*",
-    "drizzle-orm": "^0.45.3"
+    "drizzle-orm": "^0.45.3",
+    "@magi/channel-peer": "*"
   },
   "devDependencies": {
     "drizzle-kit": "^0.31.11"

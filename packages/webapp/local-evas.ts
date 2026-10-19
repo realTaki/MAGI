@@ -3,7 +3,8 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { createServer } from "node:net";
 import { mkdirSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { createHash, createPublicKey } from "node:crypto";
+import { createHash, createPublicKey, randomUUID } from "node:crypto";
+import { discoverPeer, PeerClient } from "@magi/channel-peer/client.js";
 import { loadOrCreateIdentity, type Bus, type ExecutableTool } from "@magi/bus";
 
 async function freePort(): Promise<number> {
@@ -66,7 +67,25 @@ export function localEvaManagement(bus: Bus, runtime): ExecutableTool[] {
     if (action === "start") return JSON.stringify(await runtime.startLocal({ ...local, local: true }));
     throw new Error("Action must be start or stop");
   }
+  async function connect({ url }: Record<string, unknown>) {
+    if (typeof url !== "string") throw new Error("A peer URL is required");
+    const ownURL = bus.settings.get("peer.reachableURL");
+    if (!ownURL) throw new Error("Shell peer server is not ready");
+    const discovered = await discoverPeer(url);
+    if (discovered.principal === bus.settings.get("peer.principal")) throw new Error("This is the Shell EVA itself");
+    const contact = bus.contacts.forPeer({ principal: discovered.principal, endpoint: url, name: discovered.handle });
+    if (contact.peer_trust === "blocked") throw new Error("This peer is blocked");
+    const conversation = bus.chats.forPeer(discovered.principal);
+    await new PeerClient(bus.identity).send(url, discovered.principal, {
+      messageId: randomUUID(), conversationUUID: conversation.conversation_uuid!,
+      content: `Hello from ${bus.handle}. My EVA URL is ${ownURL}. Please decide whether to accept my contact using your own contact tool.`,
+      reachableURL: ownURL, handle: bus.handle,
+    });
+    bus.contacts.acceptPeer(contact.id, url);
+    return JSON.stringify({ contact_id: contact.id, handle: contact.name, url, hello_sent: true, remote_acceptance: "pending" });
+  }
   return [
+    { name: "connect_peer", description: "Owner requested a remote EVA URL: discover its pinned identity, send a signed hello containing this EVA URL, and add the local contact. The remote EVA independently decides whether to accept.", input_schema: { type: "object", properties: { url: { type: "string" } }, required: ["url"], additionalProperties: false }, run: connect },
     { name: "create_local_eva", description: "Create and start a separate local EVA workspace and direct peer server, then add its contact. Owner chat only.", input_schema: { type: "object", properties: { name: { type: "string" } }, required: ["name"], additionalProperties: false }, run: create },
     { name: "local_eva_lifecycle", description: "Start or stop an explicitly provisioned local EVA. Remote contacts never grant process control. Owner chat only.", input_schema: { type: "object", properties: { contact_id: { type: "integer" }, action: { enum: ["start", "stop"] } }, required: ["contact_id", "action"], additionalProperties: false }, run: lifecycle },
   ];

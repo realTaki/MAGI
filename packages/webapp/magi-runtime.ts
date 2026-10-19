@@ -7,6 +7,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { EVA_MAGI_HANDLE, isInProcessMagiHandle, magiLocalName } from "@magi/bus";
@@ -220,7 +221,29 @@ export function createMagiRuntime({
         if (!children.has(handle)) throw new Error(`${handle} exited before becoming available`);
       } else {
         const child = spawnProcess(nodeBinary(), [entry, ...spec.args], {
-          cwd: spec.cwd, env, stdio: ["ignore", "ignore", "pipe", "ipc"], detached: true, windowsHide: true,
+          cwd: spec.cwd, env, stdio: ["pipe", "pipe", "pipe", "ipc"], detached: true, windowsHide: true,
+        });
+        const pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+        let sequence = 0;
+        const lines = createInterface({ input: child.stdout });
+        lines.on("line", line => {
+          let message;
+          try { message = JSON.parse(line); } catch { return; }
+          const call = pending.get(message?.id);
+          if (!call || !["res", "err"].includes(message.type)) return;
+          pending.delete(message.id); clearTimeout(call.timer);
+          if (message.type === "err") call.reject(new Error("Local owner request failed")); else call.resolve(message.result);
+        });
+        child.invoke = (method, params) => new Promise((resolve, reject) => {
+          const id = String(++sequence);
+          const timer = setTimeout(() => { pending.delete(id); reject(new Error("Local owner request timed out")); }, 30_000);
+          pending.set(id, { resolve, reject, timer });
+          child.stdin.write(JSON.stringify({ type: "req", id, method, params }) + "\n");
+        });
+        child.once("exit", () => {
+          lines.close();
+          for (const call of pending.values()) { clearTimeout(call.timer); call.reject(new Error("Local EVA exited")); }
+          pending.clear();
         });
         const record = { child, root };
         children.set(handle, record);

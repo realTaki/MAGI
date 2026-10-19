@@ -64,3 +64,31 @@ test("Shell composition has no ASP process or relay worker", () => {
   const roles = readFileSync(new URL("../../../packages/node/roles.ts", import.meta.url), "utf8").split("export function shellWorkers")[1].split("HOSTED_NODE_WORKERS")[0];
   assert.doesNotMatch(roles, /new AspWorker/);
 });
+
+test("Local create waits for peer identity before publishing contact and rolls back failures", async t => {
+  const { bus } = fixture(t);
+  const { localEvaManagement } = await import("@magi/webapp/local-evas.js");
+  let running: string[] = [];
+  let stopped = 0;
+  const runtime = {
+    startLocal: async ({ handle }) => { running.push(handle); return { started: true }; },
+    running: () => running,
+    stopLocal: async handle => { stopped++; running = running.filter(h => h !== handle); return true; }, stop() {},
+  };
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  globalThis.fetch = async () => {
+    const identity = JSON.parse(readFileSync(join(bus.workspace, "..", "new-eva", "identity.json"), "utf8"));
+    return new Response(JSON.stringify({ publicKey: identity.publicKey }), { status: 200 });
+  };
+  const tool = localEvaManagement(bus, runtime).find(t => t.name === "create_local_eva")!;
+  const result = JSON.parse(await tool.run({ name: "new-eva" }));
+  assert.equal(result.ready, true);
+  assert.equal(bus.contacts.get(result.contact_id)?.peer_trust, "accepted");
+  assert.equal(stopped, 0);
+  await assert.rejects(tool.run({ name: "new-eva" }), /already exists/);
+  globalThis.fetch = async () => new Response(JSON.stringify({ publicKey: bus.identity.publicKey }), { status: 200 });
+  await assert.rejects(tool.run({ name: "failed-eva" }), /identity does not match/);
+  assert.equal(stopped, 1);
+  assert.equal(bus.contacts.list().some(c => c.name === "@failed-eva.magi"), false);
+});
