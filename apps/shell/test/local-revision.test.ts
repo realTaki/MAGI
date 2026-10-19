@@ -159,13 +159,17 @@ test('the actual replace worker builds local tool edits without an upstream and 
 test('agent bash uses the same toolchain as the replace safety gate and can finish compile and test', async (t) => {
   const f = fixture(t);
   const bash = shellTools(f.home, new ShellManager())[0];
-  const printed = await bash.run({ command: 'printf "%s\\n%s" "$MAGI_NODE" "$MAGI_NPM"' });
+  const printed = await bash.run({ command: process.platform === 'win32'
+    ? '[Console]::Out.WriteLine($env:MAGI_NODE); [Console]::Out.WriteLine($env:MAGI_NPM)'
+    : 'printf "%s\\n%s" "$MAGI_NODE" "$MAGI_NPM"' });
   assert.match(printed, /^exit_code: 0\n/);
   const { node: resolvedNode, npm: resolvedNpm } = resolveToolchain();
   assert.match(printed, new RegExp(resolvedNode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(printed, new RegExp(resolvedNpm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   const result = await bash.run({
-    command: 'cd MAGI && "$MAGI_NODE" "$MAGI_NPM" test && "$MAGI_NODE" "$MAGI_NPM" run build && "$MAGI_NODE" "$MAGI_NPM" run build:ui --prefix apps/shell',
+    command: process.platform === 'win32'
+      ? 'Set-Location MAGI; & $env:MAGI_NODE $env:MAGI_NPM test; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; & $env:MAGI_NODE $env:MAGI_NPM run build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; & $env:MAGI_NODE $env:MAGI_NPM run build:ui --prefix apps/shell; exit $LASTEXITCODE'
+      : 'cd MAGI && "$MAGI_NODE" "$MAGI_NPM" test && "$MAGI_NODE" "$MAGI_NPM" run build && "$MAGI_NODE" "$MAGI_NPM" run build:ui --prefix apps/shell',
     timeout: 60,
   });
   if (!result.startsWith('exit_code: 0')) assert.fail(result);

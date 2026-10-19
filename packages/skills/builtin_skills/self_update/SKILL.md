@@ -42,6 +42,8 @@ Do not `git add` secrets, `memories/`, or `skills/`.
 
 A saved file is not a passing change. `apps/eva/dist` tests run the last build, not the TypeScript you just wrote. Do not treat a green dist test as proof of an unbuilt edit.
 
+`bash` uses bash on Linux/macOS and Windows PowerShell 5.1 on Windows. Use the syntax for the current platform; PowerShell environment variables use `$env:MAGI_NODE`, and PowerShell 5.1 does not support `&&`.
+
 From `MAGI/`, run the same compile and test commands the replace safety gate runs (`verifyCheckout`). Use `MAGI_NODE` and `MAGI_NPM` from the environment; never a system Node. Raise the `bash` `timeout` as needed so the full suite can finish.
 
 ```bash
@@ -54,6 +56,18 @@ If `MAGI_ROLE` is `shell`, also:
 
 ```bash
 "$MAGI_NODE" "$MAGI_NPM" run build:ui --prefix apps/shell
+```
+
+On Windows, use these commands instead (including the UI command only for role `shell`). Check each exit code before continuing:
+
+```powershell
+Set-Location MAGI
+& $env:MAGI_NODE $env:MAGI_NPM test
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $env:MAGI_NODE $env:MAGI_NPM run build
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $env:MAGI_NODE $env:MAGI_NPM run build:ui --prefix apps/shell
+exit $LASTEXITCODE
 ```
 
 Read the log in this turn. If a command fails, fix the source and run the same commands again. Do not `request_replace` until they all exit 0.

@@ -80,3 +80,27 @@ These are Linux source checks with temporary profiles and synthetic model
 responses. Native Electron Stop interaction remains for parent-session acceptance.
 Native Windows PowerShell/WMI timeout failures remain a separate open item; no
 Windows regression was removed or skipped for this change.
+
+## Windows command regression follow-up
+
+Native Windows run `39325808753` at `bc6533e1` failed before Stop: the
+heartbeat command never created its first file. The fixture sent quoted JSON
+inside `node -e` through Windows PowerShell 5.1's native argument parser.
+The heartbeat now runs from a real temporary `.cjs` file, including a space in
+its path, and reports a finished tool job immediately instead of hiding its
+output behind a generic startup timeout. The same cancellation, stopped
+heartbeat, late-result and real launcher assertions remain enabled.
+
+The other Windows failure was already present at Cursor baseline `418b79b6`
+(run `39324622626`): the self-update test used POSIX environment expansion and
+`&&` even though the Windows tool runs PowerShell 5.1. The fixture now uses
+`$env:MAGI_NODE`, the call operator and explicit native exit-code checks on
+Windows. The self_update skill documents both platforms. No timeout was raised.
+
+PowerShell script transport uses UTF-16LE `-EncodedCommand` to preserve script
+quotes across the Windows process-argument boundary. This does not change
+PowerShell 5.1's native argument semantics into PowerShell 7's; callers must
+still use valid platform syntax. A real foreground regression checks literal
+quotes/braces/spaces, stderr capture and nonzero exit status on each platform.
+Native Windows CI remains the authority for Windows execution. WMI contention
+and timeout investigation is separate; no regression was deleted or skipped.
