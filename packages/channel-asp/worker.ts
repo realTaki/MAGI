@@ -44,6 +44,7 @@ export class AspWorker extends BaseWorker {
   /** Connecting happens in the background and retries on its own. */
   start(): void { void this.connect(); }
   stop(): void { this.close(); }
+  interrupt(): void { this.close(); }
 
   /** Connected and the public key registered. A failed registration stays visible. */
   health(): string | null {

@@ -6,7 +6,7 @@
  * self-replace are their own workers, supervised here.
  */
 
-import { BaseWorker, messageDelivery, type Bus, type ManageWorkerNotify } from "@magi/bus";
+import { BaseWorker, messageDelivery, waitForJob, type Bus, type ManageWorkerNotify } from "@magi/bus";
 import { ConfigWorker } from "./config.js";
 import { ReplaceWorker, type AppBuild } from "./replace.js";
 
@@ -49,6 +49,8 @@ export type StartableWorker = {
   poll(): Promise<boolean>;
   start?(): void | Promise<void>;
   stop?(): void | Promise<void>;
+  /** Cancel active agent work before an intentional node pause. */
+  interrupt?(): void | Promise<void>;
   /** False while this worker has nothing to work with, such as a channel token. */
   configured?(): boolean;
   /** What is wrong right now, or null when nothing is. Asked between polls. */
@@ -60,6 +62,8 @@ type RunningWorker = { worker: StartableWorker; loop: Promise<void> };
 export type ManagerOptions = {
   /** Workers that must finish their current poll before anything else stops. */
   drain?: string[];
+  /** Hosted node workers, excluding the UI backend and relay infrastructure. */
+  nodeWorkers?: string[];
   /** Which app this process builds and replaces. */
   build: AppBuild;
 };
@@ -68,6 +72,7 @@ export class ManagerWorker extends BaseWorker {
   readonly worker_name = "manager";
   private readonly workers: StartableWorker[];
   private readonly drain: string[];
+  private readonly nodeWorkers: Set<string>;
   private readonly running = new Map<string, RunningWorker>();
   /** What was last reported about each running worker, so only changes notify. */
   private readonly health = new Map<string, string | null>();
@@ -81,6 +86,7 @@ export class ManagerWorker extends BaseWorker {
   constructor(bus: Bus, workers: StartableWorker[], options: ManagerOptions) {
     super(bus);
     this.drain = options.drain ?? [];
+    this.nodeWorkers = new Set(options.nodeWorkers ?? []);
     this.workers = [
       ...workers,
       new ConfigWorker(bus),
@@ -91,6 +97,24 @@ export class ManagerWorker extends BaseWorker {
   get up(): boolean { return this.started; }
 
   isRunning(name: string): boolean { return this.running.has(name); }
+
+  nodeRunning(): boolean {
+    return this.started && this.bus.settings.get("node.enabled") !== "false" && this.running.has("agent") &&
+      [...this.nodeWorkers].every((name) => {
+        const worker = this.workers.find((item) => item.worker_name === name);
+        return worker !== undefined && (!this.wanted(worker) || this.running.has(name));
+      });
+  }
+
+  async setNodeRunning(enabled: boolean): Promise<{ running: boolean }> {
+    if (!this.started || !this.nodeWorkers.size) throw new Error("Hosted node control is unavailable");
+    const board = this.bus.board("ManageWorkerNotify");
+    const id = board.publish({ worker: "magi", action: enabled ? "start" : "stop" }, "operator");
+    const result = await waitForJob(() => board.result(id), 30_000, "Node lifecycle");
+    if (result.status === "failed") throw new Error(result.error ?? "Node lifecycle failed");
+    if (enabled && !this.nodeRunning()) throw new Error(this.healthy() ?? "Hosted node did not start");
+    return { running: this.nodeRunning() };
+  }
 
   /** Null when every worker that should be running is up and reports nothing wrong. */
   healthy(): string | null {
@@ -167,6 +191,14 @@ export class ManagerWorker extends BaseWorker {
 
   /** Start, stop, or restart one worker by name. The settings stay the source of truth. */
   private async apply(input: ManageWorkerNotify): Promise<void> {
+    if (input.worker === "magi" && this.nodeWorkers.size) {
+      this.bus.settings.set("node.enabled", input.action === "stop" ? "false" : "true");
+      if (input.action === "stop") {
+        await Promise.all([...this.nodeWorkers].map((name) => this.workers.find((worker) => worker.worker_name === name)?.interrupt?.()));
+      }
+      await this.reconcile();
+      return;
+    }
     const worker = this.workers.find((candidate) => candidate.worker_name === input.worker);
     if (!worker) throw new Error(`unknown worker ${input.worker}`);
     this.bus.settings.set(disabledKey(worker.worker_name), input.action === "stop" ? "false" : "true");
@@ -191,6 +223,7 @@ export class ManagerWorker extends BaseWorker {
   private wanted(worker: StartableWorker): boolean {
     // "Stopped" is a decision, not a one-off: a worker that came back on the next
     // reconcilation would make stopping it useless.
+    if (this.nodeWorkers.has(worker.worker_name) && this.bus.settings.get("node.enabled") === "false") return false;
     if (this.bus.settings.get(disabledKey(worker.worker_name)) === "false") return false;
     return worker.configured?.() ?? true;
   }
@@ -225,7 +258,7 @@ export class ManagerWorker extends BaseWorker {
 
   private runLoop(name: string, worker: StartableWorker): Promise<void> {
     return (async () => {
-      while (this.started && this.running.has(name)) {
+      while (this.started && this.running.has(name) && !(this.nodeWorkers.has(name) && this.bus.settings.get("node.enabled") === "false")) {
         let worked = false;
         try {
           worked = await worker.poll();

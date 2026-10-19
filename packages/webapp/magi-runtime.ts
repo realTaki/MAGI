@@ -297,6 +297,28 @@ export function createMagiRuntime({
     return true;
   }
 
+  /** Operator stop completes only after the owned launcher has actually exited. */
+  async function stopLocal(handle) {
+    const record = children.get(handle);
+    if (!record) return false;
+    let timer;
+    let exited = false;
+    const gone = new Promise<void>((resolve, reject) => {
+      const done = () => { exited = true; clearTimeout(timer); resolve(); };
+      if (startProcess) record.child.onExit(done);
+      else record.child.once("exit", done);
+      timer = setTimeout(() => reject(new Error(`${handle} did not stop`)), 15_000);
+    });
+    try {
+      stop(handle);
+      if (!exited) children.set(handle, record); // Presence remains truthful until the exit callback.
+      await gone;
+      return true;
+    }
+    catch (error) { if (!exited && !children.has(handle)) children.set(handle, record); throw error; }
+    finally { clearTimeout(timer); }
+  }
+
   /** Stop every MAGI this backend started (desktop shutdown). */
   function stopAll() {
     const handles = [...children.keys()];
@@ -359,6 +381,7 @@ export function createMagiRuntime({
     startAll,
     stop,
     stopAll,
+    stopLocal,
     restart,
     merge,
   };

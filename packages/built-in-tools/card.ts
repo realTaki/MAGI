@@ -39,7 +39,7 @@ export function cardTools(bus: Bus): ExecutableTool[] {
       submit: { type: "string" },
       fields: { type: "array" },
     }, required: ["title", "fields"] },
-    async run(args) {
+    async run(args, signal) {
       const chatId = messageDelivery.presentChat(bus);
       if (chatId === null) throw new Error("no ASP chat can present a card");
       let spec: CardSpec = {
@@ -59,7 +59,7 @@ export function cardTools(bus: Bus): ExecutableTool[] {
       const jobId = bus.board("CardJob").publish({ spec }, "card");
       messageDelivery.send(bus, chatId, `card: ${spec.title}`, MAGI_CONTACT_ID, "card", { card: spec });
       try {
-        const result = await waitForJob(() => bus.board("CardJob").result(jobId), 300_000, "CardJob");
+        const result = await waitForJob(() => bus.board("CardJob").result(jobId), 300_000, "CardJob", signal);
         if (result.status === "failed") throw new Error(result.error ?? "card failed");
         return JSON.stringify(result.output?.fields ?? {});
       } catch (error) {

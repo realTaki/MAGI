@@ -55,12 +55,15 @@ export function aspWorkers(bus: Bus, server: BaseWorker, client?: LLMClient): Ba
   ];
 }
 
-export function shellWorkers(bus: Bus, webapp: BaseWorker, aspProcess: BaseWorker): BaseWorker[] {
+export function shellWorkers(bus: Bus, webapp: BaseWorker, aspProcess: BaseWorker, client?: LLMClient): BaseWorker[] {
   return [
-    ...shared(bus),
+    ...shared(bus, client),
     webapp,
     aspProcess,
     new AspWorker(bus),
     new TelegramWorker(bus),
   ];
 }
+
+/** Pause a hosted MAGI without taking down its UI or relay service. */
+export const HOSTED_NODE_WORKERS = ["contacts", "skills", "agent", "tools", "memory", "providers", "asp", "tg"];

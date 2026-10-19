@@ -858,11 +858,14 @@ export function createLocalApi(context) {
     const local = agents.find((agent) => agent?.handle === EVA_MAGI_HANDLE);
     if (local && !local.online) {
       progress?.("Starting local MAGI…", 0.98);
-      await magiRuntime.startLocal(local);
+      if (bus?.settings.get("magi.local.enabled") !== "false") await magiRuntime.startLocal(local);
     }
     await Promise.all(
       created.map(async ({ handle, nickname, chatId }) => {
         try {
+          if (handle === SHELL_MAGI_HANDLE && context.nodeControl && !context.nodeControl.running()) return;
+          if (handle === ASP_MAGI_HANDLE && !(await hostedState(handle)).running) return;
+          if (handle === EVA_MAGI_HANDLE && bus?.settings.get("magi.local.enabled") === "false") return;
           await nameWhenOnline(handle, nickname, token);
           await greet(chatId, token);
         } catch (error) {
@@ -983,32 +986,71 @@ export function createLocalApi(context) {
     return agent;
   }
 
-  /** What a MAGI's profile shows: whether it is up, and where it runs from. */
+  async function hostedState(handle) {
+    if (handle === SHELL_MAGI_HANDLE) {
+      if (!context.nodeControl) throw new Error("Shell node control is unavailable");
+      return { running: context.nodeControl.running() };
+    }
+    const { token } = await aspJson("/operator");
+    return await aspJson("/runtime/host", { token });
+  }
+
+  async function setHostedRunning(handle, enabled) {
+    if (handle === SHELL_MAGI_HANDLE) {
+      if (!context.nodeControl) throw new Error("Shell node control is unavailable");
+      return await context.nodeControl.setRunning(enabled);
+    }
+    const { token } = await aspJson("/operator");
+    return await aspJson("/runtime/host", { token, method: "POST", body: { action: enabled ? "start" : "stop" } });
+  }
+
+  /** Hosted-node lifecycle and socket presence are separate from the host OS process. */
   async function magiInfo(payload) {
     const agent = await magiAgent(payload);
     const { token } = await aspJson("/operator");
     const agents = (await aspJson("/agents", { token }))?.agents ?? [];
     const row = agents.find((entry) => entry.handle === agent.handle);
+    const hosted = agent.handle === SHELL_MAGI_HANDLE || agent.handle === ASP_MAGI_HANDLE;
+    const running = hosted ? (await hostedState(agent.handle)).running : magiRuntime.running().includes(agent.handle);
     return {
       handle: agent.handle,
-      online: row?.online === true,
-      running: magiRuntime.running().includes(agent.handle),
+      online: row?.online === true && (!hosted || running),
+      running,
       branch: managed ? agentBranch(agent.handle) : "",
       source: magiRuntime.sourceOf(agent.handle),
     };
   }
 
   async function magiStart(payload) {
-    return await magiRuntime.start(await magiAgent(payload));
+    const agent = await magiAgent(payload);
+    if (agent.handle === SHELL_MAGI_HANDLE || agent.handle === ASP_MAGI_HANDLE) {
+      const previous = await hostedState(agent.handle);
+      await setHostedRunning(agent.handle, true);
+      return { handle: agent.handle, started: !previous.running };
+    }
+    if (agent.handle === EVA_MAGI_HANDLE) {
+      bus?.settings.set("magi.local.enabled", "true");
+      return await magiRuntime.startLocal(agent);
+    }
+    return await magiRuntime.start(agent);
   }
 
   async function magiStop(payload) {
     const agent = await magiAgent(payload);
-    return { handle: agent.handle, stopped: magiRuntime.stop(agent.handle) };
+    if (agent.handle === SHELL_MAGI_HANDLE || agent.handle === ASP_MAGI_HANDLE) {
+      const previous = await hostedState(agent.handle);
+      const result = await setHostedRunning(agent.handle, false);
+      if (result.running) throw new Error(`${agent.handle} is still running`);
+      return { handle: agent.handle, stopped: previous.running };
+    }
+    if (agent.handle !== EVA_MAGI_HANDLE) throw new Error(`${agent.handle} is not a locally controlled node`);
+    bus?.settings.set("magi.local.enabled", "false");
+    return { handle: agent.handle, stopped: await magiRuntime.stopLocal(agent.handle) };
   }
 
   async function magiRestart(payload) {
-    return await magiRuntime.restart(await magiAgent(payload));
+    await magiStop(payload);
+    return await magiStart(payload);
   }
 
   async function magiMerge(payload) {

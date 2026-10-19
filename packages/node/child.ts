@@ -141,7 +141,10 @@ async function main(): Promise<void> {
   const session = await startRole(selected);
   sendLauncher({ type: "ready" });
   try { await Promise.race([untilShutdown(), session.done]); }
-  finally { await session.stop(); }
+  finally {
+    try { await session.stop(); }
+    finally { if (process.connected) process.disconnect(); }
+  }
 }
 
 async function runHealth(selected: string): Promise<void> {

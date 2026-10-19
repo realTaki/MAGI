@@ -5,7 +5,7 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { LLMRequest, LLMMessage, LLMToolCall } from "@magi/bus";
 
 export interface LLMClient {
-  complete(job: LLMRequest): Promise<LLMMessage>;
+  complete(job: LLMRequest, signal?: AbortSignal): Promise<LLMMessage>;
   verify?(settings: ProviderSettings, signal?: AbortSignal): Promise<void>;
   configure?(settings: ProviderSettings): void;
   /** The selected model's advertised context capacity, when this client knows it. */
@@ -89,7 +89,7 @@ export class PiAiClient implements LLMClient {
     await this.request({ messages: [{ role: "user", content: "Reply OK." }], tools: [] }, { ...this.settings, ...settings }, 256, signal);
   }
 
-  complete(job: LLMRequest): Promise<LLMMessage> { return this.request(job, this.settings); }
+  complete(job: LLMRequest, signal?: AbortSignal): Promise<LLMMessage> { return this.request(job, this.settings, undefined, signal); }
 
   contextWindow(): number | undefined {
     // A provider with no configured model is a normal fresh-workspace state, not an

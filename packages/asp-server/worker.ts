@@ -20,6 +20,7 @@ export { ASP_HANDLE } from "./relayWorker.js";
 export type AspSeed = Record<string, string | AgentSeed>;
 
 export type CreateAppOptions = {
+  nodeControl?: { running(): boolean; setRunning(enabled: boolean): Promise<{ running: boolean }> };
   databasePath?: string;
   workspace?: string;
   aspSeed?: AspSeed;
@@ -44,6 +45,7 @@ export class AspServer extends BaseWorker {
   readonly baseUrl: string;
   readonly operator: OperatorService;
   readonly requestShutdown?: () => void;
+  readonly nodeControl: CreateAppOptions["nodeControl"];
   origin = "";
   operatorHandle = OPERATOR_HANDLE;
   operatorToken = "";
@@ -61,6 +63,7 @@ export class AspServer extends BaseWorker {
     this.chats = new ChatService(this.store, this.transport);
     this.baseUrl = options.aspBase ?? intranetBaseUrl();
     this.requestShutdown = options.requestShutdown;
+    this.nodeControl = options.nodeControl;
     this.operator = new OperatorService(this.chats, this.store, this.transport);
     this.#seed = options.aspSeed ?? {};
     this.#host = options.host ?? "127.0.0.1";
@@ -173,6 +176,20 @@ function registerRoutes(router: Router, app: AspServer): void {
     }
     return handle;
   };
+
+  router.add("GET", "/runtime/host", (context) => {
+    operatorOnly(context.headers);
+    if (!app.nodeControl) throw new HttpError(503, "Hosted node control is unavailable");
+    return { body: { handle: ASP_MAGI_HANDLE, running: app.nodeControl.running(), online: app.transport.isOnline(ASP_MAGI_HANDLE) } };
+  });
+  router.add("POST", "/runtime/host", async (context) => {
+    operatorOnly(context.headers);
+    const body = requireObject(context.body ?? {});
+    if (body.action !== "start" && body.action !== "stop") throw new HttpError(400, "action must be start or stop");
+    if (!app.nodeControl) throw new HttpError(503, "Hosted node control is unavailable");
+    const state = await app.nodeControl.setRunning(body.action === "start");
+    return { body: { handle: ASP_MAGI_HANDLE, ...state } };
+  });
 
   router.add("GET", "/health", () => ({ body: { status: "ok", runtime: "typescript" } }));
   router.add("GET", "/operator", () => ({

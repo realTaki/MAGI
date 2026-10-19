@@ -7,6 +7,8 @@ export class AgentWorker extends BaseWorker {
   readonly worker_name = "agent";
   private readonly queues = new Map<number, Promise<void>>();
   private started = false;
+  private readonly active = new Set<AbortController>();
+  private generation = 0;
 
   constructor(bus: Bus) {
     super(bus);
@@ -21,6 +23,7 @@ export class AgentWorker extends BaseWorker {
   }
 
   async poll(): Promise<boolean> {
+    if (!this.started) return false;
     const board = this.bus.board("MessageDeliveryJob");
     // What someone else said is this MAGI's to answer. Its own words are not: they are
     // for a channel to deliver, and nobody answers them here.
@@ -35,10 +38,23 @@ export class AgentWorker extends BaseWorker {
     }
     const id = message.chat_id;
     const previous = this.queues.get(id) ?? Promise.resolve();
-    const next = previous.then(() => new Chat(this.bus, id).run(job.id));
+    const generation = this.generation;
+    const next = previous.then(async () => {
+      if (generation !== this.generation) { board.submit(this.worker_name, job.id, { error: "MAGI stopped" }); return; }
+      const controller = new AbortController();
+      this.active.add(controller);
+      try { await new Chat(this.bus, id, controller.signal).run(job.id); }
+      finally { this.active.delete(controller); }
+    });
     this.queues.set(id, next);
     void next.finally(() => { if (this.queues.get(id) === next) this.queues.delete(id); });
     return true;
+  }
+
+  interrupt(): void {
+    this.started = false;
+    this.generation++;
+    for (const controller of this.active) controller.abort(new Error("MAGI stopped"));
   }
 
   async drain(): Promise<void> { await Promise.all(this.queues.values()); }

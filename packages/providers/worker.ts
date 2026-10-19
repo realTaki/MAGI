@@ -1,3 +1,4 @@
+import { abortable } from "@magi/bus/abort.js";
 import { providerFailure } from "@magi/bus/jobs/providerFailure.js";
 import { BaseWorker, waitForJob, type CallLLMJob, type ExecutableTool } from "@magi/bus";
 import type { Bus } from "@magi/bus";
@@ -11,6 +12,8 @@ export class ProvidersWorker extends BaseWorker {
   private settings: ProviderSettings;
   private readonly own: ExecutableTool[];
   private started = false;
+  private paused = false;
+  private current: AbortController | null = null;
 
   constructor(bus: Bus, client?: LLMClient, private readonly verifyTimeoutMs = 20_000) {
     super(bus);
@@ -28,6 +31,7 @@ export class ProvidersWorker extends BaseWorker {
 
   async start(): Promise<void> {
     this.started = true;
+    this.paused = false;
     this.settings = this.readSettings();
     if (this.settings.provider && this.settings.api_key && this.client.configure) {
       this.client.configure(this.settings);
@@ -36,6 +40,7 @@ export class ProvidersWorker extends BaseWorker {
   }
 
   async poll(): Promise<boolean> {
+    if (this.paused) return false;
     if (await this.pollChange()) return true;
     if (await this.pollToolCall()) return true;
     return this.pollCompletion();
@@ -81,7 +86,12 @@ export class ProvidersWorker extends BaseWorker {
       let message: import("@magi/bus").LLMMessage;
       try { message = this.bus.agentTurns.assistant(turn_id, job.id); }
       catch {
-        message = await this.client.complete(this.bus.agentTurns.get(turn_id));
+        const controller = new AbortController();
+        this.current = controller;
+        try {
+          message = await abortable(this.client.complete(this.bus.agentTurns.get(turn_id), controller.signal), controller.signal);
+          controller.signal.throwIfAborted();
+        } finally { if (this.current === controller) this.current = null; }
         this.bus.agentTurns.appendAssistant(turn_id, job.id, message);
       }
       board.submit(this.worker_name, job.id, { output: { turn_id } });
@@ -115,16 +125,19 @@ export class ProvidersWorker extends BaseWorker {
     try {
       if (!this.client.verify || !this.client.configure) throw new Error("provider client cannot be reconfigured");
       const controller = new AbortController();
+      this.current = controller;
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         await Promise.race([
-          this.client.verify(candidate, controller.signal),
-          new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { controller.abort(); reject(providerFailure("timeout")); }, this.verifyTimeoutMs); }),
+          abortable(this.client.verify(candidate, controller.signal), controller.signal),
+          new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { controller.abort(providerFailure("timeout")); reject(providerFailure("timeout")); }, this.verifyTimeoutMs); }),
         ]);
-      } finally { if (timer) clearTimeout(timer); }
+      } finally { if (timer) clearTimeout(timer); if (this.current === controller) this.current = null; }
+      controller.signal.throwIfAborted();
     } catch (error) {
       throw new Error(redact(message(error), candidate.api_key));
     }
+    if (this.paused) throw new Error("MAGI stopped");
     const settings: Record<string, string> = {};
     if (change.provider !== undefined) settings["provider.name"] = change.provider;
     if (change.model !== undefined) settings["provider.model"] = change.model;
@@ -158,6 +171,11 @@ export class ProvidersWorker extends BaseWorker {
     } catch {
       // Keep the worker available to report/configure a previously saved bad model.
     }
+  }
+
+  interrupt(): void {
+    this.paused = true;
+    this.current?.abort(new Error("MAGI stopped"));
   }
 
   async stop(): Promise<void> { this.started = false; }

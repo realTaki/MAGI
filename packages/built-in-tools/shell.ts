@@ -3,13 +3,10 @@
  * can poll (`bash_output`) and stop (`bash_kill`) through the ShellManager.
  */
 
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import type { ExecutableTool } from "@magi/bus";
 import { stringArg } from "./args.js";
-import { ShellManager, shellInvocation } from "./shellManager.js";
+import { ShellManager } from "./shellManager.js";
 
-const runCommand = promisify(execFile);
 
 export function shellTools(workspace: string, shells: ShellManager): ExecutableTool[] {
   return [
@@ -19,7 +16,7 @@ export function shellTools(workspace: string, shells: ShellManager): ExecutableT
         command: { type: "string" }, timeout: { type: "integer", minimum: 1, maximum: 600 },
         run_in_background: { type: "boolean" },
       }, required: ["command"] },
-      async run(args) {
+      async run(args, signal) {
         const command = stringArg(args, "command");
         if (args.run_in_background === true) {
           const shell = shells.start(command, workspace);
@@ -27,9 +24,7 @@ export function shellTools(workspace: string, shells: ShellManager): ExecutableT
         }
         const timeout = typeof args.timeout === "number" ? Math.max(1, Math.min(600, args.timeout)) : 120;
         try {
-          const [executable, ...parameters] = shellInvocation(command);
-          const { stdout, stderr } = await runCommand(executable, parameters, { cwd: workspace, timeout: timeout * 1000, maxBuffer: 256 * 1024 });
-          return `exit_code: 0\n${stdout}${stderr}`.slice(0, 8192);
+          return await shells.foreground(command, workspace, timeout * 1000, signal);
         } catch (error) {
           const failed = error as Error & { code?: number | string; stdout?: string; stderr?: string };
           return `exit_code: ${failed.code ?? "error"}\n${failed.stdout ?? ""}${failed.stderr ?? failed.message}`.slice(0, 8192);

@@ -238,11 +238,12 @@ test("a MAGI's runtime is driven from its own profile methods", async (t) => {
   assert.deepEqual(await api["magi.info"]({ handle: SHELL_MAGI_HANDLE }), {
     handle: SHELL_MAGI_HANDLE,
     online: true,
-    running: false,
+    running: true,
     branch: "",
     source: root,
   });
-  assert.deepEqual(await api["magi.stop"]({ handle: SHELL_MAGI_HANDLE }), { handle: SHELL_MAGI_HANDLE, stopped: false });
+  assert.deepEqual(await api["magi.stop"]({ handle: SHELL_MAGI_HANDLE }), { handle: SHELL_MAGI_HANDLE, stopped: true });
+  assert.equal((await api["magi.info"]({ handle: SHELL_MAGI_HANDLE })).online, false, "stale relay presence cannot undo an intentional host stop");
   await assert.rejects(api["magi.start"]({ handle: "@nobody.magi" }), /Unknown MAGI/);
   await assert.rejects(api["magi.start"]({}), /handle is required/);
   assert.equal(calls.includes("POST /runtime/magi/stop"), false);

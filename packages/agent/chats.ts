@@ -17,11 +17,13 @@ export class Chat {
   constructor(
     private readonly bus: Bus,
     readonly chat_id: number,
+    private readonly signal?: AbortSignal,
   ) {}
 
   async run(jobId: number): Promise<void> {
     const chatBoard = this.bus.board("MessageDeliveryJob");
     try {
+      this.signal?.throwIfAborted();
       if (!this.bus.agentTurns.has(jobId)) await this.initialize(jobId);
       await this.execute(jobId);
     } catch (error) {
@@ -69,6 +71,7 @@ export class Chat {
       // No step limit is enforced: the model is told which step it is on and that it
       // should stop and ask the user before going much past the suggested number.
       for (let step = 1; ; step++) {
+        this.signal?.throwIfAborted();
         messages[1] = { role: "system", content: this.section("Turn", `step: ${step}\nsuggested maximum: ${SUGGESTED_STEPS}\nStop and ask the user whether to continue once you reach the suggested maximum without finishing.`) };
         const llmId = this.bus.board("CallLLMJob").publish({ turn_id: jobId }, "agent");
         const llm = await this.waitFor("CallLLMJob", llmId, 300_000);
@@ -92,6 +95,7 @@ export class Chat {
           ? { call, jobId: this.bus.board("RunToolJob").publish({ call }, "agent") as number | null }
           : { call, jobId: null });
         for (const pending of calls) {
+          this.signal?.throwIfAborted();
           if (pending.jobId === null) {
             this.bus.agentTurns.appendToolResult(jobId, { role: "tool", tool_call_id: pending.call.tool_call_id, tool_name: pending.call.name, content: `unknown tool ${pending.call.name}`, is_error: true });
             continue;
@@ -156,6 +160,7 @@ export class Chat {
   private async waitFor<K extends "CallLLMJob" | "RunToolJob">(type: K, id: number, timeoutMs: number) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
+      if (this.signal?.aborted) { this.bus.board(type).fail(id, "MAGI stopped"); this.signal.throwIfAborted(); }
       const result = this.bus.board(type).result(id);
       if (result) return result;
       await sleep(10);

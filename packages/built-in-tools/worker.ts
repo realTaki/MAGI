@@ -1,3 +1,4 @@
+import { abortable } from "@magi/bus/abort.js";
 /**
  * The built-in tools, owned by the worker that runs them.
  *
@@ -49,6 +50,7 @@ export class ToolsWorker extends BaseWorker {
   readonly worker_name = "tools";
   private readonly shells = new ShellManager();
   private readonly pending = new Set<Promise<void>>();
+  private controller = new AbortController();
   /** The tools this worker runs. The BUS catalog is what a model is offered. */
   private readonly own = new Map<string, Tool>();
 
@@ -59,7 +61,12 @@ export class ToolsWorker extends BaseWorker {
     bus.tools.registerSource("builtin", () => [...this.own.values()]);
   }
 
+  start(): void { if (this.controller.signal.aborted) this.controller = new AbortController(); }
+
+  async interrupt(): Promise<void> { this.controller.abort(new Error("MAGI stopped")); await this.shells.shutdown(); }
+
   async poll(): Promise<boolean> {
+    if (this.controller.signal.aborted) return false;
     const board = this.bus.board("RunToolJob");
     const job = board.claim(this.worker_name, (input) => this.own.has(input.call.name));
     if (!job) return false;
@@ -74,7 +81,7 @@ export class ToolsWorker extends BaseWorker {
     try {
       const tool = this.own.get(name);
       if (!tool) throw new Error(`unknown tool ${name}`);
-      board.submit(this.worker_name, id, { output: { content: await tool.run(args) } });
+      board.submit(this.worker_name, id, { output: { content: await abortable(tool.run(args, this.controller.signal), this.controller.signal) } });
     } catch (error) {
       board.submit(this.worker_name, id, { error: error instanceof Error ? error.message : String(error) });
     }

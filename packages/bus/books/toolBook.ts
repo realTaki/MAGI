@@ -1,7 +1,7 @@
 /** What a model may be offered: a catalog entry, without the way to run it. */
 export type LLMTool = { name: string; description: string; input_schema: Record<string, unknown> };
 
-export type ExecutableTool = LLMTool & { run(args: Record<string, unknown>): Promise<string> };
+export type ExecutableTool = LLMTool & { run(args: Record<string, unknown>, signal?: AbortSignal): Promise<string> };
 
 /** A source reports the tools it owns right now; it is asked, never pushed to. */
 export type ToolSource = () => ExecutableTool[];

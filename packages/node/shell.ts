@@ -31,7 +31,7 @@ function secureShellDatabases(workspace: string): void {
 import { Bus, MAGI_CONTACT_ID, SHELL_MAGI_HANDLE, SHELL_MAGI_NICKNAME } from "@magi/bus";
 import { ManagerWorker, healthyOrExit } from "@magi/manager";
 import { AspProcessWorker, WebappWorker } from "@magi/webapp";
-import { shellWorkers } from "./roles.js";
+import { shellWorkers, HOSTED_NODE_WORKERS } from "./roles.js";
 
 type ShellContext = ConstructorParameters<typeof WebappWorker>[1];
 
@@ -58,9 +58,12 @@ export class Shell {
         startProcess: context.startProcess,
         initialProcess: context.initialProcesses?.find(({ spec }: { spec: ProcessSpec }) => spec.entry.endsWith("asp.js")),
       });
-      this.worker = new WebappWorker(this.bus, { ...context, aspProcess: this.aspProcess });
-      this.manager = new ManagerWorker(this.bus, shellWorkers(this.bus, this.worker, this.aspProcess), {
+      this.worker = new WebappWorker(this.bus, { ...context, aspProcess: this.aspProcess,
+        nodeControl: { running: () => this.manager.nodeRunning(), setRunning: (enabled: boolean) => this.manager.setNodeRunning(enabled) },
+      });
+      this.manager = new ManagerWorker(this.bus, shellWorkers(this.bus, this.worker, this.aspProcess, context.client), {
         drain: ["agent", "webapp"],
+        nodeWorkers: HOSTED_NODE_WORKERS,
         build: { app: "shell", script: "build:process" },
       });
     } catch (error) {

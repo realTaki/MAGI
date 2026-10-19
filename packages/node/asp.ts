@@ -8,7 +8,7 @@ import { ASP_MAGI_HANDLE, ASP_MAGI_NICKNAME, MAGI_CONTACT_ID, Bus } from "@magi/
 import { ManagerWorker } from "@magi/manager";
 import type { LLMClient } from "@magi/providers/client.js";
 import { AspServer, defaultDatabasePath, type CreateAppOptions } from "@magi/asp-server";
-import { aspWorkers } from "./roles.js";
+import { aspWorkers, HOSTED_NODE_WORKERS } from "./roles.js";
 
 export type { CreateAppOptions };
 export type AspOptions = CreateAppOptions & { client?: LLMClient };
@@ -22,9 +22,12 @@ export class Asp {
     const databasePath = options.databasePath ?? defaultDatabasePath();
     this.bus = new Bus(ASP_MAGI_HANDLE, options.workspace ?? dirname(databasePath));
     this.bus.contacts.update(MAGI_CONTACT_ID, { nickname: ASP_MAGI_NICKNAME });
-    this.server = new AspServer(this.bus, { ...options, databasePath });
+    this.server = new AspServer(this.bus, { ...options, databasePath,
+      nodeControl: { running: () => this.manager.nodeRunning(), setRunning: (enabled) => this.manager.setNodeRunning(enabled) },
+    });
     this.manager = new ManagerWorker(this.bus, aspWorkers(this.bus, this.server, options.client), {
       drain: ["agent"],
+      nodeWorkers: HOSTED_NODE_WORKERS,
       build: { app: "asp", script: "build" },
     });
   }

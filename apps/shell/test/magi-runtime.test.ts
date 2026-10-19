@@ -255,3 +255,19 @@ test("local launcher errors fail startup and leave no running record", async () 
   }
   assert.equal(launches, 2, "a failed start does not retain an in-flight request");
 });
+
+test("an operator stop remains running until the owned launcher confirms exit", async () => {
+  const exits: Array<() => void> = [];
+  let stops = 0;
+  const runtime = createMagiRuntime({ checkout: repository, home: repository, base: "http://127.0.0.1:9", managed: false,
+    tools: { ...testRuntime, git: "git", env: {} }, run: async () => "",
+    startProcess: async () => ({ stop() { stops++; }, onExit(callback) { exits.push(callback); } }),
+  });
+  await runtime.startLocal({ handle: EVA_MAGI_HANDLE, token: "synthetic-owned" });
+  const stopped = runtime.stopLocal(EVA_MAGI_HANDLE);
+  assert.equal(stops, 1);
+  assert.deepEqual(runtime.running(), [EVA_MAGI_HANDLE]);
+  for (const exit of exits) exit();
+  assert.equal(await stopped, true);
+  assert.deepEqual(runtime.running(), []);
+});
