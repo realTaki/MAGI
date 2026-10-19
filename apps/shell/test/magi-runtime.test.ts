@@ -238,3 +238,51 @@ test("the shell refuses to boot another node's process", async () => {
   });
   await assert.rejects(runtime.start(agent), /eva --role agent/);
 });
+
+test("only the explicit local default gets an independent launcher, with concurrent starts coalesced", async () => {
+  const specs = [];
+  let exit;
+  const runtime = createMagiRuntime({
+    checkout: repository, home: repository, workspaceRoot: "/isolated-profile", base: "http://127.0.0.1:42069",
+    tools: { ...testRuntime, git: "git", env: { MAGI_HOST: "1", MAGI_ROLE: "shell", MAGI_REVISION_DIR: "/shell-revision", MAGI_CHILD: "/shell-child" } },
+    run: async () => "", managed: false,
+    startProcess: async (spec) => {
+      specs.push(spec);
+      return { stop() {}, onExit(callback) { exit = callback; } };
+    },
+  });
+  const local = { handle: EVA_MAGI_HANDLE, token: "synthetic-local-token" };
+  await Promise.all([runtime.startLocal(local), runtime.startLocal(local)]);
+  assert.equal(specs.length, 1);
+  assert.equal(specs[0].entry, path.join(repository, "apps/eva/eva.mjs"));
+  assert.deepEqual(specs[0].args, ["--role", "agent", EVA_MAGI_HANDLE]);
+  assert.equal(specs[0].env.MAGI_HOST, "0");
+  assert.equal(specs[0].env.MAGI_HOME, "/isolated-profile");
+  assert.equal(specs[0].env.MAGI_CHILD, undefined);
+  assert.equal(specs[0].env.MAGI_REVISION_DIR, undefined);
+  assert.equal(specs[0].env.MAGI_ASP_TOKEN, local.token);
+  assert.deepEqual(await runtime.startLocal(local), { handle: EVA_MAGI_HANDLE, started: false });
+  await assert.rejects(runtime.startLocal({ handle: "@external.magi", token: "external" }), /Only the default local/);
+  exit(0, null);
+  assert.deepEqual(runtime.running(), []);
+});
+
+test("local launcher errors fail startup and leave no running record", async () => {
+  let launches = 0;
+  const runtime = createMagiRuntime({
+    checkout: repository, home: repository, base: "http://127.0.0.1:9", managed: false,
+    tools: { ...testRuntime, env: {} }, run: async () => "",
+    spawnProcess() {
+      launches += 1;
+      const child = new EventEmitter();
+      child.kill = () => true;
+      queueMicrotask(() => child.emit("error", new Error("synthetic launcher failure")));
+      return child;
+    },
+  });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await assert.rejects(runtime.startLocal({ handle: EVA_MAGI_HANDLE, token: "synthetic" }), /synthetic launcher failure/);
+    assert.deepEqual(runtime.running(), []);
+  }
+  assert.equal(launches, 2, "a failed start does not retain an in-flight request");
+});
