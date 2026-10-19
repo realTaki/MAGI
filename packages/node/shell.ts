@@ -6,7 +6,7 @@
 import { existsSync, chmodSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { magiHome } from "@magi/runtime/home.js";
-import type { ProcessSpec } from "./host.js";
+
 
 export function operatingSystemHome(): string {
   const explicit = process.env.MAGI_OS_HOME?.trim();
@@ -30,7 +30,8 @@ function secureShellDatabases(workspace: string): void {
 }
 import { Bus, SHELL_MAGI_HANDLE } from "@magi/bus";
 import { ManagerWorker, healthyOrExit } from "@magi/manager";
-import { AspProcessWorker, WebappWorker } from "@magi/webapp";
+import { WebappWorker } from "@magi/webapp";
+import { PeerWorker } from "@magi/channel-peer/worker.js";
 import { shellWorkers, HOSTED_NODE_WORKERS } from "./roles.js";
 
 type ShellContext = ConstructorParameters<typeof WebappWorker>[1];
@@ -38,7 +39,7 @@ type ShellContext = ConstructorParameters<typeof WebappWorker>[1];
 export class Shell {
   readonly bus: Bus;
   readonly worker: WebappWorker;
-  readonly aspProcess: AspProcessWorker;
+  readonly peer: PeerWorker;
   private readonly manager: ManagerWorker;
   private ready: Promise<void> | null = null;
   private stopping: Promise<void> | null = null;
@@ -49,18 +50,11 @@ export class Shell {
     this.bus = new Bus(SHELL_MAGI_HANDLE, workspace);
     try {
       secureShellDatabases(workspace);
-      this.aspProcess = new AspProcessWorker(this.bus, {
-        sourceCheckout: context.paths.checkout,
-        node: context.tools.node,
-        env: context.tools.env,
-        spawnProcess: context.spawn,
-        startProcess: context.startProcess,
-        initialProcess: context.initialProcesses?.find(({ spec }: { spec: ProcessSpec }) => (spec.entry.endsWith("asp.js") || (spec.entry.endsWith("eva.mjs") && spec.args?.[0] === "--role" && spec.args?.[1] === "asp"))),
-      });
-      this.worker = new WebappWorker(this.bus, { ...context, aspProcess: this.aspProcess,
+      this.peer = new PeerWorker(this.bus);
+      this.worker = new WebappWorker(this.bus, { ...context,
         nodeControl: { running: () => this.manager.nodeRunning(), setRunning: (enabled: boolean) => this.manager.setNodeRunning(enabled) },
       });
-      this.manager = new ManagerWorker(this.bus, shellWorkers(this.bus, this.worker, this.aspProcess, context.client), {
+      this.manager = new ManagerWorker(this.bus, shellWorkers(this.bus, this.worker, this.peer, context.client), {
         drain: ["agent", "webapp"],
         nodeWorkers: HOSTED_NODE_WORKERS,
         build: { app: "shell", script: "build:process" },
@@ -89,13 +83,13 @@ export class Shell {
   async stop(shutdown = false): Promise<void> {
     if (shutdown) {
       this.worker.requestShutdown();
-      this.aspProcess.requestShutdown();
+
     }
     if (this.stopping) {
       await this.stopping;
       if (shutdown) {
         await this.worker.stop();
-        await this.aspProcess.stop();
+
       }
       return;
     }

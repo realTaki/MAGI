@@ -11,6 +11,7 @@ export type ProcessSpec = {
 export type ProcessHandle = {
   id: string;
   stop(): void;
+  invoke(method: string, params?: unknown): Promise<unknown>;
   onExit(cb: (code: number | null, signal: string | null) => void): void;
 };
 
@@ -121,6 +122,10 @@ export function connectHost(stdin: Readable, stdout: Writable) {
   function processHandle(id: string): ProcessHandle {
     return {
       id,
+      invoke(method, params) {
+        if (!["owner.chat", "owner.events", "owner.profile"].includes(method)) return Promise.reject(new Error("Unknown local owner method"));
+        return rpc("process.invoke", { id, method, params });
+      },
       stop() {
         void rpc("stop", { id });
       },

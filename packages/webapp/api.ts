@@ -1,5 +1,5 @@
 /**
- * The operator backend: GitHub, MAGI processes, ASP lifecycle, and the cache
+ * The operator backend: GitHub, MAGI processes, EVA lifecycle, and the cache
  * tables BUS does not cover.
  *
  * Electron no longer loads `main/index.ts`. Shell is `node dist/shell.js`.
@@ -10,9 +10,9 @@
  * and nothing else:
  *   prepare(progress)        — get this checkout ready and report the interface
  *                              entry point (a file path or a URL).
- *   start(progress)          — bring up local ASP, the service this app talks to.
+ *   start(progress)          — make the built-in Shell EVA available.
  *   dispose()                — release reloadable backend resources only.
- *   shutdown()               — stop ASP when the desktop itself exits.
+ *   shutdown()               — stop owned EVA processes when the desktop exits.
  *   github.state             — account, fork and whether the checkout is wired.
  *   github.signIn            — OAuth device flow; stores the token for Git to use.
  *   github.connect           — fork when the account has none, then point the
@@ -28,21 +28,14 @@ import { spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
-  ASP_MAGI_HANDLE,
-  EVA_MAGI_HANDLE,
+  chat, messageDelivery, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, loadOrCreateIdentity,
   SHELL_MAGI_HANDLE,
 } from "@magi/bus";
-import { ASP_ORIGIN } from "./asp-process.js";
+
 import { ensureManagedClone } from "./clone.js";
+import { localEvaManagement } from "./local-evas.js";
 import { agentBranch, agentName, agentSource, createMagiRuntime } from "./magi-runtime.js";
 import { downloadShellInstaller, installerPath, shellRelease } from "./shell-update.js";
-// Host MAGIs live in Shell (Balthasar) and ASP (Casper).
-// Only Melchior is a spawned eva.js child.
-const DEFAULT_SOCIETY = [
-  { handle: SHELL_MAGI_HANDLE },
-  { handle: ASP_MAGI_HANDLE },
-  { handle: EVA_MAGI_HANDLE },
-];
 const GITHUB_API = "https://api.github.com";
 const GITHUB_WEB = "https://github.com";
 const GITHUB_DEVICE_URL = `${GITHUB_WEB}/login/device`;
@@ -211,12 +204,11 @@ function parseGitHubSlug(url) {
 }
 
 export function createLocalApi(context) {
-  const { paths, repository, tools, emit, openExternal, copy, shellUpdate, managed = false, sourceVerified = false, aspProcess, bus } = context;
+  const { paths, repository, tools, emit, openExternal, copy, shellUpdate, managed = false, sourceVerified = false, bus } = context;
   const command = context.command ?? localCommand;
   // checkout is fixed editable source authority; appCheckout is the running
   // revision (including its UI). Never sync or rebuild back into that revision.
   const appCheckout = paths.appCheckout ?? paths.checkout;
-  let aspCheckout = paths.checkout;
   const spawnProcess = context.spawn ?? spawn;
   const git = { binary: tools.git, env: tools.env };
   const options = { cwd: paths.checkout, env: tools.env };
@@ -228,14 +220,10 @@ export function createLocalApi(context) {
   let disposal = null;
   let initialization = null;
   const lifetime = new AbortController();
-  // ASP keeps the roll of agents; this backend prepares their source trees,
-  // while Shell owns processes and commands through the host (see magi-runtime.ts).
-  // A developer's own checkout is never
-  // rewired, so MAGI then share it exactly as before.
   const magiRuntime = createMagiRuntime({
     checkout: paths.checkout,
     home: paths.home,
-    base: ASP_ORIGIN.href,
+    base: "",
     tools,
     run: command,
     spawnProcess,
@@ -257,25 +245,6 @@ export function createLocalApi(context) {
         "This operation requires an app-managed installation. A source launch only enables explicit source sync and build actions.",
       );
     }
-  }
-
-  /**
-   * Shell prepares this separate `magi/asp` clone. Electron remains the
-   * process and command owner; creating a clone grants no lifecycle authority.
-   */
-  async function ensureAspCheckout() {
-    if (!managed) return aspCheckout;
-    const destination = path.join(paths.home, ".magi", agentName(ASP_MAGI_HANDLE), "MAGI");
-    await ensureManagedClone({
-      run: (args, gitOptions) => command(git.binary, args, gitOptions),
-      env: tools.env,
-      url: repository,
-      destination,
-      branch: agentBranch(ASP_MAGI_HANDLE),
-    });
-    await configureClone(destination);
-    aspCheckout = destination;
-    return aspCheckout;
   }
 
   const magiDataRoot = path.join(paths.home, ".magi");
@@ -581,17 +550,6 @@ export function createLocalApi(context) {
 
   async function configureManagedClones(fork, upstream, viewer) {
     const roots = new Set([paths.checkout, appCheckout]);
-    if (existsSync(path.join(aspCheckout, ".git"))) roots.add(aspCheckout);
-    const aspDestination = path.join(paths.home, ".magi", "asp", "MAGI");
-    if (existsSync(path.join(aspDestination, ".git"))) roots.add(aspDestination);
-    try {
-      for (const agent of await magiRoster()) {
-        const root = agentSource(paths.home, agent.handle);
-        if (existsSync(path.join(root, ".git"))) roots.add(root);
-      }
-    } catch {
-      // ASP may not be up yet; existing MAGI clones are still retargeted below.
-    }
     for (const root of roots) await pointCheckoutAtFork(fork, upstream, viewer, root);
   }
 
@@ -702,178 +660,125 @@ export function createLocalApi(context) {
    * is prepared: a developer's own tree is already theirs to prepare.
    */
   async function prepare(progress?: (message: string, percent: number) => void) {
-    await ensureAspCheckout();
     const appDir = path.join(appCheckout, "apps", "shell");
-    // The MAGI runtime is a workspace now: its packages hang off the checkout root,
-    // so the root carries their lockfile and their node_modules — the Shell clone
-    // installs them for itself, while each MAGI's own clone installs its own.
-    const magiDir = appCheckout;
-    const required = [
-      path.join(aspCheckout, "package-lock.json"),
-      path.join(magiDir, "package-lock.json"),
-    ];
-    for (const file of required) {
-      if (!existsSync(file)) {
-        throw new Error(`MAGI checkout is incomplete: ${file} is missing`);
-      }
-    }
-
-    // The desktop ships no C++ toolchain. Lifecycle scripts stay off so these
-    // installs cannot reach node-gyp.
-    if (managed && context.prepareDependencies) {
-      progress?.("Checking local ASP dependencies…", 0.2);
-      await context.prepareDependencies(aspCheckout);
-      await context.prepareDependencies(magiDir);
-    }
-    if (managed && !context.prepareDependencies && !existsSync(path.join(aspCheckout, "node_modules", "drizzle-orm"))) {
-      progress?.("Preparing local ASP…", 0.2);
-      await command(tools.node, [tools.npm, "ci", "--ignore-scripts"], {
-        cwd: aspCheckout,
-        env: tools.env,
-        description: "Could not prepare ASP",
-      });
-    }
-    if (managed && !context.prepareDependencies && !existsSync(path.join(magiDir, "node_modules"))) {
-      progress?.("Preparing MAGI…", 0.4);
-      await command(tools.node, [tools.npm, "ci", "--ignore-scripts"], {
-        cwd: magiDir,
-        env: tools.env,
-        description: "Could not prepare MAGI",
-      });
-    }
+    if (!existsSync(path.join(appCheckout, "package-lock.json"))) throw new Error("MAGI checkout is incomplete");
+    if (managed && context.prepareDependencies) await context.prepareDependencies(appCheckout);
     if (managed && !existsSync(path.join(appDir, "dist", "index.html"))) {
-      progress?.("Building the app…", 0.8);
-      await command(tools.node, [tools.npm, "run", "build:ui"], {
-        cwd: appDir,
-        env: tools.env,
-        description: "Could not build the desktop app",
-      });
+      await command(tools.node, [tools.npm, "run", "build:ui"], { cwd: appDir, env: tools.env, description: "Could not build desktop UI" });
     }
-
     progress?.("Prepared.", 0.85);
     return { ui: uiEntry() };
   }
 
-  async function aspJson(endpoint, { token, method = "GET", body, timeoutMs = 20_000 }: JsonRequestOptions = {}) {
-    const response = await fetch(new URL(endpoint, ASP_ORIGIN), {
-      method,
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.any([AbortSignal.timeout(timeoutMs), lifetime.signal]),
-    });
-    const text = await response.text();
-    let data = null;
-    if (text !== "") {
-      try {
-        data = JSON.parse(text);
-      } catch {
-        data = { detail: text.slice(0, 300) };
-      }
-    }
-    if (!response.ok) {
-      const error = Object.assign(new Error(
-        `ASP ${method} ${endpoint} failed (${response.status}): ${data?.detail ?? response.statusText}`,
-      ), { status: response.status });
-      throw error;
-    }
-    return data;
-  }
-
-  /**
-   * Seeds Balthasar, Casper, and Melchior. Shell and ASP already host the first
-   * two; this registers missing handles, opens a 1:1 with each, and spawns
-   * Melchior. Each node publishes its own profile through chat delivery.
-   */
-  async function ensureDefaultMagis(progress) {
-    const { token } = await aspJson("/operator");
-    const chats = (await aspJson("/chats", { token }))?.chats ?? [];
-    const haveChat = new Map();
-    for (const chat of chats) {
-      if (chat?.kind !== "bot" || !Array.isArray(chat.agents) || chat.agents.length !== 1) continue;
-      const handle = chat.agents[0];
-      if (typeof handle !== "string" || typeof chat.chat_id !== "string") continue;
-      if (!haveChat.has(handle)) haveChat.set(handle, chat.chat_id);
-    }
-    const created = [];
-    for (const member of DEFAULT_SOCIETY) {
-      let chatId = haveChat.get(member.handle);
-      if (typeof chatId !== "string") {
-        progress?.("Creating default MAGIs…", 0.98);
-        const chat = await aspJson("/chats", {
-          token,
-          method: "POST",
-          body: { kind: "bot", handle: member.handle },
-        });
-        chatId = chat?.chat_id;
-        if (typeof chatId === "string") {
-          created.push({ handle: member.handle, chatId });
-        }
-      }
-    }
-    await attachHostChannel(token);
-    // The default local agent is a separate eva launcher, not another BUS in Shell.
-    const agents = (await aspJson("/agents", { token }))?.agents ?? [];
-    const local = agents.find((agent) => agent?.handle === EVA_MAGI_HANDLE);
-    if (local && !local.online) {
-      progress?.("Starting local MAGI…", 0.98);
-      if (bus?.settings.get("magi.local.enabled") !== "false") await magiRuntime.startLocal(local);
-    }
-    await Promise.all(
-      created.map(async ({ handle, chatId }) => {
-        try {
-          if (handle === SHELL_MAGI_HANDLE && context.nodeControl && !context.nodeControl.running()) return;
-          if (handle === ASP_MAGI_HANDLE && !(await hostedState(handle)).running) return;
-          if (handle === EVA_MAGI_HANDLE && bus?.settings.get("magi.local.enabled") === "false") return;
-          await greet(chatId, token);
-        } catch (error) {
-          console.error(
-            `[asp] ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-      }),
-    );
-  }
-
-  /** Balthasar speaks on ASP through AspWorker once these settings exist. */
-  async function attachHostChannel(token) {
-    if (!bus) return;
-    const agents = (await aspJson("/agents", { token }))?.agents ?? [];
-    const host = agents.find((row) => row?.handle === SHELL_MAGI_HANDLE);
-    if (typeof host?.token !== "string" || host.token === "") return;
-    bus.settings.set("asp.base", ASP_ORIGIN.href);
-    bus.settings.set("asp.token", host.token);
-    bus.board("ManageWorkerNotify").publish({ worker: "asp", action: "start" }, "webapp");
-  }
-
-  /**
-   * The first thing said in a chat, in the operator's name.
-   *
-   * It answers two questions at once: whether the new MAGI answers at all, and where
-   * the operator is, which is what the MAGI keeps as its own thread to report trouble
-   * to. A MAGI without a provider still answers — with that complaint.
-   */
-  async function greet(chatId, token) {
-    await aspJson(`/chats/${encodeURIComponent(chatId)}/messages`, {
-      token,
-      method: "POST",
-      body: { content: "Hi" },
-    });
-  }
-
-  /** Brings local ASP up unless something already answers on its port. */
   async function start(progress?: (message: string, percent: number) => void) {
-    await ensureAspCheckout();
-    try {
-      await aspProcess.ensure(aspCheckout, progress);
-    } catch (error) {
-      await dispose();
-      throw error;
+    ownerChat();
+    progress?.("Shell EVA is ready.", 1);
+    return { origin: bus?.settings.get("peer.reachableURL") ?? "" };
+  }
+
+  const management = localEvaManagement(bus, magiRuntime);
+
+  function ownerChat() {
+    if (!bus) throw new Error("Shell EVA is unavailable");
+    const owner = bus.chats.forChannel("shell-owner", "owner");
+    messageDelivery.setHomeChat(bus, owner.id);
+    return owner;
+  }
+
+  function peerContacts() {
+    if (!bus) return [];
+    return [
+      { id: "shell", handle: SHELL_MAGI_HANDLE, name: "Shell EVA", nickname: "Shell EVA", url: bus.settings.get("peer.reachableURL") ?? "", local: true, running: context.nodeControl?.running() ?? true },
+      ...bus.contacts.list().filter(c => c.peer_trust === "accepted" && c.peer_url).map(c => ({
+        id: String(c.id), handle: c.name, name: c.name, nickname: c.nickname, url: c.peer_url,
+        local: Boolean(bus.settings.get(`local.eva.${c.id}`)), running: magiRuntime.running().includes(c.name),
+      })),
+    ];
+  }
+
+  function conversation(id) {
+    if (typeof id === "string" && id.startsWith("conversation:")) {
+      const group = bus.groups.get(id.slice("conversation:".length));
+      if (!group) throw new Error("Unknown group conversation");
+      return bus.chats.get(group.chat_id);
     }
-    await ensureDefaultMagis(progress);
-    return { origin: ASP_ORIGIN.href };
+    if (id === "shell") return ownerChat();
+    const contact = bus.contacts.get(Number(id));
+    if (!contact || contact.peer_trust !== "accepted" || !contact.peer_id) throw new Error("Peer is not an accepted contact");
+    return bus.chats.forPeer(contact.peer_id);
+  }
+
+  function localOwned(id) {
+    if (id === "shell") return null;
+    const stored = bus.settings.get(`local.eva.${Number(id)}`);
+    return stored ? JSON.parse(stored) : null;
+  }
+
+  function peerConversations() {
+    return bus.groups.list().map(group => ({ id: `conversation:${group.conversation_uuid}`, title: group.title,
+      trust: group.trust, members: bus.groups.membership(group.conversation_uuid)?.payload?.members ?? [], local: false, group: true }));
+  }
+
+  async function peerEvents({ id }) {
+    const local = localOwned(id);
+    if (local) return await magiRuntime.invokeOwner(local.handle, "owner.events", {});
+    const room = conversation(id);
+    return bus.messages.list(room.id, 500).map(m => ({ id: m.id, content: m.content,
+      role: (id === "shell" ? m.contact_id === SYSTEM_CONTACT_ID : m.contact_id === MAGI_CONTACT_ID) ? "user" : "assistant",
+      sender: bus.contacts.get(m.contact_id)?.nickname ?? bus.contacts.get(m.contact_id)?.name,
+      metadata: JSON.parse(bus.settings.get(`webapp.message.${m.id}`) ?? "null") ?? undefined, created_at: m.created_at,
+    }));
+  }
+
+  async function peerSend({ id, content, metadata }) {
+    if (metadata?.group_action !== undefined) {
+      if (id !== "shell" || Object.keys(metadata).length !== 1) throw new Error("Group decisions require the local owner conversation");
+      const action = metadata.group_action;
+      if (action?.action === "accept" && typeof action.id === "string") return bus.groups.accept(action.id);
+      if (action?.action === "create" && typeof action.title === "string" && Array.isArray(action.members)) {
+        const members = action.members.map(id => {
+          const contact = bus.contacts.get(Number(id));
+          if (!contact || contact.peer_trust !== "accepted" || !contact.peer_principal || !contact.peer_url) throw new Error("Choose accepted peer contacts");
+          return { principal: contact.peer_principal, endpoint: contact.peer_url };
+        });
+        return bus.groups.create({ title: action.title, members });
+      }
+      throw new Error("Invalid group owner command");
+    }
+    if (typeof id === "string" && id.startsWith("conversation:")) {
+      if (metadata) throw new Error("Groups accept ordinary chat only");
+      const uuid = id.slice("conversation:".length);
+      if (bus.groups.get(uuid)?.trust !== "accepted") throw new Error("Accept the group invitation before sending");
+      return bus.groups.append(uuid, content);
+    }
+    if (metadata?.local_eva_action !== undefined) {
+      if (id !== "shell" || Object.keys(metadata).length !== 1) throw new Error("Lifecycle commands require the local owner conversation");
+      const action = metadata.local_eva_action;
+      if (!action || !["start", "stop"].includes(action.action) || Object.keys(action).some(k => !["action", "contact_id"].includes(k))) throw new Error("Invalid local lifecycle command");
+      const owner = ownerChat();
+      messageDelivery.record(bus, owner.id, `${action.action} local EVA ${action.contact_id}`, SYSTEM_CONTACT_ID);
+      let result;
+      if (action.contact_id === "shell") {
+        if (!context.nodeControl) throw new Error("Shell lifecycle is unavailable");
+        result = await context.nodeControl.setRunning(action.action === "start");
+      } else result = await management.find(t => t.name === "local_eva_lifecycle").run(action);
+      messageDelivery.record(bus, owner.id, typeof result === "string" ? result : JSON.stringify(result), MAGI_CONTACT_ID);
+      return { accepted: true };
+    }
+    const local = localOwned(id);
+    if (local) return await magiRuntime.invokeOwner(local.handle, "owner.chat", { content, metadata });
+    const room = conversation(id);
+    if (id === "shell") return chat(bus, room.id, SYSTEM_CONTACT_ID, { content, metadata }, "webapp");
+    if (metadata) throw new Error("Owner-only structured actions are available in the Shell conversation");
+    return { id: messageDelivery.send(bus, room.id, content, MAGI_CONTACT_ID, "webapp") };
+  }
+
+  async function peerProfile({ id }) {
+    const local = localOwned(id);
+    if (local) return await magiRuntime.invokeOwner(local.handle, "owner.profile", {});
+    if (id !== "shell") return { ...peerContacts().find(c => c.id === id), owner: false };
+    return { handle: SHELL_MAGI_HANDLE, owner: true, public_key: loadOrCreateIdentity(bus.workspace).publicKey,
+      provider: bus.settings.get("provider.provider") ?? "", model: bus.settings.get("provider.model") ?? "" };
   }
 
   async function dispose() {
@@ -926,130 +831,9 @@ export function createLocalApi(context) {
     }
   }
 
-  /** The agents this machine is supposed to run, with their credentials. */
-  async function magiRoster() {
-    const { token } = await aspJson("/operator");
-    const agents = (await aspJson("/agents", { token }))?.agents ?? [];
-    return agents.filter(
-      (agent) =>
-        agent?.managed === true &&
-        typeof agent.handle === "string" &&
-        typeof agent.token === "string",
-    );
-  }
-
-  async function magiAgent(payload) {
-    const handle = typeof payload?.handle === "string" ? payload.handle : "";
-    if (handle === "") throw new Error("A MAGI handle is required.");
-    const agent = (await magiRoster()).find((row) => row.handle === handle);
-    if (agent === undefined) throw new Error(`Unknown MAGI: ${handle}`);
-    return agent;
-  }
-
-  async function hostedState(handle) {
-    if (handle === SHELL_MAGI_HANDLE) {
-      if (!context.nodeControl) throw new Error("Shell node control is unavailable");
-      return { running: context.nodeControl.running() };
-    }
-    const { token } = await aspJson("/operator");
-    return await aspJson("/runtime/host", { token });
-  }
-
-  async function setHostedRunning(handle, enabled) {
-    if (handle === SHELL_MAGI_HANDLE) {
-      if (!context.nodeControl) throw new Error("Shell node control is unavailable");
-      return await context.nodeControl.setRunning(enabled);
-    }
-    const { token } = await aspJson("/operator");
-    return await aspJson("/runtime/host", { token, method: "POST", body: { action: enabled ? "start" : "stop" } });
-  }
-
-  /** Hosted-node lifecycle and socket presence are separate from the host OS process. */
-  async function magiInfo(payload) {
-    const agent = await magiAgent(payload);
-    const { token } = await aspJson("/operator");
-    const agents = (await aspJson("/agents", { token }))?.agents ?? [];
-    const row = agents.find((entry) => entry.handle === agent.handle);
-    const hosted = agent.handle === SHELL_MAGI_HANDLE || agent.handle === ASP_MAGI_HANDLE;
-    const running = hosted ? (await hostedState(agent.handle)).running : magiRuntime.running().includes(agent.handle);
-    return {
-      handle: agent.handle,
-      online: row?.online === true && (!hosted || running),
-      running,
-      branch: managed ? agentBranch(agent.handle) : "",
-      source: magiRuntime.sourceOf(agent.handle),
-    };
-  }
-
-  async function magiStart(payload) {
-    const agent = await magiAgent(payload);
-    if (agent.handle === SHELL_MAGI_HANDLE || agent.handle === ASP_MAGI_HANDLE) {
-      const previous = await hostedState(agent.handle);
-      await setHostedRunning(agent.handle, true);
-      return { handle: agent.handle, started: !previous.running };
-    }
-    if (agent.handle === EVA_MAGI_HANDLE) {
-      bus?.settings.set("magi.local.enabled", "true");
-      return await magiRuntime.startLocal(agent);
-    }
-    return await magiRuntime.start(agent);
-  }
-
-  async function magiStop(payload) {
-    const agent = await magiAgent(payload);
-    if (agent.handle === SHELL_MAGI_HANDLE || agent.handle === ASP_MAGI_HANDLE) {
-      const previous = await hostedState(agent.handle);
-      const result = await setHostedRunning(agent.handle, false);
-      if (result.running) throw new Error(`${agent.handle} is still running`);
-      return { handle: agent.handle, stopped: previous.running };
-    }
-    if (agent.handle !== EVA_MAGI_HANDLE) throw new Error(`${agent.handle} is not a locally controlled node`);
-    bus?.settings.set("magi.local.enabled", "false");
-    return { handle: agent.handle, stopped: await magiRuntime.stopLocal(agent.handle) };
-  }
-
-  async function magiRestart(payload) {
-    await magiStop(payload);
-    return await magiStart(payload);
-  }
-
-  async function magiMerge(payload) {
-    return await magiRuntime.merge(await magiAgent(payload));
-  }
-
-  /**
-   * Roster-level actions, for when going through the profiles one by one is the
-   * slow way. One MAGI failing is reported, never fatal: a sweep the operator
-   * cannot read is worse than no sweep at all.
-   */
-  async function magiStartAll() {
-    if ((await aspProcess.probe()) !== "ready") throw new Error("Start ASP before starting the MAGIs.");
-    return await magiRuntime.startAll(await magiRoster());
-  }
-
-  function magiStopAll() {
-    return magiRuntime.stopAll();
-  }
-
-  async function stopOwnedAsp() {
-    await aspProcess.stopOwned();
-  }
-
   async function runtimeStatus() {
-    const health = await aspProcess.probe();
-    let magiOnline = 0;
-    if (health === "ready") {
-      const { token } = await aspJson("/operator");
-      const bots = (await aspJson("/bots", { token }))?.bots ?? [];
-      magiOnline = bots.filter((bot) => bot.online).length;
-    }
-    return {
-      asp: health,
-      owned: aspProcess.owned(),
-      magiOnline,
-      sourceCheckout: paths.checkout,
-      runtimeCheckout: appCheckout,
-    };
+    return { shell: "ready", owned: true, magiOnline: 1 + magiRuntime.running().length,
+      sourceCheckout: paths.checkout, runtimeCheckout: appCheckout };
   }
 
   async function sourceBranch(cwd = paths.checkout) {
@@ -1167,27 +951,6 @@ export function createLocalApi(context) {
   /** Always update editable source, even while the backend runs a revision. */
   function syncApp() {
     return syncModule("shell", paths.checkout);
-  }
-
-  /** The ASP clone, created here if this is the first time it is needed. */
-  async function syncAsp() {
-    await ensureAspCheckout();
-    return await syncModule("asp", aspCheckout);
-  }
-
-  /** Every MAGI's own clone; `merge` restarts one whose branch actually moved. */
-  async function syncMagis() {
-    const synced = [];
-    const failed = [];
-    for (const agent of await magiRoster()) {
-      try {
-        const { merged } = await magiRuntime.merge(agent);
-        synced.push({ module: agent.handle, merged });
-      } catch (error) {
-        failed.push({ module: agent.handle, detail: describe(error) });
-      }
-    }
-    return { synced, failed };
   }
 
   function isAgentic(url) {
@@ -1372,18 +1135,14 @@ export function createLocalApi(context) {
     dispose,
     shutdown,
     "runtime.status": runtimeStatus,
-    "runtime.stopAsp": () => runtimeAction(stopOwnedAsp),
-    "runtime.startAsp": () => runtimeAction(() => start()),
     "runtime.syncApp": () => sourceAction(syncApp),
-    "runtime.syncAsp": () => runtimeAction(syncAsp),
-    "magi.info": magiInfo,
-    "magi.start": (payload) => magiAction(() => magiStart(payload)),
-    "magi.stop": (payload) => magiAction(() => magiStop(payload)),
-    "magi.restart": (payload) => magiAction(() => magiRestart(payload)),
-    "magi.merge": (payload) => runtimeAction(() => magiMerge(payload)),
-    "magi.startAll": () => magiAction(() => magiStartAll()),
-    "magi.stopAll": () => magiAction(() => magiStopAll()),
-    "magi.syncAll": () => runtimeAction(syncMagis),
+    localRuntime: magiRuntime,
+    localManagement: management,
+    "peer.contacts": peerContacts,
+    "peer.conversations": peerConversations,
+    "peer.events": peerEvents,
+    "peer.send": peerSend,
+    "peer.profile": peerProfile,
     "runtime.interface": () => ({ ui: uiEntry(), revision: process.env.MAGI_REVISION ?? "", checkout: appCheckout, entry: process.argv[1] }),
     "shell.updateStatus": shellUpdateStatus,
     "shell.installUpdate": installShellUpdate,

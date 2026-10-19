@@ -61,12 +61,11 @@ export function aspWorkers(bus: Bus, server: BaseWorker, client?: LLMClient): Ba
   ];
 }
 
-export function shellWorkers(bus: Bus, webapp: BaseWorker, aspProcess: BaseWorker, client?: LLMClient): BaseWorker[] {
+export function shellWorkers(bus: Bus, webapp: BaseWorker, peer: BaseWorker, client?: LLMClient): BaseWorker[] {
   return [
     ...shared(bus, client),
     webapp,
-    aspProcess,
-    new AspWorker(bus),
+    peer,
     new TelegramWorker(bus),
   ];
 }

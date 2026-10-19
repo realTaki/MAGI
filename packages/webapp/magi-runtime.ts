@@ -166,13 +166,12 @@ export function createMagiRuntime({
       typeof agent === "object" &&
       typeof agent.handle === "string" &&
       agent.handle !== "" &&
-      typeof agent.token === "string" &&
-      agent.token !== ""
+      /^@[a-z0-9][a-z0-9-]{0,62}\.magi$/.test(agent.handle)
     );
   }
 
   function require(agent) {
-    if (!usable(agent)) throw new Error("A MAGI needs both its handle and its token.");
+    if (!usable(agent)) throw new Error("A valid local EVA handle is required.");
     return agent;
   }
 
@@ -194,8 +193,8 @@ export function createMagiRuntime({
 
   /** Only the explicitly seeded local agent is owned by the desktop. It runs its own launcher and BUS. */
   async function startLocal(agent) {
-    const { handle, token } = require(agent);
-    if (handle !== EVA_MAGI_HANDLE) throw new Error("Only the default local MAGI can be started by Shell");
+    const { handle } = require(agent);
+    if (agent.local !== true) throw new Error("Only explicitly provisioned local EVAs can be started by Shell");
     if (isRunning(handle)) return { handle, started: false };
     if (starting.has(handle)) return starting.get(handle);
     const task = (async () => {
@@ -207,9 +206,10 @@ export function createMagiRuntime({
       for (const key of Object.keys(env)) if (key.startsWith("MAGI_DESKTOP_UPDATE_")) delete env[key];
       for (const key of ["MAGI_CHILD", "MAGI_HEALTH", "MAGI_HEALTH_WORKSPACE", "MAGI_APP_CHECKOUT", "MAGI_REVISION", "MAGI_REVISION_DIR", "MAGI_PREVIOUS_REVISION", "MAGI_REPLACE_JOB", "MAGI_REPLACE_ERROR"]) delete env[key];
       Object.assign(env, {
-        MAGI_ROLE: "agent", MAGI_HOST: "0", MAGI_HOME: workspaceRoot, MAGI_CHECKOUT: root,
+        MAGI_ROLE: "agent", MAGI_HOST: "1", MAGI_HOME: workspaceRoot, MAGI_CHECKOUT: root,
         MAGI_NODE: nodeBinary(), MAGI_NPM: npmCli(), MAGI_GIT: tools.git,
-        MAGI_HANDLE: handle, MAGI_ASP: base, MAGI_ASP_TOKEN: token,
+        MAGI_HANDLE: handle, MAGI_SERVER: "1",
+        MAGI_PEER_HOST: "127.0.0.1", MAGI_PEER_PORT: String(agent.port), MAGI_PEER_URL: agent.url,
       });
       const spec = { entry, cwd: path.dirname(entry), args: ["--role", "agent", handle], env };
       if (startProcess) {
@@ -377,6 +377,12 @@ export function createMagiRuntime({
   }
 
   return {
+    invokeOwner: async (handle, method, params) => {
+      const record = children.get(handle);
+      if (!record || typeof record.child.invoke !== "function") throw new Error("Local owner connection is unavailable");
+      if (!["owner.chat", "owner.events", "owner.profile"].includes(method)) throw new Error("Unknown local owner method");
+      return await record.child.invoke(method, params);
+    },
     ensureSource,
     sourceOf,
     running: () => [...children.keys()].filter(isRunning),
