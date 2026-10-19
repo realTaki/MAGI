@@ -11,6 +11,7 @@
   "scripts": {
     "build": "tsc -b",
     "test": "tsc -b && node scripts/test.mjs",
+    "verify": "node scripts/verify.mjs",
     "db:generate": "npm run db:generate --workspace @magi/bus"
   },
   "allowScripts": {

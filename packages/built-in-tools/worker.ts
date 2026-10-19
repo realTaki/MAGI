@@ -7,7 +7,7 @@ import { abortable } from "@magi/bus/abort.js";
  *   files.ts     read_file / list_files / search_files / write_file / edit_file
  *   messages.ts  search_chat_messages / search_contact_messages /
  *                send_message / set_home_chat
- *   rebuild.ts   request_replace — queue a replace of this node
+ *   replace.ts   request_replace — queue a replace of this node
  *
  * `load_skill` is not here: it reads the SKILL.md files that `@magi/skills`
  * owns, so that package's worker registers the tool itself. The contact tools
@@ -25,7 +25,7 @@ import type { Bus, ExecutableTool } from "@magi/bus";
 import { cardTools } from "./card.js";
 import { fileTools } from "./files.js";
 import { messageTools } from "./messages.js";
-import { rebuildTools } from "./rebuild.js";
+import { replaceTools } from "./replace.js";
 import { shellTools } from "./shell.js";
 import { syncTools } from "./sync.js";
 import { ShellManager } from "./shellManager.js";
@@ -40,7 +40,7 @@ export function builtinTools(bus: Bus, shells = new ShellManager()): Tool[] {
     ...messageTools(bus),
     ...cardTools(bus),
     ...syncTools(bus),
-    ...rebuildTools(bus),
+    ...replaceTools(bus),
   ];
 }
 
@@ -68,9 +68,11 @@ export class ToolsWorker extends BaseWorker {
     const board = this.bus.board("RunToolJob");
     const job = board.claim(this.worker_name, (input) => this.own.has(input.call.name));
     if (!job) return false;
-    const args = job.input.chat_id === undefined
-      ? job.input.call.arguments
-      : { ...job.input.call.arguments, chat_id: job.input.chat_id };
+    // Requester chat is job context for request_replace only. Model-facing
+    // chat_id on send_message / search_chat_messages / set_home_chat stays intact.
+    const args = job.input.call.name === "request_replace" && job.input.chat_id !== undefined
+      ? { ...job.input.call.arguments, chat_id: job.input.chat_id }
+      : job.input.call.arguments;
     const task = this.run(job.id, job.input.call.name, args);
     this.pending.add(task);
     void task.finally(() => this.pending.delete(task));

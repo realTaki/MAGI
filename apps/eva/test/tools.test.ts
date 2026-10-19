@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Magi } from "../eva.js";
 import { Bus, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "@magi/bus";
 import type { ExecutableTool, LLMMessage } from "@magi/bus";
-import { builtinTools } from "@magi/built-in-tools/worker.js";
+import { builtinTools, ToolsWorker } from "@magi/built-in-tools/worker.js";
 
 test("message search includes archived history and send_message uses delivery jobs", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-tools-"));
@@ -29,6 +29,33 @@ test("message search includes archived history and send_message uses delivery jo
     expect(delivered).toEqual(["progress update"]);
   } finally {
     await magi.stop();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("send_message to another chat is not rewritten to the requester chat", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "magi-tools-chat-id-"));
+  const bus = new Bus("@tools-chat.magi", workspace);
+  const worker = new ToolsWorker(bus);
+  const from = bus.chats.forChannel("cli", "from");
+  const to = bus.chats.forChannel("cli", "to");
+  try {
+    const id = bus.board("RunToolJob").publish({
+      call: { tool_call_id: "call-other", name: "send_message", arguments: { chat_id: to.id, text: "hello other chat" } },
+      chat_id: from.id,
+    }, "test");
+    expect(await worker.poll()).toBeTrue();
+    let result = bus.board("RunToolJob").result(id);
+    for (let i = 0; i < 100 && !result; i++) {
+      await sleep(10);
+      result = bus.board("RunToolJob").result(id);
+    }
+    expect(result).toMatchObject({ status: "completed" });
+    expect(bus.messages.list(to.id).map((row) => row.content)).toEqual(["hello other chat"]);
+    expect(bus.messages.list(from.id)).toHaveLength(0);
+  } finally {
+    await worker.stop();
+    bus.close();
     await rm(workspace, { recursive: true, force: true });
   }
 });

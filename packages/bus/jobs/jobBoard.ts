@@ -174,4 +174,12 @@ export class JobBoard<K extends JobType> {
       error: row.error ?? undefined,
     };
   }
+
+  /** Input of a job in any status. Replace failures read chat_id from this, not a global setting. */
+  peekInput(id: number): JobInput[K] | null {
+    const row = this.db.select({ input: jobs.input }).from(jobs)
+      .where(and(eq(jobs.id, id), eq(jobs.type, this.type)))
+      .get();
+    return row ? JSON.parse(row.input) as JobInput[K] : null;
+  }
 }

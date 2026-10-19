@@ -6,7 +6,7 @@
 import type { ExecutableTool } from "@magi/bus";
 import { toolchainEnv } from "@magi/runtime/toolchain.js";
 import { stringArg } from "./args.js";
-import { ShellManager } from "./shellManager.js";
+import { clipShellOutput, ShellManager } from "./shellManager.js";
 
 
 export function shellTools(workspace: string, shells: ShellManager): ExecutableTool[] {
@@ -28,7 +28,7 @@ export function shellTools(workspace: string, shells: ShellManager): ExecutableT
           return await shells.foreground(command, workspace, timeout * 1000, signal, toolchainEnv());
         } catch (error) {
           const failed = error as Error & { code?: number | string; stdout?: string; stderr?: string };
-          return `exit_code: ${failed.code ?? "error"}\n${failed.stdout ?? ""}${failed.stderr ?? failed.message}`.slice(0, 8192);
+          return clipShellOutput(`exit_code: ${failed.code ?? "error"}\n${failed.stdout ?? ""}${failed.stderr ?? failed.message}`);
         }
       },
     },

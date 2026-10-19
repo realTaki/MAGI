@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { reviseCheckout, trackingRef } from '@magi/runtime/revise.js';
 import { Bus, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, magiLocalName, messageDelivery, sequentialMagiHandle, SHELL_MAGI_HANDLE } from '@magi/bus';
-import { rebuildTools } from '@magi/built-in-tools/rebuild.js';
+import { replaceTools } from '@magi/built-in-tools/replace.js';
 import { shellTools } from '@magi/built-in-tools/shell.js';
 import { ShellManager } from '@magi/built-in-tools/shellManager.js';
-import { resolveToolchain } from '@magi/runtime/toolchain.js';
-import { VERIFY_BUILD_ARGS, VERIFY_TEST_ARGS, VERIFY_UI_ARGS } from '@magi/runtime/verify.js';
+import { resolveToolchain, toolchainEnv } from '@magi/runtime/toolchain.js';
+import { VERIFY_NPM_ARGS } from '@magi/runtime/verify.js';
 import { ReplaceWorker } from '../../../packages/manager/dist/replace.js';
 
 const repo = path.resolve(import.meta.dirname, '../../..');
@@ -26,7 +26,9 @@ function fixture(t, beforeRemove = () => {}) {
   mkdirSync(root);
   const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' } }).trim();
   git('init', '--initial-branch=main'); git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--allow-empty', '-m', 'initial');
-  const pkg = { name: 'source-fixture', version: '1.0.0', type: 'module', scripts: { test: 'node build.mjs test', build: 'node build.mjs build' } };
+  mkdirSync(path.join(root, 'scripts'), { recursive: true });
+  copyFileSync(path.join(repo, 'scripts/verify.mjs'), path.join(root, 'scripts/verify.mjs'));
+  const pkg = { name: 'source-fixture', version: '1.0.0', type: 'module', scripts: { test: 'node build.mjs test', build: 'node build.mjs build', verify: 'node scripts/verify.mjs' } };
   writeFileSync(path.join(root, 'package.json'), JSON.stringify(pkg));
   writeFileSync(path.join(root, 'package-lock.json'), JSON.stringify({ name: pkg.name, version: pkg.version, lockfileVersion: 3, packages: { '': { name: pkg.name, version: pkg.version } } }));
   writeFileSync(path.join(root, '.gitignore'), 'node_modules/\ndist/\n.env\n');
@@ -96,10 +98,9 @@ test('request_replace binds the editable source to this node workspace, includin
   const home = mkdtempSync(path.join(tmpdir(), 'magi-rebuild-scope-'));
   const bus = new Bus(SHELL_MAGI_HANDLE, home);
   t.after(() => { bus.close(); rmSync(home, { recursive: true, force: true }); });
-  const tool = rebuildTools(bus)[0];
+  const tool = replaceTools(bus)[0];
   assert.equal(tool.name, 'request_replace');
-  await assert.rejects(tool.run({ target: 'app' }), /each node replaces itself/);
-  const { id } = JSON.parse(await tool.run({ target: 'self', checkout: path.join(home, 'other-node') }));
+  const { id } = JSON.parse(await tool.run({ checkout: path.join(home, 'other-node') }));
   const job = bus.board('ReplaceSelfJob').claimId('test', id);
   assert.equal(job?.input.checkout, path.join(home, 'MAGI'));
   assert.equal(job?.input.ref, undefined);
@@ -120,7 +121,7 @@ test('Shell tools keep startup source across revision switches without exposing 
   process.env.MAGI_CHECKOUT = path.join(home, 'development-source');
   process.env.MAGI_APP_CHECKOUT = path.join(home, 'shell/revisions/new');
   for (const bus of [shell, other]) {
-    const { id } = JSON.parse(await rebuildTools(bus)[0].run({ target: 'self', checkout: '/unrelated' }));
+    const { id } = JSON.parse(await replaceTools(bus)[0].run({ checkout: '/unrelated' }));
     const job = bus.board('ReplaceSelfJob').claimId('test', id);
     assert.equal(job?.input.checkout, bus === shell ? process.env.MAGI_CHECKOUT : path.join(other.workspace, 'MAGI'));
   }
@@ -142,7 +143,7 @@ test('the actual replace worker builds local tool edits without an upstream and 
   Object.defineProperty(process, 'connected', { configurable: true, value: true });
   t.after(() => { process.send = savedSend; if (savedConnected) Object.defineProperty(process, 'connected', savedConnected); else delete process.connected; });
   const worker = new ReplaceWorker(bus, { app: 'shell', script: 'build:process' }, { healthy: () => null, suspendForReplace: async () => {}, resume: async () => {} });
-  const { id } = JSON.parse(await rebuildTools(bus)[0].run({ target: 'self' }));
+  const { id } = JSON.parse(await replaceTools(bus)[0].run({}));
   await worker.poll();
   const deadline = Date.now() + 15_000;
   while (!outgoing && Date.now() < deadline) {
@@ -157,66 +158,153 @@ test('the actual replace worker builds local tool edits without an upstream and 
   await new Promise(resolve => setImmediate(resolve));
 });
 
-test('agent bash uses the same toolchain as the replace safety gate and can finish compile and test', async (t) => {
+test('agent bash runs the shared verify entry on a managed clone with MAGI_NODE/MAGI_NPM', async (t) => {
   const f = fixture(t);
-  const bash = shellTools(f.home, new ShellManager())[0];
+  const workspace = mkdtempSync(path.join(tmpdir(), 'magi-managed-clone-'));
+  const clone = path.join(workspace, 'MAGI');
+  t.after(() => rmSync(workspace, { recursive: true, force: true }));
+  execFileSync('git', ['clone', '--local', '--no-hardlinks', f.root, clone]);
+  const bash = shellTools(workspace, new ShellManager())[0];
   // Windows `bash` is PowerShell, so the agent command cannot be a bash-only snippet.
-  writeFileSync(path.join(f.home, 'print-toolchain.mjs'), 'process.stdout.write(`${process.env.MAGI_NODE}\\n${process.env.MAGI_NPM}`);');
+  writeFileSync(path.join(workspace, 'print-toolchain.mjs'), 'process.stdout.write(`${process.env.MAGI_NODE}\\n${process.env.MAGI_NPM}`);');
   const printed = await bash.run({ command: 'node print-toolchain.mjs' });
   assert.match(printed, /^exit_code: 0\n/);
   const { node: resolvedNode, npm: resolvedNpm } = resolveToolchain();
   assert.match(printed, new RegExp(resolvedNode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(printed, new RegExp(resolvedNpm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  writeFileSync(path.join(f.home, 'run-verify.mjs'), `import { spawnSync } from 'node:child_process';
+  writeFileSync(path.join(workspace, 'run-verify.mjs'), `import { spawnSync } from 'node:child_process';
 process.chdir('MAGI');
-const node = process.env.MAGI_NODE, npm = process.env.MAGI_NPM;
-for (const args of ${JSON.stringify([VERIFY_TEST_ARGS, VERIFY_BUILD_ARGS, VERIFY_UI_ARGS])}) {
-  const result = spawnSync(node, [npm, ...args], { stdio: 'inherit' });
-  if ((result.status ?? 1) !== 0) process.exit(result.status ?? 1);
-}
+const result = spawnSync(process.env.MAGI_NODE, [process.env.MAGI_NPM, ...${JSON.stringify([...VERIFY_NPM_ARGS])}], { stdio: 'inherit', env: process.env });
+process.exit(result.status ?? 1);
 `);
   const result = await bash.run({ command: 'node run-verify.mjs', timeout: 60 });
   if (!result.startsWith('exit_code: 0')) assert.fail(result);
-  assert.equal(readFileSync(path.join(f.root, 'dist/proof'), 'utf8'), 'upstream-v1');
-  assert.equal(readFileSync(path.join(f.root, 'apps/shell/dist/index.html'), 'utf8'), 'upstream-v1');
+  const validation = JSON.parse(readFileSync(path.join(clone, 'dist/test-env'), 'utf8'));
+  assert.notEqual(validation.home, f.home);
+  assert.equal(readFileSync(path.join(clone, 'dist/proof'), 'utf8'), 'upstream-v1');
+  assert.equal(readFileSync(path.join(clone, 'apps/shell/dist/index.html'), 'utf8'), 'upstream-v1');
 });
 
-test('a failed safety gate wakes the requesting chat until the cap, then the operator', async (t) => {
-  const home = mkdtempSync(path.join(tmpdir(), 'magi-gate-wake-'));
-  const bus = new Bus('@gate.magi', home);
-  t.after(() => { bus.close(); rmSync(home, { recursive: true, force: true }); });
-  const agentChat = bus.chats.forChannel('cli', 'agent');
+test('toolchainEnv does not put . on PATH when node is an unqualified name', () => {
+  const env = toolchainEnv({
+    MAGI_NODE: 'node',
+    MAGI_NPM: npm,
+    MAGI_GIT: 'git',
+    PATH: `${path.dirname(process.execPath)}${path.delimiter}/usr/bin`,
+  });
+  assert.equal(env.PATH?.startsWith(`.${path.delimiter}`), false);
+  assert.equal(env.MAGI_NODE, 'node');
+});
+
+test('bash stays available when Node 24 cannot be resolved', async (t) => {
+  const home = mkdtempSync(path.join(tmpdir(), 'magi-bash-fallback-'));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const previous = process.env.MAGI_NODE;
+  process.env.MAGI_NODE = path.join(home, 'missing-node');
+  t.after(() => {
+    if (previous === undefined) delete process.env.MAGI_NODE;
+    else process.env.MAGI_NODE = previous;
+  });
+  assert.throws(() => resolveToolchain(), /did not report a version|requires Node/);
+  writeFileSync(path.join(home, 'echo.mjs'), "process.stdout.write('still-here');");
+  const result = await shellTools(home, new ShellManager())[0].run({ command: 'node echo.mjs' });
+  assert.match(result, /exit_code: 0/);
+  assert.match(result, /still-here/);
+});
+
+test('foreground bash keeps the tail of long output', async (t) => {
+  const home = mkdtempSync(path.join(tmpdir(), 'magi-bash-tail-'));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  writeFileSync(path.join(home, 'long.mjs'), `process.stdout.write(${JSON.stringify(`${"H".repeat(10_000)}\nUNIQUE_TAIL_MARKER\n`)});`);
+  const result = await shellTools(home, new ShellManager())[0].run({ command: 'node long.mjs' });
+  assert.match(result, /UNIQUE_TAIL_MARKER/);
+  assert.match(result, /…/);
+});
+
+function failingFixture(t, beforeRemove = () => {}) {
+  const f = fixture(t, beforeRemove);
+  writeFileSync(path.join(f.root, 'source.txt'), 'INVALID');
+  return f;
+}
+
+async function finishReplace(worker, bus, id, ms = 30_000) {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    await worker.poll();
+    const result = bus.board('ReplaceSelfJob').result(id);
+    if (result) return result;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error('replace did not finish');
+}
+
+function claimWake(bus: Bus) {
+  const wake = bus.board('MessageDeliveryJob').claim('agent', (input) => bus.messages.get(input.message_id)?.contact_id !== MAGI_CONTACT_ID);
+  assert.ok(wake);
+  bus.board('MessageDeliveryJob').submit('agent', wake.id, { output: {} });
+}
+
+test('swap:true safety-gate failure goes through reviseCheckout and wakes the requesting chat per chat until the cap', async (t) => {
+  let bus: Bus | undefined;
+  const f = failingFixture(t, () => bus?.close());
+  process.env.MAGI_CHECKOUT = f.root;
+  bus = new Bus('@gate.magi', path.join(f.home, 'node-workspace'));
+  const agentA = bus.chats.forChannel('cli', 'agent-a');
+  const agentB = bus.chats.forChannel('cli', 'agent-b');
   const operatorChat = bus.chats.forChannel('cli', 'home');
   messageDelivery.setHomeChat(bus, operatorChat.id);
+  const savedSend = process.send, savedConnected = Object.getOwnPropertyDescriptor(process, 'connected');
+  process.send = () => { throw new Error('launcher must not switch after a failed safety gate'); };
+  Object.defineProperty(process, 'connected', { configurable: true, value: true });
+  t.after(() => { process.send = savedSend; if (savedConnected) Object.defineProperty(process, 'connected', savedConnected); else delete process.connected; });
   const worker = new ReplaceWorker(bus, { app: 'eva', script: 'build' }, { healthy: () => null, suspendForReplace: async () => {}, resume: async () => {} });
-  async function failOnce() {
-    const id = bus.board('ReplaceSelfJob').publish({ checkout: path.join(home, 'absent'), swap: false, chat_id: agentChat.id }, 'test');
-    const deadline = Date.now() + 5_000;
-    while (Date.now() < deadline) {
-      await worker.poll();
-      const result = bus.board('ReplaceSelfJob').result(id);
-      if (result) return result;
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-    throw new Error('replace did not finish');
+  async function failOnce(chatId: number) {
+    const id = bus!.board('ReplaceSelfJob').publish({ checkout: f.root, swap: true, chat_id: chatId }, 'test');
+    return finishReplace(worker, bus!, id);
   }
   for (let attempt = 1; attempt <= 3; attempt++) {
-    const result = await failOnce();
+    const result = await failOnce(agentA.id);
     assert.equal(result.status, 'failed');
-    const last = bus.messages.list(agentChat.id).at(-1);
+    assert.match(result.error ?? '', /candidate rejected/);
+    const last = bus.messages.list(agentA.id).at(-1);
     assert.equal(last?.contact_id, SYSTEM_CONTACT_ID);
     assert.match(last!.content, new RegExp(`attempt ${attempt}/3`));
+    assert.match(last!.content, /safety gate failed/);
     assert.equal(bus.messages.list(operatorChat.id).length, 0);
-    const wake = bus.board('MessageDeliveryJob').claim('agent', (input) => bus.messages.get(input.message_id)?.contact_id !== MAGI_CONTACT_ID);
-    assert.ok(wake);
-    bus.board('MessageDeliveryJob').submit('agent', wake.id, { output: {} });
+    claimWake(bus);
   }
-  const fourth = await failOnce();
+  const other = await failOnce(agentB.id);
+  assert.equal(other.status, 'failed');
+  const fromB = bus.messages.list(agentB.id).at(-1);
+  assert.match(fromB!.content, /attempt 1\/3/);
+  claimWake(bus);
+  const fourth = await failOnce(agentA.id);
   assert.equal(fourth.status, 'failed');
-  assert.equal(bus.messages.list(agentChat.id).filter((row) => row.contact_id === SYSTEM_CONTACT_ID).length, 3);
+  assert.equal(bus.messages.list(agentA.id).filter((row) => row.contact_id === SYSTEM_CONTACT_ID).length, 3);
   const operator = bus.messages.list(operatorChat.id).at(-1);
   assert.equal(operator?.contact_id, MAGI_CONTACT_ID);
   assert.match(operator!.content, /after 3 attempts/);
   const leftover = bus.board('MessageDeliveryJob').claim('agent', (input) => bus.messages.get(input.message_id)?.contact_id !== MAGI_CONTACT_ID);
   assert.equal(leftover, null);
+});
+
+test('launcher rollback copy is distinct from a safety-gate failure and uses the job chat_id', async (t) => {
+  const home = mkdtempSync(path.join(tmpdir(), 'magi-replace-crash-'));
+  const bus = new Bus('@crash.magi', home);
+  t.after(() => { bus.close(); rmSync(home, { recursive: true, force: true }); });
+  const agentChat = bus.chats.forChannel('cli', 'agent');
+  const otherChat = bus.chats.forChannel('cli', 'other');
+  const operatorChat = bus.chats.forChannel('cli', 'home');
+  messageDelivery.setHomeChat(bus, operatorChat.id);
+  bus.settings.set('replace.gate_failures.999', '3');
+  const worker = new ReplaceWorker(bus, { app: 'eva', script: 'build' }, { healthy: () => null, suspendForReplace: async () => {}, resume: async () => {} });
+  const id = bus.board('ReplaceSelfJob').publish({ checkout: path.join(home, 'absent'), swap: true, chat_id: agentChat.id }, 'test');
+  const result = await finishReplace(worker, bus, id, 5_000);
+  assert.equal(result.status, 'failed');
+  const last = bus.messages.list(agentChat.id).at(-1);
+  assert.equal(last?.contact_id, SYSTEM_CONTACT_ID);
+  assert.match(last!.content, /launcher rollback or crash/);
+  assert.doesNotMatch(last!.content, /safety gate failed/);
+  assert.equal(bus.messages.list(otherChat.id).length, 0);
+  assert.equal(bus.messages.list(operatorChat.id).length, 0);
 });
