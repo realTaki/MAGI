@@ -60,11 +60,14 @@ setInterval(() => {}, 1000);
   const deadline = Date.now() + 8_000;
   while (Date.now() < deadline && proc.exitCode == null) {
     try {
-      assert.equal(readFileSync(proof, "utf8"), "from-b");
+      // The new child can write the proof before the launcher records current=b.
+      // Keep waiting for both; only ENOENT used to retry, so `'a' !== 'b'` aborted the test.
+      if (readFileSync(proof, "utf8") !== "from-b") {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        continue;
+      }
       const state = JSON.parse(readFileSync(path.join(home, "eva-002", "launcher.json"), "utf8"));
-      assert.equal(state.current, "b");
-      assert.equal(state.previous, "a");
-      return;
+      if (state.current === "b" && state.previous === "a") return;
     } catch (error) {
       if (error?.code !== "ENOENT") throw error;
     }
