@@ -249,6 +249,7 @@ export function createLocalApi(context) {
     repository,
     configureGit: (root) => configureClone(root),
     initialProcesses: context.initialProcesses,
+    workspaceRoot: bus ? path.dirname(bus.workspace) : path.join(paths.home, ".magi"),
     log: (message) => console.error(message),
   });
 
@@ -852,8 +853,13 @@ export function createLocalApi(context) {
       }
     }
     await attachHostChannel(token);
-    // Spawn only classic EVA children. Shell and ASP hosts are skipped in magi-runtime.
-    await startManagedMagi();
+    // The default local agent is a separate eva launcher, not another BUS in Shell.
+    const agents = (await aspJson("/agents", { token }))?.agents ?? [];
+    const local = agents.find((agent) => agent?.handle === EVA_MAGI_HANDLE);
+    if (local && !local.online) {
+      progress?.("Starting local MAGI…", 0.98);
+      await magiRuntime.startLocal(local);
+    }
     await Promise.all(
       created.map(async ({ handle, nickname, chatId }) => {
         try {
@@ -903,9 +909,6 @@ export function createLocalApi(context) {
       await dispose();
       throw error;
     }
-    // The society comes up once here; after that it is the operator's to
-    // start and stop from each MAGI's profile.
-    await startManagedMagi();
     await ensureDefaultMagis(progress);
     return { origin: ASP_ORIGIN.href };
   }
@@ -978,23 +981,6 @@ export function createLocalApi(context) {
     const agent = (await magiRoster()).find((row) => row.handle === handle);
     if (agent === undefined) throw new Error(`Unknown MAGI: ${handle}`);
     return agent;
-  }
-
-  /**
-   * The society of this machine comes up once, when the app brings ASP up.
-   * Afterwards nothing restarts behind the operator's back: the left panel
-   * shows who is offline, and a MAGI's profile starts what it needs.
-   */
-  async function startManagedMagi() {
-    try {
-      if ((await aspProcess.probe()) !== "ready") return { started: [], failed: [] };
-      return await magiRuntime.startAll(await magiRoster());
-    } catch (error) {
-      console.error(
-        `[magi] could not start the society: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      return { started: [], failed: [] };
-    }
   }
 
   /** What a MAGI's profile shows: whether it is up, and where it runs from. */

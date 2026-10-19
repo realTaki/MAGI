@@ -1,6 +1,6 @@
 /**
- * Checkout paths for a MAGI workspace. The shell does not start other nodes.
- * Each node is an eva launcher and one child process. `start` reports that.
+ * Checkout paths and the desktop's explicitly seeded local agent.
+ * Each node runs its own eva launcher and child; arbitrary roster nodes stay external.
  *
  * A managed workspace can still be cloned so the operator can see its branch.
  * The child of that node fetches, tests, and builds when it replaces itself.
@@ -9,7 +9,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { isInProcessMagiHandle, magiLocalName } from "@magi/bus";
+import { EVA_MAGI_HANDLE, isInProcessMagiHandle, magiLocalName } from "@magi/bus";
 import { ensureManagedClone } from "./clone.js";
 
 /** Branch per MAGI: `magi/<name>` (`magi/shell` for Balthasar, `magi/asp` for Casper). */
@@ -54,24 +54,27 @@ export function createMagiRuntime({
   repository,
   configureGit,
   initialProcesses = [],
+  workspaceRoot = path.join(home, ".magi"),
   log = (_message: string) => {},
 }) {
   const children = new Map(); // handle -> { child, root }
   const sources = new Map(); // handle -> prepared checkout root
+  const starting = new Map();
 
   for (const { spec, handle: child } of initialProcesses) {
-    if (!spec.entry.endsWith("eva.js")) continue;
-    const handle = spec.args?.[0];
+    if (!spec.entry.endsWith("eva.mjs") || spec.args?.[0] !== "--role" || spec.args?.[1] !== "agent") continue;
+    const handle = spec.args?.[2];
     if (!handle) continue;
     const root = path.resolve(spec.cwd, "..", "..");
-    children.set(handle, { child, root });
+    const record = { child, root };
+    children.set(handle, record);
     sources.set(handle, root);
-    child.onExit(() => children.delete(handle));
+    child.onExit(() => { if (children.get(handle) === record) children.delete(handle); });
   }
 
   function nodeBinary() {
     if (typeof tools.node === "string" && tools.node !== "" && existsSync(tools.node)) return tools.node;
-    return "node";
+    throw new Error("MAGI's bundled Node runtime is missing");
   }
 
   function npmCli() {
@@ -120,7 +123,7 @@ export function createMagiRuntime({
   async function ensureSource(handle) {
     const ready = sources.get(handle);
     if (ready !== undefined) return ready;
-    const root = agentSource(home, handle);
+    const root = path.join(workspaceRoot, agentName(handle), "MAGI");
     if (managed) {
       if (typeof repository !== "string" || repository === "") {
         throw new Error("A managed MAGI clone needs MAGI_REPOSITORY_URL");
@@ -144,7 +147,7 @@ export function createMagiRuntime({
     const ready = sources.get(handle);
     if (ready !== undefined) return ready;
     if (!managed) return checkout;
-    return agentSource(home, handle);
+    return path.join(workspaceRoot, agentName(handle), "MAGI");
   }
 
   function isRunning(handle) {
@@ -186,7 +189,60 @@ export function createMagiRuntime({
     refuse(handle);
   }
 
-  /** Start every agent of a roster; used once when the app brings ASP up. */
+  /** Only the explicitly seeded local agent is owned by the desktop. It runs its own launcher and BUS. */
+  async function startLocal(agent) {
+    const { handle, token } = require(agent);
+    if (handle !== EVA_MAGI_HANDLE) throw new Error("Only the default local MAGI can be started by Shell");
+    if (isRunning(handle)) return { handle, started: false };
+    if (starting.has(handle)) return starting.get(handle);
+    const task = (async () => {
+      const root = await rootFor(handle);
+      const entry = path.join(root, "apps", "eva", "eva.mjs");
+      if (!existsSync(entry)) throw new Error(`The local MAGI launcher is missing: ${entry}`);
+      const env = { ...tools.env };
+      delete env.NODE_TEST_CONTEXT;
+      for (const key of ["MAGI_CHILD", "MAGI_HEALTH", "MAGI_HEALTH_WORKSPACE", "MAGI_APP_CHECKOUT", "MAGI_REVISION", "MAGI_REVISION_DIR", "MAGI_PREVIOUS_REVISION", "MAGI_REPLACE_JOB", "MAGI_REPLACE_ERROR"]) delete env[key];
+      Object.assign(env, {
+        MAGI_ROLE: "agent", MAGI_HOST: "0", MAGI_HOME: workspaceRoot, MAGI_CHECKOUT: root,
+        MAGI_NODE: nodeBinary(), MAGI_NPM: npmCli(), MAGI_GIT: tools.git,
+        MAGI_HANDLE: handle, MAGI_ASP: base, MAGI_ASP_TOKEN: token,
+      });
+      const spec = { entry, cwd: path.dirname(entry), args: ["--role", "agent", handle], env };
+      if (startProcess) {
+        const child = await startProcess(spec);
+        const record = { child, root };
+        children.set(handle, record);
+        child.onExit(() => { if (children.get(handle) === record) children.delete(handle); });
+        if (!children.has(handle)) throw new Error(`${handle} exited before becoming available`);
+      } else {
+        const child = spawnProcess(nodeBinary(), [entry, ...spec.args], {
+          cwd: spec.cwd, env, stdio: ["ignore", "ignore", "pipe", "ipc"], detached: true, windowsHide: true,
+        });
+        const record = { child, root };
+        children.set(handle, record);
+        child.once("exit", () => { if (children.get(handle) === record) children.delete(handle); });
+        child.stderr?.on("data", (chunk) => log(`[magi] ${handle}: ${String(chunk).trim()}`));
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const timer = setTimeout(() => failed(new Error(`${handle} did not become ready`)), 30_000);
+            const cleanup = () => { clearTimeout(timer); child.off("message", message); child.off("error", failed); child.off("exit", exited); };
+            const failed = (error) => { cleanup(); reject(error); };
+            const exited = () => failed(new Error(`${handle} exited before ready`));
+            const message = (value) => {
+              if (value?.type === "ready") { cleanup(); resolve(); }
+              else if (value?.type === "failed") failed(new Error(`${handle} failed to start`));
+            };
+            child.on("message", message); child.once("error", failed); child.once("exit", exited);
+          });
+        } catch (error) { stop(handle); throw error; }
+      }
+      return { handle, started: true };
+    })();
+    starting.set(handle, task);
+    try { return await task; } finally { starting.delete(handle); }
+  }
+
+  /** Apply the external-node guard to a roster; startup uses startLocal instead. */
   async function startAll(agents) {
     const started = [];
     const failed = [];
@@ -299,6 +355,7 @@ export function createMagiRuntime({
     sourceOf,
     running: () => [...children.keys()].filter(isRunning),
     start,
+    startLocal,
     startAll,
     stop,
     stopAll,
