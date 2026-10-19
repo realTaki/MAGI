@@ -68,7 +68,7 @@ async function expectRollback(bus: Bus, checkout: string, app: "eva" | "asp" | "
   assert.ok(notes.some((text) => text.startsWith("[replace] ") && text !== "[replace] replaced"));
 }
 
-test("a fresh MAGI shows the provider card on cold start and offers it again after a rejection", async () => {
+test("a fresh MAGI shows a card and the operator can reopen it after cancellation without a model", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-card-"));
   const asp = new Asp({
     databasePath: path.join(root, "asp.sqlite"),
@@ -129,7 +129,14 @@ test("a fresh MAGI shows the provider card on cold start and offers it again aft
       body: JSON.stringify({ content: "card rejected", metadata: { card_reject: { id: card } } }),
     });
     assert.equal(submitted.ok, true);
-    await until("provider card was not offered again", () => cards(magi!.bus).length >= 2);
+    await until("cancellation was not acknowledged", () => magi!.bus.settings.get(`card.receipt.${card}`) !== null);
+    const reopened = await fetch(new URL(`/chats/${address}/messages`, asp.origin), {
+      method: "POST",
+      headers: { authorization: `Bearer ${asp.operatorToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ content: "open provider", metadata: { card_result: { id: `open-${card}`, action: "open" } } }),
+    });
+    assert.equal(reopened.ok, true);
+    await until("provider card was not opened", () => cards(magi!.bus).length >= 2);
     assert.equal(cards(magi.bus).length, 2);
     let again = "";
     await until("the card was not sent a second time", async () => {
@@ -150,9 +157,8 @@ test("a fresh MAGI shows the provider card on cold start and offers it again aft
       body: JSON.stringify({ content: "card rejected", metadata: { card_reject: { id: again } } }),
     });
     assert.equal(againSubmitted.ok, true);
-    await until("the operator was not told the card had stopped", () => magi!.bus.chats.list().some((candidate) =>
-      magi!.bus.messages.list(candidate.id).some((message) => message.content.includes("will not be shown again"))));
-    assert.equal(magi.bus.settings.get("provider.card.rejections"), "2");
+    await until("second cancellation was not acknowledged", () => magi!.bus.settings.get(`card.receipt.${again}`) !== null);
+    assert.equal(magi.bus.settings.get("provider.card.stopped"), "1");
     const workspace = path.join(root, "receiver");
     await magi.stop();
     magi = new Magi(handle, {
@@ -166,7 +172,7 @@ test("a fresh MAGI shows the provider card on cold start and offers it again aft
     await magi.start();
     await sleep(400);
     assert.equal(cards(magi.bus).length, 2);
-    assert.equal(magi.bus.settings.get("provider.card.rejections"), "2");
+    assert.equal(magi.bus.settings.get("provider.card.stopped"), "1");
     assert.equal(calls, 0);
     assert.equal(magi.bus.secrets.get("provider.api_key"), null);
   } finally {
@@ -215,7 +221,7 @@ test("two restarts do not count as rejecting the provider card", async () => {
     await sleep(400);
     const texts = magi.bus.chats.list().flatMap((chat) => magi!.bus.messages.list(chat.id, 50).map((message) => message.content));
     assert.equal(texts.some((text) => text.includes("rejected") || text.includes("will not be shown again")), false);
-    assert.equal(magi.bus.settings.get("provider.card.offers"), "1");
+    assert.equal(magi.bus.settings.get("provider.card.offers"), null);
     assert.equal(magi.bus.settings.get("provider.card.rejections") ?? "0", "0");
     assert.equal(calls, 0);
   } finally {
@@ -225,7 +231,7 @@ test("two restarts do not count as rejecting the provider card", async () => {
   }
 });
 
-test("one rejection then a restart still shows the provider card", async () => {
+test("an explicitly reopened card survives a restart after cancellation", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-card-reject-restart-"));
   const asp = new Asp({
     databasePath: path.join(root, "asp.sqlite"),
@@ -277,9 +283,15 @@ test("one rejection then a restart still shows the provider card", async () => {
       body: JSON.stringify({ content: "card rejected", metadata: { card_reject: { id: card } } }),
     });
     assert.equal(submitted.ok, true);
-    await until("provider card was not offered again", () => cards(magi!.bus).length >= 2);
-    assert.equal(magi.bus.settings.get("provider.card.offers"), "2");
-    assert.equal(magi.bus.settings.get("provider.card.rejections"), "1");
+    await until("cancellation was not acknowledged", () => magi!.bus.settings.get(`card.receipt.${card}`) !== null);
+    const reopened = await fetch(new URL(`/chats/${address}/messages`, asp.origin), {
+      method: "POST",
+      headers: { authorization: `Bearer ${asp.operatorToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ content: "open provider", metadata: { card_result: { id: `open-${card}`, action: "open" } } }),
+    });
+    assert.equal(reopened.ok, true);
+    await until("provider card was not opened", () => cards(magi!.bus).length >= 2);
+    assert.equal(magi.bus.settings.get("provider.card.rejections"), "0");
     const before = cards(magi.bus).length;
     await magi.stop();
     magi = new Magi(handle, { workspace, asp: { base: asp.origin, token }, client });
@@ -288,8 +300,7 @@ test("one rejection then a restart still shows the provider card", async () => {
     await sleep(400);
     const texts = magi.bus.chats.list().flatMap((candidate) => magi!.bus.messages.list(candidate.id, 50).map((message) => message.content));
     assert.equal(texts.some((text) => text.includes("will not be shown again")), false);
-    assert.equal(magi.bus.settings.get("provider.card.offers"), "2");
-    assert.equal(magi.bus.settings.get("provider.card.rejections"), "1");
+    assert.equal(magi.bus.settings.get("provider.card.rejections"), "0");
   } finally {
     await magi?.stop();
     await asp.stop();

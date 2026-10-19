@@ -37,7 +37,7 @@ export type AspEvent = {
   payload: {
     sender?: string;
     content?: unknown;
-    metadata?: { card?: CardSpec };
+    metadata?: { card?: CardSpec; [key: string]: unknown };
   };
 };
 

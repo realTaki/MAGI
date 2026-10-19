@@ -5,7 +5,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { MAGI_CONTACT_ID, messageDelivery, waitForJob, type Bus, type CardField, type CardSpec, type ExecutableTool } from "@magi/bus";
+import { MAGI_CONTACT_ID, messageDelivery, waitForJob, providerCard, type Bus, type CardField, type CardSpec, type ExecutableTool } from "@magi/bus";
 import { stringArg } from "./args.js";
 
 function fieldsArg(value: unknown): CardField[] {
@@ -42,13 +42,20 @@ export function cardTools(bus: Bus): ExecutableTool[] {
     async run(args) {
       const chatId = messageDelivery.presentChat(bus);
       if (chatId === null) throw new Error("no ASP chat can present a card");
-      const spec: CardSpec = {
+      let spec: CardSpec = {
         id: randomUUID(),
         title: stringArg(args, "title"),
         handle: bus.handle,
         submit: typeof args.submit === "string" && args.submit.trim() ? args.submit.trim() : "Save",
         fields: fieldsArg(args.fields),
       };
+      if (spec.fields.some((field) => field.name === "provider.api_key") && spec.fields.some((field) => field.name === "provider")) {
+        spec = providerCard(bus.handle, {
+          provider: bus.settings.get("provider.name") ?? undefined,
+          model: bus.settings.get("provider.model") ?? undefined,
+          base_url: bus.settings.get("provider.base_url") ?? undefined,
+        });
+      }
       const jobId = bus.board("CardJob").publish({ spec }, "card");
       messageDelivery.send(bus, chatId, `card: ${spec.title}`, MAGI_CONTACT_ID, "card", { card: spec });
       try {

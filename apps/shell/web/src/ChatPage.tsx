@@ -1,3 +1,5 @@
+import { FormCardView } from "./FormCardView";
+import { cardStateFromEvents, cardWithReceipt } from "./provider-form";
 import { Button } from "./Button";
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -12,7 +14,7 @@ import {
   type RoutineRun,
 } from "./chat-model";
 import { Avatar } from "./Avatar";
-import { createAspChat, patchAspChat, clearOperator, encryptSecret, listAspBots, listAspChats, listProfiles, sendAspMessage, updateAspNickname, addAspChatMember, storedChats, saveChats, storedEvents, syncAspEvents, storedOutgoingMessages, queueOutgoingMessage, removeOutgoingMessage, type AspBot, type AspEvent, type CreatedChat, type OutgoingMessage } from "./asp";
+import { createAspChat, patchAspChat, clearOperator, listAspBots, listAspChats, sendAspMessage, updateAspNickname, addAspChatMember, storedChats, saveChats, storedEvents, syncAspEvents, storedOutgoingMessages, queueOutgoingMessage, removeOutgoingMessage, type AspBot, type AspEvent, type CreatedChat, type OutgoingMessage } from "./asp";
 import { initialsFromLogin, useGitHubAccount } from "./github-connect";
 import { openSettingsRoute } from "./hash-route";
 import { useT } from "./i18n";
@@ -420,85 +422,6 @@ function previewForChat(chat: ChatView, extra: ExtraMessages) {
   return chat.preview;
 }
 
-function FormCardView({ message }: { message: Extract<ChatMessage, { type: "form" }> }) {
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [error, setError] = useState("");
-  const [sent, setSent] = useState(false);
-  const card = message.card;
-  return (
-    <form
-      className="chat-page__form"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (sent) return;
-        void (async () => {
-          try {
-            const fields: Record<string, unknown> = {};
-            const secret = card.fields.some((field) => field.kind === "secret");
-            const profiles = secret ? await listProfiles() : [];
-            const publicKey = profiles.find((profile) => profile.handle === card.handle)?.public_key ?? null;
-            if (secret && !publicKey) throw new Error(`${card.handle} has no public key yet`);
-            for (const field of card.fields) {
-              const value = values[field.name] ?? "";
-              if (value === "" && !field.optional) throw new Error(`${field.label} is required`);
-              fields[field.name] = field.kind === "secret"
-                ? { ciphertext: await encryptSecret(publicKey!, value) }
-                : value;
-            }
-            await sendAspMessage(message.chatId, `card filled: ${card.title}`, {
-              card_result: { id: card.id, fields },
-            });
-            setSent(true);
-            setError("");
-          } catch (caught) {
-            setError(caught instanceof Error ? caught.message : String(caught));
-          }
-        })();
-      }}
-    >
-      <div className="chat-page__form-title">{card.title}</div>
-      {card.fields.map((field) => (
-        <label key={field.name} className="chat-page__form-row">
-          <span>{field.label}</span>
-          {field.kind === "choice" ? (
-            <select
-              value={values[field.name] ?? ""}
-              onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))}
-            >
-              <option value="">Choose</option>
-              {(field.choices ?? []).map((choice) => <option key={choice} value={choice}>{choice}</option>)}
-            </select>
-          ) : (
-            <input
-              type={field.kind === "secret" ? "password" : "text"}
-              autoComplete="off"
-              value={values[field.name] ?? ""}
-              onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))}
-            />
-          )}
-        </label>
-      ))}
-      <button type="submit" disabled={sent}>{sent ? "Sent" : card.submit}</button>
-      <button
-        type="button"
-        disabled={sent}
-        onClick={() => {
-          if (sent) return;
-          void (async () => {
-            try {
-              await sendAspMessage(message.chatId, `card rejected: ${card.title}`, { card_reject: { id: card.id } });
-              setSent(true);
-              setError("");
-            } catch (caught) {
-              setError(caught instanceof Error ? caught.message : String(caught));
-            }
-          })();
-        }}
-      >Not now</button>
-      {error ? <p className="chat-page__form-error">{error}</p> : null}
-    </form>
-  );
-}
 
 function Thread({ messages }: { messages: ChatMessage[] }) {
   return (
@@ -678,6 +601,8 @@ export function ChatPage() {
   const userWrapRef = useRef<HTMLDivElement | null>(null);
   const botListRef = useRef<HTMLDivElement | null>(null);
   const composerInputRef = useRef<HTMLInputElement | null>(null);
+  const [providerOpening, setProviderOpening] = useState(false);
+  const providerOpenLock = useRef(false);
   const activeIdRef = useRef(activeId);
   const readThroughRef = useRef<Record<string, number>>(storedReadThrough());
   const creatingRef = useRef(false);
@@ -1083,13 +1008,13 @@ export function ChatPage() {
 
   function applyChatEvents(chatId: string, events: AspEvent[]) {
     const messageEvents = events.filter((event) => event.type === "chat.message");
-    const thread: ChatMessage[] = messageEvents.map((event) => {
+    const thread: ChatMessage[] = messageEvents.filter((event) => !event.payload.metadata?.card_status).map((event) => {
       const text = typeof event.payload.content === "string"
         ? event.payload.content
         : JSON.stringify(event.payload.content);
       const card = event.payload.metadata?.card;
       if (card && !isOperatorSender(event.payload.sender)) {
-        return { type: "form" as const, text, chatId, card: card as CardSpec };
+        return { type: "form" as const, text, chatId, card: cardWithReceipt(card as CardSpec, messageEvents), state: cardStateFromEvents(card, messageEvents) };
       }
       // Old desktop caches may still contain events written before ASP renamed the
       // operator handle. Keep presenting those cached entries as user messages.
@@ -1624,6 +1549,15 @@ export function ChatPage() {
 
         <main className="chat-page__main">
           <div className="chat-page__topbar">
+            {active.kind !== "group" && active.remoteId && <button type="button" disabled={providerOpening} onClick={() => {
+              if (providerOpenLock.current) return;
+              providerOpenLock.current = true;
+              setProviderOpening(true);
+              void sendAspMessage(active.remoteId!, t("providerForm.title"), { card_result: { id: crypto.randomUUID(), action: "open" } })
+                .catch(() => setRuntimeNote(t("providerForm.sendFailed")))
+                .finally(() => { providerOpenLock.current = false; setProviderOpening(false); });
+            }}>{t("providerForm.title")}</button>}
+
             <div className="chat-page__topbar-left">
               <button
                 type="button"
