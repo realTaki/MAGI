@@ -78,8 +78,11 @@ export function createMagiRuntime({
   }
 
   function npmCli() {
+    const fromEnv = typeof tools.env?.MAGI_NPM === "string" ? tools.env.MAGI_NPM.trim() : "";
     const candidates = [
       typeof tools.npm === "string" ? tools.npm : "",
+      fromEnv,
+      process.env.MAGI_NPM?.trim() ?? "",
       path.join(checkout, "apps", "shell", "runtime", "npm", "node_modules", "npm", "bin", "npm-cli.js"),
     ];
     for (const candidate of candidates) {
