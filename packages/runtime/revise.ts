@@ -85,21 +85,35 @@ export async function reviseCheckout(root: string, target?: string): Promise<{ r
   const staging = `${dir}.building`;
   rmSync(staging, { recursive: true, force: true });
   mkdirSync(join(magiHome(), name, "revisions"), { recursive: true });
+  let materialized = false;
   try {
-    await run(git, ["clone", "--local", root, staging], root);
+    await run(git, ["clone", "--local", "--no-hardlinks", root, staging], root);
     await run(git, ["checkout", "--detach", revision], staging);
-    await run("npm", ["ci"], staging);
-    await run("npm", ["test"], staging);
-    await run("npm", ["run", "build"], staging);
+    // Install at the permanent path: Windows workspace junctions (and some
+    // build output) retain absolute paths and would break after a final rename.
+    if (!live) rmSync(dir, { recursive: true, force: true });
+    renameSync(staging, dir);
+    materialized = true;
+    await run("npm", ["ci"], dir);
+    const validationHome = mkdtempSync(join(tmpdir(), "magi-revision-tests-"));
+    const testEnv = { ...process.env };
+    for (const key of Object.keys(testEnv)) {
+      if (key.startsWith("MAGI_") && !["MAGI_NODE", "MAGI_NPM", "MAGI_GIT"].includes(key)) delete testEnv[key];
+    }
+    testEnv.MAGI_HOME = validationHome;
+    testEnv.MAGI_OS_HOME = validationHome;
+    delete testEnv.NODE_TEST_CONTEXT;
+    try { await run("npm", ["test"], dir, testEnv); }
+    finally { rmSync(validationHome, { recursive: true, force: true }); }
+    await run("npm", ["run", "build"], dir);
     if (process.env.MAGI_ROLE === "shell") {
-      await run("npm", ["run", "build:ui", "--prefix", "apps/shell"], staging);
-      if (!existsSync(join(staging, "apps", "shell", "dist", "index.html"))) throw new Error("Shell build produced no UI entry");
+      await run("npm", ["run", "build:ui", "--prefix", "apps/shell"], dir);
+      if (!existsSync(join(dir, "apps", "shell", "dist", "index.html"))) throw new Error("Shell build produced no UI entry");
     }
   } catch (error) {
     rmSync(staging, { recursive: true, force: true });
+    if (materialized) rmSync(dir, { recursive: true, force: true });
     throw error;
   }
-  if (!live) rmSync(dir, { recursive: true, force: true });
-  renameSync(staging, dir);
   return { revision, previous, dir };
 }

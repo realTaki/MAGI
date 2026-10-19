@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { reviseCheckout, trackingRef } from '@magi/runtime/revise.js';
@@ -12,7 +12,7 @@ import { ReplaceWorker } from '../../../packages/manager/dist/replace.js';
 
 const repo = path.resolve(import.meta.dirname, '../../..');
 const node = process.execPath;
-const npm = path.join(repo, 'apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js');
+const npm = process.env.MAGI_NPM?.trim() || process.env.npm_execpath?.trim() || path.join(repo, 'apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js');
 function fixture(t, beforeRemove = () => {}) {
   const home = mkdtempSync(path.join(tmpdir(), 'magi-local-revision-'));
   const root = path.join(home, 'MAGI');
@@ -30,7 +30,7 @@ function fixture(t, beforeRemove = () => {}) {
   writeFileSync(path.join(root, 'source.txt'), 'upstream-v1');
   writeFileSync(path.join(root, 'removed.txt'), 'remove this source');
   writeFileSync(path.join(root, 'staged.txt'), 'original');
-  writeFileSync(path.join(root, 'build.mjs'), `import{readFileSync,mkdirSync,writeFileSync}from'node:fs';import{dirname}from'node:path';import{fileURLToPath}from'node:url';process.chdir(dirname(fileURLToPath(import.meta.url)));const value=readFileSync('source.txt','utf8');if(value==='INVALID')throw Error('candidate rejected');if(process.argv[2]==='ui'){mkdirSync('apps/shell/dist',{recursive:true});writeFileSync('apps/shell/dist/index.html',value)}else if(process.argv[2]==='build'){mkdirSync('dist',{recursive:true});writeFileSync('dist/proof',value)}`);
+  writeFileSync(path.join(root, 'build.mjs'), `import{readFileSync,mkdirSync,writeFileSync}from'node:fs';import{dirname,basename}from'node:path';import{fileURLToPath}from'node:url';process.chdir(dirname(fileURLToPath(import.meta.url)));const value=readFileSync('source.txt','utf8');if(value==='INVALID')throw Error('candidate rejected');if(process.argv[2]==='test'){mkdirSync('dist',{recursive:true});writeFileSync('dist/test-env',JSON.stringify({home:process.env.MAGI_HOME,dirName:basename(process.cwd()),token:process.env.MAGI_ASP_TOKEN!==undefined,replace:process.env.MAGI_REPLACE_JOB!==undefined}))}else if(process.argv[2]==='ui'){mkdirSync('apps/shell/dist',{recursive:true});writeFileSync('apps/shell/dist/index.html',value)}else if(process.argv[2]==='build'){mkdirSync('dist',{recursive:true});writeFileSync('dist/proof',value)}`);
   mkdirSync(path.join(root, 'apps/shell'), { recursive: true });
   writeFileSync(path.join(root, 'apps/shell/package.json'), JSON.stringify({ scripts: { 'build:ui': 'node ../../build.mjs ui' } }));
   git('add', '.'); git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'fixture');
@@ -46,8 +46,16 @@ test('local rebuild includes unstaged, staged, untracked and removed source with
   writeFileSync(path.join(f.root, '.env'), 'fixture-only-secret');
   const before = { head: f.git('rev-parse', 'HEAD'), status: f.git('status', '--porcelain'), refs: f.git('show-ref'), index: readFileSync(path.join(f.root, '.git/index')) };
   await assert.rejects(reviseCheckout(path.join(f.root, 'apps')), /source checkout root/);
+  process.env.MAGI_ASP_TOKEN = 'fixture-only-runtime-token'; process.env.MAGI_REPLACE_JOB = '99';
   const result = await reviseCheckout(f.root, undefined);
+  const validation = JSON.parse(readFileSync(path.join(result.dir, 'dist/test-env'), 'utf8'));
+  assert.equal(validation.dirName, result.revision, "validation runs at the permanent revision path");
+  assert.notEqual(validation.home, f.home, 'candidate tests must not open the running node data root');
+  assert.equal(validation.token, false); assert.equal(validation.replace, false);
   assert.notEqual(result.revision, before.head);
+  const object = path.join('.git/objects', result.revision.slice(0, 2), result.revision.slice(2));
+  const originalObject = statSync(path.join(f.root, object), { bigint: true }), copiedObject = statSync(path.join(result.dir, object), { bigint: true });
+  assert.equal(originalObject.dev === copiedObject.dev && originalObject.ino === copiedObject.ino, false, 'revision objects must not depend on hard links to the source filesystem');
   assert.equal(readFileSync(path.join(result.dir, 'dist/proof'), 'utf8'), 'local-v2');
   assert.equal(readFileSync(path.join(result.dir, 'apps/shell/dist/index.html'), 'utf8'), 'local-v2');
   assert.equal(readFileSync(path.join(result.dir, 'staged.txt'), 'utf8'), 'staged change');
