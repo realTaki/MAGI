@@ -73,7 +73,8 @@ export class AspProcessWorker extends BaseWorker {
     this.origin = options.origin ?? ASP_ORIGIN;
     this.sourceCheckout = options.sourceCheckout;
     this.node = options.node;
-    this.env = options.env;
+    this.env = { ...options.env };
+    for (const key of Object.keys(this.env)) if (key.startsWith("MAGI_DESKTOP_UPDATE_") || ["MAGI_REVISION", "MAGI_REVISION_DIR", "MAGI_REPLACE_JOB", "MAGI_REPLACE_ERROR"].includes(key)) delete this.env[key];
     this.spawnProcess = options.spawnProcess ?? spawn;
     this.startProcess = options.startProcess;
     if (options.initialProcess) {

@@ -216,3 +216,35 @@ test('a failed safety gate wakes the requesting chat until the cap, then the ope
   const leftover = bus.board('MessageDeliveryJob').claim('agent', (input) => bus.messages.get(input.message_id)?.contact_id !== MAGI_CONTACT_ID);
   assert.equal(leftover, null);
 });
+
+test('desktop replace builds a unique package then calls host, never a node-only switch', { skip: process.platform !== 'linux' }, async (t) => {
+  let bus;
+  const f = fixture(t, () => bus?.close());
+  process.env.MAGI_CHECKOUT = f.root;
+  process.env.MAGI_PACKAGED = '1';
+  writeFileSync(path.join(f.root, 'apps/shell/package.json'), JSON.stringify({ scripts: { 'build:ui': 'node ../../build.mjs ui', build: 'node package.mjs' } }));
+  writeFileSync(path.join(f.root, 'apps/shell/package.mjs'), `import{writeFileSync}from'node:fs';import{join}from'node:path';const output=process.argv.find(x=>x.startsWith('--config.directories.output=')).split('=').slice(1).join('=');writeFileSync(join(output,'fixture.AppImage'),'verified-package');`);
+  bus = new Bus(SHELL_MAGI_HANDLE, path.join(f.home, 'node-workspace'));
+  const savedSend = process.send, savedConnected = Object.getOwnPropertyDescriptor(process, 'connected');
+  let outgoing, installed;
+  process.send = message => { outgoing = message; return true; };
+  Object.defineProperty(process, 'connected', { configurable: true, value: true });
+  t.after(() => { process.send = savedSend; if (savedConnected) Object.defineProperty(process, 'connected', savedConnected); else delete process.connected; });
+  const worker = new ReplaceWorker(bus, { app: 'shell', script: 'build:process' }, {
+    healthy: () => null, suspendForReplace: async () => {}, resume: async () => {},
+    installDesktopUpdate: async (manifest, job) => { installed = { manifest, job }; },
+  });
+  const { id } = JSON.parse(await rebuildTools(bus)[0].run({ target: 'self', desktop: true }));
+  await worker.poll();
+  const deadline = Date.now() + 15_000;
+  while (!installed && Date.now() < deadline) {
+    const result = bus.board('ReplaceSelfJob').result(id);
+    if (result?.status === 'failed') assert.fail(result.error);
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.equal(installed?.job, id);
+  assert.equal(readFileSync(installed.manifest.installer, 'utf8'), 'verified-package');
+  assert.equal(outgoing, undefined);
+  await worker.poll();
+  assert.equal(bus.board('ReplaceSelfJob').result(id), null, 'arming installation must not report success or failure before Electron exits');
+});

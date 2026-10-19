@@ -208,6 +208,10 @@ function stopAndWait(child, role) {
 function pruneRevisions(name, keep) {
   const root = join(magiHome(), name, "revisions");
   if (!existsSync(root)) return;
+  // A still-running launcher may live in a revision older than its child.
+  // Keep its entry available for the Electron supervisor's later restart.
+  const ownRoot = resolve(dirname(launcherFile), "..", "..");
+  if (dirname(ownRoot) === resolve(root)) keep.add(ownRoot.slice(resolve(root).length + 1));
   for (const entry of readdirSync(root)) {
     if (keep.has(entry)) continue;
     rmSync(join(root, entry), { recursive: true, force: true });
@@ -369,6 +373,7 @@ async function main() {
     }
   }
 
+  const desktopHandoff = Boolean(process.env.MAGI_DESKTOP_UPDATE_JOURNAL);
   const inheritedJob = Number(process.env.MAGI_REPLACE_JOB);
   const inheritedError = process.env.MAGI_REPLACE_ERROR || undefined;
   delete process.env.MAGI_REPLACE_JOB;
@@ -380,6 +385,13 @@ async function main() {
       replaceJob: Number.isInteger(inheritedJob) ? inheritedJob : undefined,
       replaceError: inheritedError,
     });
+    // Desktop readiness belongs only to the first handoff child. Later normal
+    // self replacements must not wait on an earlier desktop transaction.
+    delete process.env.MAGI_DESKTOP_UPDATE_JOURNAL;
+    if (desktopHandoff) {
+      delete process.env.MAGI_REVISION;
+      delete process.env.MAGI_REVISION_DIR;
+    }
   } catch (error) {
     report(name, error);
     process.exit(1);
@@ -399,7 +411,9 @@ async function main() {
     state.previous = saved.current;
     state.previousDir = saved.currentDir;
     writeState(name, state);
-    pruneRevisions(name, new Set([state.current, state.previous].filter(Boolean)));
+    // Desktop rollback must retain BOTH prior launcher-state revisions until
+    // the Electron/UI readiness transaction commits. A later normal switch prunes.
+    if (!desktopHandoff) pruneRevisions(name, new Set([state.current, state.previous].filter(Boolean)));
   }
   if (typeof process.send === "function") process.send({ v: LAUNCHER_PROTOCOL, type: "ready" });
   if (Number.isInteger(inheritedJob) && !inheritedError) interfaceUpdated(state.currentDir);

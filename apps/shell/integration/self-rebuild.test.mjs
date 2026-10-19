@@ -365,3 +365,37 @@ test('a failed Shell candidate restores the old checkout and never offers UI act
   assert.deepEqual(events,[]);
   assert.deepEqual(loaded, []);
 });
+
+test('desktop handoff preserves rollback revisions and consumes its override before a later node switch', async t => {
+  const home = mkdtempSync(path.join(tmpdir(), 'magi-desktop-launcher-'));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const trigger = path.join(home, 'switch'), proof = path.join(home, 'proof');
+  const old = childAt(home, 'shell', 'old', '');
+  const older = childAt(home, 'shell', 'older', '');
+  const next = childAt(home, 'shell', 'next', `process.send({v:1,type:'hello'});process.send({v:1,type:'ready'});require('node:fs').writeFileSync(${JSON.stringify(proof)},JSON.stringify({journal:process.env.MAGI_DESKTOP_UPDATE_JOURNAL,revision:process.env.MAGI_REVISION,dir:process.env.MAGI_REVISION_DIR}));process.on('message',m=>{if(m?.type==='shutdown')process.exit(0)});setInterval(()=>{},1000);`);
+  const candidate = childAt(home, 'shell', 'candidate', `process.send({v:1,type:'hello'});process.send({v:1,type:'ready'});const timer=setInterval(()=>{if(require('node:fs').existsSync(${JSON.stringify(trigger)})){clearInterval(timer);process.send({v:1,type:'switch',revision:'next',dir:${JSON.stringify(next)},job:10})}},20);process.on('message',m=>{if(m?.type==='shutdown')process.exit(0)});`);
+  writeFileSync(path.join(home, 'shell', 'launcher.json'), JSON.stringify({ protocol:1, current:'old',currentDir:old,previous:'older',previousDir:older }));
+  const {proc, stderr} = start(home, ['--role','shell'], {MAGI_REVISION:'candidate',MAGI_REVISION_DIR:candidate,MAGI_REPLACE_JOB:'9',MAGI_DESKTOP_UPDATE_JOURNAL:path.join(home,'journal.json')}, t);
+  const wait = async predicate => { const deadline=Date.now()+6000;while(Date.now()<deadline){try{if(predicate())return}catch{}await new Promise(r=>setTimeout(r,20))}assert.fail(stderr())};
+  await wait(()=>JSON.parse(readFileSync(path.join(home,'shell','launcher.json'),'utf8')).current==='candidate');
+  assert.doesNotThrow(()=>readFileSync(path.join(older,'packages/node/dist/child.js')),'desktop readiness must preserve the previous rollback history');
+  writeFileSync(trigger,'go');
+  await wait(()=>{const body=JSON.parse(readFileSync(proof,'utf8'));return body.revision==='next'});
+  const body=JSON.parse(readFileSync(proof,'utf8'));
+  assert.equal(body.journal,undefined);assert.equal(body.dir,undefined);assert.equal(proc.exitCode,null);
+});
+
+test('supervisor consumes desktop-only environment before restarting the same Shell', async t => {
+  const home = mkdtempSync(path.join(tmpdir(),'magi-desktop-supervisor-'));
+  const proof = path.join(home,'starts');
+  const candidate = childAt(home,'shell','candidate',`process.send({v:1,type:'hello'});require('node:fs').appendFileSync(${JSON.stringify(proof)},JSON.stringify({job:process.env.MAGI_REPLACE_JOB,journal:process.env.MAGI_DESKTOP_UPDATE_JOURNAL,revision:process.env.MAGI_REVISION})+'\\n');process.send({v:1,type:'ready'});process.on('message',m=>{if(m?.type==='shutdown')process.exit(0)});setInterval(()=>{},1000);`);
+  const supervisor = createSupervisor({node:process.execPath,env:process.env});
+  t.after(async()=>{await supervisor.close();rmSync(home,{recursive:true,force:true})});
+  const journal = path.join(home,'journal');
+  const handle = await supervisor.start({entry:launcher,cwd:path.dirname(launcher),args:['--role','shell'],env:{MAGI_HOME:home,MAGI_NODE:process.execPath,MAGI_REVISION:'candidate',MAGI_REVISION_DIR:candidate,MAGI_REPLACE_JOB:'17',MAGI_DESKTOP_UPDATE_JOURNAL:journal}});
+  await handle.whenReady();
+  supervisor.consumeDesktopHandoff(journal);
+  await supervisor.restart(handle.id);
+  const starts=readFileSync(proof,'utf8').trim().split('\n').map(JSON.parse);
+  assert.equal(starts.length,2);assert.equal(starts[0].job,'17');assert.equal(starts[1].job,undefined);assert.equal(starts[1].journal,undefined);assert.equal(starts[1].revision,'candidate');
+});

@@ -204,6 +204,7 @@ export function createMagiRuntime({
       if (!existsSync(entry)) throw new Error(`The local MAGI launcher is missing: ${entry}`);
       const env = { ...tools.env };
       delete env.NODE_TEST_CONTEXT;
+      for (const key of Object.keys(env)) if (key.startsWith("MAGI_DESKTOP_UPDATE_")) delete env[key];
       for (const key of ["MAGI_CHILD", "MAGI_HEALTH", "MAGI_HEALTH_WORKSPACE", "MAGI_APP_CHECKOUT", "MAGI_REVISION", "MAGI_REVISION_DIR", "MAGI_PREVIOUS_REVISION", "MAGI_REPLACE_JOB", "MAGI_REPLACE_ERROR"]) delete env[key];
       Object.assign(env, {
         MAGI_ROLE: "agent", MAGI_HOST: "0", MAGI_HOME: workspaceRoot, MAGI_CHECKOUT: root,

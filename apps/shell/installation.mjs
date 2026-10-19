@@ -32,3 +32,9 @@ export async function ensureInstalledDependencies(root, { node, npm, env, comman
   if (!installedTree(root) || dependencyState(root) !== fingerprint) throw new Error("Dependency installation did not complete against the expected lockfile");
   mark(root, { phase: "complete", fingerprint });
 }
+
+/** A gated activation may validate its installed tree, but must not reinstall it
+ * after compilation/package verification and before the readiness ACK. */
+export function assertInstalledDependencies(root) {
+  if (dependencyState(root) === null || !installedTree(root)) throw new Error("Verified desktop revision dependencies are incomplete");
+}

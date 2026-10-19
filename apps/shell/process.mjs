@@ -441,6 +441,13 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
     assertOpen,
     beginClose: () => { closing = true; owner.beginClose(); },
     close: () => closePromise ??= (async () => { closing = true; owner.beginClose(); for (const id of children.keys()) stop(id); await owner.close(); })(),
+    consumeDesktopHandoff: (journalPath) => {
+      for (const record of records.values()) {
+        const environment = record.spec.env;
+        if (environment?.MAGI_DESKTOP_UPDATE_JOURNAL !== journalPath) continue;
+        for (const key of Object.keys(environment)) if (key.startsWith("MAGI_DESKTOP_UPDATE_") || ["MAGI_REVISION", "MAGI_REVISION_DIR", "MAGI_REPLACE_JOB", "MAGI_REPLACE_ERROR"].includes(key)) delete environment[key];
+      }
+    },
     setRebuildHandler: (handler) => { rebuildHandler = handler; },
     dependencyState: (id) => records.get(id)?.dependencies ?? null,
     stopAll: () => { for (const id of children.keys()) stop(id); },

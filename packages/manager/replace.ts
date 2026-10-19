@@ -17,6 +17,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BaseWorker, SYSTEM_CONTACT_ID, messageDelivery, replaceFailedPath, type Bus } from "@magi/bus";
 import { LAUNCHER_PROTOCOL } from "@magi/runtime/protocol.js";
+import { packageDesktopRevision, type DesktopManifest } from "@magi/runtime/desktop-package.js";
 import { reviseCheckout } from "@magi/runtime/revise.js";
 import { resolveToolchain } from "@magi/runtime/toolchain.js";
 
@@ -35,6 +36,7 @@ export type ReplaceHost = {
   suspendForReplace(): Promise<void>;
   resume(): Promise<void>;
   healthy(): string | null;
+  installDesktopUpdate?(manifest: DesktopManifest, job: number): Promise<unknown>;
 };
 
 const HEALTH_MS = 20_000;
@@ -42,12 +44,14 @@ const HEALTH_MS = 20_000;
 export class ReplaceWorker extends BaseWorker {
   readonly worker_name = "replace";
   private task: Promise<void> | null = null;
+  private desktopHandoff = false;
 
   constructor(bus: Bus, private readonly build: AppBuild, private readonly host: ReplaceHost) {
     super(bus);
   }
 
   async poll(): Promise<boolean> {
+    if (this.desktopHandoff) return false;
     if (process.env.MAGI_REPLACE_JOB || process.env.MAGI_REPLACE_ERROR) return this.finishHandoff();
     if (this.noteFailedReplace()) return true;
     if (this.consumeReplaceMarker()) return true;
@@ -57,16 +61,16 @@ export class ReplaceWorker extends BaseWorker {
     if (!job) return false;
     const id = job.id;
     const input = job.input;
-    this.task = this.execute(id, input.checkout, input.ref, input.swap === true, input.chat_id).finally(() => { this.task = null; });
+    this.task = this.execute(id, input.checkout, input.ref, input.swap === true, input.chat_id, input.desktop === true).finally(() => { this.task = null; });
     return true;
   }
 
-  private async execute(id: number, requested: string | undefined, ref: string | undefined, swap: boolean, chatId?: number): Promise<void> {
+  private async execute(id: number, requested: string | undefined, ref: string | undefined, swap: boolean, chatId?: number, desktop = false): Promise<void> {
     const board = this.bus.board("ReplaceSelfJob");
     if (typeof chatId === "number" && Number.isInteger(chatId)) this.bus.settings.set(REQUEST_CHAT_KEY, String(chatId));
     const checkout = requested ?? findCheckout();
     if (swap) {
-      await this.switchRevision(id, checkout, ref);
+      await this.switchRevision(id, checkout, ref, desktop);
       return;
     }
     const appDir = join(checkout, "apps", this.build.app);
@@ -99,14 +103,22 @@ export class ReplaceWorker extends BaseWorker {
   }
 
   /** Build the target revision in its own directory, then ask the launcher to run it. */
-  private async switchRevision(id: number, checkout: string, ref: string | undefined): Promise<void> {
+  private async switchRevision(id: number, checkout: string, ref: string | undefined, desktop = false): Promise<void> {
     const board = this.bus.board("ReplaceSelfJob");
     try {
       if (typeof process.send !== "function" || !process.connected) {
         throw new Error("this node has no launcher to switch to the new revision");
       }
+      if (desktop && (!this.host.installDesktopUpdate || this.build.app !== "shell" || process.env.MAGI_PACKAGED !== "1" || process.platform !== "linux")) throw new Error("This node cannot replace the desktop package");
       const target = ref?.trim() || undefined;
       const { revision, previous, dir } = await reviseCheckout(checkout, target);
+      if (desktop) {
+        const manifest = await packageDesktopRevision({ revision, previous, dir });
+        this.bus.settings.set("replace.pending", String(id));
+        this.desktopHandoff = true;
+        await this.host.installDesktopUpdate!(manifest, id);
+        return;
+      }
       const launcher = join(dir, "apps", "eva", "eva.mjs");
       const running = process.env.MAGI_LAUNCHER;
       const upgrade = Boolean(running && existsSync(running) && existsSync(launcher) && fileHash(running) !== fileHash(launcher));
@@ -124,6 +136,7 @@ export class ReplaceWorker extends BaseWorker {
       if (outcome === "shutdown") return;
       throw new Error(outcome);
     } catch (error) {
+      this.desktopHandoff = false;
       const text = message(error);
       board.submit(this.worker_name, id, { error: text });
       failReplace(this.bus, text);
@@ -140,6 +153,12 @@ export class ReplaceWorker extends BaseWorker {
     if (!Number.isInteger(jobId)) return false;
     const replaceError = process.env.MAGI_REPLACE_ERROR;
     if (!replaceError && this.host.healthy() !== null) return false;
+    if (!replaceError && process.env.MAGI_DESKTOP_UPDATE_JOURNAL) {
+      try {
+        const journal = JSON.parse(readFileSync(process.env.MAGI_DESKTOP_UPDATE_JOURNAL, "utf8"));
+        if (journal.status !== "completed" || journal.job !== jobId || journal.manifest.revision !== process.env.MAGI_REVISION) return false;
+      } catch { return false; }
+    }
     const board = this.bus.board("ReplaceSelfJob");
     const done = board.result(jobId);
     if (done) {
@@ -166,6 +185,7 @@ export class ReplaceWorker extends BaseWorker {
   private clearHandoff(): void {
     delete process.env.MAGI_REPLACE_JOB;
     delete process.env.MAGI_REPLACE_ERROR;
+    delete process.env.MAGI_DESKTOP_UPDATE_JOURNAL;
     this.bus.settings.set("replace.pending", "");
   }
 

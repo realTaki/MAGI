@@ -41,7 +41,8 @@
       "shell-path.mjs",
       "update-script.mjs",
       "boot/**",
-      "package.json"
+      "package.json",
+      "desktop-update.mjs"
     ],
     "asarUnpack": [
       "node_modules/dugite/git/**"

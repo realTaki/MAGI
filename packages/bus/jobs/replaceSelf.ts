@@ -8,6 +8,8 @@
 export type ReplaceSelfJob = {
   /** The checkout to build. Omitted, the running app's own checkout is used. */
   checkout?: string;
+  /** Explicitly rebuild and activate the Linux desktop package, not just this node. */
+  desktop?: boolean;
   /** Commit or ref to check out. Omitted, snapshot the checkout’s saved local source. An explicit ref fetches a committed remote upgrade. */
   ref?: string;
   /** After a healthy build, hand this process to its supervisor or a new one. */

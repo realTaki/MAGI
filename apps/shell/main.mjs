@@ -20,13 +20,14 @@ import { fileURLToPath } from "node:url";
 import dugite from "dugite";
 import { app, BrowserWindow, Menu, clipboard, ipcMain, screen, shell } from "electron";
 
+import { prepareDesktopUpdate, acknowledgeDesktopUpdate, desktopUpdateLaunchContext, prepareDesktopUpdateRecovery } from "./desktop-update.mjs";
 import { shellArtifactPath } from "./shell-path.mjs";
 import { applyInterfaceUpdate, loadApp, reloadInterface } from "./interface.mjs";
 import { prependRuntimePath } from "./runtime-environment.mjs";
 import { updateScript } from "./update-script.mjs";
 import { createSupervisor, prepareAndStartShell } from "./process.mjs";
 import { createProcessOwner } from "./process-owner.mjs";
-import { ensureInstalledDependencies } from "./installation.mjs";
+import { ensureInstalledDependencies, assertInstalledDependencies } from "./installation.mjs";
 import { profilePaths, prepareShellProfile } from "./profile-layout.mjs";
 import { resolveShellCheckout } from "./source-checkout.mjs";
 
@@ -98,6 +99,10 @@ function toolsForRuntime(runtime) {
 
   const git = resolveGitBinary();
   const gitEnvironment = setupEnvironment({}).env;
+  // Activation belongs to Shell alone. Never leak its handoff into ASP/agents.
+  for (const key of Object.keys(gitEnvironment)) {
+    if (key.startsWith("MAGI_DESKTOP_UPDATE_") || ["MAGI_REVISION", "MAGI_REVISION_DIR", "MAGI_REPLACE_JOB", "MAGI_REPLACE_ERROR"].includes(key)) delete gitEnvironment[key];
+  }
   const env = {
     ...prependRuntimePath(gitEnvironment, [
       path.dirname(git),
@@ -150,7 +155,8 @@ async function spawnShell(runtimeRoot, appCheckout) {
     node: tools.node, env: tools.env, owner: processOwner,
     onHostRestart: (handle) => { localApi = handle; },
   });
-  const spec = shellProcessSpec(appCheckout);
+  const activation = desktopLaunchEnvironment();
+  const spec = shellProcessSpec(activation.MAGI_REVISION_DIR || appCheckout);
   const ownedDirectory = (directory) => {
     if (typeof directory !== "string") throw new Error("Command requires an owned source directory");
     const actual = realpathSync(directory);
@@ -175,12 +181,13 @@ async function spawnShell(runtimeRoot, appCheckout) {
         MAGI_SOURCE_VERIFIED: localSourceVerified ? "1" : "",
         MAGI_PACKAGED: app.isPackaged ? "1" : "",
         MAGI_SHELL_VERSION: app.getVersion(),
+        ...activation,
         MAGI_GIT: tools.git,
         MAGI_NODE: tools.node,
         MAGI_NPM: tools.npm,
       },
     },
-    { ...tools, managed: localCheckoutManaged, command },
+    { ...tools, managed: localCheckoutManaged && !activation.MAGI_REVISION_DIR, command },
     supervisor,
     {
       host: {
@@ -192,10 +199,13 @@ async function spawnShell(runtimeRoot, appCheckout) {
         prepareDependencies: ({ root }) => {
           processOwner.assertOpen();
           if (!localCheckoutManaged) throw new Error("This checkout is not managed by Shell");
-          return ensureInstalledDependencies(ownedDirectory(root), { ...tools, command, assertOpen: processOwner.assertOpen });
+          const owned = ownedDirectory(root);
+          if (activation.MAGI_REVISION_DIR && owned === realpathSync(activation.MAGI_REVISION_DIR)) return assertInstalledDependencies(owned);
+          return ensureInstalledDependencies(owned, { ...tools, command, assertOpen: processOwner.assertOpen });
         },
         openExternal: ({ url }) => shell.openExternal(url),
         copy: ({ text }) => clipboard.writeText(text),
+        installDesktopUpdate: ({ manifest, job }) => installLocalDesktopUpdate(manifest, job),
         installShellUpdate: ({ installer }) => installShellUpdate(installer),
         emit: ({ event, payload }) => {
           if (event === "app.interface-updated") {
@@ -266,6 +276,21 @@ async function launchLocalOperator(win) {
     await localApi.invoke("start");
     if (!win.isDestroyed()) {
       await loadApp(win, ui);
+      if (app.isPackaged && process.env.MAGI_DESKTOP_UPDATE_JOURNAL && !process.env.MAGI_REPLACE_ERROR) {
+        const identity = await localApi.invoke("runtime.interface");
+        const packagedRevision = JSON.parse(readFileSync(path.join(SHELL_DIR, "package.json"), "utf8")).magiRevision;
+        const context = desktopUpdateLaunchContext({ artifact: process.env.APPIMAGE });
+        const expectedUi = path.join(context.sourceDir, "apps", "shell", "dist", "index.html");
+        const expectedEntry = path.join(context.sourceDir, "packages", "node", "dist", "child.js");
+        if (packagedRevision !== identity.revision || realpathSync(identity.checkout) !== realpathSync(context.sourceDir)
+          || realpathSync(identity.entry) !== realpathSync(expectedEntry) || realpathSync(ui) !== realpathSync(expectedUi)
+          || realpathSync(identity.ui) !== realpathSync(expectedUi)) throw new Error("Desktop artifact and running Shell/UI revision differ");
+        acknowledgeDesktopUpdate({ revision: identity.revision, artifact: process.env.APPIMAGE });
+      }
+      if (process.env.MAGI_DESKTOP_UPDATE_JOURNAL) {
+        supervisor?.consumeDesktopHandoff(process.env.MAGI_DESKTOP_UPDATE_JOURNAL);
+        for (const key of Object.keys(process.env)) if (key.startsWith("MAGI_DESKTOP_UPDATE_") || ["MAGI_REVISION", "MAGI_REVISION_DIR", "MAGI_REPLACE_JOB", "MAGI_REPLACE_ERROR"].includes(key)) delete process.env[key];
+      }
     }
   } catch (error) {
     if (processOwner.closing) return;
@@ -450,7 +475,60 @@ ipcMain.handle("shell:copy-text", (_event, text) => {
   clipboard.writeText(text);
 });
 
+function desktopLaunchEnvironment() {
+  if (!app.isPackaged || process.platform !== "linux") return {};
+  const context = desktopUpdateLaunchContext({ artifact: process.env.APPIMAGE });
+  if (!context) return {};
+  return {
+    MAGI_DESKTOP_UPDATE_JOURNAL: context.journalPath,
+    MAGI_REPLACE_JOB: String(context.job),
+    ...(context.error ? { MAGI_REPLACE_ERROR: context.error } : {
+      MAGI_REVISION: context.revision, MAGI_REVISION_DIR: context.sourceDir,
+    }),
+  };
+}
+
+let desktopInstallPending = false;
+let desktopRecoveryPending = false;
+async function recoverInterruptedDesktopUpdate() {
+  if (process.platform !== "linux" || !process.env.APPIMAGE || process.env.MAGI_DESKTOP_UPDATE_JOURNAL) return false;
+  const target = shellArtifactPath({ platform: process.platform, execPath: process.execPath, appImage: process.env.APPIMAGE });
+  const pending = await prepareDesktopUpdateRecovery({ target, nodePath: packagedTools().node });
+  if (!pending) return false;
+  desktopRecoveryPending = true;
+  if (!pending.helperRunning) {
+    const helper = spawn(pending.nodePath, [pending.helperPath, "--run", pending.journalPath, String(process.pid)], { detached: true, stdio: "ignore" });
+    await new Promise((resolve, reject) => { helper.once("spawn", resolve); helper.once("error", reject); });
+    helper.unref();
+  }
+  setImmediate(() => app.quit());
+  return true;
+}
+async function installLocalDesktopUpdate(manifest, job) {
+  processOwner.assertOpen();
+  if (!app.isPackaged || process.platform !== "linux") throw new Error("Desktop self-update requires a Linux AppImage");
+  if (desktopInstallPending) throw new Error("A desktop update is already pending");
+  if (!Number.isInteger(job) || job <= 0 || !manifest || !/^[a-f0-9]{40}$/.test(manifest.revision)) throw new Error("Invalid desktop update request");
+  const home = process.env.MAGI_HOME?.trim() || path.join(app.getPath("home"), ".magi");
+  const expected = path.join(home, "shell", "revisions", manifest.revision);
+  if (realpathSync(manifest.dir) !== realpathSync(expected)) throw new Error("Desktop update is outside Shell-owned revisions");
+  desktopInstallPending = true;
+  try {
+    const target = shellArtifactPath({ platform: process.platform, execPath: process.execPath, appImage: process.env.APPIMAGE });
+    const transaction = await prepareDesktopUpdate({ target, execPath: process.execPath, manifest, job, pid: process.pid, home, nodePath: localTools.node });
+    const helper = spawn(transaction.nodePath, [transaction.helperPath, "--run", transaction.journalPath], { detached: true, stdio: "ignore", windowsHide: true });
+    await new Promise((resolve, reject) => { helper.once("spawn", resolve); helper.once("error", reject); });
+    helper.unref();
+    setImmediate(() => app.quit());
+    return { quitting: true, transactionId: transaction.transactionId, revision: manifest.revision };
+  } catch (error) {
+    desktopInstallPending = false;
+    throw error;
+  }
+}
+
 async function installShellUpdate(installer) {
+  if (desktopInstallPending) throw new Error("A desktop update is already pending");
   if (!app.isPackaged) {
     throw new Error("A development shell cannot replace itself from a Release.");
   }
@@ -480,11 +558,18 @@ if (!ownsInstance) {
   // Relocate profile cache before any BrowserWindow can open Chromium files
   // inside it (Windows refuses renaming directories with those files open).
   const profilePreparation = app.isPackaged
-    ? resolveRuntimeRoot(() => {}).then(() => null, (error) => error)
+    ? (async () => { if (await recoverInterruptedDesktopUpdate()) return null; return resolveRuntimeRoot(() => {}); })().then(() => null, (error) => error)
     : Promise.resolve(null);
   app.whenReady().then(async () => {
-    await profilePreparation;
+    const preparationError = await profilePreparation;
     if (processOwner.closing) return;
+    if (preparationError instanceof Error) {
+      mainWindow = createWindow();
+      await loadStartup(mainWindow);
+      mainWindow.webContents.send("startup:error", preparationError.message);
+      return;
+    }
+    if (desktopRecoveryPending) return;
     Menu.setApplicationMenu(null);
     mainWindow = createWindow();
     void loadStartup(mainWindow).then(() => launchLocalOperator(mainWindow));

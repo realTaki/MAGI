@@ -65,6 +65,7 @@ export class Shell {
         drain: ["agent", "webapp"],
         nodeWorkers: HOSTED_NODE_WORKERS,
         build: { app: "shell", script: "build:process" },
+        installDesktopUpdate: context.installDesktopUpdate,
       });
     } catch (error) {
       this.bus.close();

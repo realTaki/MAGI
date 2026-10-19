@@ -1424,7 +1424,7 @@ export function createLocalApi(context) {
     "magi.startAll": () => magiAction(() => magiStartAll()),
     "magi.stopAll": () => magiAction(() => magiStopAll()),
     "magi.syncAll": () => runtimeAction(syncMagis),
-    "runtime.interface": () => ({ ui: uiEntry() }),
+    "runtime.interface": () => ({ ui: uiEntry(), revision: process.env.MAGI_REVISION ?? "", checkout: appCheckout, entry: process.argv[1] }),
     "shell.updateStatus": shellUpdateStatus,
     "shell.installUpdate": installShellUpdate,
     "github.state": currentState,

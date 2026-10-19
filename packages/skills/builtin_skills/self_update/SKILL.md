@@ -77,3 +77,10 @@ Read the log in this turn. If a command fails, fix the source and run the same c
 `request_replace` with target `self` asks this node's launcher to replace the running process. Call it only after compile and tests are already green. This process cannot safely stop and restart itself; the parent snapshots saved local source (staged/unstaged changes and non-ignored new files/deletions), runs those same compile and test commands as a last safety gate, then drains, switches revision, health-checks, and rolls back on failure. It does not fetch upstream for a local replace and does not commit or push. Ignored files such as dependencies, generated output and secrets are not added to the snapshot.
 
 Call it only after the edit is saved, and say what changed first. Queuing a job is not proof the new process is running. Another node replaces itself the same way. This node does not restart Shell or ASP. `bash` does not replace a running process. Do not kill your own process.
+
+
+## Replace the Linux desktop package
+
+Only packaged Balthasar can replace the complete Linux AppImage. When the operator explicitly asks to rebuild and upgrade the desktop itself, call `request_replace` with `target: "self", desktop: true` after the same compile/test/UI gates pass. The launcher builds a unique AppImage from that verified source revision, then Electron stages it and restarts through a transactional helper. Normal `target: "self"` without `desktop` still replaces only this node and its UI.
+
+The first baseline AppImage must already include this desktop-update capability; a new backend cannot add an RPC handler to an old running Electron shell. A queued job or produced AppImage does not prove activation. Success requires the new package identity, the expected backend/UI revision and ready acknowledgment. Failed activation restores the prior package and launcher revision. This local path does not publish a Release, push source, or update another node.

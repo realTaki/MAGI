@@ -8,7 +8,7 @@
 
 import { BaseWorker, messageDelivery, waitForJob, type Bus, type ManageWorkerNotify } from "@magi/bus";
 import { ConfigWorker } from "./config.js";
-import { ReplaceWorker, type AppBuild } from "./replace.js";
+import { ReplaceWorker, type AppBuild, type ReplaceHost } from "./replace.js";
 
 const POLL_MS = 20;
 const HEALTH_MS = 1_000;
@@ -66,11 +66,13 @@ export type ManagerOptions = {
   nodeWorkers?: string[];
   /** Which app this process builds and replaces. */
   build: AppBuild;
+  installDesktopUpdate?: ReplaceHost["installDesktopUpdate"];
 };
 
 export class ManagerWorker extends BaseWorker {
   readonly worker_name = "manager";
   private readonly workers: StartableWorker[];
+  readonly installDesktopUpdate?: ReplaceHost["installDesktopUpdate"];
   private readonly drain: string[];
   private readonly nodeWorkers: Set<string>;
   private readonly running = new Map<string, RunningWorker>();
@@ -85,6 +87,7 @@ export class ManagerWorker extends BaseWorker {
 
   constructor(bus: Bus, workers: StartableWorker[], options: ManagerOptions) {
     super(bus);
+    this.installDesktopUpdate = options.installDesktopUpdate;
     this.drain = options.drain ?? [];
     this.nodeWorkers = new Set(options.nodeWorkers ?? []);
     this.workers = [

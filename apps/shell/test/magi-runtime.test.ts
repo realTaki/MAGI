@@ -213,7 +213,7 @@ test("only the explicit local default gets an independent launcher, with concurr
   let exit;
   const runtime = createMagiRuntime({
     checkout: repository, home: repository, workspaceRoot: "/isolated-profile", base: "http://127.0.0.1:42069",
-    tools: { ...testRuntime, git: "git", env: { MAGI_HOST: "1", MAGI_ROLE: "shell", MAGI_REVISION_DIR: "/shell-revision", MAGI_CHILD: "/shell-child" } },
+    tools: { ...testRuntime, git: "git", env: { MAGI_HOST: "1", MAGI_ROLE: "shell", MAGI_REVISION_DIR: "/shell-revision", MAGI_CHILD: "/shell-child", MAGI_DESKTOP_UPDATE_JOURNAL: "/desktop-journal", MAGI_DESKTOP_UPDATE_ID: "transaction" } },
     run: async () => "", managed: false,
     startProcess: async (spec) => {
       specs.push(spec);
@@ -229,6 +229,8 @@ test("only the explicit local default gets an independent launcher, with concurr
   assert.equal(specs[0].env.MAGI_HOME, "/isolated-profile");
   assert.equal(specs[0].env.MAGI_CHILD, undefined);
   assert.equal(specs[0].env.MAGI_REVISION_DIR, undefined);
+  assert.equal(specs[0].env.MAGI_DESKTOP_UPDATE_JOURNAL, undefined);
+  assert.equal(specs[0].env.MAGI_DESKTOP_UPDATE_ID, undefined);
   assert.equal(specs[0].env.MAGI_ASP_TOKEN, local.token);
   assert.deepEqual(await runtime.startLocal(local), { handle: EVA_MAGI_HANDLE, started: false });
   await assert.rejects(runtime.startLocal({ handle: "@external.magi", token: "external" }), /Only the default local/);
