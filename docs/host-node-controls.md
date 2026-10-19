@@ -66,3 +66,17 @@ Run root acceptance and `apps/shell/integration/self-rebuild.test.mjs` with the
 MAGI-owned runtime. Native Electron clicking remains a separate parent-session
 acceptance; these tests exercise the underlying control path, sockets and processes
 rather than a mocked button state. No live model account is used or inspected.
+
+## Merged-source verification
+
+At `64d72a80`, after integrating `418b79b6` (self_update and replace safety-gate
+wake), the project-owned Node ran root `npm test`: 186 passed, zero failed,
+zero skipped. The real self-rebuild IPC integration passed all 7 tests. Shell UI
+build/typecheck and locale lint also passed. Conflict resolution retains the
+upstream toolchain environment for both foreground and background commands while
+keeping foreground commands owned and cancellable.
+
+These are Linux source checks with temporary profiles and synthetic model
+responses. Native Electron Stop interaction remains for parent-session acceptance.
+Native Windows PowerShell/WMI timeout failures remain a separate open item; no
+Windows regression was removed or skipped for this change.
