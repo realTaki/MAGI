@@ -40,7 +40,7 @@ Do not `git add` secrets, `memories/`, or `skills/`.
 
 A saved file is not a passing change. `apps/eva/dist` tests run the last build, not the TypeScript you just wrote. Do not treat a green dist test as proof of an unbuilt edit.
 
-When a check can run in this process, run that one file with the checkout's Node at `apps/shell/runtime/bin/node`. If that binary is missing, say so. Do not use a system Node, and do not run the whole suite. If the check fails, do not `request_rebuild`.
+When a check can run in this process, run that one file with `MAGI_NODE`, the absolute bundled Node path supplied to this process; use its `MAGI_NPM` CLI for workspace scripts. If those are not supplied, use the checkout's `apps/shell/runtime/bin/node` and bundled npm. A revision/managed clone need not contain its own runtime copy. If no MAGI-owned runtime is available, say so. Do not use a system Node, and do not run the whole suite. If the check fails, do not `request_rebuild`.
 
 ## Rebuild
 
