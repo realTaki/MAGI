@@ -10,6 +10,7 @@ import { MemoryWorker } from "@magi/memory/worker.js";
 import { ProvidersWorker } from "@magi/providers/worker.js";
 import type { LLMClient } from "@magi/providers/client.js";
 import { SkillWorker } from "@magi/skills/worker.js";
+import { PeerWorker, type PeerOptions } from "@magi/channel-peer";
 import { AspWorker } from "@magi/channel-asp/worker.js";
 import { TelegramWorker } from "@magi/channel-telegram/worker.js";
 import { CliWorker } from "@magi/channel-cli/worker.js";
@@ -32,6 +33,7 @@ export function agentWorkers(bus: Bus, options: {
   client?: LLMClient;
   tools?: Tool[];
   deliver?: (text: string, delivery: ChatDelivery) => void;
+  peer?: PeerOptions;
   asp?: { base: string; token: string };
   telegram?: { token: string; apiBase?: string };
   mcpConnector?: McpConnector;
@@ -41,7 +43,8 @@ export function agentWorkers(bus: Bus, options: {
     new CliWorker(bus, options.deliver),
     new TaskWorker(bus),
     new McpWorker(bus, options.mcpConnector),
-    new AspWorker(bus, options.asp),
+    new PeerWorker(bus, options.peer),
+    ...(options.asp ? [new AspWorker(bus, options.asp)] : []),
     new TelegramWorker(bus, options.telegram),
   ];
 }

@@ -33,6 +33,7 @@
     "@magi/channel-tasks": "*",
     "@magi/channel-telegram": "*",
     "@magi/asp-server": "*",
-    "@magi/webapp": "*"
+    "@magi/webapp": "*",
+    "@magi/channel-peer": "*"
   }
 }

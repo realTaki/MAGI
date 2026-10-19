@@ -60,6 +60,9 @@
     },
     {
       "path": "apps/shell"
+    },
+    {
+      "path": "packages/channel-peer"
     }
   ]
 }

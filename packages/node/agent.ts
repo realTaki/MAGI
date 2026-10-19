@@ -3,6 +3,7 @@ import { ManagerWorker } from "@magi/manager";
 import type { LLMClient } from "@magi/providers/client.js";
 import type { Tool } from "@magi/built-in-tools/worker.js";
 import type { McpConnector } from "@magi/mcp/worker.js";
+import type { PeerOptions } from "@magi/channel-peer";
 import { agentWorkers } from "./roles.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -12,6 +13,8 @@ export type MagiOptions = {
   client?: LLMClient;
   tools?: Tool[];
   deliver?: (text: string, delivery: ChatDelivery) => void;
+  peer?: PeerOptions;
+  /** Legacy explicit relay adapter; standalone EVA no longer needs ASP. */
   asp?: { base: string; token: string };
   telegram?: { token: string; apiBase?: string };
   mcpConnector?: McpConnector;
