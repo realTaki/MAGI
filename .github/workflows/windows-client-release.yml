@@ -33,8 +33,6 @@ jobs:
           cache: npm
           cache-dependency-path: |
             package-lock.json
-            apps/asp/package-lock.json
-            apps/shell/package-lock.json
 
       - name: Install dependencies
         # `npm ci` is faster than `npm install` on a CI cache hit and refuses to
@@ -44,12 +42,12 @@ jobs:
         run: npm ci
 
       - name: Restore prepared runtime
-        # Include the shell package-lock hash so a dep bump drops the cache
+        # Include the workspace package-lock hash so a dep bump drops the cache
         # instead of leaving a stale npm/Node in `apps/shell/runtime`.
         uses: actions/cache@v5
         with:
           path: apps/shell/runtime
-          key: runtime-${{ runner.os }}-${{ hashFiles('apps/shell/package-lock.json', 'apps/shell/scripts/prepare-runtime.mjs') }}
+          key: runtime-${{ runner.os }}-${{ hashFiles('package-lock.json', 'apps/shell/scripts/prepare-runtime.mjs') }}
           restore-keys: |
             runtime-${{ runner.os }}-
 
@@ -57,14 +55,14 @@ jobs:
         # electron-builder downloads winCodeSign, the nsis installer, and the
         # Windows Electron binary on first build (hundreds of MB). On Windows
         # runners these land in %LOCALAPPDATA%\electron-builder, which
-        # `setup-node`'s built-in npm cache does not cover. The shell
+        # `setup-node`'s built-in npm cache does not cover. The root workspace
         # package-lock pins the electron / electron-builder versions, so use
         # its hash as the cache key.
-        if: hashFiles('apps/shell/package-lock.json') != ''
+        if: hashFiles('package-lock.json') != ''
         uses: actions/cache@v5
         with:
           path: ~\AppData\Local\electron-builder
-          key: electron-builder-${{ runner.os }}-${{ hashFiles('apps/shell/package-lock.json') }}
+          key: electron-builder-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
           restore-keys: |
             electron-builder-${{ runner.os }}-
 
