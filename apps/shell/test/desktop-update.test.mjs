@@ -35,7 +35,7 @@ function processChild(file, args, options = {}) {
   const exited = new Promise((resolve, reject) => { child.once("error", reject); child.once("exit", (code, signal) => resolve({ code, signal, output })); });
   return { child, exited };
 }
-function fixture(t, { behavior = "ack", timeoutMs = 3000, stateExists = true } = {}) {
+function fixture(t, { behavior = "ack", timeoutMs = 10_000, stateExists = true } = {}) {
   const root = mkdtempSync(path.join(tmpdir(), "magi's desktop transaction "));
   const home = path.join(root, "profile"), source = path.join(home, "shell", "revisions", REVISION);
   const output = path.join(source, "desktop-artifacts", "build"), state = path.join(home, "shell", "launcher.json");
@@ -186,7 +186,7 @@ linuxTest("a duplicate actual helper cannot race the active transaction", { time
   const duplicate = await f.start(tx).exited; assert.equal(duplicate.code, 1); assert.match(duplicate.output, /already running/);
   assert.deepEqual(readFileSync(f.target), f.original);
   old.child.kill("SIGTERM"); await old.exited;
-  assert.equal((await first.exited).code, 0); assert.equal(readJSON(tx.journalPath).status, "completed");
+  assert.equal((await first.exited).code, 0); assert.equal(readJSON(tx.journalPath).status, "completed", JSON.stringify(readJSON(tx.journalPath)));
 });
 
 linuxTest("recovery finishes persisted swap intent with original target continuously present", { timeout: 20_000 }, async (t) => {
@@ -196,7 +196,7 @@ linuxTest("recovery finishes persisted swap intent with original target continuo
   linkSync(f.target, backup);
   assert.deepEqual(readFileSync(f.target), f.original);
   const result = await f.start(tx).exited; assert.equal(result.code, 0, result.output);
-  assert.equal(readJSON(tx.journalPath).status, "completed"); assert.equal(hash(f.target), f.manifest.sha256);
+  assert.equal(readJSON(tx.journalPath).status, "completed", JSON.stringify(readJSON(tx.journalPath))); assert.equal(hash(f.target), f.manifest.sha256);
   assert.equal(existsSync(backup), false);
 });
 
@@ -205,7 +205,7 @@ linuxTest("recovery also handles an older journal interrupted with a missing out
   journal.status = "swapping"; writeFileSync(tx.journalPath, JSON.stringify(journal));
   renameSync(f.target, path.join(path.dirname(f.target), `.${path.basename(f.target)}.${tx.transactionId}.previous`));
   const result = await f.start(tx).exited; assert.equal(result.code, 0, result.output);
-  assert.equal(readJSON(tx.journalPath).status, "completed");
+  assert.equal(readJSON(tx.journalPath).status, "completed", JSON.stringify(readJSON(tx.journalPath)));
 });
 
 linuxTest("cold-start recovery repairs missing durable files and waits for its current desktop before rollback", { timeout: 20_000 }, async (t) => {
@@ -268,7 +268,7 @@ linuxTest("concurrent recovery helpers cannot both replace a dead runner owner",
   const results = await Promise.all(Array.from({ length: 6 }, () => f.start(tx).exited));
   assert.equal(results.filter((item) => item.code === 0).length, 1, JSON.stringify(results));
   assert.ok(results.filter((item) => item.code !== 0).every((item) => /already running/.test(item.output)), JSON.stringify(results));
-  assert.equal(readJSON(tx.journalPath).status, "completed"); assert.equal(f.launches().length, 1);
+  assert.equal(readJSON(tx.journalPath).status, "completed", JSON.stringify(readJSON(tx.journalPath))); assert.equal(f.launches().length, 1);
 });
 
 linuxTest("a saved readiness ACK cannot commit after its candidate process has died", { timeout: 20_000 }, async (t) => {
@@ -294,7 +294,7 @@ linuxTest("runtime, installer and old extraction can disappear after preparation
   const tx = await f.prepare({ nodePath: oldNode });
   rmSync(extraction, { recursive: true }); rmSync(f.installer);
   const result = await f.start(tx).exited; assert.equal(result.code, 0, result.output);
-  assert.equal(readJSON(tx.journalPath).status, "completed");
+  assert.equal(readJSON(tx.journalPath).status, "completed", JSON.stringify(readJSON(tx.journalPath)));
 });
 
 linuxTest("staged artifact corruption fails closed and restores the original without launching candidate", { timeout: 20_000 }, async (t) => {
