@@ -32,12 +32,16 @@ export class AspWorker extends BaseWorker {
   connect(): Promise<void> {
     const credentials = this.credentials();
     if (!credentials) return Promise.resolve();
-    this.client ??= new AspClient(this.bus.handle, credentials.base, credentials.token);
-    return this.client.connect((event) => this.handle(event), (error) => this.report(error));
+    const client = this.client ??= new AspClient(this.bus.handle, credentials.base, credentials.token);
+    return client.connect(
+      (event) => this.client === client ? this.handle(event, client) : Promise.resolve(),
+      (error) => { if (this.client === client) this.report(error); },
+    );
   }
   close(): void {
-    this.client?.close();
+    const client = this.client;
     this.client = null;
+    client?.close();
     this.keyReady = false;
   }
 
@@ -136,11 +140,11 @@ export class AspWorker extends BaseWorker {
   }
 
   /** The operator sent this event, so a failure handling it is theirs to hear about. */
-  private async handle(event: AspEvent): Promise<Record<string, unknown> | void> {
+  private async handle(event: AspEvent, client: AspClient): Promise<Record<string, unknown> | void> {
     try {
       return await this.onEvent(event);
     } catch (error) {
-      this.report(error, event.chat_id);
+      if (this.client === client) this.report(error, event.chat_id);
     }
   }
 

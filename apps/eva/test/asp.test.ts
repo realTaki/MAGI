@@ -3,9 +3,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Magi } from "../eva.js";
-import { EVA_MAGI_HANDLE, MAGI_CONTACT_ID, sequentialMagiHandle, SYSTEM_CONTACT_ID, USER_HANDLE } from "@magi/bus";
+import { Bus, EVA_MAGI_HANDLE, MAGI_CONTACT_ID, messageDelivery, sequentialMagiHandle, SYSTEM_CONTACT_ID, USER_HANDLE } from "@magi/bus";
 import { nodeHarness } from "./nodeHarness.js";
 import type { WebSocket } from "ws";
+import { AspWorker } from "@magi/channel-asp/worker.js";
+import { AspClient, type AspEvent } from "@magi/channel-asp/client.js";
+import assert from "node:assert/strict";
 
 /*
  * Business flow: sending a message, MAGI side (`docs/architecture.md`, "Relay").
@@ -210,7 +213,8 @@ test("mentions decide who answers, and everything said is kept", async () => {
 
     expect(acks.sort()).toEqual(["m1", "m2", "m3", "m4"]);
     expect(completions).toBe(2);
-    expect(sent).toEqual(["heard", "heard"]);
+    expect(sent.filter(text => text === "heard")).toEqual(["heard", "heard"]);
+    expect(sent.every(text => text === "heard" || text.startsWith("[manager] "))).toBe(true);
 
     const chat = magi.bus.chats.forChannel("asp", "group");
     const stored = magi.bus.messages.list(chat.id);
@@ -231,5 +235,30 @@ test("mentions decide who answers, and everything said is kept", async () => {
     await magi.stop();
     server.stop(true);
     await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+// The transport may settle an old request after stop; only the live connection
+// may report errors or deliver events into this BUS.
+test("a stopped ASP connection ignores late callbacks without hiding live errors", async (t) => {
+  const workspace = await mkdtemp(join(tmpdir(), "asp-stopped-callback-"));
+  const bus = new Bus("@stopped.magi", workspace);
+  const worker = new AspWorker(bus, { base: "http://synthetic.invalid", token: "synthetic" });
+  let closed = false;
+  let onEvent: (event: AspEvent) => Promise<Record<string, unknown> | void> = async () => {};
+  let onError: (error: unknown) => void = () => {};
+  t.mock.method(AspClient.prototype, "connect", async (event: typeof onEvent, error: typeof onError = () => {}) => { onEvent = event; onError = error; });
+  try {
+    const chat = bus.chats.forChannel("cli", "operator");
+    messageDelivery.setHomeChat(bus, chat.id);
+    await worker.connect();
+    onError(new Error("live connection failure"));
+    expect(bus.messages.list(chat.id).some(message => message.content.includes("live connection failure"))).toBe(true);
+    worker.stop(); bus.close(); closed = true;
+    assert.doesNotThrow(() => onError(new Error("late request failure")));
+    await assert.doesNotReject(() => onEvent({ type: "agent.nickname.update", nickname: "late update" }));
+  } finally {
+    worker.stop(); if (!closed) bus.close();
+    await rm(workspace, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 });

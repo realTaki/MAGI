@@ -12,6 +12,9 @@ for (const app of ['eva', 'asp', 'shell']) {
     else if (app !== 'shell' && name.endsWith('.test.ts')) files.push(`apps/${app}/dist/test/${name.replace(/\.ts$/, '.js')}`);
   }
 }
-const result = spawnSync(process.execPath, ['--test', ...process.argv.slice(2), ...files], { cwd: root, env: process.env, stdio: 'inherit' });
+// Separate test processes each poll WMI; cap their contention on Windows.
+// Ownership/concurrency tests inside each file still execute all real children.
+const concurrency = process.platform === 'win32' ? ['--test-concurrency=2'] : [];
+const result = spawnSync(process.execPath, ['--test', ...concurrency, ...process.argv.slice(2), ...files], { cwd: root, env: process.env, stdio: 'inherit' });
 if (result.error) console.error(result.error);
 process.exitCode = result.status ?? 1;
