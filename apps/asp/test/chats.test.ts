@@ -178,8 +178,8 @@ test("group can add a listed bot", async (t) => {
     const picker = await request(app, "GET", `/bots?chat_id=${groupId}`, { token });
     assert.equal(picker.status, 200);
     assert.deepEqual(record(picker.data).bots, [
-      { handle, name: magiNodeName(0), online: false, in_chat: false },
       { handle: ASP_MAGI_HANDLE, name: ASP_MAGI_NICKNAME, online: true, in_chat: false },
+      { handle, name: magiNodeName(0), online: false, in_chat: false },
     ]);
     const added = await request(app, "POST", `/chats/${groupId}/members`, {
       token,
@@ -191,8 +191,8 @@ test("group can add a listed bot", async (t) => {
     assert.equal(addedBody.kind, "group");
     const after = await request(app, "GET", `/bots?chat_id=${groupId}`, { token });
     assert.deepEqual(record(after.data).bots, [
-      { handle, name: magiNodeName(0), online: false, in_chat: true },
       { handle: ASP_MAGI_HANDLE, name: ASP_MAGI_NICKNAME, online: true, in_chat: false },
+      { handle, name: magiNodeName(0), online: false, in_chat: true },
     ]);
     const unknown = await request(app, "POST", `/chats/${groupId}/members`, {
       token,
@@ -229,8 +229,8 @@ test("magi joins the group when it receives the invite", async (t) => {
     t.after(() => live.socket.close());
     const online = record((await request(app, "GET", `/bots?chat_id=${groupId}`, { token })).data).bots;
     assert.deepEqual(online, [
-      { handle, name: bot.name, online: true, in_chat: false },
       { handle: ASP_MAGI_HANDLE, name: ASP_MAGI_NICKNAME, online: true, in_chat: false },
+      { handle, name: bot.name, online: true, in_chat: false },
     ]);
     const added = await request(app, "POST", `/chats/${groupId}/members`, { token, body: { handle } });
     assert.equal(added.status, 200);
