@@ -113,3 +113,10 @@ alone lets that old loop adopt the new generation and never retire. The loop
 now requires its original running-record identity. A controlled regression
 fails against the pre-fix loop and passes with the identity guard. This leaves
 normal graceful draining and replacement semantics intact.
+
+Local merged-source check at `bb7b320c` (including parent profile bootstrap fix
+`10633ba0`): root acceptance passed 190/190 with zero skips; real self-rebuild IPC
+passed 7/7. UI build/typecheck passed for the Windows command changes. This is
+Linux evidence; the next pushed revision's native CI must establish Windows
+acceptance. PowerShell transport follows the documented UTF-16LE
+[`-EncodedCommand` format](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_powershell_exe?view=powershell-5.1).
