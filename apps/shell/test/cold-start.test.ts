@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -11,6 +12,9 @@ import { Asp } from "../../asp/asp.ts";
 
 const repository = path.resolve(import.meta.dirname, "../../..");
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const bundledNpm = path.join(repository, "apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js");
+const npm = [process.env.MAGI_NPM?.trim(), process.env.npm_execpath?.trim(), bundledNpm].find((candidate) => candidate && existsSync(candidate));
+if (!npm) throw new Error("MAGI's bundled npm runtime is missing");
 
 test("a new Shell starts its local Melchior launcher before naming the default society", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "magi-cold-start-"));
@@ -31,7 +35,7 @@ test("a new Shell starts its local Melchior launcher before naming the default s
     shell = new Shell({
       paths: { home: process.env.MAGI_OS_HOME, userData: path.join(root, "electron"), checkout: repository },
       repository: "https://github.com/realTaki/MAGI.git", managed: false,
-      tools: { git: "git", node: process.execPath, npm: path.join(repository, "apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js"), env: process.env },
+      tools: { git: "git", node: process.execPath, npm, env: process.env },
       emit: () => {}, openExternal: async () => {}, copy: () => {},
       spawn(file, args, options) {
         assert.equal(args[0], path.join(repository, "apps/eva/eva.mjs"));
