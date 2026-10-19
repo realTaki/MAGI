@@ -26,6 +26,8 @@ test("source checkout is this process's tree or an explicit refusal", () => {
     assert.match(present, /branch: magi\/eva-000/);
     assert.doesNotMatch(present, /apps\/asp/);
     assert.match(sourceCheckout("@eva-000.magi", workspace, "shell"), /branch: magi\/shell/);
+    assert.match(sourceCheckout("@shell.magi", workspace, "shell"), /handle: @shell\.magi/);
+    assert.match(sourceCheckout("@shell.magi", workspace, "shell"), /branch: magi\/shell/);
     assert.match(sourceCheckout("@eva-001.magi", workspace, "asp"), /branch: magi\/asp/);
   } finally {
     rmSync(workspace, { recursive: true, force: true });

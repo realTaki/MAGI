@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
-import { Bus, USER_HANDLE, messageDelivery } from "@magi/bus";
+import { ASP_MAGI_HANDLE, Bus, EVA_MAGI_HANDLE, SHELL_MAGI_HANDLE, USER_HANDLE, messageDelivery } from "@magi/bus";
 import { magiHome } from "@magi/runtime/home.js";
 import { ManagerWorker } from "@magi/manager";
 import { Asp } from "../../asp/asp.ts";
@@ -532,7 +532,7 @@ test("a broken shell build is restored and the operator is told", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-shell-rollback-"));
   const checkout = writeBrokenApp(root, "shell", "build:process");
   const workspace = path.join(root, "workspace");
-  const bus = new Bus("@eva-000.magi", workspace);
+  const bus = new Bus(SHELL_MAGI_HANDLE, workspace);
   bus.secrets.set("provider.api_key", "present");
   const manager = new ManagerWorker(bus, [], { build: { app: "shell", script: "build:process" } });
   try {
@@ -561,7 +561,7 @@ test("provider sync stores the key and keeps it out of the message text", async 
   let magi: Magi | null = null;
   try {
     await asp.start();
-    const known = new Set(["@eva-000.magi", "@eva-001.magi", "@eva-002.magi"]);
+    const known = new Set([SHELL_MAGI_HANDLE, ASP_MAGI_HANDLE, EVA_MAGI_HANDLE]);
     const bots: Array<{ handle: string; token: string }> = [];
     while (bots.length < 2 || !bots.some((bot) => !known.has(bot.handle))) {
       const created = await fetch(new URL("/chats", asp.origin), {

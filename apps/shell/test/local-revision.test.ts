@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync }
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { reviseCheckout, trackingRef } from '@magi/runtime/revise.js';
-import { Bus } from '@magi/bus';
+import { Bus, SHELL_MAGI_HANDLE } from '@magi/bus';
 import { rebuildTools } from '@magi/built-in-tools/rebuild.js';
 import { replaceTools } from '@magi/built-in-tools/replace.js';
 import { ReplaceWorker } from '../../../packages/manager/dist/replace.js';
@@ -17,7 +17,7 @@ function fixture(t, beforeRemove = () => {}) {
   const home = mkdtempSync(path.join(tmpdir(), 'magi-local-revision-'));
   const root = path.join(home, 'MAGI');
   const previous = { ...process.env };
-  Object.assign(process.env, { MAGI_HOME: home, MAGI_NODE: node, MAGI_NPM: npm, MAGI_GIT: 'git', MAGI_NODE_NAME: 'eva-000', MAGI_ROLE: 'shell', PATH: `${path.dirname(node)}${path.delimiter}${process.env.PATH}` });
+  Object.assign(process.env, { MAGI_HOME: home, MAGI_NODE: node, MAGI_NPM: npm, MAGI_GIT: 'git', MAGI_NODE_NAME: 'shell', MAGI_ROLE: 'shell', PATH: `${path.dirname(node)}${path.delimiter}${process.env.PATH}` });
   delete process.env.MAGI_REVISION; delete process.env.MAGI_PREVIOUS_REVISION;
   t.after(() => { beforeRemove(); for (const key of Object.keys(process.env)) if (!(key in previous)) delete process.env[key]; Object.assign(process.env, previous); rmSync(home, { recursive: true, force: true }); });
   mkdirSync(root);
@@ -48,6 +48,7 @@ test('local rebuild includes unstaged, staged, untracked and removed source with
   await assert.rejects(reviseCheckout(path.join(f.root, 'apps')), /source checkout root/);
   process.env.MAGI_ASP_TOKEN = 'fixture-only-runtime-token'; process.env.MAGI_REPLACE_JOB = '99';
   const result = await reviseCheckout(f.root, undefined);
+  assert.equal(result.dir, path.join(f.home, 'shell', 'revisions', result.revision));
   const validation = JSON.parse(readFileSync(path.join(result.dir, 'dist/test-env'), 'utf8'));
   assert.equal(validation.dirName, result.revision, "validation runs at the permanent revision path");
   assert.notEqual(validation.home, f.home, 'candidate tests must not open the running node data root');
@@ -90,7 +91,7 @@ test('a failed local build leaves the previously active revision intact', async 
 
 test('both self-rebuild tools bind the editable source to this node workspace, including after a revision switch', async (t) => {
   const home = mkdtempSync(path.join(tmpdir(), 'magi-rebuild-scope-'));
-  const bus = new Bus('@eva-000.magi', home);
+  const bus = new Bus(SHELL_MAGI_HANDLE, home);
   t.after(() => { bus.close(); rmSync(home, { recursive: true, force: true }); });
   await assert.rejects(rebuildTools(bus)[0].run({ target: 'app' }), /each node replaces itself/);
   for (const tool of [...rebuildTools(bus), ...replaceTools(bus)]) {
@@ -107,7 +108,7 @@ test('the actual replace worker builds local tool edits without an upstream and 
   const f = fixture(t, () => bus?.close());
   f.git('branch', '--unset-upstream');
   writeFileSync(path.join(f.root, 'source.txt'), 'worker-local-v2');
-  bus = new Bus('@eva-000.magi', f.home);
+  bus = new Bus(SHELL_MAGI_HANDLE, f.home);
   const savedSend = process.send, savedConnected = Object.getOwnPropertyDescriptor(process, 'connected');
   let outgoing;
   process.send = (message) => { outgoing = message; setImmediate(() => process.emit('message', { v: 1, type: 'shutdown' })); return true; };
@@ -123,6 +124,7 @@ test('the actual replace worker builds local tool edits without an upstream and 
     await new Promise(resolve => setTimeout(resolve, 10));
   }
   assert.equal(outgoing?.type, 'switch'); assert.equal(outgoing?.job, id);
+  assert.equal(outgoing.dir, path.join(f.home, 'shell', 'revisions', outgoing.revision));
   assert.equal(readFileSync(path.join(outgoing.dir, 'apps/shell/dist/index.html'), 'utf8'), 'worker-local-v2');
   assert.equal(readFileSync(path.join(f.root, 'source.txt'), 'utf8'), 'worker-local-v2');
   await new Promise(resolve => setImmediate(resolve));

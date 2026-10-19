@@ -10,7 +10,7 @@ It starts one child OS process, `packages/node` `child.js`. That child is the BU
 
 | Role | Handle | Name | Workers added |
 | --- | --- | --- | --- |
-| `shell` | `@eva-000.magi` | Balthasar | Webapp, the Electron UI backend |
+| `shell` | `@shell.magi` | Balthasar | Webapp, the Electron UI backend |
 | `asp` | `@eva-001.magi` | Casper | AspServer, the relay |
 | `agent` | `@eva-002.magi` and later handles | Melchior | the agent workers |
 
@@ -24,7 +24,7 @@ Electron (`apps/shell/main.mjs`) owns the window. It starts `eva --role shell`. 
 
 `MAGI_HOME` is the data root. The default is `~/.magi`. A container mounts that path and runs the launcher as its main process. `MAGI_OS_HOME` is the operating-system home when a caller still needs it. The shell workspace is `$MAGI_HOME/shell`. Casper's relay database and BUS workspace are `$MAGI_HOME/asp` (`asp.sqlite`). Those are not process names.
 
-The launcher remembers the current and previous revision in `$MAGI_HOME/<node>/launcher.json`. A failed switch writes `$MAGI_HOME/eva-000/replace-failed.json`, `eva-001`, or `eva-002` (the handle with `@` and `.magi` removed).
+The launcher remembers the current and previous revision in `$MAGI_HOME/<node>/launcher.json`. A failed switch writes `$MAGI_HOME/shell/replace-failed.json`, `eva-001`, or `eva-002` (the handle with `@` and `.magi` removed).
 
 Node, npm, and git resolve in this order: `MAGI_NODE` / `MAGI_NPM` / `MAGI_GIT`, then the bundled runtime under `apps/shell/runtime` and dugite, then `PATH`. The resolved Node must be 24 or newer (`engines` is `>=24.0.0`, and `resolveToolchain` rejects an older binary). SQLite is Node's built-in `node:sqlite`.
 
@@ -54,9 +54,9 @@ A failed checkout or build fails the job and tells the operator. A new child tha
 
 If the new revision's `apps/eva/eva.mjs` differs, the child asks for an upgrade. A launcher started by Electron tells Electron and exits after stopping its child; Electron starts the new `eva.mjs`. A launcher with no host starts the new launcher itself, and only after the old child has exited. A failed upgrade starts the previous child and writes the marker. A child that keeps crashing is restarted with backoff, then the launcher writes the marker and tells the operator. The window shows that failure.
 
-For Shell, the launcher keeps `MAGI_CHECKOUT` as the editable Git/source authority and sets `MAGI_APP_CHECKOUT` to the active child revision. After the new Shell child becomes ready, it notifies Electron that the interface changed. The existing renderer confirmation remains required. Accepting it asks the current backend for `runtime.interface().ui`, then Electron loads that file/URL; simply reloading the previous file URL would keep the old UI. Failed builds/health checks do not offer UI activation.
+For Shell, the launcher keeps `MAGI_CHECKOUT` as the editable Git/source authority and sets `MAGI_APP_CHECKOUT` to the active child revision under `$MAGI_HOME/shell/revisions/<sha>`. After the new Shell child becomes ready, it notifies Electron (`app.interface-updated` with the revision UI path). While the window is open, Electron `loadFile`s that path immediately. Simply reloading the previous file URL would keep the old UI. Failed builds/health checks roll back to the previous revision and do not emit a success reload.
 
-To independently verify a UI self-edit, start an isolated instance from the updated Electron source/preload, open Balthasar (`@eva-000.magi`), and allow a bounded edit only under its own `MAGI/apps/shell/web/src`. Ask it to test its edit and call `request_rebuild` with `target: self` (no commit or push needed). Inspect the replace job/result and `eva-000/launcher.json`; after confirming the reload, the window should use `revisions/<sha>/apps/shell/dist/index.html`. Declining keeps the current page. A failed candidate must keep the previous current revision and offer no success reload. The actual demo feature and recording are performed by the operator/MAGI, not by this change.
+To independently verify a UI self-edit, start an isolated instance from the updated Electron source/preload, open Balthasar (`@shell.magi`), and allow a bounded edit only under its own `MAGI/apps/shell/web/src`. Ask it to test its edit and call `request_rebuild` with `target: self` (no commit or push needed). Inspect the replace job/result and `shell/launcher.json`; the window should load `revisions/<sha>/apps/shell/dist/index.html`. A failed candidate must keep the previous current revision and offer no success reload. The actual demo feature and recording are performed by the operator/MAGI, not by this change.
 
 ## Failures
 

@@ -1,6 +1,6 @@
 ---
 name: project
-description: Read and edit this node’s own MAGI/ source and request a local self rebuild. A Shell-role self rebuild also builds its UI and offers a confirmed reload.
+description: Read and edit this node’s own MAGI/ source and request a local self rebuild. A Shell-role self rebuild also builds its UI and reloads the open window.
 version: "1.0"
 ---
 
@@ -20,7 +20,7 @@ Paths for `list_files`, `read_file`, `search_files`, `edit_file`, and `write_fil
 | `magi/shell` (`~/.magi/shell/MAGI`) | Balthasar’s own checkout: Shell backend and UI. Other nodes do not edit it |
 | `magi/asp` (`~/.magi/asp/MAGI`) | Casper’s own checkout: ASP. Other nodes do not edit it |
 
-Each node edits only its own `MAGI/`. On Balthasar (`@eva-000.magi`, role `shell`), `MAGI/apps/shell/web/src` is its own UI source: a self rebuild builds and activates that UI after the operator confirms reloading. On an agent-role node, changing `apps/shell` does not update Balthasar. Ask the operator to use the Balthasar chat for a Shell UI change; do not edit another node’s checkout.
+Each node edits only its own `MAGI/`. On Balthasar (`@shell.magi`, role `shell`), `MAGI/apps/shell/web/src` is its own UI source: a self rebuild builds that UI and the open window loads `MAGI_APP_CHECKOUT/apps/shell/dist/index.html` from the new revision. On an agent-role node, changing `apps/shell` does not update Balthasar. Ask the operator to use the Balthasar chat for a Shell UI change; do not edit another node’s checkout.
 
 ## Edit
 
@@ -46,4 +46,4 @@ When a check can run in this process, run that one file with `MAGI_NODE`, the ab
 
 `request_rebuild` with target `self` (or `replace_self`) queues `ReplaceSelfJob` for this workspace’s `MAGI/`. The child captures saved local source, including staged/unstaged changes and non-ignored new files/deletions, tests and builds it, then asks its launcher to switch revision. It does not fetch upstream for a local rebuild and does not commit on your branch or push. Ignored files such as dependencies, generated output and secrets are not added to the snapshot. An explicitly requested revision/ref is a separate remote upgrade, not a way to activate unsaved/local edits. The launcher is a separate process. A failed switch leaves this process running and tells the operator. `bash` does not replace a running process. Do not kill your own process.
 
-Call it only after the edit is saved, and say what changed first. In a Shell UI demo, wait for `[replace] replaced` and the interface-update confirmation, then let the operator approve loading the new UI. Queuing a job is not proof that the new code is displayed. Another node replaces itself the same way. This node does not restart Shell or ASP.
+Call it only after the edit is saved, and say what changed first. In a Shell UI demo, wait for `[replace] replaced` and for the open window to load the new revision UI. Queuing a job is not proof that the new code is displayed. Another node replaces itself the same way. This node does not restart Shell or ASP.

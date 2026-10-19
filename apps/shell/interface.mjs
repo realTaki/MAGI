@@ -4,11 +4,19 @@ export async function loadApp(win, ui) {
   else await win.loadFile(ui);
 }
 
-/** Called only after the renderer's existing reload confirmation. */
-export async function reloadInterface(api, win) {
-  if (!api || !win || win.isDestroyed()) throw new Error('Shell is not ready');
-  const { ui } = await api.invoke('runtime.interface');
+/**
+ * Point the open window at a rebuilt UI. `payload.ui` is the revision entry
+ * after ReplaceSelfJob; otherwise ask the live backend for `runtime.interface`.
+ */
+export async function applyInterfaceUpdate(api, win, payload) {
+  if (!win || win.isDestroyed()) throw new Error('Shell is not ready');
+  const direct = typeof payload?.ui === 'string' ? payload.ui.trim() : '';
+  const ui = direct || (await api?.invoke?.('runtime.interface'))?.ui;
   if (typeof ui !== 'string' || !ui) throw new Error('Shell did not provide an interface');
   await loadApp(win, ui);
   return { ui };
+}
+
+export async function reloadInterface(api, win) {
+  return applyInterfaceUpdate(api, win, {});
 }

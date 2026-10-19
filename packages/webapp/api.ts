@@ -39,7 +39,7 @@ import { ASP_ORIGIN } from "./asp-process.js";
 import { ensureManagedClone } from "./clone.js";
 import { agentBranch, agentSource, createMagiRuntime } from "./magi-runtime.js";
 import { downloadShellInstaller, installerPath, shellRelease } from "./shell-update.js";
-// Host MAGIs live in Shell (@eva-000 Balthasar) and ASP (@eva-001 Casper).
+// Host MAGIs live in Shell (@shell Balthasar) and ASP (@eva-001 Casper).
 // Only Melchior (@eva-002) is a spawned eva.js child.
 const DEFAULT_SOCIETY = [
   { handle: SHELL_MAGI_HANDLE, nickname: SHELL_MAGI_NICKNAME },

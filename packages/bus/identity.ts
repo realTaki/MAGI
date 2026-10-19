@@ -1,7 +1,7 @@
 /**
  * Society handles. One process may speak with two of these.
  *
- * The desktop operator process owns `@eva-000.magi` (Balthasar) on its BUS and
+ * The desktop operator process owns `@shell.magi` (Balthasar) on its BUS and
  * speaks as `@user.magi` from the webapp. The ASP process owns `@eva-001.magi`
  * (Casper). Only `@eva-002.magi` (Melchior) is a classic spawned EVA child.
  */
@@ -10,7 +10,7 @@
 export const USER_HANDLE = "@user.magi";
 
 /** Host MAGI of the desktop operator process. Display name Balthasar. */
-export const SHELL_MAGI_HANDLE = "@eva-000.magi";
+export const SHELL_MAGI_HANDLE = "@shell.magi";
 export const SHELL_MAGI_NICKNAME = "BALTHASAR";
 
 /** Host MAGI of the ASP process. Display name Casper. */

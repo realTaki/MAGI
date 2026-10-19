@@ -29,7 +29,7 @@ function args() {
 }
 
 function nodeName(role, rest) {
-  if (role === "shell") return "eva-000";
+  if (role === "shell") return "shell";
   if (role === "asp") return "eva-001";
   const handle = rest[0] || "agent";
   return handle.replace(/^@/, "").replace(/\.magi$/, "");

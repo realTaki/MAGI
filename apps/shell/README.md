@@ -1,6 +1,6 @@
 # Shell
 
-The Electron window. Balthasar (`@eva-000.magi`) is the shell child of the eva launcher. The human speaks as `@user.magi`.
+The Electron window. Balthasar (`@shell.magi`) is the shell child of the eva launcher. The human speaks as `@user.magi`.
 
 Open the app. Electron starts `eva --role shell`. It does not start ASP or other nodes. Operator files are under `$MAGI_HOME/shell` (default `~/.magi/shell`).
 

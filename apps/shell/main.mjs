@@ -21,7 +21,7 @@ import dugite from "dugite";
 import { app, BrowserWindow, Menu, clipboard, ipcMain, screen, shell } from "electron";
 
 import { shellArtifactPath } from "./shell-path.mjs";
-import { loadApp, reloadInterface } from "./interface.mjs";
+import { applyInterfaceUpdate, loadApp, reloadInterface } from "./interface.mjs";
 import { prependRuntimePath } from "./runtime-environment.mjs";
 import { updateScript } from "./update-script.mjs";
 import { createSupervisor, prepareAndStartShell } from "./process.mjs";
@@ -195,7 +195,14 @@ async function spawnShell(runtimeRoot, appCheckout) {
         openExternal: ({ url }) => shell.openExternal(url),
         copy: ({ text }) => clipboard.writeText(text),
         installShellUpdate: ({ installer }) => installShellUpdate(installer),
-        emit: ({ event, payload }) => sendToWindow(mainWindow, "local:event", { event, payload }),
+        emit: ({ event, payload }) => {
+          if (event === "app.interface-updated") {
+            void applyInterfaceUpdate(localApi, mainWindow, payload).catch((error) => {
+              console.error(`[magi-app] could not reload interface: ${error instanceof Error ? error.message : error}`);
+            });
+          }
+          sendToWindow(mainWindow, "local:event", { event, payload });
+        },
         progress: ({ message, percent }) => reportStartup(mainWindow, message, percent),
       },
     },
