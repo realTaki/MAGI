@@ -1,4 +1,5 @@
 export default {
+  chatHistory: { sessions: "会話履歴" },
   providerForm: {
     title: "モデルプロバイダー設定",
     provider: "プロバイダー",

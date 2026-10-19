@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { ASP_MAGI_HANDLE, USER_HANDLE } from "@magi/bus";
+import { ASP_MAGI_HANDLE, SHELL_MAGI_HANDLE, USER_HANDLE } from "@magi/bus";
 import { Asp } from "../asp.js";
 import { connect, isRecord, receiveInvite, request, tempRoot, withApp } from "./helpers.js";
 
@@ -287,6 +287,52 @@ test("Casper restart and open_owner_chat keep a single owner 1:1", async (t) => 
     await until("open_owner_chat after restart", () => app.bus.board("AspCommandJob").result(job) !== null);
     assert.equal(app.bus.board("AspCommandJob").result(job)?.status, "completed");
     assert.equal(ownerAgentChats(app, ASP_MAGI_HANDLE).length, 1);
+  });
+});
+
+test("Shell owner API, concurrent recovery and restart preserve the same room and old histories", async (t) => {
+  const root = tempRoot(t);
+  const options = { databasePath: databasePath(root), workspace: path.join(root, "casper") };
+  let firstId: string;
+  let extraId: string;
+  async function open(app: Asp) {
+    return record((await request(app, "POST", "/chats", {
+      token: app.operatorToken, body: { kind: "bot", handle: SHELL_MAGI_HANDLE },
+    })).data);
+  }
+  await withApp(options, async (app) => {
+    const first = await open(app);
+    firstId = String(first.chat_id);
+    const agentToken = String(record(first.magi).token);
+    async function recover() {
+      return Promise.all(Array.from({ length: 4 }, () => request(app, "POST", "/chats/open", {
+        token: agentToken, body: { invite: [USER_HANDLE] },
+      })));
+    }
+    assert.ok((await recover()).every((reply) => record(reply.data).chat_id === firstId));
+    assert.equal(ownerAgentChats(app, SHELL_MAGI_HANDLE).length, 1, "fresh startup has one room");
+    // Model the pre-#39 duplicate without weakening the current creation API.
+    const extra = app.store.createChat({ creator: SHELL_MAGI_HANDLE, kind: "bot", topic: null });
+    extraId = extra.id;
+    app.store.addParticipant(extra.id, SHELL_MAGI_HANDLE, "joined");
+    app.store.addParticipant(extra.id, USER_HANDLE, "joined");
+    app.store.appendChatEvent(extra.id, "chat.invited", { invitee: USER_HANDLE, by: SHELL_MAGI_HANDLE });
+    app.store.appendChatEvent(extra.id, "chat.joined", { agent: USER_HANDLE });
+    const sent = await request(app, "POST", `/chats/${extra.id}/messages`, {
+      token: agentToken, body: { content: "historical provider card" },
+    });
+    assert.equal(sent.status, 201);
+    const opened = await recover();
+    assert.ok(opened.every((reply) => reply.status === 201 && record(reply.data).chat_id === firstId));
+    assert.equal((await open(app)).chat_id, firstId);
+    assert.equal(ownerAgentChats(app, SHELL_MAGI_HANDLE).length, 2);
+  });
+  await withApp(options, async (app) => {
+    assert.equal((await open(app)).chat_id, firstId);
+    assert.equal(ownerAgentChats(app, SHELL_MAGI_HANDLE).length, 2);
+    const history = await request(app, "GET", `/chats/${extraId}/events`, { token: app.operatorToken });
+    assert.equal(history.status, 200);
+    assert.ok(recordList(record(history.data).events).some((event) => record(event.payload).content === "historical provider card"));
   });
 });
 

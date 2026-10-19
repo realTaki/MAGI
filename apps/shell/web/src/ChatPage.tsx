@@ -1,3 +1,4 @@
+import { groupChatRooms } from "./chat-list";
 import { FormCardView } from "./FormCardView";
 import { cardStateFromEvents, cardWithReceipt } from "./provider-form";
 import { Button } from "./Button";
@@ -176,6 +177,15 @@ type RoutineDraft = {
 };
 
 const READ_THROUGH_KEY = "magi.chats.read-through.v1";
+const ACTIVE_CHAT_KEY = "magi.chats.active.v1";
+
+function storedActiveChat(): string {
+  try {
+    return window.localStorage.getItem(ACTIVE_CHAT_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
 
 function storedReadThrough(): Record<string, number> {
   try {
@@ -566,7 +576,7 @@ function OnboardThread({
 export function ChatPage() {
   const t = useT();
   const [bots, setBots] = useState<ChatView[]>([]);
-  const [activeId, setActiveId] = useState("");
+  const [activeId, setActiveId] = useState(storedActiveChat);
   const [loadError, setLoadError] = useState("");
   const [panelOpen, setPanelOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -622,13 +632,19 @@ export function ChatPage() {
     );
   }, [active, extra, outgoing]);
 
+  const chatGroups = useMemo(() => groupChatRooms(bots, OPERATOR.handle), [bots]);
+  const activeRooms = chatGroups.find((group) => group.rooms.some((room) => room.id === active?.id))?.rooms ?? [];
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) {
-      return bots;
-    }
-    return bots.filter((bot) => `${bot.name} ${bot.preview}`.toLowerCase().includes(needle));
-  }, [bots, query]);
+    return chatGroups.filter((group) => !needle || group.rooms.some((bot) =>
+      `${bot.name} ${bot.magiHandle ?? ""} ${bot.preview}`.toLowerCase().includes(needle),
+    )).map((group) => ({
+      ...group,
+      bot: group.rooms.find((room) => room.id === activeId)
+        ?? group.rooms.find((room) => room.unread) ?? group.rooms[0],
+      unread: group.rooms.some((room) => room.unread),
+    }));
+  }, [chatGroups, query, activeId]);
 
   const onboardingOpen = Boolean(active?.onboarding && active.answers.length < ONBOARD.length);
   const mention = mentionAt(draft, mentionCursor);
@@ -664,7 +680,8 @@ export function ChatPage() {
         setOutgoing(queued);
         const restored = local.map(fromAspChat);
         setBots(restored);
-        setActiveId((current) => current || restored[0]?.id || "");
+        setActiveId((current) => restored.some((bot) => bot.id === current)
+          ? current : restored[0]?.id || current);
         const remote = await listAspChats();
         if (cancelled) return;
         await saveChats(remote);
@@ -675,7 +692,7 @@ export function ChatPage() {
           const previous = current.find((bot) => bot.id === next.id);
           return previous ? { ...next, thread: previous.thread } : next;
         }));
-        setActiveId((current) => current || remote[0]?.chat_id || "");
+        setActiveId((current) => known.has(current) ? current : known.keys().next().value ?? "");
       } catch (error) {
         if (!cancelled) setLoadError(String(error));
       }
@@ -686,6 +703,15 @@ export function ChatPage() {
   useEffect(() => {
     activeIdRef.current = activeId;
   }, [activeId]);
+
+  useEffect(() => {
+    if (!bots.some((bot) => bot.id === activeId)) return;
+    try {
+      window.localStorage.setItem(ACTIVE_CHAT_KEY, activeId);
+    } catch {
+      // A blocked localStorage must not prevent selecting a conversation.
+    }
+  }, [activeId, bots]);
 
   const remoteIdsKey = useMemo(
     () => bots.flatMap((bot) => bot.remoteId ? [bot.remoteId] : []).sort().join("\n"),
@@ -1447,23 +1473,24 @@ export function ChatPage() {
           ) : null}
           <div className="chat-page__bot-list-wrap">
             <div className="chat-page__bot-list" ref={botListRef}>
-              {filtered.map((bot) => {
+              {filtered.map(({ key, bot, unread }) => {
               const isActive = bot.id === active.id;
               return (
                 <button
-                  key={bot.id}
+                  key={key}
+                  title={bot.magiHandle}
                   type="button"
                   className={`chat-page__bot-row${isActive ? " is-active" : ""}${isAgentOffline(bot) ? " is-offline" : ""}`}
                   data-bot-id={bot.id}
-                  data-unread={bot.unread ? "true" : "false"}
+                  data-unread={unread ? "true" : "false"}
                   onClick={() => selectBot(bot.id)}
                 >
                   <Avatar color={bot.color} size={34} />
                   <span className="chat-page__bot-copy">
                     <span className="chat-page__bot-meta">
-                      <span className="chat-page__bot-name">{bot.name}</span>
+                      <span className="chat-page__bot-name">{bot.name}{bots.some((other) => other.name === bot.name && other.magiHandle !== bot.magiHandle) ? ` (${bot.magiHandle})` : ""}</span>
                       <span className="chat-page__bot-trailing">
-                        {bot.unread ? <span className="chat-page__unread-dot" aria-label={t("account.unread")} /> : null}
+                        {unread ? <span className="chat-page__unread-dot" aria-label={t("account.unread")} /> : null}
                         <span className="chat-page__bot-time">{bot.time}</span>
                       </span>
                     </span>
@@ -1615,6 +1642,19 @@ export function ChatPage() {
               </span>
             </button>
           </div>
+
+          {activeRooms.length > 1 ? (
+            <label className="chat-page__history">
+              {t("chatHistory.sessions")}
+              <select value={active.id} onChange={(event) => selectBot(event.target.value)}>
+                {activeRooms.map((room) => (
+                  <option key={room.id} value={room.id}>
+                    {room.time} · {room.id}{room.unread ? ` · ${t("account.unread")}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
 
           <div className="chat-page__thread" ref={scrollRef}>
             {providerOpenError ? <div role="alert" className="chat-page__empty-thread">{providerOpenError}</div> : null}

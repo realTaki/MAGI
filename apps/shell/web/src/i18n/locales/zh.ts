@@ -1,4 +1,5 @@
 export default {
+  chatHistory: { sessions: "会话历史" },
   providerForm: {
     title: "模型供应商配置",
     provider: "供应商",

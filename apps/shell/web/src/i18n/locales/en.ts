@@ -1,4 +1,5 @@
 export default {
+  chatHistory: { sessions: "Conversation history" },
   providerForm: {
     title: "Model provider",
     provider: "Provider",
