@@ -29,12 +29,36 @@ function start(home, args, env, t) {
   const proc = spawn(process.execPath, [launcher, ...args], {
     env: { ...process.env, MAGI_HOME: home, MAGI_NODE: process.execPath, ...env },
     stdio: ["pipe", "pipe", "pipe", "ipc"],
-    detached: true,
+    detached: process.platform !== "win32",
   });
   let stderr = "";
   proc.stderr?.on("data", (chunk) => { stderr += String(chunk); });
-  t.after(() => {
-    try { process.kill(-proc.pid, "SIGTERM"); } catch { /* already gone */ }
+  t.after(async () => {
+    // Keep the fixtures' real launcher/child trees owned on both platforms.
+    // POSIX negative PIDs do not terminate a Windows tree and leave pipes open.
+    if (proc.exitCode === null && proc.signalCode === null) {
+      let timer;
+      const closed = new Promise((resolve) => proc.once("close", resolve));
+      try {
+        await Promise.race([(async () => {
+          if (process.platform === "win32") {
+            await new Promise((resolve, reject) => {
+              const killer = spawn("taskkill.exe", ["/pid", String(proc.pid), "/t", "/f"], { stdio: "ignore", windowsHide: true });
+              killer.once("error", reject);
+              killer.once("exit", (code) => code === 0 || proc.exitCode !== null || proc.signalCode !== null
+                ? resolve() : reject(new Error(`taskkill fixture launcher exited ${code}`)));
+            });
+          } else {
+            try { process.kill(-proc.pid, "SIGTERM"); }
+            catch (error) { if (error.code !== "ESRCH") throw error; }
+          }
+          await closed;
+        })(), new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`fixture launcher ${proc.pid} did not exit`)), 5000);
+        })]);
+      } finally { clearTimeout(timer); }
+    }
+    rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
   return { proc, stderr: () => stderr };
 }
@@ -57,7 +81,6 @@ setTimeout(() => {
 }, 80);
 setInterval(() => {}, 1000);
 `);
-  t.after(() => rmSync(home, { recursive: true, force: true }));
   const { proc, stderr } = start(home, ["--role", "agent", EVA_MAGI_HANDLE], { MAGI_REVISION_DIR: path.join(home, node, "revisions", "a"), MAGI_REVISION: "a" }, t);
   const deadline = Date.now() + 8_000;
   while (Date.now() < deadline && proc.exitCode == null) {
@@ -88,7 +111,6 @@ process.send({ v: 1, type: "hello" });
 process.send({ v: 1, type: "ready" });
 setTimeout(() => process.exit(1), 20);
 `);
-  t.after(() => rmSync(home, { recursive: true, force: true }));
   const { proc, stderr } = start(home, ["--role", "agent", EVA_MAGI_HANDLE], {
     MAGI_CHILD: child,
     MAGI_CRASH_LIMIT: "3",
@@ -127,7 +149,6 @@ if (n === 0) setTimeout(() => {
 else writeFileSync(${JSON.stringify(restored)}, "previous");
 setInterval(() => {}, 1000);
 `);
-  t.after(() => rmSync(home, { recursive: true, force: true }));
   const { proc, stderr } = start(home, ["--role", "agent", EVA_MAGI_HANDLE], {
     MAGI_REVISION_DIR: path.join(home, node, "revisions", "a"),
     MAGI_REVISION: "a",
@@ -260,7 +281,6 @@ async function main() {
 }
 main();
 `);
-  t.after(() => rmSync(home, { recursive: true, force: true }));
   const { proc, stderr } = start(home, ["--role", "agent", EVA_MAGI_HANDLE], {
     MAGI_REVISION_DIR: path.join(home, node, "revisions", "a"),
     MAGI_REVISION: "a",
@@ -279,13 +299,13 @@ main();
       return;
     } catch (error) {
       if (error?.code !== "ENOENT") {
-        writeFileSync("/tmp/job-result-debug.txt", `${detail}\n${error && error.stack || error}\n${stderr()}`);
+        writeFileSync(path.join(home, "job-result-debug.txt"), `${detail}\n${error && error.stack || error}\n${stderr()}`);
         throw error;
       }
     }
     await new Promise((resolve) => setTimeout(resolve, 30));
   }
-  writeFileSync("/tmp/job-result-debug.txt", `timeout ${detail}\n${stderr()}`);
+  writeFileSync(path.join(home, "job-result-debug.txt"), `timeout ${detail}\n${stderr()}`);
   assert.fail(`job result was not recorded (${proc.exitCode}): ${stderr()}`);
 });
 
