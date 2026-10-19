@@ -10,9 +10,10 @@ import { test } from "./test.js";
 test("the system prompt says how to change the system and does not map the repository", () => {
   assert.match(SYSTEM_PROMPT, /NO_REPLY/);
   assert.match(SYSTEM_PROMPT, /load_skill/);
-  assert.match(SYSTEM_PROMPT, /request_rebuild/);
+  assert.match(SYSTEM_PROMPT, /self_update/);
   assert.match(SYSTEM_PROMPT, /does not fit in a prompt/);
   assert.doesNotMatch(SYSTEM_PROMPT, /apps\/user/);
+  assert.doesNotMatch(SYSTEM_PROMPT, /request_rebuild|replace_self|request_replace/);
   assert.match(COMPACTION_INVARIANT, /rebuild/);
   assert.match(COMPACTION_INVARIANT, /tool transcripts/);
 });

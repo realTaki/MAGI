@@ -12,8 +12,7 @@
     "dist"
   ],
   "references": [
-    {
-      "path": "../bus"
-    }
+    { "path": "../bus" },
+    { "path": "../runtime" }
   ]
 }

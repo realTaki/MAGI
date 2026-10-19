@@ -4,6 +4,7 @@
  */
 
 import type { ExecutableTool } from "@magi/bus";
+import { toolchainEnv } from "@magi/runtime/toolchain.js";
 import { stringArg } from "./args.js";
 import { ShellManager } from "./shellManager.js";
 
@@ -19,12 +20,12 @@ export function shellTools(workspace: string, shells: ShellManager): ExecutableT
       async run(args, signal) {
         const command = stringArg(args, "command");
         if (args.run_in_background === true) {
-          const shell = shells.start(command, workspace);
+          const shell = shells.start(command, workspace, toolchainEnv());
           return `Command started in background. Use bash_output to monitor (bash_id='${shell.id}').\n\nCommand: ${command}\nBash ID: ${shell.id}`;
         }
         const timeout = typeof args.timeout === "number" ? Math.max(1, Math.min(600, args.timeout)) : 120;
         try {
-          return await shells.foreground(command, workspace, timeout * 1000, signal);
+          return await shells.foreground(command, workspace, timeout * 1000, signal, toolchainEnv());
         } catch (error) {
           const failed = error as Error & { code?: number | string; stdout?: string; stderr?: string };
           return `exit_code: ${failed.code ?? "error"}\n${failed.stdout ?? ""}${failed.stderr ?? failed.message}`.slice(0, 8192);

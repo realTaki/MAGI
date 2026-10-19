@@ -96,12 +96,15 @@ function childScript(name, dir) {
 }
 
 function spawnChild(role, rest, name, { script, revision, previous, replaceJob, replaceError }) {
-  const { node } = resolveToolchain();
+  const { node, npm, git } = resolveToolchain();
   const host = process.env.MAGI_HOST === "1";
   const env = {
     ...process.env,
     MAGI_ROLE: role,
     MAGI_HOME: magiHome(),
+    MAGI_NODE: node,
+    MAGI_NPM: npm,
+    MAGI_GIT: git,
     MAGI_NODE_NAME: name,
     MAGI_LAUNCHER: launcherFile,
     ...(role === "shell" ? { MAGI_APP_CHECKOUT: resolve(dirname(script), "..", "..", "..") } : {}),

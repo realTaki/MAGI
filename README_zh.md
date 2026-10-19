@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/runtime-TypeScript%20%2B%20Node%2024-blue)](https://nodejs.org/)
-[![Status](https://img.shields.io/badge/status-experimental-orange)](#项目状态)
+[![Status](https://img.shields.io/badge/status-experimental-orange)](docs/architecture.md)
 
 [English README](README.md)
 
@@ -32,7 +32,7 @@ MAGI 关注的核心问题是：
 | Agent 是工作流中的步骤 | MAGI 跨任务持续存在 |
 | 协作随任务结束 | 上下文、记忆、技能和联系人会保留 |
 | 多个 Agent 往往共用一个进程 | 每个 MAGI 都有独立运行时和工作区 |
-| Controller 预先规定执行路径 | MAGI 在自己的进程里决定。App 负责启动，ASP 负责转发聊天 |
+| Controller 预先规定执行路径 | MAGI 在自己的进程里决定，ASP 负责转发聊天 |
 | 扩展意味着增加并发调用 | 扩展意味着增加 MAGI |
 
 工作流引擎仍然可以留在旁边。MAGI 是这些长期存在的智能体自己的运行时。
@@ -69,126 +69,43 @@ MAGI 应当因为持续运行而变得更好。目标是让它们观察工作、
 - 操作者可以检查它的记忆、工具、资源边界，以及改变它时使用的权限；
 - 多个 MAGI 可以加入同一个操作者聊天。每个 MAGI 仍保留自己的工作区。
 
-> **实现状态：**现在跑起来的是本地桌面端（操作者进程里的 Balthasar）、一个 ASP 进程
-> （Casper），以及默认一条 EVA 子进程（Melchior）。每个 MAGI 有自己的工作区（记忆、Skills、任务、联系人、提示词），通过 ASP
-> 和操作者对话。本地源码可编辑，但由 Agent 自主提出代码修改、验证、
-> 切换生效并回滚的闭环**尚未实现**。
+> **实现状态：**当前是实验性的本地桌面和多节点运行时。节点可修改自己的可编辑源码、
+> 验证候选并请求启动器切换修订；这不等于已经验证自主改进带来持续收益，也不代表整个演示已验收。
 
-## MAGI 模型
+## 当前运行方式
 
-| 名词 | 含义 |
-| --- | --- |
-| **MAGI** | 一个自主、可治理的智能体，也是 `apps/eva/` 与 `packages/` 里的 Node 24 运行时。 |
-| **EVA** | 句柄的命名规范。默认社会：Balthasar `@shell.magi` 在 Shell 进程，Casper `@asp.magi` 在 ASP 进程，Melchior `@eva-000.magi` 是唯一默认拉起的 EVA 子进程。 |
-
-桌面 App 是本机的生命周期边界：它拥有每条 MAGI 的分支、检出和进程。ASP 只转发聊天，不决定 MAGI 说什么，也不启动任何进程。
-
-打包安装后，每个应用都是从 GitHub 远程独立克隆的仓库，只通过 push/fetch 同步，没有共享的底仓。
-
-```text
-~/.magi/shell/MAGI       Shell 克隆，分支 magi/shell（安装包源码和操作者进程）
-~/.magi/shell/cache      生成缓存（与 MAGI 同级）
-~/.magi/shell/           操作者工作区：chat.sqlite、memories/books.db、GitHub 凭证
-~/.magi/asp/             ASP 工作区和 asp.sqlite
-~/.magi/asp/MAGI         ASP 克隆，分支 magi/asp
-~/.magi/<名字>/          该 MAGI 的工作区（Books、Jobs、skills、prompts）
-~/.magi/<名字>/MAGI      该 MAGI 的克隆，分支 magi/<名字>
-```
-
-## 当前已具备的能力
-
-- **桌面端**：Electron 壳把仓库克隆到 `~/.magi/shell/MAGI`，安装 `packages/` 和 `apps/`，构建操作界面，并启动 ASP。安装包里有 Node.js 24 和 npm，没有 Python。
-- **ASP**：Node 24 运行 `apps/asp/dist/asp.js`，监听 `127.0.0.1:42069`。聊天和转发事件存在 `~/.magi/asp/asp.sqlite`。同一进程是 Casper（`@asp.magi`）。创建 bot 会注册 MAGI；独立进程的句柄从 `@eva-000` 起拉起 `eva.js`。创建 group 会开一个操作者可以邀请 MAGI 加入的聊天。
-- **宿主 MAGI 与一条 EVA**：Balthasar（`@shell.magi`）跑在操作者进程里，和 webapp 在一起。Casper 跑在 ASP 里。Melchior（`@eva-000.magi`）跑 `apps/eva/eva.ts`，检出在 `~/.magi/eva-000/MAGI`。之后再创建的 MAGI 也按这条 EVA 路径拉起。
-- **每个 MAGI 内部的 BUS**：对话、消息、记忆、Skills、任务、联系人、提示词和工具都是 Book；聊天、模型调用、工具调用、投递、切换 provider、任务和 MCP 服务器变更都是 Job。
-- **操作者的数据留在桌面端**：聊天记录是 `~/.magi/shell/chat.sqlite`。Provider 和 API key 在操作者 BUS 的 SettingsBook（`~/.magi/shell/memories/books.db`）。ASP 只转发更新，不另存一份 key。
-- **其他通道**：MAGI 进程自己还能走终端、Telegram 和已配置的 MCP 服务器。这些不属于 ASP。
-
-## 快速开始
-
-当前 MAGI 运行于本地 ASP 服务加本地 MAGI 进程；仓库根目录没有 `deploy/`。
-
-| 场景 | 位置 | 入口 |
+| 角色 | Handle | 运行位置 |
 | --- | --- | --- |
-| 壳 | [`apps/shell/`](apps/shell/) | 打开 Electron App；它启动本地 ASP，并运行每条 MAGI。 |
+| Balthasar | `@shell.magi` | Electron 启动的 Shell launcher 的 child |
+| Casper | `@asp.magi` | 单独启动的 ASP launcher 的 child，兼任中继服务 |
+| Melchior | `@eva-000.magi` | Shell 明确启动的默认本机 agent，有独立 launcher、child 和工作区 |
+| 操作者 | `@user.magi` | 人类发言身份，不是另一个节点进程 |
 
-**桌面端：**首次打开时，App 将完整仓库克隆到 `~/.magi/shell/MAGI`，准备本地依赖并构建
-WebUI。启动页显示各阶段进度；本地 ASP 就绪后自动进入 WebUI。默认社会是
-**Balthasar**（`@shell.magi`，操作者进程）、**Casper**（`@asp.magi`，ASP 进程）
-和 **Melchior**（`@eva-000.magi`，唯一默认拉起的 EVA）。以后启动会保留这份 Git 工作树，不自动覆盖本地修改
-或拉取远端更新。
+先启动 ASP，再打开桌面应用。Shell 检查 ASP、建立默认会话、连接 Balthasar，
+启动默认本机 Melchior，并在节点就绪后命名。ASP 不启动进程；其他已登记的远端节点不会自动拉起。
+所有角色都通过 `apps/eva/eva.mjs --role …` 进入启动器；`dist/eva.js`、`dist/asp.js` 是类导出，不是服务 CLI。
 
-**一个 MAGI：** 在仓库根运行 `npm start --workspace eva -- <handle> <base> <token>`。
+每个节点拥有自己的 BUS、记忆、Skills、任务、联系人、提示词、Provider 设置和密钥。
+MAGI 之间经 ASP 交换聊天事件，节点内部的 Worker 经 BUS Books/Jobs 协调。
+Provider 验证与保存由接收节点执行，不是把操作者的一组明文配置广播给所有节点。
 
+`MAGI_HOME` 是节点数据根目录，默认 `~/.magi`。节点工作区分别为 `shell/`、`asp/`、`eva-000/`；
+托管源码放在节点自己的 `MAGI/` 中，构建修订放在 `revisions/` 中。
+源码启动使用经核验的开发检出，安装包则准备托管 Shell 检出。
+Electron 用户数据与节点工作区是不同存储，不能仅凭 `MAGI_HOME` 就认定整个桌面 profile 已隔离。
 
-## 第一次打开
+## 阅读入口
 
-1. **打开桌面应用。** 壳克隆仓库、安装依赖、构建界面，并等到 ASP 在 42069 端口应答。
-2. **见到默认社会。** Balthasar 是操作者进程（`@shell.magi`，你自己的发言是 `@user.magi`）。Casper 是 ASP（`@asp.magi`）。Melchior 是拉起的 EVA（`@eva-000.magi`）。一直没上线的 MAGI 就保持没有昵称。
-3. **对话。** 桌面端先把记录写到本机，再经 ASP 发出去。MAGI 从自己的 WebSocket 回复，桌面端再把回复存下来。
-4. **设置模型。** 设置页写入 operator BUS 的 SettingsBook。ASP 把同一组值交给每个已经连上的 MAGI，由 MAGI 写进自己的 BUS。
-5. **邀请。** 群聊可以加入一个 App 已经启动的 MAGI。对方收到 `chat.invited` 后加入。
+- [启动、配置与常见故障](docs/running.md)：完整命令、启动顺序、环境变量与独立节点。
+- [开发贡献指南](CONTRIBUTING.md)：根 lockfile、MAGI 自带 Node/npm 与源码准备。
+- [架构](docs/architecture.md)：launcher/child、BUS、中继、可编辑源码与运行修订的区别。
+- [验证指南](docs/verification.md)：必要检查与真实桌面验收的边界。
+- [Provider 目录](docs/provider-catalog.md)：字段、模型目录和验证流程。
+- [文档索引](docs/README.md)、[研究与未完成工作](docs/future.md)。
 
-## 架构
-
-```text
-操作者
-   │
-   ▼
-apps/shell/       Electron + 操作者进程：@user.magi 发言 + Balthasar @shell.magi
-   │  启动 Node 24
-   ▼
-apps/asp/         127.0.0.1:42069   转发 + Casper @asp.magi
-   ▲
-apps/eva/         Melchior @eva-000.magi   分支 magi/eva-000   ~/.magi/eva-000/MAGI
-```
-
-App 负责启动进程。ASP 转发聊天事件，同时也是 Casper 的宿主。被拉起的 MAGI 在自己的检出旁边有自己的 SQLite 工作区，main 被改坏也不会连累正在运行的 MAGI。操作者的聊天记录和 provider key 留在桌面端。
-
-**MAGI 之间通过 ASP 的聊天通信**：ASP 管理参与者，并将事件转发给目标智能体。
-**单个 MAGI 内部则以 BUS 为中心**：Books 和 Jobs 集中持久化状态、协调各组件的工作，
-让 Worker 等组件统一依赖 BUS，而不必彼此直接依赖。
-
-### 桌面 UI 与 ASP
-
-Electron App 启动本地 ASP，并运行本机的每条 MAGI 进程。ASP 负责 HTTP、WebSocket `/connect`，自己从不
-启动进程。桌面端直接运行 MAGI。WebUI 从本地仓库构建并加载。
-
-### 本地源码与 RSI 方向
-
-安装包提供 Electron 启动壳及仅供 MAGI 使用的 Git、Node.js、npm 工具。首次启动
-会将完整仓库克隆到 `~/.magi/shell/MAGI`；之后从其中的 `magi/`、`asp/`、
-`apps/` 与 `packages/` 运行。用户或 coding agent 可以在这份普通 Git 仓库中修改源码，并用 Git 合并上游更新。
-界面、ASP 和每条 MAGI 由各自的节点自己构建并切换修订。
-
-真正留在安装包里的只有启动壳：`apps/shell/` 克隆仓库、从里面加载整个应用
-（界面 `apps/shell/web/` + 操作者进程 `apps/shell/shell.ts`，worker 在 `packages/webapp`），然后只是请这个后端
-自己去准备依赖、启动 ASP、并交回界面入口——壳只提供一个通用桥。改 app **不需要
-重新打包**；改 `apps/shell/` 才需要。
-
-当前安装包中的 Electron 壳（`apps/shell/`）和内置工具版本仍是固定的：虽然本地
-仓库也有壳的源码，修改它不会改变正在运行的 App。MAGI 与 ASP 的代码修改需要重启
-对应进程才能生效。自替换、回滚和失败标记见 [docs/architecture.md](docs/architecture.md)。
-
-深入实现请阅读 [docs/architecture.md](docs/architecture.md)。
-
-## 项目状态
-
-MAGI 仍处于实验阶段并在持续构建。现在交付的是本地桌面端、ASP，以及每个 MAGI 一个 Node 24 运行时。
-
-更长远的方向是让 MAGI 改进自己的软件与组织方式、验证效果，并重复这一过程。
-这一 RSI 闭环仍是研究目标，与上面列出的现有能力有所区分。
-
-代码里还没有的部分：
-
-| 事项 | 状态 | 说明 |
-| --- | --- | --- |
-| MAGI 之间的协作 | **Later** | ASP 只中继操作者的聊天，不提供 MAGI 之间共享的任务板。 |
-| 从 checkout 激活某个代码修订 | **已实现** | `replace_self` 检出目标修订，eva 启动器切换到该修订；失败时回到上一修订并通知操作者。见 [docs/architecture.md](docs/architecture.md)。 |
-| 把上游合并进本地已改动的 checkout | **Later** | checkout 会与上游分叉，合并目前是手工操作。 |
-| 桌面端、终端、Telegram 之外的渠道 | **Later** | 邮件与日历尚未实现。 |
-
-更早的路线图条目引用过 `magi/channels/api/` 与 `magi/bus/firmwares/` 下的 Python 模块，那些文件已经删除。
+修改本地源码、构建并切换节点修订、更新 Electron 安装包是不同操作。
+本地自重建不要求 commit 或 push；修改 Electron 主进程、preload 或启动壳则需要退出重开，
+安装包场景还需构建并安装新的包。具体边界见架构文档。
 
 ## 参与贡献
 

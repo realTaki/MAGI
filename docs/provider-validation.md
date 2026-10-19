@@ -1,9 +1,11 @@
 # Provider configuration and recovery
 
-Scope: the report from a fresh `eec58e9148fa33f1728ff109089888fae32f4bb0`
-instance, rechecked against development main `b9bf0805`. This work uses fake keys,
-mock provider responses and a local temporary ASP. It does not establish the
-specific DNS, proxy, TLS or routing failure on the user's cloud instance.
+This guide records provider recovery mechanisms and their verification boundaries.
+The original implementation report is retained at
+[`54a0a8b6`](https://github.com/realTaki/MAGI/blob/54a0a8b6/docs/provider-validation.md).
+Automated evidence uses synthetic credentials, mock provider responses and a
+local temporary ASP; it does not diagnose a particular account's DNS, proxy,
+TLS, routing or entitlement. Model fields are in the [catalog](provider-catalog.md).
 
 ## Findings
 
@@ -40,7 +42,7 @@ requires the user to re-enter the key; no key is copied into links or chat.
 
 Provider selection, model/endpoint configuration, password input, verification,
 errors and direct retry are in the corresponding MAGI's profile. A chat prompt is
-only a deep link, for example `#/magi/%40eva-002.magi/provider`. Structured form,
+only a deep link, for example `#/magi/%40eva-000.magi/provider`. Structured form,
 submission and status transport does not render as chat forms or status-poll noise.
 The former independent provider slider button is removed.
 
@@ -76,7 +78,6 @@ Use MAGI's owned Node runtime. Root acceptance includes the tests below.
 An account's actual network connectivity, entitlement and key validity remain
 operator-side checks; these tests make no paid model call and inspect no real key.
 
-Validation snapshot: root acceptance after merging `dbe805b9` passed **191/191**;
-Shell UI typecheck/build, all three locale catalogs and the Chromium interaction
-check passed. Runtime data is created under temporary directories and removed by
-the checks; no real credential or paid API is used.
+For current commands and acceptance boundaries, use [Verification](verification.md).
+The historical pass count in the original implementation report belongs to that
+revision; it is not the current suite size or proof of real-account acceptance.

@@ -5,9 +5,11 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync }
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { reviseCheckout, trackingRef } from '@magi/runtime/revise.js';
-import { Bus, magiLocalName, sequentialMagiHandle, SHELL_MAGI_HANDLE } from '@magi/bus';
+import { Bus, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, magiLocalName, messageDelivery, sequentialMagiHandle, SHELL_MAGI_HANDLE } from '@magi/bus';
 import { rebuildTools } from '@magi/built-in-tools/rebuild.js';
-import { replaceTools } from '@magi/built-in-tools/replace.js';
+import { shellTools } from '@magi/built-in-tools/shell.js';
+import { ShellManager } from '@magi/built-in-tools/shellManager.js';
+import { resolveToolchain } from '@magi/runtime/toolchain.js';
 import { ReplaceWorker } from '../../../packages/manager/dist/replace.js';
 
 const repo = path.resolve(import.meta.dirname, '../../..');
@@ -89,17 +91,17 @@ test('a failed local build leaves the previously active revision intact', async 
   assert.equal(readFileSync(path.join(live.dir, 'apps/shell/dist/index.html'), 'utf8'), 'upstream-v1');
 });
 
-test('both self-rebuild tools bind the editable source to this node workspace, including after a revision switch', async (t) => {
+test('request_replace binds the editable source to this node workspace, including after a revision switch', async (t) => {
   const home = mkdtempSync(path.join(tmpdir(), 'magi-rebuild-scope-'));
   const bus = new Bus(SHELL_MAGI_HANDLE, home);
   t.after(() => { bus.close(); rmSync(home, { recursive: true, force: true }); });
-  await assert.rejects(rebuildTools(bus)[0].run({ target: 'app' }), /each node replaces itself/);
-  for (const tool of [...rebuildTools(bus), ...replaceTools(bus)]) {
-    const { id } = JSON.parse(await tool.run({ target: 'self', checkout: path.join(home, 'other-node') }));
-    const job = bus.board('ReplaceSelfJob').claimId('test', id);
-    assert.equal(job?.input.checkout, path.join(home, 'MAGI'));
-    assert.equal(job?.input.ref, undefined);
-  }
+  const tool = rebuildTools(bus)[0];
+  assert.equal(tool.name, 'request_replace');
+  await assert.rejects(tool.run({ target: 'app' }), /each node replaces itself/);
+  const { id } = JSON.parse(await tool.run({ target: 'self', checkout: path.join(home, 'other-node') }));
+  const job = bus.board('ReplaceSelfJob').claimId('test', id);
+  assert.equal(job?.input.checkout, path.join(home, 'MAGI'));
+  assert.equal(job?.input.ref, undefined);
 });
 
 test('Shell tools keep startup source across revision switches without exposing it to another node', async (t) => {
@@ -117,11 +119,9 @@ test('Shell tools keep startup source across revision switches without exposing 
   process.env.MAGI_CHECKOUT = path.join(home, 'development-source');
   process.env.MAGI_APP_CHECKOUT = path.join(home, 'shell/revisions/new');
   for (const bus of [shell, other]) {
-    for (const tool of [...rebuildTools(bus), ...replaceTools(bus)]) {
-      const { id } = JSON.parse(await tool.run({ target: 'self', checkout: '/unrelated' }));
-      const job = bus.board('ReplaceSelfJob').claimId('test', id);
-      assert.equal(job?.input.checkout, bus === shell ? process.env.MAGI_CHECKOUT : path.join(other.workspace, 'MAGI'));
-    }
+    const { id } = JSON.parse(await rebuildTools(bus)[0].run({ target: 'self', checkout: '/unrelated' }));
+    const job = bus.board('ReplaceSelfJob').claimId('test', id);
+    assert.equal(job?.input.checkout, bus === shell ? process.env.MAGI_CHECKOUT : path.join(other.workspace, 'MAGI'));
   }
 });
 
@@ -154,4 +154,61 @@ test('the actual replace worker builds local tool edits without an upstream and 
   assert.equal(readFileSync(path.join(outgoing.dir, 'apps/shell/dist/index.html'), 'utf8'), 'worker-local-v2');
   assert.equal(readFileSync(path.join(f.root, 'source.txt'), 'utf8'), 'worker-local-v2');
   await new Promise(resolve => setImmediate(resolve));
+});
+
+test('agent bash uses the same toolchain as the replace safety gate and can finish compile and test', async (t) => {
+  const f = fixture(t);
+  const bash = shellTools(f.home, new ShellManager())[0];
+  const printed = await bash.run({ command: 'printf "%s\\n%s" "$MAGI_NODE" "$MAGI_NPM"' });
+  assert.match(printed, /^exit_code: 0\n/);
+  const { node: resolvedNode, npm: resolvedNpm } = resolveToolchain();
+  assert.match(printed, new RegExp(resolvedNode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(printed, new RegExp(resolvedNpm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  const result = await bash.run({
+    command: 'cd MAGI && "$MAGI_NODE" "$MAGI_NPM" test && "$MAGI_NODE" "$MAGI_NPM" run build && "$MAGI_NODE" "$MAGI_NPM" run build:ui --prefix apps/shell',
+    timeout: 60,
+  });
+  if (!result.startsWith('exit_code: 0')) assert.fail(result);
+  assert.equal(readFileSync(path.join(f.root, 'dist/proof'), 'utf8'), 'upstream-v1');
+  assert.equal(readFileSync(path.join(f.root, 'apps/shell/dist/index.html'), 'utf8'), 'upstream-v1');
+});
+
+test('a failed safety gate wakes the requesting chat until the cap, then the operator', async (t) => {
+  const home = mkdtempSync(path.join(tmpdir(), 'magi-gate-wake-'));
+  const bus = new Bus('@gate.magi', home);
+  t.after(() => { bus.close(); rmSync(home, { recursive: true, force: true }); });
+  const agentChat = bus.chats.forChannel('cli', 'agent');
+  const operatorChat = bus.chats.forChannel('cli', 'home');
+  messageDelivery.setHomeChat(bus, operatorChat.id);
+  const worker = new ReplaceWorker(bus, { app: 'eva', script: 'build' }, { healthy: () => null, suspendForReplace: async () => {}, resume: async () => {} });
+  async function failOnce() {
+    const id = bus.board('ReplaceSelfJob').publish({ checkout: path.join(home, 'absent'), swap: false, chat_id: agentChat.id }, 'test');
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      await worker.poll();
+      const result = bus.board('ReplaceSelfJob').result(id);
+      if (result) return result;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error('replace did not finish');
+  }
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const result = await failOnce();
+    assert.equal(result.status, 'failed');
+    const last = bus.messages.list(agentChat.id).at(-1);
+    assert.equal(last?.contact_id, SYSTEM_CONTACT_ID);
+    assert.match(last!.content, new RegExp(`attempt ${attempt}/3`));
+    assert.equal(bus.messages.list(operatorChat.id).length, 0);
+    const wake = bus.board('MessageDeliveryJob').claim('agent', (input) => bus.messages.get(input.message_id)?.contact_id !== MAGI_CONTACT_ID);
+    assert.ok(wake);
+    bus.board('MessageDeliveryJob').submit('agent', wake.id, { output: {} });
+  }
+  const fourth = await failOnce();
+  assert.equal(fourth.status, 'failed');
+  assert.equal(bus.messages.list(agentChat.id).filter((row) => row.contact_id === SYSTEM_CONTACT_ID).length, 3);
+  const operator = bus.messages.list(operatorChat.id).at(-1);
+  assert.equal(operator?.contact_id, MAGI_CONTACT_ID);
+  assert.match(operator!.content, /after 3 attempts/);
+  const leftover = bus.board('MessageDeliveryJob').claim('agent', (input) => bus.messages.get(input.message_id)?.contact_id !== MAGI_CONTACT_ID);
+  assert.equal(leftover, null);
 });

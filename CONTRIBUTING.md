@@ -1,84 +1,81 @@
 # Contributing to MAGI
 
-Thanks for your interest in MAGI! This guide helps you get started.
+Development source is [realTaki/MAGI](https://github.com/realTaki/MAGI).
+`AgenticSocietyLab/MAGI` is the release fork; do not assume both repositories
+contain the same revision. Discuss substantial changes in an Issue, then work
+on a focused branch and open a reviewable PR.
 
-## Quick start
+## Prepare the toolchain
 
-```bash
-git clone https://github.com/realTaki/MAGI.git
-cd MAGI
-npm install
+The checkout is one npm workspace (`packages/*`, `apps/*`) with a committed
+root `package-lock.json`. Install against that lockfile with `npm ci`.
+Use MAGI's own Node 24 and npm, as required by [AGENTS.md](AGENTS.md).
+A prepared source build has:
+
+```text
+apps/shell/runtime/bin/node
+apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js
 ```
 
-One install at the root covers every workspace (`packages/` and `apps/`). The
-root lockfile is not committed yet, so use `npm install` rather than `npm ci`.
+Windows uses `bin/node.exe`. A packaged MAGI installation also supplies its
+runtime. If neither is available, prepare the pinned runtime using the
+[platform workflow bootstrap](.github/workflows/linux-validation.yml) and
+[`prepare-runtime.mjs`](apps/shell/scripts/prepare-runtime.mjs); do not silently
+fall back to an arbitrary system Node. CI has a separate initial Node 24
+bootstrap stage before it switches to the MAGI-owned runtime. No global tool
+installation, persistent PATH change or shell-startup edit is needed.
 
-MAGI runs on Node.js 24, and the desktop app is where it comes from — not a
-separate install on the machine. A packaged install ships the runtime MAGI's
-child processes use; a source checkout builds that same runtime into
-`apps/shell/runtime/`:
+From a prepared checkout on Linux/macOS:
 
-```bash
-(cd apps/shell && npm install && node scripts/prepare-runtime.mjs)
+```sh
+PATH="$PWD/apps/shell/runtime/bin:$PATH" apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js ci
+PATH="$PWD/apps/shell/runtime/bin:$PATH" apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run build
 ```
 
-That runtime (`bin/node` plus its bundled npm CLI) is what builds and runs the app;
-the pinned versions live in `apps/shell/package.json` and CI uses Node 24.
-`apps/shell/main.mjs` is what puts it on a child process's `PATH`.
+Dependencies stay inside the workspace. Cache overrides, when needed, belong to
+individual commands. See [Running MAGI](docs/running.md) for the ASP/Electron
+startup order and [Testing MAGI](docs/testing.md) for commands and
+[Verification](docs/verification.md) for acceptance boundaries.
 
-## Where to start
+## Code and review
 
-- **Good first issues** — tagged `good first issue` in Issues
-- **Documentation** — translations, README improvements, docstrings
-- **Tests** — adding tests for untested paths
-- **Bug fixes** — pick an existing bug report and fix it
+Use TypeScript for runtime packages and follow neighboring code conventions.
+Prefer small, clear changes over extra abstractions. Workers coordinate through
+BUS jobs rather than direct calls into peer workers. Before changing a process,
+source or credential boundary, read [Architecture](docs/architecture.md).
 
-## Before you code
+A pre-release change need not preserve obsolete layouts or test data. Use fresh
+isolated fixtures and current behavior; do not add compatibility machinery
+without a product requirement. Preserve useful design rationale in versioned
+history instead of keeping contradictory current instructions.
 
-1. Open an Issue first (feature request or bug report). Let's discuss.
-2. Once aligned, fork and create a branch: `feat/description` or `fix/description`.
-3. Keep PRs small — one concern per PR.
+Verify the affected flow and required build/checks. Test output from generated
+`dist` files is evidence for the last build, so compile changed TypeScript first.
+Do not duplicate whole suites merely to accumulate green counts. Report what
+was run, its revision, failures and platform limitations.
 
-## Code conventions
+Use Conventional Commits (`fix:`, `feat:`, `docs:`, `refactor:`). PRs should state
+the problem, resulting behavior and relevant validation. Keep unrelated changes,
+credentials, node workspaces and generated artifacts out of commits. Publishing
+a release, changing a release fork and activating a desktop build are distinct
+from saving a source change.
 
-Two bars, not a tradeoff: **little code**, and **clear code**. Long code is hard to read. Extra glue that converts the same idea between two shapes is also noise — unify the type instead of mapping back and forth.
+## Source map
 
-Then:
+| Path | Responsibility |
+| --- | --- |
+| `apps/shell/` | Electron window, process ownership, startup/profile helpers and React UI |
+| `apps/eva/eva.mjs` | Launcher for Shell, ASP or an independent agent |
+| `packages/node/` | Role composition and launcher child entry |
+| `packages/bus/` | Books, durable jobs and shared contracts |
+| `packages/manager/` | Worker lifecycle, configuration and self-replacement |
+| `packages/asp-server/`, `packages/channel-asp/` | Relay service and node-side transport |
+| `packages/webapp/` | Shell's desktop backend and source/runtime actions |
+| `packages/agent/`, `packages/providers/`, other worker packages | Agent turns, model execution and tools/channels |
+| `docs/` | Current guides and clearly marked historical rationale |
 
-- **TypeScript** for the runtime (`apps/eva/`, `packages/`), `apps/asp/`, and the operator app (`apps/shell/`)
-- Follow what's already in the codebase:
-  - English for code and comments (Chinese allowed in user-facing strings)
-- `npm test` at the repository root (workspace build + runtime tests), `npm test` in
-  `apps/asp/`, and `npm test` in `apps/shell/` should pass before pushing
+Package names come from the manifests: the launcher workspace is `eva`, the
+desktop is `@magi/shell`, ASP is `@magi/asp`, and libraries use `@magi/*`.
+`@user.magi` is operator speech, not an npm workspace or separate process.
 
-## Commit style
-
-Conventional Commits:
-```
-feat: Add multi-channel dispatcher
-fix: Handle empty contact notes rendering
-refactor: Rename employees table to contacts
-docs: Update README with new architecture
-```
-
-## PR checklist
-
-- [ ] Issue linked
-- [ ] Code follows existing patterns
-- [ ] Tests pass locally
-- [ ] No unrelated changes mixed in
-
-## Project structure
-
-| Directory | Purpose |
-|-----------|---------|
-| `apps/shell/` | Electron plus the operator process: BUS manager (`shell.ts`) and UI (`web/`) |
-| `apps/asp/` | ASP process: BUS manager (`asp.ts`) |
-| `apps/eva/` + `packages/` | The runtime entry and its packages: bus, manager, asp-server, webapp, agent, providers, tools, mcp, channels, tests |
-| `docs/` | Design docs + roadmap |
-
-**Package names follow one rule: a role in the society stays bare, everything else carries the `@magi/` scope.** `user` (operator speech, `@user.magi`) and `eva` (the agent runtime behind spawned `eva-NNN`) are roles; `@magi/asp`, `@magi/shell` and every library under `packages/` are the machinery around them. The scope is not part of the module name, so `apps/asp` ↔ `@magi/asp` is aligned — what has to match is the *module*: `apps/shell/`, `apps/eva/`, `apps/eva/eva.ts`.
-
-## Questions?
-
-Open a Discussion or ask in the Issue you're working on.
+Security reports belong in [SECURITY.md](SECURITY.md), not public issue bodies.

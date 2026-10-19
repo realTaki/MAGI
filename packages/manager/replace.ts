@@ -3,7 +3,8 @@
  *
  * Order: snapshot every file in the app's dist, build, drain, stop the other
  * workers, start the new build's workers and health-check them, and only then
- * mark the job done. A failure restores that dist and tells the operator.
+ * mark the job done. A failure restores that dist. The requesting agent is
+ * woken with the error and log tail (capped); the operator is told after the cap.
  * The running process is never left beside a second one: a supervised app
  * asks its supervisor to restart it, and a hand-run app exits after spawning.
  */
@@ -14,10 +15,15 @@ import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { BaseWorker, messageDelivery, replaceFailedPath, type Bus } from "@magi/bus";
+import { BaseWorker, SYSTEM_CONTACT_ID, messageDelivery, replaceFailedPath, type Bus } from "@magi/bus";
 import { LAUNCHER_PROTOCOL } from "@magi/runtime/protocol.js";
 import { reviseCheckout } from "@magi/runtime/revise.js";
 import { resolveToolchain } from "@magi/runtime/toolchain.js";
+
+const GATE_TRIES = 3;
+const LOG_TAIL = 8_000;
+const FAILURES_KEY = "replace.gate_failures";
+const REQUEST_CHAT_KEY = "replace.request_chat_id";
 
 export type AppBuild = {
   app: "eva" | "asp" | "shell";
@@ -51,12 +57,13 @@ export class ReplaceWorker extends BaseWorker {
     if (!job) return false;
     const id = job.id;
     const input = job.input;
-    this.task = this.execute(id, input.checkout, input.ref, input.swap === true).finally(() => { this.task = null; });
+    this.task = this.execute(id, input.checkout, input.ref, input.swap === true, input.chat_id).finally(() => { this.task = null; });
     return true;
   }
 
-  private async execute(id: number, requested: string | undefined, ref: string | undefined, swap: boolean): Promise<void> {
+  private async execute(id: number, requested: string | undefined, ref: string | undefined, swap: boolean, chatId?: number): Promise<void> {
     const board = this.bus.board("ReplaceSelfJob");
+    if (typeof chatId === "number" && Number.isInteger(chatId)) this.bus.settings.set(REQUEST_CHAT_KEY, String(chatId));
     const checkout = requested ?? findCheckout();
     if (swap) {
       await this.switchRevision(id, checkout, ref);
@@ -76,6 +83,7 @@ export class ReplaceWorker extends BaseWorker {
       await healthCheck(this.build.app === "eva" ? "agent" : this.build.app);
       board.submit(this.worker_name, id, { output: { replaced: true } });
       rmSync(backup, { recursive: true, force: true });
+      gateSuccess(this.bus);
       tell(this.bus, "[replace] replaced");
       await this.host.resume();
     } catch (error) {
@@ -86,7 +94,7 @@ export class ReplaceWorker extends BaseWorker {
         catch (resumeError) { text = `${text}; ${message(resumeError)}`; }
       }
       board.submit(this.worker_name, id, { error: text });
-      tell(this.bus, `[replace] ${text}`);
+      failReplace(this.bus, text);
     }
   }
 
@@ -118,7 +126,7 @@ export class ReplaceWorker extends BaseWorker {
     } catch (error) {
       const text = message(error);
       board.submit(this.worker_name, id, { error: text });
-      tell(this.bus, `[replace] ${text}`);
+      failReplace(this.bus, text);
     }
   }
 
@@ -135,19 +143,20 @@ export class ReplaceWorker extends BaseWorker {
     const board = this.bus.board("ReplaceSelfJob");
     const done = board.result(jobId);
     if (done) {
-      if (done.status === "failed") tell(this.bus, `[replace] ${done.error ?? "replace failed"}`);
       this.clearHandoff();
       return true;
     }
     const job = board.claimId(this.worker_name, jobId);
     if (!job) return false;
+    if (typeof job.input.chat_id === "number") this.bus.settings.set(REQUEST_CHAT_KEY, String(job.input.chat_id));
     if (replaceError) {
       board.submit(this.worker_name, job.id, { error: replaceError });
-      tell(this.bus, `[replace] ${replaceError}`);
+      failReplace(this.bus, replaceError);
     } else {
       const dist = join(job.input.checkout ?? findCheckout(), "apps", this.build.app, "dist");
       rmSync(`${dist}.rollback`, { recursive: true, force: true });
       board.submit(this.worker_name, job.id, { output: { replaced: true } });
+      gateSuccess(this.bus);
       tell(this.bus, "[replace] replaced");
     }
     this.clearHandoff();
@@ -181,7 +190,7 @@ export class ReplaceWorker extends BaseWorker {
       return true;
     }
     if (jobId !== null) board.fail(jobId, error);
-    tell(this.bus, `[replace] ${error}`);
+    failReplace(this.bus, error);
     rmSync(marker, { force: true });
     return true;
   }
@@ -195,13 +204,10 @@ export class ReplaceWorker extends BaseWorker {
     const board = this.bus.board("ReplaceSelfJob");
     const result = board.result(id);
     this.bus.settings.set("replace.pending", "");
-    if (result) {
-      if (result.status === "failed") tell(this.bus, `[replace] ${result.error ?? "replace failed"}`);
-      return true;
-    }
+    if (result) return true;
     const error = "MAGI crashed before this replace finished";
     board.fail(id, error);
-    tell(this.bus, `[replace] ${error}`);
+    failReplace(this.bus, error);
     return true;
   }
 }
@@ -319,6 +325,27 @@ function waitLauncher(): Promise<string> {
     };
     process.on("message", onMessage);
   });
+}
+
+function gateSuccess(bus: Bus): void {
+  bus.settings.set(FAILURES_KEY, "");
+}
+
+function failReplace(bus: Bus, error: string): void {
+  const tail = error.length > LOG_TAIL ? error.slice(-LOG_TAIL) : error;
+  const chat = Number(bus.settings.get(REQUEST_CHAT_KEY));
+  const live = Number.isInteger(chat) && chat > 0 ? bus.chats.get(chat) : null;
+  if (!live) {
+    tell(bus, `[replace] ${tail}`);
+    return;
+  }
+  const attempt = (Number(bus.settings.get(FAILURES_KEY)) || 0) + 1;
+  bus.settings.set(FAILURES_KEY, String(attempt));
+  if (attempt <= GATE_TRIES) {
+    messageDelivery.send(bus, chat, `[replace] safety gate failed (attempt ${attempt}/${GATE_TRIES}). The running process was not replaced.\n\n${tail}`, SYSTEM_CONTACT_ID, "replace");
+    return;
+  }
+  tell(bus, `[replace] safety gate failed after ${GATE_TRIES} attempts. The running process was not replaced.\n\n${tail}`);
 }
 
 function tell(bus: Bus, text: string): void {

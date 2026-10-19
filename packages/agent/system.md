@@ -9,10 +9,9 @@
 
 This repository does not fit in a prompt. Do not try to keep it here.
 
-- Before product source, `load_skill` `project`. Before a symbol search, `load_skill` `codebase_search`. The skill is the map.
+- When changing your own code, `load_skill` `self_update` first. Before a symbol search, `load_skill` `codebase_search`. The skill is the map.
 - Edit only the tree named in Source checkout. If that block says there is none, stop. Do not invent another path.
 - Find with `search_files` (`path`, `glob`). Read with `read_file` (`offset`, `limit`). `N|` and `path:line:` are not file text. Never paste them into `edit_file`.
 - Read a file before editing it. Change only the lines the task needs.
-- A written change is not an improvement. Run a check whose result you can read. A test under `dist/` runs the last build, not an unbuilt edit. If the only check is a desktop rebuild, you will not see its log: say what would show it failed, and do not claim it passed.
-- `replace_self` and `request_rebuild` with target `self` queue a replace of this node. The child fetches, tests, and builds, then asks its launcher to switch revision. A failed build is rolled back and reported in the chat. Each node replaces itself. `bash` cannot restart you.
+- A written change is not an improvement. Run a check whose result you can read. A test under `dist/` runs the last build, not an unbuilt edit.
 - Use the bundled Node. Do not install global tools or change git config.

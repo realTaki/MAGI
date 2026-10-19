@@ -14,10 +14,10 @@ type ShellState = {
 export class ShellManager {
   private readonly shells = new Map<string, ShellState>();
 
-  start(command: string, cwd: string): ShellState {
+  start(command: string, cwd: string, env: NodeJS.ProcessEnv = process.env): ShellState {
     const id = crypto.randomUUID().replaceAll("-", "").slice(0, 12);
     const [file, ...args] = shellInvocation(command);
-    const child = spawn(file, args, { cwd, stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32", windowsHide: true });
+    const child = spawn(file, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32", windowsHide: true });
     const state: ShellState = { id, command, process: child, output: "", cursor: 0, exitCode: null, status: "running" };
     this.shells.set(id, state);
     void this.capture(state, child.stdout);
@@ -29,9 +29,9 @@ export class ShellManager {
     return state;
   }
 
-  async foreground(command: string, cwd: string, timeout: number, signal?: AbortSignal): Promise<string> {
+  async foreground(command: string, cwd: string, timeout: number, signal?: AbortSignal, env: NodeJS.ProcessEnv = process.env): Promise<string> {
     signal?.throwIfAborted();
-    const state = this.start(command, cwd);
+    const state = this.start(command, cwd, env);
     let timer: ReturnType<typeof setTimeout> | undefined;
     let aborted: (() => void) | undefined;
     try {

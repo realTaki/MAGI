@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { magiHome } from "./home.js";
 import { resolveToolchain } from "./toolchain.js";
+import { verifyCheckout } from "./verify.js";
 
 function run(file: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = process.env): Promise<string> {
   const { node } = resolveToolchain();
@@ -62,7 +63,7 @@ async function localRevision(root: string, previous: string): Promise<string> {
  * With no target, build a snapshot of this editable source tree (including
  * non-ignored new files and deletions). An explicit ref is a remote upgrade:
  * fetch and build that committed ref, independently of local edits.
- * Install, test and build before exposing the revision to the launcher.
+ * Install, then the shared verifyCheckout compile and test, before exposing the revision to the launcher.
  */
 export async function reviseCheckout(root: string, target?: string): Promise<{ revision: string; previous: string; dir: string }> {
   const ref = target?.trim();
@@ -95,21 +96,7 @@ export async function reviseCheckout(root: string, target?: string): Promise<{ r
     renameSync(staging, dir);
     materialized = true;
     await run("npm", ["ci"], dir);
-    const validationHome = mkdtempSync(join(tmpdir(), "magi-revision-tests-"));
-    const testEnv = { ...process.env };
-    for (const key of Object.keys(testEnv)) {
-      if (key.startsWith("MAGI_") && !["MAGI_NODE", "MAGI_NPM", "MAGI_GIT"].includes(key)) delete testEnv[key];
-    }
-    testEnv.MAGI_HOME = validationHome;
-    testEnv.MAGI_OS_HOME = validationHome;
-    delete testEnv.NODE_TEST_CONTEXT;
-    try { await run("npm", ["test"], dir, testEnv); }
-    finally { rmSync(validationHome, { recursive: true, force: true }); }
-    await run("npm", ["run", "build"], dir);
-    if (process.env.MAGI_ROLE === "shell") {
-      await run("npm", ["run", "build:ui", "--prefix", "apps/shell"], dir);
-      if (!existsSync(join(dir, "apps", "shell", "dist", "index.html"))) throw new Error("Shell build produced no UI entry");
-    }
+    await verifyCheckout(dir);
   } catch (error) {
     rmSync(staging, { recursive: true, force: true });
     if (materialized) rmSync(dir, { recursive: true, force: true });

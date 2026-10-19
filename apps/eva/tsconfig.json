@@ -20,6 +20,9 @@
       "path": "../../packages/bus"
     },
     {
+      "path": "../../packages/runtime"
+    },
+    {
       "path": "../../packages/manager"
     },
     {

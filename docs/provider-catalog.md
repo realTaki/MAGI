@@ -1,4 +1,4 @@
-# Provider card catalog
+# Provider catalog
 
 Checked **2026-10-19** against the project's locked `@earendil-works/pi-ai@0.87.1`
 model directory and the official references below. This is a curated list of
@@ -24,25 +24,23 @@ Official sources:
 - https://platform.minimaxi.com/docs/api-reference/text-anthropic-api
 - https://api-docs.deepseek.com/
 
-The OpenAI documentation now advertises a larger context capacity and GPT-6.1
-Sol; this change does not override the locked backend's metadata or add an
-unresolvable ID. GPT-6 Sol is retained from the verified backend catalog.
-Likewise MiniMax-M3.1-Flash and Claude Sonnet/Haiku 5.5 are not offered because
-this locked catalog lacks them. MiniMax-M2.7 is omitted because the current
-Anthropic compatibility documentation lists M3 and M3.1 Flash instead.
-MiniMax CN documentation has moved to `platform.minimax.cn`; the actual backend
-endpoint remains the catalog value above. Global and CN credentials are not
-interchangeable. No OAuth behavior is added here.
+The source of the shipped picker is
+[`PROVIDER_CATALOG`](../packages/bus/jobs/providerCatalog.ts), checked against the
+lockfile-installed backend by the provider catalog test. Vendor documentation
+can describe models or capacities newer than that dependency. A table entry is
+not a promise of account entitlement or current vendor availability. MiniMax
+China and Global use different endpoints/credentials; no OAuth behavior is
+implied by this catalog.
 
 Known providers use their backend catalog endpoint; the card submits an empty
 custom URL and the manager clears any previous custom URL. Custom uses the
 existing URL validation (HTTPS, or localhost HTTP, without embedded credentials,
 query or fragment). Changing provider clears the draft model, URL and password.
 Unknown model IDs remain visible with an explanation and must be replaced
-with a supported selection; no existing settings change merely by opening a card.
+with a supported selection; opening the profile alone does not change saved settings.
 
 The provider form now lives in the matching MAGI profile. Chat presents only an
-application link such as `#/magi/%40eva-002.magi/provider`, never a provider form or
+application link such as `#/magi/%40eva-000.magi/provider`, never a provider form or
 credentials. Opening the profile uses an operator-authenticated structured request
 directly to the config worker and does not require an LLM turn. A failed form stays
 editable; each save has an attempt ID, so stale failure receipts and replayed
@@ -72,19 +70,8 @@ Agent-callable self-rebuild/synchronization capabilities remain available.
 
 ## Reproducible checks
 
-Use the project's bundled Node 24 and the lockfile-installed dependencies:
-
-```sh
-apps/shell/runtime/bin/node node_modules/typescript/bin/tsc -b
-apps/shell/runtime/bin/node node_modules/typescript/bin/tsc --noEmit -p apps/shell/web/tsconfig.json
-apps/shell/runtime/bin/node apps/shell/scripts/i18n-lint.ts
-MAGI_HOME=/tmp/magi-provider-tests apps/shell/runtime/bin/node --test apps/eva/dist/test/*.test.js apps/asp/dist/test/*.test.js apps/shell/test/*.test.mjs apps/shell/test/*.test.ts
-apps/shell/runtime/bin/node apps/shell/integration/provider-form.browser.mjs
-```
-
-The browser check uses local Chromium (`CHROMIUM` can select its path), a temporary
-loopback server and mocked ASP/encryption boundaries. It never connects to a
-provider or reads credentials. The worker integration test separately exercises
-real RSA encryption/decryption with synthetic keys in a temporary BUS workspace.
-Only run generated tests corresponding to source tests in the checked-out revision;
-TypeScript does not remove orphaned output left by older branches.
+Use [Testing MAGI](testing.md) for the canonical root, browser and UI checks;
+[Verification](verification.md) explains what each kind of evidence establishes.
+The Chromium fixture uses a temporary loopback server and explicit mock
+transport/encryption boundaries; worker tests separately exercise cryptography
+with synthetic keys. Neither establishes real-provider/account acceptance.
