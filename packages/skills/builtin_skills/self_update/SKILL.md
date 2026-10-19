@@ -6,13 +6,15 @@ version: "1.0"
 
 # Self-update
 
-Your state (memory, skills, prompts, logs) is the workspace. The source you may change is the Git checkout at `MAGI/` inside that workspace. The Shell clone normally uses `magi/shell`, ASP uses `magi/asp`, and an agent uses `magi/<name>`; inspect the actual branch before editing. If `MAGI/.git` is missing, this process is not on its own clone: stop and say so. Do not guess another checkout path, and do not request a replace.
+Your state (memory, skills, prompts, logs) is the workspace. Managed clones keep source at `MAGI/` inside that workspace (`magi/shell` for Shell, `magi/asp` for ASP, `magi/<name>` for an agent). Inspect the actual branch before editing.
+
+If `MAGI/.git` is missing, this is a source launch, not a missing-source process. On Shell or ASP, `MAGI_CHECKOUT` is the editable git root (the Source checkout block names it). Edit that tree. Call `request_replace` after verify; it snapshots `MAGI_CHECKOUT`. Agent-role nodes without `MAGI/` still stop and do not request a replace.
 
 Work like a coding agent in this turn: read, edit, compile, and run the full test suite with `bash`. Failures belong in this turn so you can keep fixing. Call `request_replace` only after the shared verify command exits 0.
 
 ## Find and read
 
-Paths for `list_files`, `read_file`, `search_files`, `edit_file`, and `write_file` are relative to the workspace. Prefix source paths with `MAGI/`.
+Paths for `list_files`, `read_file`, `search_files`, `edit_file`, and `write_file` are relative to the workspace. Prefix source paths with `MAGI/`, or with the Source checkout path when that block names `MAGI_CHECKOUT`.
 
 `search_files` finds a literal string and returns `path:line: text`. Narrow it with `path` and `glob` before reading. `read_file` returns numbered lines (`N|text`); the number is not part of the file. Pass `offset` and `limit` to read past the first window. Load `codebase_search` before hunting for a symbol. Read `MAGI/docs/architecture.md` before changing a boundary between the shell, the app, ASP, and a MAGI.
 
@@ -26,7 +28,7 @@ Each node edits only its own `MAGI/`. On Balthasar (`@shell.magi`, role `shell`)
 
 ## Edit
 
-Edit only under `MAGI/`. Do not write product source into `memories/`, `skills/`, `logs/`, or `prompts/`.
+Edit only under `MAGI/` or the Source checkout path. Do not write product source into `memories/`, `skills/`, `logs/`, or `prompts/`.
 
 Prefer `edit_file` with one unique exact substring. Use `write_file` for a new file or a full rewrite of at most 256 KiB. Do not commit, push, or merge unless the operator asked. Never change git config. If a commit is required and git reports a missing `user.name` or `user.email`, stop and tell the operator.
 
@@ -47,7 +49,7 @@ A saved file is not a passing change. `apps/eva/dist` tests run the last build, 
 From `MAGI/`, run the same verify entry the replace safety gate runs (`verifyCheckout`). Use `MAGI_NODE` and `MAGI_NPM` from the environment; never a system Node. Foreground `bash` keeps only a head and tail of output, so a long verify job should use `run_in_background` and `bash_output`, or redirect to a file and `read_file` the end. Raise `timeout` if you stay in the foreground.
 
 ```bash
-cd MAGI
+cd "${MAGI_CHECKOUT:-MAGI}"
 "$MAGI_NODE" "$MAGI_NPM" run verify
 ```
 
