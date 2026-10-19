@@ -121,7 +121,7 @@ function spawnChild(role, rest, name, { script, revision, previous, replaceJob, 
   const child = spawn(node, [script, "--role", role, ...rest], {
     env,
     stdio: host ? ["pipe", "pipe", "pipe", "ipc"] : ["ignore", "inherit", "inherit", "ipc"],
-    detached: true,
+    detached: !sharesDesktopProcessGroup(),
     windowsHide: true,
   });
   if (host) {
@@ -133,6 +133,13 @@ function spawnChild(role, rest, name, { script, revision, previous, replaceJob, 
   note(child);
   child.send({ v: LAUNCHER_PROTOCOL, type: "hello" });
   return child;
+}
+
+function sharesDesktopProcessGroup() {
+  const marker = process.env.MAGI_DESKTOP_PROCESS_GROUP;
+  if (process.platform !== "linux" || !/^[1-9][0-9]*$/.test(marker ?? "")) return false;
+  const raw = readFileSync("/proc/self/stat", "utf8");
+  return raw.slice(raw.lastIndexOf(")") + 2).split(" ")[2] === marker;
 }
 
 function note(child) {

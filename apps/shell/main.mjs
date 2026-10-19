@@ -77,7 +77,7 @@ app.setAppLogsPath(ELECTRON_LOGS);
 let mainWindow = null;
 let startingLocal = false;
 let runtimeRootPromise = null;
-const processOwner = createProcessOwner();
+const processOwner = createProcessOwner({ keepProcessGroup: app.isPackaged && process.platform === "linux" && desktopUpdateLaunchContext({ artifact: process.env.APPIMAGE })?.rollback === false });
 const command = processOwner.command;
 
 function sendToWindow(win, channel, payload) {

@@ -16,6 +16,9 @@ import {
 
 const linuxTest = process.platform === "linux" ? test : test.skip;
 const MODULE = fileURLToPath(new URL("../desktop-update.mjs", import.meta.url));
+const OWNER_MODULE = fileURLToPath(new URL("../process-owner.mjs", import.meta.url));
+const EVA_MODULE = fileURLToPath(new URL("../../eva/eva.mjs", import.meta.url));
+const CONTROL_MODULE = fileURLToPath(new URL("../../../packages/node/dist/control.js", import.meta.url));
 const REVISION = "a".repeat(40), PREVIOUS = "b".repeat(40);
 const hash = (file) => createHash("sha256").update(readFileSync(file)).digest("hex");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -42,8 +45,14 @@ function fixture(t, { behavior = "ack", timeoutMs = 3000, stateExists = true } =
   writeFileSync(inner, "inner binary remains untouched"); chmodSync(inner, 0o755);
   const priorState = JSON.stringify({ protocol: 1, current: PREVIOUS, previous: "c".repeat(40), currentDir: "/prior/revision", untouched: "state must be byte-identical\n" }, null, 2);
   if (stateExists) { writeFileSync(state, priorState); chmodSync(state, 0o640); }
+  const backend = path.join(root, "owned-backend.mjs");
+  writeFileSync(backend, `import{writeFileSync,readFileSync}from'node:fs';import{sendLauncher,untilShutdown}from ${JSON.stringify(pathToFileURL(CONTROL_MODULE).href)};
+const raw=readFileSync('/proc/self/stat','utf8');const group=Number(raw.slice(raw.lastIndexOf(')')+2).split(' ')[2]);
+writeFileSync(${JSON.stringify(path.join(root, "owned-backend.json"))},JSON.stringify({pid:process.pid,group,marker:process.env.MAGI_DESKTOP_PROCESS_GROUP,journal:process.env.MAGI_DESKTOP_UPDATE_JOURNAL,role:process.env.MAGI_ROLE}));
+sendLauncher({type:'hello'});const shutdown=untilShutdown();sendLauncher({type:'ready'});await shutdown;process.exit(0);`);
   writeFileSync(script, `import{appendFileSync,readFileSync,writeFileSync,existsSync}from'node:fs';import path from'node:path';import{spawn}from'node:child_process';
 import{acknowledgeDesktopUpdate,desktopUpdateLaunchContext}from ${JSON.stringify(pathToFileURL(MODULE).href)};
+import{createProcessOwner}from ${JSON.stringify(pathToFileURL(OWNER_MODULE).href)};
 const mode=process.env.MAGI_DESKTOP_UPDATE_MODE;
 appendFileSync(${JSON.stringify(marker)},JSON.stringify({mode,pid:process.pid,extract:process.env.APPIMAGE_EXTRACT_AND_RUN,revision:process.env.MAGI_REVISION,revisionDir:process.env.MAGI_REVISION_DIR,error:process.env.MAGI_REPLACE_ERROR,job:process.env.MAGI_REPLACE_JOB,context:desktopUpdateLaunchContext(),state:(()=>{try{return readFileSync(${JSON.stringify(state)},'utf8')}catch{return null}})()})+'\\n');
 if(mode==='candidate'){
@@ -55,6 +64,13 @@ if(behavior==='ack')acknowledgeDesktopUpdate({revision:${JSON.stringify(REVISION
 if(behavior==='ack-exit')setInterval(()=>{if(existsSync(${JSON.stringify(path.join(root, 'ack-now'))})){acknowledgeDesktopUpdate({revision:${JSON.stringify(REVISION)}});process.exit(0)}},10);
 if(behavior==='delayed-ack')setTimeout(()=>acknowledgeDesktopUpdate({revision:${JSON.stringify(REVISION)}}),1000);
 if(behavior==='detached-descendant'){const child=spawn(process.execPath,['-e',"process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"],{detached:true,stdio:'ignore'});writeFileSync(${JSON.stringify(path.join(root, "descendant.pid"))},String(child.pid));child.unref();}
+if(behavior.startsWith('owned-eva-')){
+const role=behavior.slice('owned-eva-'.length),owner=createProcessOwner({keepProcessGroup:desktopUpdateLaunchContext()?.rollback===false}),env={...process.env};
+for(const key of Object.keys(env))if(key.startsWith('MAGI_DESKTOP_UPDATE_')||['MAGI_REVISION','MAGI_REVISION_DIR','MAGI_REPLACE_JOB','MAGI_REPLACE_ERROR'].includes(key))delete env[key];
+Object.assign(env,{MAGI_CHILD:${JSON.stringify(backend)},MAGI_NODE:process.execPath,MAGI_HOST:'0',MAGI_HOME:${JSON.stringify(path.join(root, "owned-profile"))}});
+const child=owner.spawn(process.execPath,[${JSON.stringify(EVA_MODULE)},'--role',role],{env,stdio:['ignore','ignore','ignore','ipc']});
+child.on('message',message=>{if(message?.type==='ready'){const raw=readFileSync('/proc/'+child.pid+'/stat','utf8');writeFileSync(${JSON.stringify(path.join(root, "owned-launcher.json"))},JSON.stringify({pid:child.pid,group:Number(raw.slice(raw.lastIndexOf(')')+2).split(' ')[2])}));process.exit(7)}});
+}
 }
 setInterval(()=>{},1000);
 `);
@@ -218,6 +234,23 @@ linuxTest("rollback waits for a detached backend that ignores SIGTERM before rel
   assert.ok(raw === null || raw.slice(raw.lastIndexOf(")") + 2).startsWith("Z"), "detached candidate backend survived rollback");
   assert.equal(readJSON(tx.journalPath).status, "rolled-back");
 });
+
+for (const role of ["shell", "agent", "asp"]) {
+  linuxTest(`actual candidate owner and Eva ${role} backend stay reclaimable after desktop exits without ACK`, { timeout: 20_000 }, async (t) => {
+    const f = fixture(t, { behavior: `owned-eva-${role}`, timeoutMs: 5000 }), tx = await f.prepare();
+    const result = await f.start(tx).exited; assert.equal(result.code, 0, result.output);
+    const journal = readJSON(tx.journalPath);
+    const launcher = readJSON(path.join(f.root, "owned-launcher.json")), backend = readJSON(path.join(f.root, "owned-backend.json"));
+    t.after(() => { for (const process of [launcher, backend]) { try { globalThis.process.kill(process.pid, "SIGKILL"); } catch (error) { if (error.code !== "ESRCH") throw error; } } });
+    assert.equal(launcher.group, journal.candidateProcess.pid); assert.equal(backend.group, journal.candidateProcess.pid);
+    assert.equal(backend.marker, String(journal.candidateProcess.pid)); assert.equal(backend.journal, undefined); assert.equal(backend.role, role);
+    for (const { pid } of [launcher, backend]) {
+      const raw = existsSync(`/proc/${pid}/stat`) ? readFileSync(`/proc/${pid}/stat`, "utf8") : null;
+      assert.ok(raw === null || raw.slice(raw.lastIndexOf(")") + 2).startsWith("Z"), `${role} PID ${pid} survived rollback`);
+    }
+    assert.equal(journal.status, "rolled-back"); assert.deepEqual(readFileSync(f.target), f.original);
+  });
+}
 
 linuxTest("crashed readiness watcher resumes the same candidate process and accepts its later ACK", { timeout: 20_000 }, async (t) => {
   const f = fixture(t, { behavior: "delayed-ack", timeoutMs: 5000 }), tx = await f.prepare(), first = f.start(tx);

@@ -285,8 +285,9 @@ function processTable() {
 }
 async function stopGroup(identity) {
   if (!identity) return;
-  // Capture descendants as well as the session: Eva deliberately creates a
-  // detached backend group. Keep their start times so PID reuse is harmless.
+  // Candidate owners and Eva backends preserve this group, even if Electron
+  // exits first. Also capture descendants that explicitly detach (the ordinary
+  // non-candidate Eva default); start times protect against PID reuse.
   const current = processIdentity(identity.pid);
   if (current && current.start !== identity.start) throw new Error("Candidate process identity changed; refusing to signal a reused PID");
   const owned = new Map();

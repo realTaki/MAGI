@@ -1,6 +1,7 @@
 import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
+import { readFileSync } from "node:fs";
 
 const execute = promisify(execFile);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -32,7 +33,7 @@ function sharedProcessTable() {
 }
 
 /** Private ownership of roots and their descendants; no process-name matching. */
-export function createProcessOwner({ spawnProcess = spawn, graceMs = 3000, forceMs = 5000 } = {}) {
+export function createProcessOwner({ spawnProcess = spawn, graceMs = 3000, forceMs = 5000, keepProcessGroup = false } = {}) {
   const roots = new Map();
   const reaps = new WeakMap();
   const pendingReaps = new Set();
@@ -43,8 +44,16 @@ export function createProcessOwner({ spawnProcess = spawn, graceMs = 3000, force
   function ownSpawn(file, args, options = {}) {
     assertOpen();
     const before = Date.now();
-    const child = spawnProcess(file, args, { ...options, detached: process.platform !== "win32" });
-    const record = { child, pid: child.pid, before, after: Date.now(), exited: null, known: new Map() };
+    let environment = options.env;
+    if (keepProcessGroup && process.platform === "linux") {
+      const raw = readFileSync("/proc/self/stat", "utf8");
+      const group = raw.slice(raw.lastIndexOf(")") + 2).split(" ")[2];
+      // This is injected only by the verified candidate's owner. Other roles
+      // retain it when stripping update/job metadata, then verify their PGID.
+      environment = { ...(options.env ?? process.env), MAGI_DESKTOP_PROCESS_GROUP: group };
+    }
+    const child = spawnProcess(file, args, { ...options, ...(environment ? { env: environment } : {}), detached: process.platform !== "win32" && !keepProcessGroup });
+    const record = { child, pid: child.pid, keepProcessGroup, before, after: Date.now(), exited: null, known: new Map() };
     roots.set(child, record);
     child.once("exit", () => {
       record.exited = Date.now();
@@ -58,7 +67,12 @@ export function createProcessOwner({ spawnProcess = spawn, graceMs = 3000, force
     const own = new Map();
     const root = table.find((item) => item.pid === record.pid);
     if (process.platform !== "win32") {
-      for (const item of table) if (item.group === record.pid || item.session === record.pid) own.set(item.pid, item);
+      if (!record.keepProcessGroup) {
+        for (const item of table) if (item.group === record.pid || item.session === record.pid) own.set(item.pid, item);
+      }
+      // A shared-group root is still ours, but its siblings and desktop/helper
+      // group are not. ChildProcess liveness protects this root from PID reuse.
+      if (root && record.child.exitCode === null && record.child.signalCode === null) own.set(root.pid, root);
     } else if (root && root.birth >= record.before - 2 && root.birth <= record.after + 2) {
       own.set(root.pid, root);
     }
@@ -87,7 +101,9 @@ export function createProcessOwner({ spawnProcess = spawn, graceMs = 3000, force
   async function terminate(record, force) {
     if (!record?.pid) return;
     if (process.platform !== "win32") {
-      try { process.kill(-record.pid, force ? "SIGKILL" : "SIGTERM"); } catch (error) { if (error.code !== "ESRCH") throw error; }
+      if (!record.keepProcessGroup) {
+        try { process.kill(-record.pid, force ? "SIGKILL" : "SIGTERM"); } catch (error) { if (error.code !== "ESRCH") throw error; }
+      }
       // Separate sessions created by owned descendants are still owned if they
       // were observed before reparenting. Normal npm descendants share the group.
       const table = await sharedProcessTable();
