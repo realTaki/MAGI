@@ -36,3 +36,21 @@ then saves its actual bound port for stable restart. `peer.publicURL` may descri
 a reverse proxy; that public port is never substituted for the local listen port.
 This development change does not provision certificates, open firewall ports,
 register credentials, or contact external agents.
+
+## Group synchronization
+
+Groups retain independently signed immutable author events and a creator-signed
+membership epoch chain. `/chat` carries ordinary group events; `/sync` is a signed
+protocol-only anti-entropy exchange. No business command is added by sync. Both
+transport sender and original event author are checked independently. Every
+participant maintains its own history, and presentation order is deterministic.
+Group invitations stay pending until explicitly accepted locally. Routes must
+also be individually accepted contacts. Removed peers cannot read or write sync.
+
+Sync transfers at most eight membership epochs and eight events per page, with a
+2 MiB hard body limit. Storage-local cursors restart at zero each completed round;
+there is no author high-water shortcut that could permanently hide a missing
+older event. Offline peers catch up by unioning original signed events. Conflicts
+in author sequence/event IDs or membership epochs are rejected, not overwritten.
+This is eventual history convergence with a single membership authority, not a
+claim of distributed consensus or full A2A group interoperability.

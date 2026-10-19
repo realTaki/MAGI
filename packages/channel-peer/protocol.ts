@@ -4,6 +4,7 @@ import { constants, createHash, createPublicKey, sign, verify } from "node:crypt
 export const PEER_PROTOCOL = "magi-peer/1";
 const DOMAIN = "MAGI direct peer chat v1\n";
 export const MAX_BODY_BYTES = 64 * 1024;
+export const MAX_SYNC_BYTES = 2 * 1024 * 1024;
 export type PeerIdentity = { publicKey: string; privateKey: string };
 export type PeerMessage = {
   messageId: string;
@@ -15,7 +16,8 @@ export type PeerMessage = {
 };
 export type PeerReceipt = { messageId: string; conversationUUID: string; accepted: true; duplicate: boolean };
 export type PeerCard = { protocol: typeof PEER_PROTOCOL; principal: string; publicKey: string; handle: string; reachableURL: string };
-type Payload<T> = { protocol: typeof PEER_PROTOCOL; audience: string; issuedAt: number; kind: "chat" | "receipt"; data: T };
+export type EnvelopeKind = "chat" | "receipt" | "sync" | "sync-result";
+type Payload<T> = { protocol: typeof PEER_PROTOCOL; audience: string; issuedAt: number; kind: EnvelopeKind; data: T };
 type Envelope<T> = { publicKey: string; payload: Payload<T>; signature: string };
 export class PeerError extends Error { constructor(message: string, readonly status = 400) { super(message); } }
 export function record(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
@@ -24,12 +26,12 @@ export function principalFor(publicKey: string): string {
   if (key.asymmetricKeyType !== "rsa" || (key.asymmetricKeyDetails?.modulusLength ?? 0) < 2048) throw new PeerError("RSA identity must be at least 2048 bits", 401);
   return createHash("sha256").update(key.export({ type: "spki", format: "der" })).digest("hex");
 }
-export function encodeEnvelope<T>(identity: PeerIdentity, audience: string, kind: "chat" | "receipt", data: T): string {
+export function encodeEnvelope<T>(identity: PeerIdentity, audience: string, kind: EnvelopeKind, data: T): string {
   const payload: Payload<T> = { protocol: PEER_PROTOCOL, audience, issuedAt: Date.now(), kind, data };
   const signature = sign("sha256", Buffer.from(DOMAIN + JSON.stringify(payload)), { key: identity.privateKey, padding: constants.RSA_PKCS1_PSS_PADDING, saltLength: 32 }).toString("base64");
   return JSON.stringify({ publicKey: identity.publicKey, payload, signature });
 }
-export function decodeEnvelope(body: string, audience: string, kind: "chat" | "receipt", expectedPrincipal?: string): { principal: string; data: unknown } {
+export function decodeEnvelope(body: string, audience: string, kind: EnvelopeKind, expectedPrincipal?: string): { principal: string; data: unknown } {
   let parsed: unknown;
   try { parsed = JSON.parse(body); } catch { throw new PeerError("invalid JSON"); }
   if (!record(parsed) || typeof parsed.publicKey !== "string" || parsed.publicKey.length > 8192 || typeof parsed.signature !== "string" || parsed.signature.length > 2048 || !record(parsed.payload)) throw new PeerError("invalid signed envelope", 401);

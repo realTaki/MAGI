@@ -1,4 +1,5 @@
 import { BaseWorker, MAGI_CONTACT_ID, messageDelivery, type Bus } from "@magi/bus";
+import { GroupReplica } from "./groups.js";
 import { PeerClient } from "./client.js";
 import { PeerError, type PeerMessage } from "./protocol.js";
 import { PeerServer, type PeerServerOptions } from "./server.js";
@@ -12,7 +13,8 @@ export class PeerWorker extends BaseWorker {
   readonly worker_name = "peer";
   private server: PeerServer | null = null;
   private readonly client: PeerClient;
-  constructor(bus: Bus, private readonly options: PeerOptions = {}) { super(bus); this.client = new PeerClient(bus.identity); }
+  readonly groups: GroupReplica;
+  constructor(bus: Bus, private readonly options: PeerOptions = {}) { super(bus); this.client = new PeerClient(bus.identity); this.groups = new GroupReplica(bus, this.client); }
   get origin(): string | null { return this.server?.origin ?? null; }
   async start(): Promise<void> {
     const savedPort = this.bus.settings.get("peer.port");
@@ -26,7 +28,7 @@ export class PeerWorker extends BaseWorker {
     }, {
       host: this.options.host ?? this.bus.settings.get("peer.host") ?? "127.0.0.1", port,
       reachableURL: this.options.reachableURL ?? this.bus.settings.get("peer.publicURL") ?? undefined,
-    });
+    }, { receiveGroup: (principal, wire) => this.groups.receive(principal, wire), sync: (principal, data) => this.groups.respond(principal, data) });
     await server.start();
     this.server = server;
     this.bus.settings.set("peer.reachableURL", server.origin!);
@@ -41,12 +43,19 @@ export class PeerWorker extends BaseWorker {
     const board = this.bus.board("MessageDeliveryJob");
     const job = board.claim(this.worker_name, input => {
       const message = this.bus.messages.get(input.message_id);
-      return message?.contact_id === MAGI_CONTACT_ID && this.bus.chats.get(message.chat_id)?.channel === "peer" && (this.bus.deliveries.get(input.message_id)?.next_attempt_at ?? 0) <= Date.now();
+      return message?.contact_id === MAGI_CONTACT_ID && ["peer", "group"].includes(this.bus.chats.get(message.chat_id)?.channel ?? "") && (this.bus.deliveries.get(input.message_id)?.next_attempt_at ?? 0) <= Date.now();
     });
-    if (!job) return false;
+    if (!job) return this.groups.poll();
     try {
       const message = this.bus.messages.get(job.input.message_id);
       const chat = message && this.bus.chats.get(message.chat_id);
+      if (chat?.channel === "group") {
+        const event = (job.input.metadata?.group as { event?: import("@magi/bus/books/groupBook.js").SignedGroupEvent } | undefined)?.event;
+        if (!event) throw new PeerError("group delivery has no signed event");
+        await this.groups.deliver(event);
+        board.submit(this.worker_name, job.id, { output: {} });
+        return true;
+      }
       if (!message || !chat?.peer_id || !chat.conversation_uuid) throw new PeerError("peer delivery has no conversation");
       const contact = this.bus.contacts.list().find(contact => contact.peer_id === chat.peer_id);
       // A hello records a pending sender. Only the local agent's explicit addcontact
@@ -65,7 +74,7 @@ export class PeerWorker extends BaseWorker {
     } catch (error) {
       const messageId = job.input.message_id;
       // Permanent protocol/auth failures are visible, never retried blindly.
-      if (error instanceof PeerError && error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429) {
+      if (error instanceof PeerError && error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 409 && error.status !== 429) {
         board.submit(this.worker_name, job.id, { error: error.message });
       } else {
         const retry = this.bus.deliveries.retry(messageId, error instanceof Error ? error.message : String(error));
