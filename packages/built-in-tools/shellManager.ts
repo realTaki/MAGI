@@ -44,7 +44,7 @@ export class ShellManager {
           signal.addEventListener("abort", aborted, { once: true });
         }
       });
-      return `exit_code: ${state.exitCode ?? "error"}\n${state.output}`.slice(0, 8192);
+      return clipShellOutput(`exit_code: ${state.exitCode ?? "error"}\n${state.output}`);
     } finally {
       if (timer) clearTimeout(timer);
       if (signal && aborted) signal.removeEventListener("abort", aborted);
@@ -116,6 +116,14 @@ export class ShellManager {
 }
 
 // Encode the script so Windows argv quoting cannot rewrite PowerShell string literals.
+/** Keep a head and tail so long compile/test failure summaries stay visible. */
+export function clipShellOutput(text: string, limit = 8192): string {
+  if (text.length <= limit) return text;
+  const marker = "\n…\n";
+  const keep = Math.floor((limit - marker.length) / 2);
+  return `${text.slice(0, keep)}${marker}${text.slice(-keep)}`;
+}
+
 export function shellInvocation(command: string): string[] {
   return process.platform === "win32"
     ? ["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(command, "utf16le").toString("base64")]

@@ -8,7 +8,7 @@ version: "1.0"
 
 Your state (memory, skills, prompts, logs) is the workspace. The source you may change is the Git checkout at `MAGI/` inside that workspace. The Shell clone normally uses `magi/shell`, ASP uses `magi/asp`, and an agent uses `magi/<name>`; inspect the actual branch before editing. If `MAGI/.git` is missing, this process is not on its own clone: stop and say so. Do not guess another checkout path, and do not request a replace.
 
-Work like a coding agent in this turn: read, edit, compile, and run the full test suite with `bash`. Failures belong in this turn so you can keep fixing. Call `request_replace` only after every command exits 0.
+Work like a coding agent in this turn: read, edit, compile, and run the full test suite with `bash`. Failures belong in this turn so you can keep fixing. Call `request_replace` only after the shared verify command exits 0.
 
 ## Find and read
 
@@ -44,37 +44,26 @@ A saved file is not a passing change. `apps/eva/dist` tests run the last build, 
 
 `bash` uses bash on Linux/macOS and Windows PowerShell 5.1 on Windows. Use the syntax for the current platform; PowerShell environment variables use `$env:MAGI_NODE`, and PowerShell 5.1 does not support `&&`.
 
-From `MAGI/`, run the same compile and test commands the replace safety gate runs (`verifyCheckout`). Use `MAGI_NODE` and `MAGI_NPM` from the environment; never a system Node. Raise the `bash` `timeout` as needed so the full suite can finish.
+From `MAGI/`, run the same verify entry the replace safety gate runs (`verifyCheckout`). Use `MAGI_NODE` and `MAGI_NPM` from the environment; never a system Node. Foreground `bash` keeps only a head and tail of output, so a long verify job should use `run_in_background` and `bash_output`, or redirect to a file and `read_file` the end. Raise `timeout` if you stay in the foreground.
 
 ```bash
 cd MAGI
-"$MAGI_NODE" "$MAGI_NPM" test
-"$MAGI_NODE" "$MAGI_NPM" run build
+"$MAGI_NODE" "$MAGI_NPM" run verify
 ```
 
-If `MAGI_ROLE` is `shell`, also:
-
-```bash
-"$MAGI_NODE" "$MAGI_NPM" run build:ui --prefix apps/shell
-```
-
-On Windows, use these commands instead (including the UI command only for role `shell`). Check each exit code before continuing:
+On Windows, `bash` is PowerShell 5.1:
 
 ```powershell
 Set-Location MAGI
-& $env:MAGI_NODE $env:MAGI_NPM test
+& $env:MAGI_NODE $env:MAGI_NPM run verify
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $env:MAGI_NODE $env:MAGI_NPM run build
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $env:MAGI_NODE $env:MAGI_NPM run build:ui --prefix apps/shell
-exit $LASTEXITCODE
 ```
 
-Read the log in this turn. If a command fails, fix the source and run the same commands again. Do not `request_replace` until they all exit 0.
+Read the log in this turn. If the entry fails, fix the source and run it again. Do not `request_replace` until it exits 0.
 
 ## Replace
 
-`request_replace` with target `self` asks this node's launcher to replace the running process. Call it only after compile and tests are already green. This process cannot safely stop and restart itself; the parent snapshots saved local source (staged/unstaged changes and non-ignored new files/deletions), runs those same compile and test commands as a last safety gate, then drains, switches revision, health-checks, and rolls back on failure. It does not fetch upstream for a local replace and does not commit or push. Ignored files such as dependencies, generated output and secrets are not added to the snapshot.
+`request_replace` asks this node's launcher to replace the running process. Call it only after compile and tests are already green. This process cannot safely stop and restart itself; the parent snapshots saved local source (staged/unstaged changes and non-ignored new files/deletions), runs that same verify entry as a last safety gate, then drains, switches revision, health-checks, and rolls back on failure. It does not fetch upstream for a local replace and does not commit or push. Ignored files such as dependencies, generated output and secrets are not added to the snapshot.
 
 Call it only after the edit is saved, and say what changed first. Queuing a job is not proof the new process is running. Another node replaces itself the same way. This node does not restart Shell or ASP. `bash` does not replace a running process. Do not kill your own process.
 

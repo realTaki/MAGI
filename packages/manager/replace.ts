@@ -24,7 +24,7 @@ import { resolveToolchain } from "@magi/runtime/toolchain.js";
 const GATE_TRIES = 3;
 const LOG_TAIL = 8_000;
 const FAILURES_KEY = "replace.gate_failures";
-const REQUEST_CHAT_KEY = "replace.request_chat_id";
+type ReplaceFailKind = "gate" | "crash" | "build";
 
 export type AppBuild = {
   app: "eva" | "asp" | "shell";
@@ -67,10 +67,9 @@ export class ReplaceWorker extends BaseWorker {
 
   private async execute(id: number, requested: string | undefined, ref: string | undefined, swap: boolean, chatId?: number, desktop = false): Promise<void> {
     const board = this.bus.board("ReplaceSelfJob");
-    if (typeof chatId === "number" && Number.isInteger(chatId)) this.bus.settings.set(REQUEST_CHAT_KEY, String(chatId));
     const checkout = requested ?? findCheckout();
     if (swap) {
-      await this.switchRevision(id, checkout, ref, desktop);
+      await this.switchRevision(id, checkout, ref, chatId, desktop);
       return;
     }
     const appDir = join(checkout, "apps", this.build.app);
@@ -87,7 +86,7 @@ export class ReplaceWorker extends BaseWorker {
       await healthCheck(this.build.app === "eva" ? "agent" : this.build.app);
       board.submit(this.worker_name, id, { output: { replaced: true } });
       rmSync(backup, { recursive: true, force: true });
-      gateSuccess(this.bus);
+      gateSuccess(this.bus, chatId);
       tell(this.bus, "[replace] replaced");
       await this.host.resume();
     } catch (error) {
@@ -98,37 +97,49 @@ export class ReplaceWorker extends BaseWorker {
         catch (resumeError) { text = `${text}; ${message(resumeError)}`; }
       }
       board.submit(this.worker_name, id, { error: text });
-      failReplace(this.bus, text);
+      failReplace(this.bus, text, chatId, suspended ? "crash" : "build");
     }
   }
 
   /** Build the target revision in its own directory, then ask the launcher to run it. */
-  private async switchRevision(id: number, checkout: string, ref: string | undefined, desktop = false): Promise<void> {
+  private async switchRevision(id: number, checkout: string, ref: string | undefined, chatId?: number, desktop = false): Promise<void> {
     const board = this.bus.board("ReplaceSelfJob");
+    if (typeof process.send !== "function" || !process.connected) {
+      const text = "this node has no launcher to switch to the new revision";
+      board.submit(this.worker_name, id, { error: text });
+      failReplace(this.bus, text, chatId, "crash");
+      return;
+    }
+    const target = ref?.trim() || undefined;
+    let built: { revision: string; previous: string; dir: string };
+    let desktopManifest: DesktopManifest | undefined;
     try {
-      if (typeof process.send !== "function" || !process.connected) {
-        throw new Error("this node has no launcher to switch to the new revision");
-      }
       if (desktop && (!this.host.installDesktopUpdate || this.build.app !== "shell" || process.env.MAGI_PACKAGED !== "1" || process.platform !== "linux")) throw new Error("This node cannot replace the desktop package");
-      const target = ref?.trim() || undefined;
-      const { revision, previous, dir } = await reviseCheckout(checkout, target);
-      if (desktop) {
-        const manifest = await packageDesktopRevision({ revision, previous, dir });
+      built = await reviseCheckout(checkout, target);
+      if (desktop) desktopManifest = await packageDesktopRevision(built);
+    } catch (error) {
+      const text = message(error);
+      board.submit(this.worker_name, id, { error: text });
+      failReplace(this.bus, text, chatId, "gate");
+      return;
+    }
+    try {
+      if (desktopManifest) {
         this.bus.settings.set("replace.pending", String(id));
         this.desktopHandoff = true;
-        await this.host.installDesktopUpdate!(manifest, id);
+        await this.host.installDesktopUpdate!(desktopManifest, id);
         return;
       }
-      const launcher = join(dir, "apps", "eva", "eva.mjs");
+      const launcher = join(built.dir, "apps", "eva", "eva.mjs");
       const running = process.env.MAGI_LAUNCHER;
       const upgrade = Boolean(running && existsSync(running) && existsSync(launcher) && fileHash(running) !== fileHash(launcher));
       this.bus.settings.set("replace.pending", String(id));
       process.send({
         v: LAUNCHER_PROTOCOL,
         type: upgrade ? "upgrade" : "switch",
-        revision,
-        previous,
-        dir,
+        revision: built.revision,
+        previous: built.previous,
+        dir: built.dir,
         job: id,
         launcher,
       });
@@ -139,7 +150,7 @@ export class ReplaceWorker extends BaseWorker {
       this.desktopHandoff = false;
       const text = message(error);
       board.submit(this.worker_name, id, { error: text });
-      failReplace(this.bus, text);
+      failReplace(this.bus, text, chatId, "crash");
     }
   }
 
@@ -167,15 +178,14 @@ export class ReplaceWorker extends BaseWorker {
     }
     const job = board.claimId(this.worker_name, jobId);
     if (!job) return false;
-    if (typeof job.input.chat_id === "number") this.bus.settings.set(REQUEST_CHAT_KEY, String(job.input.chat_id));
     if (replaceError) {
       board.submit(this.worker_name, job.id, { error: replaceError });
-      failReplace(this.bus, replaceError);
+      failReplace(this.bus, replaceError, job.input.chat_id, "crash");
     } else {
       const dist = join(job.input.checkout ?? findCheckout(), "apps", this.build.app, "dist");
       rmSync(`${dist}.rollback`, { recursive: true, force: true });
       board.submit(this.worker_name, job.id, { output: { replaced: true } });
-      gateSuccess(this.bus);
+      gateSuccess(this.bus, job.input.chat_id);
       tell(this.bus, "[replace] replaced");
     }
     this.clearHandoff();
@@ -210,7 +220,7 @@ export class ReplaceWorker extends BaseWorker {
       return true;
     }
     if (jobId !== null) board.fail(jobId, error);
-    failReplace(this.bus, error);
+    failReplace(this.bus, error, jobId !== null ? board.peekInput(jobId)?.chat_id : undefined, "crash");
     rmSync(marker, { force: true });
     return true;
   }
@@ -226,8 +236,9 @@ export class ReplaceWorker extends BaseWorker {
     this.bus.settings.set("replace.pending", "");
     if (result) return true;
     const error = "MAGI crashed before this replace finished";
+    const chatId = board.peekInput(id)?.chat_id;
     board.fail(id, error);
-    failReplace(this.bus, error);
+    failReplace(this.bus, error, chatId, "crash");
     return true;
   }
 }
@@ -347,25 +358,49 @@ function waitLauncher(): Promise<string> {
   });
 }
 
-function gateSuccess(bus: Bus): void {
-  bus.settings.set(FAILURES_KEY, "");
+function failuresKey(chatId: number): string {
+  return `${FAILURES_KEY}.${chatId}`;
 }
 
-function failReplace(bus: Bus, error: string): void {
+function gateSuccess(bus: Bus, chatId?: number): void {
+  if (typeof chatId === "number" && Number.isInteger(chatId) && chatId > 0) {
+    bus.settings.set(failuresKey(chatId), "");
+  }
+}
+
+function failCopy(kind: ReplaceFailKind, attempt?: number): string {
+  if (kind === "gate") {
+    return attempt === undefined
+      ? `safety gate failed after ${GATE_TRIES} attempts. The running process was not replaced.`
+      : `safety gate failed (attempt ${attempt}/${GATE_TRIES}). The running process was not replaced.`;
+  }
+  if (kind === "build") {
+    return attempt === undefined
+      ? `the process was not replaced after ${GATE_TRIES} attempts (build failure).`
+      : `the process was not replaced (build failure, attempt ${attempt}/${GATE_TRIES}).`;
+  }
+  return attempt === undefined
+    ? `the process was not replaced after ${GATE_TRIES} attempts (launcher rollback or crash).`
+    : `the process was not replaced (launcher rollback or crash, attempt ${attempt}/${GATE_TRIES}).`;
+}
+
+function failReplace(bus: Bus, error: string, chatId: number | undefined, kind: ReplaceFailKind): void {
   const tail = error.length > LOG_TAIL ? error.slice(-LOG_TAIL) : error;
-  const chat = Number(bus.settings.get(REQUEST_CHAT_KEY));
-  const live = Number.isInteger(chat) && chat > 0 ? bus.chats.get(chat) : null;
+  const chat = typeof chatId === "number" && Number.isInteger(chatId) && chatId > 0 ? chatId : 0;
+  const live = chat > 0 ? bus.chats.get(chat) : null;
   if (!live) {
-    tell(bus, `[replace] ${tail}`);
+    // No requesting chat: crash keeps the original operator marker text.
+    if (kind === "build") tell(bus, `[replace] the process was not replaced (build failure).\n\n${tail}`);
+    else tell(bus, `[replace] ${tail}`);
     return;
   }
-  const attempt = (Number(bus.settings.get(FAILURES_KEY)) || 0) + 1;
-  bus.settings.set(FAILURES_KEY, String(attempt));
+  const attempt = (Number(bus.settings.get(failuresKey(chat))) || 0) + 1;
+  bus.settings.set(failuresKey(chat), String(attempt));
   if (attempt <= GATE_TRIES) {
-    messageDelivery.send(bus, chat, `[replace] safety gate failed (attempt ${attempt}/${GATE_TRIES}). The running process was not replaced.\n\n${tail}`, SYSTEM_CONTACT_ID, "replace");
+    messageDelivery.send(bus, chat, `[replace] ${failCopy(kind, attempt)}\n\n${tail}`, SYSTEM_CONTACT_ID, "replace");
     return;
   }
-  tell(bus, `[replace] safety gate failed after ${GATE_TRIES} attempts. The running process was not replaced.\n\n${tail}`);
+  tell(bus, `[replace] ${failCopy(kind)}\n\n${tail}`);
 }
 
 function tell(bus: Bus, text: string): void {

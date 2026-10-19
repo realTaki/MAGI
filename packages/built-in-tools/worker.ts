@@ -7,7 +7,7 @@ import { abortable } from "@magi/bus/abort.js";
  *   files.ts     read_file / list_files / search_files / write_file / edit_file
  *   messages.ts  search_chat_messages / search_contact_messages /
  *                send_message / set_home_chat
- *   rebuild.ts   request_replace — queue a replace of this node
+ *   replace.ts   request_replace — queue a replace of this node
  *
  * `load_skill` is not here: it reads the SKILL.md files that `@magi/skills`
  * owns, so that package's worker registers the tool itself. The contact tools
@@ -25,7 +25,7 @@ import type { Bus, ExecutableTool } from "@magi/bus";
 import { cardTools } from "./card.js";
 import { fileTools } from "./files.js";
 import { messageTools } from "./messages.js";
-import { rebuildTools } from "./rebuild.js";
+import { replaceTools } from "./replace.js";
 import { shellTools } from "./shell.js";
 import { syncTools } from "./sync.js";
 import { ShellManager } from "./shellManager.js";
@@ -40,7 +40,7 @@ export function builtinTools(bus: Bus, shells = new ShellManager()): Tool[] {
     ...messageTools(bus),
     ...cardTools(bus),
     ...syncTools(bus),
-    ...rebuildTools(bus),
+    ...replaceTools(bus),
   ];
 }
 
@@ -68,21 +68,20 @@ export class ToolsWorker extends BaseWorker {
     const board = this.bus.board("RunToolJob");
     const job = board.claim(this.worker_name, (input) => this.own.has(input.call.name));
     if (!job) return false;
-    const args = job.input.chat_id === undefined
-      ? job.input.call.arguments
-      : { ...job.input.call.arguments, chat_id: job.input.chat_id };
-    const task = this.run(job.id, job.input.call.name, args);
+    // Requester chat stays job context, never a model-facing argument. send_message
+    // / search_chat_messages / set_home_chat keep their own chat_id fields.
+    const task = this.run(job.id, job.input.call.name, job.input.call.arguments, { chat_id: job.input.chat_id });
     this.pending.add(task);
     void task.finally(() => this.pending.delete(task));
     return true;
   }
 
-  private async run(id: number, name: string, args: Record<string, unknown>): Promise<void> {
+  private async run(id: number, name: string, args: Record<string, unknown>, context?: { chat_id?: number }): Promise<void> {
     const board = this.bus.board("RunToolJob");
     try {
       const tool = this.own.get(name);
       if (!tool) throw new Error(`unknown tool ${name}`);
-      board.submit(this.worker_name, id, { output: { content: await abortable(tool.run(args, this.controller.signal), this.controller.signal) } });
+      board.submit(this.worker_name, id, { output: { content: await abortable(tool.run(args, this.controller.signal, context), this.controller.signal) } });
     } catch (error) {
       board.submit(this.worker_name, id, { error: error instanceof Error ? error.message : String(error) });
     }

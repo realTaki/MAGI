@@ -106,9 +106,10 @@ Source synchronization, building a candidate and activating it are distinct.
 Neither a Git fetch nor saving a file changes the loaded process.
 
 An agent changing its own code loads the `self_update` skill, edits its checkout,
-and runs the same compile and test commands as `verifyCheckout` (`npm test`,
-`npm run build`, and Shell's UI build) with `MAGI_NODE` / `MAGI_NPM`.
-`request_replace` with `target: self` only queues `ReplaceSelfJob`.
+and runs the same verify entry as `verifyCheckout` (`npm run verify`) with
+`MAGI_NODE` / `MAGI_NPM`. That entry installs if `node_modules` is missing, then
+tests and builds (Shell also builds UI) in an isolated MAGI home.
+`request_replace` only queues `ReplaceSelfJob`.
 The revision builder snapshots saved local source using a temporary Git index,
 including tracked edits and non-ignored additions/deletions. It does not commit,
 push or change the editable tree's index, HEAD or refs. Candidate tests use new

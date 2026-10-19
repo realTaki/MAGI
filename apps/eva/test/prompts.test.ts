@@ -14,7 +14,7 @@ test("the system prompt says how to change the system and does not map the repos
   assert.match(SYSTEM_PROMPT, /does not fit in a prompt/);
   assert.doesNotMatch(SYSTEM_PROMPT, /apps\/user/);
   assert.doesNotMatch(SYSTEM_PROMPT, /request_rebuild|replace_self|request_replace/);
-  assert.match(COMPACTION_INVARIANT, /rebuild/);
+  assert.match(COMPACTION_INVARIANT, /replace/);
   assert.match(COMPACTION_INVARIANT, /tool transcripts/);
 });
 

@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, renameSync
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { packageDesktopRevision } from '@magi/runtime/desktop-package.js';
-import { rebuildTools } from '@magi/built-in-tools/rebuild.js';
+import { replaceTools } from '@magi/built-in-tools/replace.js';
 import { Bus, SHELL_MAGI_HANDLE, EVA_MAGI_HANDLE } from '@magi/bus';
 
 const npm = process.env.MAGI_NPM || path.resolve(import.meta.dirname, '../runtime/npm/node_modules/npm/bin/npm-cli.js');
@@ -48,14 +48,14 @@ test('desktop request is explicit, packaged Shell only; ordinary self remains un
   const agent = new Bus(EVA_MAGI_HANDLE, path.join(home, 'agent'));
   t.after(() => { shell.close();agent.close(); for (const key of Object.keys(process.env)) if (!(key in old)) delete process.env[key];Object.assign(process.env, old);rmSync(home,{recursive:true,force:true}); });
   process.env.MAGI_ROLE = 'shell'; process.env.MAGI_PACKAGED = '1';
-  await assert.rejects(rebuildTools(agent)[0].run({ target: 'self', desktop: true }), /packaged Linux Balthasar/);
+  await assert.rejects(replaceTools(agent)[0].run({ desktop: true }), /packaged Linux Balthasar/);
   process.env.MAGI_PACKAGED = '';
-  await assert.rejects(rebuildTools(shell)[0].run({ target: 'self', desktop: true }), /packaged Linux Balthasar/);
-  const normal = JSON.parse(await rebuildTools(shell)[0].run({ target: 'self' }));
+  await assert.rejects(replaceTools(shell)[0].run({ desktop: true }), /packaged Linux Balthasar/);
+  const normal = JSON.parse(await replaceTools(shell)[0].run({}));
   assert.equal(shell.board('ReplaceSelfJob').claimId('test', normal.id)?.input.desktop, undefined);
   if (process.platform === 'linux') {
     process.env.MAGI_PACKAGED = '1';
-    const desktop = JSON.parse(await rebuildTools(shell)[0].run({ target: 'self', desktop: true }));
+    const desktop = JSON.parse(await replaceTools(shell)[0].run({ desktop: true }));
     assert.equal(shell.board('ReplaceSelfJob').claimId('test', desktop.id)?.input.desktop, true);
   }
 });

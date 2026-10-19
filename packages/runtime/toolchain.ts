@@ -65,14 +65,21 @@ export function resolveToolchain(env: NodeJS.ProcessEnv = process.env): { node: 
 
 /** Env for agent bash and the replace safety gate: same Node/npm/git, Node's directory on PATH. */
 export function toolchainEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  const { node, npm, git } = resolveToolchain(env);
-  return {
-    ...env,
-    MAGI_NODE: node,
-    MAGI_NPM: npm,
-    MAGI_GIT: git,
-    PATH: `${dirname(node)}${delimiter}${env.PATH ?? ""}`,
-  };
+  try {
+    const { node, npm, git } = resolveToolchain(env);
+    const dir = dirname(node);
+    const pathPrefix = dir && dir !== "." ? `${dir}${delimiter}` : "";
+    return {
+      ...env,
+      MAGI_NODE: node,
+      MAGI_NPM: npm,
+      MAGI_GIT: git,
+      PATH: `${pathPrefix}${env.PATH ?? ""}`,
+    };
+  } catch {
+    // Missing Node 24 must not disable bash; the command still runs with the incoming env.
+    return { ...env };
+  }
 }
 
 function requireNode24(binary: string): void {

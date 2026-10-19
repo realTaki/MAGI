@@ -29,7 +29,7 @@ export const COMPACTION_PROMPT = template("compaction");
  */
 export const COMPACTION_INVARIANT = [
   "Preserve source-change outcomes that are in the history: paths, what was decided,",
-  "whether a check passed or failed, and any rebuild that was requested, with its target.",
+  "whether a check passed or failed, and any replace that was requested.",
   "Do not copy tool transcripts, file bodies, or line-numbered reads.",
 ].join(" ");
 
