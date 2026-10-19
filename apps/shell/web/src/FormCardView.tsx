@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PROVIDER_CATALOG, providerPreset } from "@magi/bus/jobs/providerCatalog.js";
 import type { ChatMessage } from "./chat-model";
 import { encryptSecret, listProfiles, sendAspMessage } from "./asp";
@@ -11,50 +11,63 @@ export function FormCardView({ message }: { message: Extract<ChatMessage, { type
   const provider = isProviderCard(card);
   const [values, setValues] = useState<Record<string, string>>(() => provider ? initialProviderValues(card) : {});
   const [error, setError] = useState("");
-  const [sent, setSent] = useState(false);
+  const [submitted, setSubmitted] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [reopened, setReopened] = useState(false);
   const lock = useRef(false);
-  const state = message.state ?? (sent ? "pending" : undefined);
-  const disabled = busy || !!state;
+  const receipt = message.receipt;
+  const state = receipt?.state === "cancelled" || receipt?.state === "saved" ? receipt.state : submitted && receipt?.attempt !== submitted ? "pending" : receipt?.state;
+  const disabled = busy || state === "pending" || state === "saved" || state === "cancelled" || (state === "failed" && !provider);
+  useEffect(() => {
+    if (receipt && receipt.state !== "pending" && (!submitted || receipt.attempt === submitted || receipt.state === "cancelled" || receipt.state === "saved")) setSubmitted(null);
+  }, [receipt?.state, receipt?.attempt, submitted]);
+  useEffect(() => {
+    if (state !== "pending" || !provider) return;
+    const timer = setInterval(() => { void sendAspMessage(message.chatId, t("providerForm.checkStatus"), { card_result: { id: card.id, action: "status", attempt: submitted ?? receipt?.attempt } }).catch(() => {}); }, 5000);
+    return () => clearInterval(timer);
+  }, [state, provider, message.chatId, card.id, t, submitted, receipt?.attempt]);
   const preset = providerPreset(values.provider);
   const modelKnown = preset?.models.some((model) => model.id === values.model);
   const validProvider = !!preset || values.provider === "custom";
   const validModel = !provider || (values.provider === "custom" ? !!values.model?.trim() && !!values.base_url?.trim() : !!modelKnown);
 
   async function act(action: "save" | "cancel" | "reopen") {
-    if (lock.current || (action !== "reopen" && state)) return;
+    if (lock.current || (action !== "reopen" && disabled)) return;
     lock.current = true;
     setBusy(true);
     setError("");
+    let attemptedSend = false;
     try {
       if (action === "reopen") {
-        await sendAspMessage(message.chatId, t("providerForm.reopen"), { card_result: { id: card.id, action: "reopen" } });
+        await sendAspMessage(message.chatId, t("providerForm.reopen"), { card_result: { id: crypto.randomUUID(), action: "open" } });
         setReopened(true);
       } else if (action === "cancel") {
         await sendAspMessage(message.chatId, t("providerForm.cancelled"), { card_reject: { id: card.id } });
-        setSent(true);
+        setSubmitted("cancel");
         setValues((current) => ({ ...current, "provider.api_key": "" }));
       } else {
-        if (provider && (!validProvider || !validModel)) throw new Error(t("providerForm.selectModel"));
+        if (provider && (!validProvider || !validModel)) { setError(t("providerForm.selectModel")); return; }
         const fields: Record<string, unknown> = {};
         const secret = card.fields.some((field) => field.kind === "secret");
         const profiles = secret ? await listProfiles() : [];
         const publicKey = profiles.find((profile) => profile.handle === card.handle)?.public_key;
-        if (secret && !publicKey) throw new Error(t("providerForm.noPublicKey"));
+        if (secret && !publicKey) { setError(t("providerForm.noPublicKey")); return; }
         for (const field of card.fields) {
           const value = field.name === "base_url" && provider && values.provider !== "custom" ? "" : values[field.name] ?? "";
-          if (!value && !field.optional) throw new Error(t("providerForm.required"));
+          if (!value && !field.optional) { setError(t("providerForm.required")); return; }
           fields[field.name] = field.kind === "secret" ? { ciphertext: await encryptSecret(publicKey!, value) } : value;
         }
-        await sendAspMessage(message.chatId, t("providerForm.submitted"), { card_result: { id: card.id, fields } });
-        setSent(true);
+        const attempt = crypto.randomUUID();
+        setSubmitted(attempt);
+        attemptedSend = true;
+        await sendAspMessage(message.chatId, t("providerForm.submitted"), { card_result: { id: card.id, attempt, fields } });
         // Do not retain plaintext once the encrypted submission has been accepted by transport.
         setValues((current) => Object.fromEntries(Object.entries(current).filter(([name]) => !card.fields.some((field) => field.name === name && field.kind === "secret"))));
       }
     } catch {
+      if (!attemptedSend) setSubmitted(null);
       // Transport errors can contain request bodies. Never render raw exceptions here.
-      setError(t("providerForm.sendFailed"));
+      setError(t(attemptedSend ? "providerForm.deliveryUncertain" : "providerForm.sendFailed"));
     } finally {
       lock.current = false;
       setBusy(false);
@@ -90,10 +103,12 @@ export function FormCardView({ message }: { message: Extract<ChatMessage, { type
         <option value="">{t("providerForm.choose")}</option>{field.choices?.map((choice) => <option key={choice}>{choice}</option>)}
       </select> : input(field.name, field.kind === "secret")}
     </label>)}
-    {!state && <><button type="submit" disabled={busy || !validModel}>{busy ? t("providerForm.sending") : provider ? t("common.save") : card.submit}</button>
+    {(!state || (provider && state === "failed")) && <><button type="submit" disabled={busy || !validModel}>{busy ? t("providerForm.sending") : provider ? t(state === "failed" ? "providerForm.retry" : "common.save") : card.submit}</button>
       <button type="button" disabled={busy} onClick={() => void act("cancel")}>{t("common.cancel")}</button></>}
-    {state && <p role="status">{t(`providerForm.${state}`)}</p>}
-    {provider && state && state !== "pending" && <button type="button" disabled={busy || reopened} onClick={() => void act("reopen")}>{t(reopened ? "providerForm.reopened" : "providerForm.reopen")}</button>}
+    {state && <p role="status">{t(state === "failed" && !provider ? "common.error" : `providerForm.${state}`)}</p>}
+    {state === "failed" && provider && <p role="alert">{t(`providerForm.error_${receipt?.error ?? "unknown"}`)}</p>}
+    {provider && (state === "pending" || state === "failed") && <p>{t("providerForm.keyCleared")}</p>}
+    {provider && state && (state === "saved" || state === "cancelled") && <button type="button" disabled={busy || reopened} onClick={() => void act("reopen")}>{t(reopened ? "providerForm.reopened" : "providerForm.reopen")}</button>}
     {error && <p role="alert" className="chat-page__form-error">{error}</p>}
   </form>;
 }

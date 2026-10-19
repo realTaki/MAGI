@@ -38,36 +38,37 @@ Known providers use their backend catalog endpoint; the card submits an empty
 custom URL and the manager clears any previous custom URL. Custom uses the
 existing URL validation (HTTPS, or localhost HTTP, without embedded credentials,
 query or fragment). Changing provider clears the draft model, URL and password.
-Unknown old model IDs remain visible with an explanation and must be replaced
+Unknown model IDs remain visible with an explanation and must be replaced
 with a supported selection; no existing settings change merely by opening a card.
 
-The chat's **Model provider** button sends an operator-authenticated structured
-request directly to the config worker, without asking an LLM to call a tool.
-Failed validation does not count as a rejection or remove this entry. Cards have
-persisted acknowledgements; transport acceptance means “verifying,” not “saved.”
-Reopening uses a new card and retains public fields only. Replayed submissions
-and repeated reopen requests do not verify/save twice. Only the receiving MAGI's
-acknowledgement can mark its card as saved in the UI.
+The provider form now lives in the matching MAGI profile. Chat presents only an
+application link such as `#/magi/%40eva-002.magi/provider`, never a provider form or
+credentials. Opening the profile uses an operator-authenticated structured request
+directly to the config worker and does not require an LLM turn. A failed form stays
+editable; each save has an attempt ID, so stale failure receipts and replayed
+submissions cannot overwrite a newer attempt or verify/save twice. Status checks
+and retries contain no plaintext key in chat or links.
 
-## Manual acceptance (isolated test instance)
+The avatar has one state-dependent Start/Stop button. During transitions it is
+disabled until local runtime information confirms the result. The old Runtime
+multi-button/path block and independent provider slider button are removed.
+Agent-callable self-rebuild/synchronization capabilities remain available.
 
-1. Switch UI language between Chinese, English and Japanese; open Model provider
-   from a direct chat header before any working provider exists.
-2. Select each provider. Confirm a model is selected, no base URL is editable,
-   and MiniMax China/Global are distinct. Select Custom and confirm both fields
-   become editable. Switch back: previous URL, model and password are cleared.
-3. With synthetic/mock verification, reject at least three saves, reopening each
-   time. The configuration entry stays available. Cancel and open it again.
-4. Double-click Save while verification is delayed. Expect one encrypted
-   submission; only the worker acknowledgement changes “verifying” to “saved.”
-5. Reopen a saved configuration: public selections remain; the password is blank.
-   Load a fixture with `MinimaxM3`: show the unsupported value and require a
-   supported selection (`MiniMax-M3`) instead of silently rewriting saved state.
-6. Refresh/replay chat events after success, failure and cancellation: old cards
-   remain terminal. Retry transport errors without leaking request/error bodies.
+## Acceptance in an isolated instance
 
-Use only synthetic credentials in automated tests. A real account acceptance
-check is a separate operator action; never put a key in chat or test fixtures.
+1. Open a MAGI profile before configuring a provider. Select MiniMax China and
+   confirm `MiniMax-M3`; switch to Custom and back to check fields/key clearing.
+2. Using a mock provider, fail a save with a connection error, HTTP 401, and an
+   unsupported-model response. Each error has its own explanation. Correct the
+   same form and retry without reopening it. Re-enter the key after submission;
+   clearing the password field is an explicit privacy behavior.
+3. Interrupt ASP during verification. The persisted result must arrive after
+   reconnection. Duplicate attempts must not produce another provider request.
+4. Follow a chat configuration link and verify that the exact handle's profile
+   opens. No provider form or secret should appear in the chat transcript.
+5. At the profile avatar, double-click Start or Stop while a mock runtime call is
+   delayed. Expect one command and a disabled progress state; the next action is
+   offered only after the backend confirms the new state.
 
 ## Reproducible checks
 

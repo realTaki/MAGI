@@ -306,7 +306,7 @@ test("an explicitly reopened card survives a restart after cancellation", async 
     });
     assert.equal(reopened.ok, true);
     await until("provider card was not opened", () => cards(magi!.bus).length >= 2);
-    assert.equal(magi.bus.settings.get("provider.card.rejections"), "0");
+    assert.equal(magi.bus.settings.get("provider.card.rejections"), null);
     const before = cards(magi.bus).length;
     await magi.stop();
     magi = new Magi(handle, { workspace, asp: { base: asp.origin, token }, client });
@@ -315,7 +315,7 @@ test("an explicitly reopened card survives a restart after cancellation", async 
     await sleep(400);
     const texts = magi.bus.chats.list().flatMap((candidate) => magi!.bus.messages.list(candidate.id, 50).map((message) => message.content));
     assert.equal(texts.some((text) => text.includes("will not be shown again")), false);
-    assert.equal(magi.bus.settings.get("provider.card.rejections"), "0");
+    assert.equal(magi.bus.settings.get("provider.card.rejections"), null);
   } finally {
     await magi?.stop();
     await asp.stop();

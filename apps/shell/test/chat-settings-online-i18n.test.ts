@@ -21,9 +21,9 @@ function stringValue(block: string, key: string) {
 }
 
 test("profile runtime status keys exist in every locale", () => {
-  const page = readFileSync(join(root, "web/src/ChatPage.tsx"), "utf8");
-  assert.match(page, /t\("chatSettings\.online"\)/);
-  assert.match(page, /t\("chatSettings\.offline"\)/);
+  const page = readFileSync(join(root, "web/src/RuntimeToggle.tsx"), "utf8");
+  assert.ok(page.includes('"chatSettings.online"'));
+  assert.ok(page.includes('"chatSettings.offline"'));
 
   for (const locale of locales) {
     const block = chatSettingsBlock(

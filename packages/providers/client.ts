@@ -1,3 +1,4 @@
+import { providerFailure, type ProviderFailureCode } from "@magi/bus/jobs/providerFailure.js";
 import { createProvider, type Api, type AssistantMessage, type Context, type Message, type Model, type MutableModels, type Tool } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
@@ -5,7 +6,7 @@ import type { LLMRequest, LLMMessage, LLMToolCall } from "@magi/bus";
 
 export interface LLMClient {
   complete(job: LLMRequest): Promise<LLMMessage>;
-  verify?(settings: ProviderSettings): Promise<void>;
+  verify?(settings: ProviderSettings, signal?: AbortSignal): Promise<void>;
   configure?(settings: ProviderSettings): void;
   /** The selected model's advertised context capacity, when this client knows it. */
   contextWindow?(): number | undefined;
@@ -23,7 +24,7 @@ function providerId(value: string): string {
 function resolveModel(models: MutableModels, settings: ProviderSettings): Model<Api> {
   const provider = providerId(settings.provider?.trim() || "openai");
   const id = settings.model?.trim();
-  if (!id) throw new Error("provider.model is missing");
+  if (!id) throw providerFailure("model");
   if (provider === "custom") {
     const baseUrl = settings.base_url?.trim();
     if (!baseUrl) throw new Error("provider.base_url is missing");
@@ -48,7 +49,7 @@ function resolveModel(models: MutableModels, settings: ProviderSettings): Model<
     return model;
   }
   const model = models.getModel(provider, id);
-  if (!model) throw new Error(`pi-ai has no model ${provider}/${id}`);
+  if (!model) throw providerFailure("model");
   return model;
 }
 
@@ -84,8 +85,8 @@ export class PiAiClient implements LLMClient {
 
   configure(settings: ProviderSettings): void { this.settings = { ...this.settings, ...settings }; }
 
-  async verify(settings: ProviderSettings): Promise<void> {
-    await this.request({ messages: [{ role: "user", content: "Reply OK." }], tools: [] }, { ...this.settings, ...settings }, 256);
+  async verify(settings: ProviderSettings, signal?: AbortSignal): Promise<void> {
+    await this.request({ messages: [{ role: "user", content: "Reply OK." }], tools: [] }, { ...this.settings, ...settings }, 256, signal);
   }
 
   complete(job: LLMRequest): Promise<LLMMessage> { return this.request(job, this.settings); }
@@ -97,19 +98,53 @@ export class PiAiClient implements LLMClient {
     return resolveModel(this.models, this.settings).contextWindow;
   }
 
-  private async request(job: LLMRequest, settings: ProviderSettings, maxTokens?: number): Promise<LLMMessage> {
-    if (!settings.api_key) throw new Error("provider.api_key is missing");
-    const model = resolveModel(this.models, settings);
-    const response = await this.models.completeSimple(model, toContext(job, model), {
+  private async request(job: LLMRequest, settings: ProviderSettings, maxTokens?: number, signal?: AbortSignal): Promise<LLMMessage> {
+    if (!settings.api_key?.trim()) throw providerFailure("unconfigured");
+    let model: Model<Api>;
+    try { model = resolveModel(this.models, settings); }
+    catch (error) { if (error instanceof Error && error.message.startsWith("ProviderError")) throw error; throw providerFailure("configuration"); }
+    let failure: ProviderFailureCode | undefined;
+    const fetcher: typeof fetch = async (input, init) => {
+      try {
+        const response = await this.fetcher(input, init);
+        if (!response.ok) {
+          failure = response.status === 401 || response.status === 403 ? "authentication"
+            : response.status === 429 || response.status === 402 ? "rate_limit"
+            : response.status === 408 || response.status === 504 ? "timeout"
+            : response.status >= 500 ? "connection" : "configuration";
+          // Inspect only error semantics; never surface or persist a body, URL, header or key.
+          try {
+            const body = await response.clone().json() as { error?: { type?: string; code?: string; message?: string } };
+            const detail = `${body.error?.type ?? ""} ${body.error?.code ?? ""} ${body.error?.message ?? ""}`;
+            if ([400, 404, 422].includes(response.status) && /model[_ ]not[_ ]found|unsupported[_ ]model|model.*(not exist|not found|not supported|not available)/i.test(detail)) failure = "model";
+          } catch { /* Non-JSON error responses retain the HTTP classification. */ }
+        }
+        return response;
+      } catch (error) {
+        failure = signal?.aborted || (error instanceof Error && /timeout|timed out|abort/i.test(error.name + error.message)) ? "timeout" : "connection";
+        throw providerFailure(failure);
+      }
+    };
+    let response: AssistantMessage;
+    try { response = await this.models.completeSimple(model, toContext(job, model), {
       // pi-ai maps this neutral level to each provider's native reasoning API and
       // ignores it for models which do not advertise reasoning support.  Thinking
       // remains internal: only ordinary text is delivered to the user.
-      reasoning: "medium",
-      apiKey: settings.api_key, fetch: this.fetcher, maxTokens, timeoutMs: 120_000,
-    });
-    if (["error", "aborted", "length", "deferred"].includes(response.stopReason)) {
-      throw new Error(response.errorMessage ?? `provider stopped: ${response.stopReason}`);
+      reasoning: maxTokens ? undefined : "medium",
+      apiKey: settings.api_key.trim(), fetch: fetcher, maxTokens, signal, maxRetries: 0, timeoutMs: maxTokens ? 20_000 : 120_000,
+    }); } catch { throw providerFailure(failure ?? "unknown"); }
+    if (failure) throw providerFailure(failure);
+    if (["error", "aborted", "deferred"].includes(response.stopReason) || (!maxTokens && response.stopReason === "length")) {
+      const detail = response.errorMessage ?? "";
+      const code = signal?.aborted || response.stopReason === "aborted" ? "timeout"
+        : /"type"\s*:\s*"(?:authentication_error|permission_error)"/.test(detail) ? "authentication"
+        : /model[_ ]not[_ ]found|unsupported[_ ]model/.test(detail) ? "model"
+        : /stream ended before|connection error|fetch failed|terminated/i.test(detail) ? "connection" : "unknown";
+      throw providerFailure(code);
     }
+    // A completed short probe reaching its output limit still proves authentication/model access.
+    // A normal completion must never silently accept truncation.
+
     const calls: LLMToolCall[] = response.content.filter((part) => part.type === "toolCall").map((part) => ({
       tool_call_id: part.id, name: part.name, arguments: part.arguments as Record<string, unknown>,
     }));

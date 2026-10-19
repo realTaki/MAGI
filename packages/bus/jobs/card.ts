@@ -49,3 +49,11 @@ export function providerCard(handle: string, values: CardSpec["values"] = {}): C
     ],
   };
 }
+
+export type CardReceipt = {
+  id: string;
+  attempt?: string;
+  state: "pending" | "saved" | "failed" | "cancelled";
+  error?: import("./providerFailure.js").ProviderFailureCode;
+  values?: CardSpec["values"];
+};

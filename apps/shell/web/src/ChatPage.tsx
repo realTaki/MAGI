@@ -1,6 +1,9 @@
+import { ProviderProfile, ProviderLink } from "./ProviderProfile";
+import { RuntimeToggle } from "./RuntimeToggle";
+import { providerFailureCode } from "@magi/bus/jobs/providerFailure.js";
 import { groupChatRooms, type CurrentChats } from "./chat-list";
 import { FormCardView } from "./FormCardView";
-import { cardStateFromEvents, cardWithReceipt } from "./provider-form";
+import { cardReceiptFromEvents, cardWithReceipt, providerProfileHandle } from "./provider-form";
 import { Button } from "./Button";
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -17,7 +20,7 @@ import {
 import { Avatar } from "./Avatar";
 import { createAspChat, patchAspChat, clearOperator, listAspBots, listAspChats, sendAspMessage, updateAspNickname, addAspChatMember, storedChats, saveChats, storedEvents, syncAspEvents, storedOutgoingMessages, queueOutgoingMessage, removeOutgoingMessage, type AspBot, type AspEvent, type CreatedChat, type OutgoingMessage } from "./asp";
 import { initialsFromLogin, useGitHubAccount } from "./github-connect";
-import { openSettingsRoute } from "./hash-route";
+import { useHashPath, openSettingsRoute } from "./hash-route";
 import { useT } from "./i18n";
 
 function CollapseIcon() {
@@ -102,64 +105,6 @@ type ChatView = ChatSummary & {
   lastSequence: number;
   unread: boolean;
 };
-type AgentRuntime = {
-  handle: string;
-  online: boolean;
-  running: boolean;
-  branch: string;
-  source: string;
-};
-type RuntimeIconName = "start" | "stop" | "restart" | "merge";
-
-/**
- * The runtime controls are icon-only: start and stop are the same slot, and the
- * glyph says what a click does. The label stays as the tooltip and the
- * accessible name.
- */
-function RuntimeIcon({ name }: { name: RuntimeIconName }) {
-  const stroke = {
-    width: 16,
-    height: 16,
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: 1.8,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-    "aria-hidden": true,
-  };
-  if (name === "start") {
-    return (
-      <svg {...stroke} fill="currentColor" stroke="none">
-        <path d="M8.6 5.6 18.4 12 8.6 18.4Z" />
-      </svg>
-    );
-  }
-  if (name === "stop") {
-    return (
-      <svg {...stroke} fill="currentColor" stroke="none">
-        <rect x="7" y="7" width="10" height="10" rx="2" />
-      </svg>
-    );
-  }
-  if (name === "restart") {
-    return (
-      <svg {...stroke}>
-        <path d="M20 12a8 8 0 1 1-2.35-5.65" />
-        <path d="M20 4.8v4.6h-4.6" />
-      </svg>
-    );
-  }
-  return (
-    <svg {...stroke}>
-      <circle cx="6.5" cy="6" r="2.4" />
-      <circle cx="6.5" cy="18" r="2.4" />
-      <circle cx="17.5" cy="12" r="2.4" />
-      <path d="M6.5 8.4v7.2" />
-      <path d="M8.9 18c4 0 5.3-2.6 6-5.1" />
-    </svg>
-  );
-}
 type Trigger = { freq: string; n: number; unit: string; time: string; cron: string };
 type RoutineDraft = {
   index: number | null;
@@ -430,7 +375,8 @@ function previewForChat(chat: ChatView, extra: ExtraMessages) {
 }
 
 
-function Thread({ messages }: { messages: ChatMessage[] }) {
+function Thread({ messages, handle }: { messages: ChatMessage[]; handle?: string }) {
+  const t = useT();
   return (
     <>
       {messages.map((message, index) => {
@@ -451,9 +397,13 @@ function Thread({ messages }: { messages: ChatMessage[] }) {
         if (message.type === "form") {
           return (
             <div key={`form-${message.card.id}`} className="chat-page__message chat-page__message--bot">
-              <FormCardView message={message} />
+              {message.card.purpose === "provider" ? <ProviderLink handle={message.card.handle} /> : <FormCardView message={message} />}
             </div>
           );
+        }
+        if (message.type === "bot" && message.text.includes("ProviderError [") && handle) {
+          const code = providerFailureCode(message.text.replace(/^\[provider\] /, ""));
+          return <div key={`provider-error-${index}`} className="chat-page__message chat-page__message--bot"><p>{t(`providerForm.error_${code}`)}</p><ProviderLink handle={handle} /></div>;
         }
         if (message.type === "card") {
           return (
@@ -572,6 +522,8 @@ function OnboardThread({
 
 export function ChatPage() {
   const t = useT();
+  const route = useHashPath();
+  const profileHandle = providerProfileHandle(route);
   const [bots, setBots] = useState<ChatView[]>([]);
   const [currentChats, setCurrentChats] = useState<CurrentChats>({ registeredHandles: new Set(), chatIds: new Set() });
   const [activeId, setActiveId] = useState(storedActiveChat);
@@ -599,9 +551,6 @@ export function ChatPage() {
   const [mentionIndex, setMentionIndex] = useState(0);
   // Which agents answer right now: offline ones are greyed out like IM contacts.
   const [agentStatus, setAgentStatus] = useState<Record<string, boolean>>({});
-  const [agentRuntime, setAgentRuntime] = useState<AgentRuntime | null>(null);
-  const [runtimeBusy, setRuntimeBusy] = useState(false);
-  const [runtimeNote, setRuntimeNote] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -609,9 +558,6 @@ export function ChatPage() {
   const userWrapRef = useRef<HTMLDivElement | null>(null);
   const botListRef = useRef<HTMLDivElement | null>(null);
   const composerInputRef = useRef<HTMLInputElement | null>(null);
-  const [providerOpening, setProviderOpening] = useState(false);
-  const [providerOpenError, setProviderOpenError] = useState("");
-  const providerOpenLock = useRef(false);
   const activeIdRef = useRef(activeId);
   const readThroughRef = useRef<Record<string, number>>(storedReadThrough());
   const creatingRef = useRef(false);
@@ -654,17 +600,6 @@ export function ChatPage() {
     );
   }, [active, mention?.query]);
   const mentionVisible = mentionOpen && mention !== null && mentionCandidates.length > 0;
-  // Start and stop share one slot: the icon shows what the click will do.
-  const agentUp = Boolean(agentRuntime?.online || agentRuntime?.running);
-  const runtimeActions: Array<{ method: string; label: string; icon: RuntimeIconName }> = [
-    {
-      method: agentUp ? "magi.stop" : "magi.start",
-      label: agentUp ? "runtimeStop" : "runtimeStart",
-      icon: agentUp ? "stop" : "start",
-    },
-    { method: "magi.restart", label: "runtimeRestart", icon: "restart" },
-    { method: "magi.merge", label: "runtimeMerge", icon: "merge" },
-  ];
   const showPanel = panelOpen;
 
   useEffect(() => {
@@ -890,18 +825,11 @@ export function ChatPage() {
 
   // A MAGI's process is that MAGI's business: load its state when the profile opens.
   useEffect(() => {
-    const handle = active?.kind === "group" ? "" : active?.magiHandle ?? "";
-    setRuntimeNote("");
-    if (!showPanel || panelMode !== "settings" || handle === "") {
-      setAgentRuntime(null);
-      return;
-    }
-    let cancelled = false;
-    void loadAgentRuntime(handle).then((info) => {
-      if (!cancelled) setAgentRuntime(info);
-    });
-    return () => { cancelled = true; };
-  }, [showPanel, panelMode, active?.id, active?.magiHandle, active?.kind]);
+    if (!profileHandle) return;
+    const target = bots.find((bot) => bot.kind === "dm" && bot.magiHandle === profileHandle);
+    if (!target) return;
+    setActiveId(target.id); setPanelMode("settings"); setPanelOpen(true);
+  }, [profileHandle, bots.map((bot) => `${bot.id}:${bot.magiHandle}`).join("|")]);
 
   if (!active) {
     return <div className="chat-page" style={{ padding: 32 }}>
@@ -921,6 +849,7 @@ export function ChatPage() {
   }
 
   function collapseProfile() {
+    if (profileHandle) window.location.hash = "";
     setPanelOpen(false);
     setRoutineDraft(null);
     setPanelMode("settings");
@@ -988,59 +917,6 @@ export function ChatPage() {
     return agentStatus[handle] === false;
   }
 
-  function localInvoke(): ((method: string, payload?: unknown) => Promise<unknown>) | undefined {
-    return window.magiDesktop?.invokeLocal;
-  }
-
-  async function loadAgentRuntime(handle: string): Promise<AgentRuntime | null> {
-    const invoke = localInvoke();
-    if (!invoke || handle === "") return null;
-    try {
-      return (await invoke("magi.info", { handle })) as AgentRuntime;
-    } catch {
-      return null;
-    }
-  }
-
-  /** A MAGI needs a moment to boot; show it as soon as it answers. */
-  async function waitForAgentOnline(handle: string): Promise<void> {
-    for (let attempt = 0; attempt < 12; attempt += 1) {
-      const info = await loadAgentRuntime(handle);
-      setAgentRuntime(info);
-      if (info?.online) return;
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
-  }
-
-  async function refreshAgentStatus(): Promise<void> {
-    const listed = await listAspBots();
-    if (listed.length === 0) return;
-    setAgentStatus(Object.fromEntries(listed.map((bot) => [bot.handle, bot.online])));
-  }
-
-  /** Start, stop, restart, or merge this one MAGI, from its profile. */
-  async function runAgentRuntime(method: string) {
-    const invoke = localInvoke();
-    const handle = active?.magiHandle ?? "";
-    if (!invoke || handle === "" || runtimeBusy) return;
-    setRuntimeBusy(true);
-    setRuntimeNote(t("chatSettings.runtimeWorking"));
-    try {
-      const result = (await invoke(method, { handle })) as { started?: boolean } | null;
-      if (result?.started === true) {
-        await waitForAgentOnline(handle);
-      } else {
-        setAgentRuntime(await loadAgentRuntime(handle));
-      }
-      await refreshAgentStatus();
-      setRuntimeNote(t("chatSettings.runtimeDone"));
-    } catch (error) {
-      setRuntimeNote(error instanceof Error ? error.message : String(error));
-    } finally {
-      setRuntimeBusy(false);
-    }
-  }
-
   function markChatRead(chatId: string, through: number) {
     if (through >= 0 && through > (readThroughRef.current[chatId] ?? -1)) {
       readThroughRef.current = { ...readThroughRef.current, [chatId]: through };
@@ -1053,13 +929,22 @@ export function ChatPage() {
 
   function applyChatEvents(chatId: string, events: AspEvent[]) {
     const messageEvents = events.filter((event) => event.type === "chat.message");
-    const thread: ChatMessage[] = messageEvents.filter((event) => !event.payload.metadata?.card_status).map((event) => {
+    const presentedCards = new Set<string>();
+    const thread: ChatMessage[] = messageEvents.filter((event) => {
+      const meta = event.payload.metadata;
+      if (meta?.card_status || meta?.card_result || meta?.card_reject) return false;
+      if (meta?.card) {
+        if (presentedCards.has(meta.card.id)) return false;
+        presentedCards.add(meta.card.id);
+      }
+      return true;
+    }).map((event) => {
       const text = typeof event.payload.content === "string"
         ? event.payload.content
         : JSON.stringify(event.payload.content);
       const card = event.payload.metadata?.card;
-      if (card && !isOperatorSender(event.payload.sender)) {
-        return { type: "form" as const, text, chatId, card: cardWithReceipt(card as CardSpec, messageEvents), state: cardStateFromEvents(card, messageEvents) };
+      if (card && card.handle === event.payload.sender && !isOperatorSender(event.payload.sender)) {
+        return { type: "form" as const, text, chatId, card: cardWithReceipt(card as CardSpec, cardReceiptFromEvents(card, messageEvents)), receipt: cardReceiptFromEvents(card, messageEvents) };
       }
       // Old desktop caches may still contain events written before ASP renamed the
       // operator handle. Keep presenting those cached entries as user messages.
@@ -1319,6 +1204,7 @@ export function ChatPage() {
   }
 
   function selectBot(id: string) {
+    if (profileHandle) window.location.hash = "";
     const selected = bots.find((bot) => bot.id === id);
     markChatRead(id, selected?.lastSequence ?? -1);
     setActiveId(id);
@@ -1595,16 +1481,6 @@ export function ChatPage() {
 
         <main className="chat-page__main">
           <div className="chat-page__topbar">
-            {active.kind !== "group" && active.remoteId && <button className="chat-page__provider-btn" type="button" title={t("providerForm.title")} aria-label={t("providerForm.title")} disabled={providerOpening} onClick={() => {
-              if (providerOpenLock.current) return;
-              providerOpenLock.current = true;
-              setProviderOpening(true);
-              setProviderOpenError("");
-              void sendAspMessage(active.remoteId!, t("providerForm.title"), { card_result: { id: crypto.randomUUID(), action: "open" } })
-                .catch(() => setProviderOpenError(t("providerForm.sendFailed")))
-                .finally(() => { providerOpenLock.current = false; setProviderOpening(false); });
-            }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" /><circle cx="8" cy="6" r="2" /><circle cx="16" cy="12" r="2" /><circle cx="10" cy="18" r="2" /></svg></button>}
-
             <div className="chat-page__topbar-left">
               <button
                 type="button"
@@ -1675,7 +1551,6 @@ export function ChatPage() {
           ) : null}
 
           <div className="chat-page__thread" ref={scrollRef}>
-            {providerOpenError ? <div role="alert" className="chat-page__empty-thread">{providerOpenError}</div> : null}
             {loadError ? <div role="alert" className="chat-page__empty-thread">{loadError}</div> : null}
             {active.onboarding ? (
               <OnboardThread answers={active.answers} onAnswer={answerOnboard} />
@@ -1685,7 +1560,7 @@ export function ChatPage() {
                 {active.kind === "group" ? t("plusMenu.groupEmpty") : t("plusMenu.botEmpty")}
               </div>
             ) : (
-              <Thread messages={messages} />
+              <Thread messages={messages} handle={active.magiHandle} />
             )}
           </div>
 
@@ -1781,8 +1656,9 @@ export function ChatPage() {
 
             {panelMode === "settings" ? (
               <div className="chat-page__settings">
-                <div className={`chat-page__settings-avatar${agentRuntime && !agentRuntime.online ? " is-offline" : ""}`}>
+                <div className="chat-page__settings-avatar">
                   <Avatar color={active.color} size={64} />
+                  {active.kind !== "group" && active.magiHandle && <RuntimeToggle key={active.magiHandle} handle={active.magiHandle} invoke={window.magiDesktop?.invokeLocal} />}
                 </div>
                 {active.kind === "group" ? (
                   <>
@@ -1849,47 +1725,10 @@ export function ChatPage() {
                   </>
                 )}
 
-                {active.kind !== "group" && active.magiHandle ? (
-                  <div className="chat-page__slot">
-                    <div className="chat-page__slot-head">
-                      <span className="chat-page__panel-label">
-                        {t("chatSettings.runtime")}
-                      </span>
-                      <span
-                        className={`chat-page__runtime-state${agentRuntime?.online ? " is-online" : ""}`}
-                        role="status"
-                      >
-                        {agentRuntime?.online
-                          ? t("chatSettings.online")
-                          : t("chatSettings.offline")}
-                      </span>
-                    </div>
-                    <div className="chat-page__runtime-actions">
-                      {runtimeActions.map(({ method, label, icon }) => (
-                        <button
-                          key={method}
-                          type="button"
-                          className="chat-page__runtime-action"
-                          aria-label={t(`chatSettings.${label}`)}
-                          title={t(`chatSettings.${label}`)}
-                          disabled={runtimeBusy}
-                          onClick={() => void runAgentRuntime(method)}
-                        >
-                          <RuntimeIcon name={icon} />
-                        </button>
-                      ))}
-                    </div>
-                    {agentRuntime?.source ? (
-                      <p className="chat-page__runtime-note">
-                        {agentRuntime.branch ? `${agentRuntime.branch} · ` : ""}
-                        {agentRuntime.source}
-                      </p>
-                    ) : null}
-                    {runtimeNote ? (
-                      <p className="chat-page__runtime-note" role="status">{runtimeNote}</p>
-                    ) : null}
-                  </div>
-                ) : null}
+                {active.kind !== "group" && active.magiHandle && active.remoteId && (!profileHandle || profileHandle === active.magiHandle) && <ProviderProfile
+                  key={`${active.magiHandle}:${active.remoteId}`} handle={active.magiHandle} chatId={active.remoteId}
+                  message={active.thread.filter((item): item is Extract<ChatMessage, { type: "form" }> => item.type === "form" && item.card.purpose === "provider" && item.card.handle === active.magiHandle).at(-1)}
+                />}
 
                 {active.kind === "group" ? (
                   <div className="chat-page__slot">

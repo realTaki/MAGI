@@ -75,7 +75,10 @@ export class AspWorker extends BaseWorker {
     this.keyTask = this.registerKey().finally(() => { this.keyTask = null; });
   }
 
+  private nextCardDelivery = 0;
+
   private async pollDelivery(): Promise<boolean> {
+    if (Date.now() < this.nextCardDelivery) return false;
     const board = this.bus.board("MessageDeliveryJob");
     // Its own channel, and only what this MAGI said: the chat knows the channel it is on
     // and the address it is delivered to, so the job carries neither.
@@ -94,7 +97,10 @@ export class AspWorker extends BaseWorker {
       await client.send(chat.delivery_address, message.content, job.input.metadata);
       board.submit(this.worker_name, job.id, { output: {} });
     } catch (error) {
-      board.submit(this.worker_name, job.id, { error: error instanceof Error ? error.message : String(error) });
+      if (job.input.metadata?.card_status || job.input.metadata?.card) {
+        board.release(this.worker_name, job.id);
+        this.nextCardDelivery = Date.now() + 1_000;
+      } else board.submit(this.worker_name, job.id, { error: error instanceof Error ? error.message : String(error) });
     }
     return true;
   }
