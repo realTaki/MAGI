@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
-import { Bus, messageDelivery } from "@magi/bus";
+import { Bus, USER_HANDLE, messageDelivery } from "@magi/bus";
 import { magiHome } from "@magi/runtime/home.js";
 import { ManagerWorker } from "@magi/manager";
 import { Asp } from "../../asp/asp.ts";
@@ -27,6 +27,20 @@ async function until(label: string, ready: () => boolean | Promise<boolean>, tim
 function cards(bus: Bus): string[] {
   return bus.chats.list().flatMap((chat) => bus.messages.list(chat.id, 50).map((message) => message.content))
     .filter((content) => content === "card: Provider");
+}
+
+function ownerAgentChats(asp: Asp, agent: string) {
+  const chats = [];
+  for (const chat of asp.store.chats.values()) {
+    const people = asp.store
+      .participantsIn(chat.id)
+      .filter((participant) => participant.status === "invited" || participant.status === "joined")
+      .map((participant) => participant.handle);
+    if (people.length === 2 && people.includes(USER_HANDLE) && people.includes(agent)) {
+      chats.push(chat);
+    }
+  }
+  return chats;
 }
 
 function writeBrokenApp(root: string, app: "eva" | "asp" | "shell", script: string): string {
@@ -224,6 +238,7 @@ test("two restarts do not count as rejecting the provider card", async () => {
     assert.equal(magi.bus.settings.get("provider.card.offers"), null);
     assert.equal(magi.bus.settings.get("provider.card.rejections") ?? "0", "0");
     assert.equal(calls, 0);
+    assert.equal(ownerAgentChats(asp, handle).length, 1, "ConfigWorker restart must not open a second owner 1:1");
   } finally {
     await magi?.stop();
     await asp.stop();

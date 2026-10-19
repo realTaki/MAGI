@@ -316,6 +316,7 @@ export class AspWorker extends BaseWorker {
 
   private async openOwner(): Promise<{ chat_id: number }> {
     const client = this.requireClient();
+    // ASP reuses the owner↔agent 1:1 when one already exists.
     const opened = await client.call("POST", "/chats/open", { invite: [USER_HANDLE] });
     if (!isRecord(opened) || typeof opened.chat_id !== "string") throw new Error("ASP did not open a chat");
     const chat = this.bus.chats.forChannel("asp", opened.chat_id);

@@ -25,7 +25,7 @@ export class ConfigWorker extends BaseWorker {
   readonly worker_name = "config";
   /** The startup provider card, while it is waiting for the user. */
   private cardJob: number | null = null;
-  /** The chat this worker opened for that card. An invite is not reused. */
+  /** The owner 1:1 this worker uses for the card. ASP reuses that room if it exists. */
   private ownerChat: number | null = null;
   /** The open-chat job, while ASP is being asked for a home chat. */
   private opening: number | null = null;
