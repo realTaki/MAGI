@@ -602,6 +602,7 @@ export function ChatPage() {
   const botListRef = useRef<HTMLDivElement | null>(null);
   const composerInputRef = useRef<HTMLInputElement | null>(null);
   const [providerOpening, setProviderOpening] = useState(false);
+  const [providerOpenError, setProviderOpenError] = useState("");
   const providerOpenLock = useRef(false);
   const activeIdRef = useRef(activeId);
   const readThroughRef = useRef<Record<string, number>>(storedReadThrough());
@@ -1549,14 +1550,15 @@ export function ChatPage() {
 
         <main className="chat-page__main">
           <div className="chat-page__topbar">
-            {active.kind !== "group" && active.remoteId && <button type="button" disabled={providerOpening} onClick={() => {
+            {active.kind !== "group" && active.remoteId && <button className="chat-page__provider-btn" type="button" title={t("providerForm.title")} aria-label={t("providerForm.title")} disabled={providerOpening} onClick={() => {
               if (providerOpenLock.current) return;
               providerOpenLock.current = true;
               setProviderOpening(true);
+              setProviderOpenError("");
               void sendAspMessage(active.remoteId!, t("providerForm.title"), { card_result: { id: crypto.randomUUID(), action: "open" } })
-                .catch(() => setRuntimeNote(t("providerForm.sendFailed")))
+                .catch(() => setProviderOpenError(t("providerForm.sendFailed")))
                 .finally(() => { providerOpenLock.current = false; setProviderOpening(false); });
-            }}>{t("providerForm.title")}</button>}
+            }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" /><circle cx="8" cy="6" r="2" /><circle cx="16" cy="12" r="2" /><circle cx="10" cy="18" r="2" /></svg></button>}
 
             <div className="chat-page__topbar-left">
               <button
@@ -1615,6 +1617,7 @@ export function ChatPage() {
           </div>
 
           <div className="chat-page__thread" ref={scrollRef}>
+            {providerOpenError ? <div role="alert" className="chat-page__empty-thread">{providerOpenError}</div> : null}
             {loadError ? <div role="alert" className="chat-page__empty-thread">{loadError}</div> : null}
             {active.onboarding ? (
               <OnboardThread answers={active.answers} onAnswer={answerOnboard} />

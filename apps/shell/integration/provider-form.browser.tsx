@@ -26,6 +26,18 @@ function password(value: string) {
 }
 const tick = () => new Promise((resolve) => setTimeout(resolve, 30));
 async function run() {
+  const header = document.createElement("div");
+  header.className = "chat-page__topbar";
+  header.innerHTML = '<button class="chat-page__provider-btn">AI</button><button class="chat-page__name-btn">MAGI</button>';
+  document.body.append(header);
+  for (const width of [360, 700]) {
+    header.style.width = `${width}px`;
+    const button = header.querySelector(".chat-page__provider-btn") as HTMLElement;
+    const box = button.getBoundingClientRect();
+    check(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2) === button, "provider entry is not covered by titlebar drag layer");
+    check(getComputedStyle(button).getPropertyValue("-webkit-app-region") === "no-drag", "provider entry is clickable in Electron");
+  }
+  header.remove();
   for (const [locale, title, save] of [["zh", "模型供应商配置", "保存"], ["en", "Model provider", "Save"], ["ja", "モデルプロバイダー設定", "保存"]]) {
     render(locale);
     check(document.body.textContent?.includes(title), `title ${locale}`);

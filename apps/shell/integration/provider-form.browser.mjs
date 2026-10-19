@@ -21,7 +21,8 @@ try {
     `, loader: 'js' }));
   } }] });
   const html = join(dir, 'index.html');
-  await writeFile(html, '<!doctype html><meta charset="utf-8"><div id="root"></div><script>' + result.outputFiles[0].text.replaceAll('</script', '<\\/script') + '</script>');
+  const styles = (await readFile('apps/shell/web/src/styles.css', 'utf8')).replace('@import "tailwindcss";', '');
+  await writeFile(html, '<!doctype html><meta charset="utf-8"><style>' + styles + '</style><div id="root"></div><script>' + result.outputFiles[0].text.replaceAll('</script', '<\\/script') + '</script>');
   const document = await readFile(html);
   server = createServer((_request, response) => { response.setHeader('Content-Type', 'text/html; charset=utf-8'); response.end(document); });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
