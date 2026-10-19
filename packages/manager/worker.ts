@@ -12,6 +12,9 @@ import { ReplaceWorker, type AppBuild } from "./replace.js";
 
 const POLL_MS = 20;
 const HEALTH_MS = 1_000;
+/** Live replace reconnects the ASP socket after the previous child exits. The
+ * launcher waits 30s for `ready`; an 8s budget makes that look like a crash. */
+const REPLACE_HEALTH_MS = 30_000;
 /** A poll loop that throws this many times in a row is worth telling the operator about. */
 const FAILURES_BEFORE_NOTICE = 3;
 
@@ -24,7 +27,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  */
 export async function healthyOrExit(read: () => string | null): Promise<void> {
   if (!process.env.MAGI_REPLACE_JOB || process.env.MAGI_REPLACE_ERROR) return;
-  const problem = await untilHealthy(read);
+  const problem = await untilHealthy(read, REPLACE_HEALTH_MS);
   if (problem) {
     console.error(problem);
     process.exit(1);
