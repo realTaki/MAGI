@@ -73,6 +73,7 @@ async function startShell(): Promise<() => Promise<void>> {
       },
       repository: requireEnv("MAGI_REPOSITORY"),
       managed: process.env.MAGI_MANAGED === "1",
+      sourceVerified: process.env.MAGI_SOURCE_VERIFIED === "1",
       shellUpdate: {
         packaged: process.env.MAGI_PACKAGED === "1",
         currentVersion: process.env.MAGI_SHELL_VERSION ?? "",

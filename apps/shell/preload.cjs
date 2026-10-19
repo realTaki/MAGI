@@ -12,6 +12,7 @@ function aspBase() {
 
 contextBridge.exposeInMainWorld("magiDesktop", {
   aspBase: aspBase(),
+  reloadInterface: () => ipcRenderer.invoke("shell:reload-interface"),
   retryStartup: () => ipcRenderer.invoke("startup:retry"),
   copyText: (text) => ipcRenderer.invoke("shell:copy-text", text),
   onStartupProgress: (listener) =>

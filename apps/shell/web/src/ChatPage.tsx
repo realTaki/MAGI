@@ -1,3 +1,6 @@
+import { groupChatRooms, type CurrentChats } from "./chat-list";
+import { FormCardView } from "./FormCardView";
+import { cardStateFromEvents, cardWithReceipt } from "./provider-form";
 import { Button } from "./Button";
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -12,7 +15,7 @@ import {
   type RoutineRun,
 } from "./chat-model";
 import { Avatar } from "./Avatar";
-import { createAspChat, patchAspChat, clearOperator, encryptSecret, listAspBots, listAspChats, listProfiles, sendAspMessage, updateAspNickname, addAspChatMember, storedChats, saveChats, storedEvents, syncAspEvents, storedOutgoingMessages, queueOutgoingMessage, removeOutgoingMessage, type AspBot, type AspEvent, type CreatedChat, type OutgoingMessage } from "./asp";
+import { createAspChat, patchAspChat, clearOperator, listAspBots, listAspChats, sendAspMessage, updateAspNickname, addAspChatMember, storedChats, saveChats, storedEvents, syncAspEvents, storedOutgoingMessages, queueOutgoingMessage, removeOutgoingMessage, type AspBot, type AspEvent, type CreatedChat, type OutgoingMessage } from "./asp";
 import { initialsFromLogin, useGitHubAccount } from "./github-connect";
 import { openSettingsRoute } from "./hash-route";
 import { useT } from "./i18n";
@@ -93,6 +96,8 @@ type ChatView = ChatSummary & {
   members: ChatMember[];
   remoteId?: string;
   magiHandle?: string;
+  state?: "active" | "ended";
+  participantsKnown?: boolean;
   savedName: string;
   lastSequence: number;
   unread: boolean;
@@ -167,6 +172,15 @@ type RoutineDraft = {
 };
 
 const READ_THROUGH_KEY = "magi.chats.read-through.v1";
+const ACTIVE_CHAT_KEY = "magi.chats.active.v1";
+
+function storedActiveChat(): string {
+  try {
+    return window.localStorage.getItem(ACTIVE_CHAT_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
 
 function storedReadThrough(): Record<string, number> {
   try {
@@ -252,6 +266,8 @@ function fromAspChat(remote: CreatedChat): ChatView {
   bot.id = remote.chat_id;
   bot.remoteId = remote.chat_id;
   bot.magiHandle = remote.agents[0];
+  bot.state = remote.state;
+  bot.participantsKnown = Array.isArray(remote.participants) && remote.agents.length === 1;
   bot.description = remote.description ?? "";
   bot.savedName = name;
   bot.members = membersFromChat(remote, []);
@@ -413,85 +429,6 @@ function previewForChat(chat: ChatView, extra: ExtraMessages) {
   return chat.preview;
 }
 
-function FormCardView({ message }: { message: Extract<ChatMessage, { type: "form" }> }) {
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [error, setError] = useState("");
-  const [sent, setSent] = useState(false);
-  const card = message.card;
-  return (
-    <form
-      className="chat-page__form"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (sent) return;
-        void (async () => {
-          try {
-            const fields: Record<string, unknown> = {};
-            const secret = card.fields.some((field) => field.kind === "secret");
-            const profiles = secret ? await listProfiles() : [];
-            const publicKey = profiles.find((profile) => profile.handle === card.handle)?.public_key ?? null;
-            if (secret && !publicKey) throw new Error(`${card.handle} has no public key yet`);
-            for (const field of card.fields) {
-              const value = values[field.name] ?? "";
-              if (value === "" && !field.optional) throw new Error(`${field.label} is required`);
-              fields[field.name] = field.kind === "secret"
-                ? { ciphertext: await encryptSecret(publicKey!, value) }
-                : value;
-            }
-            await sendAspMessage(message.chatId, `card filled: ${card.title}`, {
-              card_result: { id: card.id, fields },
-            });
-            setSent(true);
-            setError("");
-          } catch (caught) {
-            setError(caught instanceof Error ? caught.message : String(caught));
-          }
-        })();
-      }}
-    >
-      <div className="chat-page__form-title">{card.title}</div>
-      {card.fields.map((field) => (
-        <label key={field.name} className="chat-page__form-row">
-          <span>{field.label}</span>
-          {field.kind === "choice" ? (
-            <select
-              value={values[field.name] ?? ""}
-              onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))}
-            >
-              <option value="">Choose</option>
-              {(field.choices ?? []).map((choice) => <option key={choice} value={choice}>{choice}</option>)}
-            </select>
-          ) : (
-            <input
-              type={field.kind === "secret" ? "password" : "text"}
-              autoComplete="off"
-              value={values[field.name] ?? ""}
-              onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))}
-            />
-          )}
-        </label>
-      ))}
-      <button type="submit" disabled={sent}>{sent ? "Sent" : card.submit}</button>
-      <button
-        type="button"
-        disabled={sent}
-        onClick={() => {
-          if (sent) return;
-          void (async () => {
-            try {
-              await sendAspMessage(message.chatId, `card rejected: ${card.title}`, { card_reject: { id: card.id } });
-              setSent(true);
-              setError("");
-            } catch (caught) {
-              setError(caught instanceof Error ? caught.message : String(caught));
-            }
-          })();
-        }}
-      >Not now</button>
-      {error ? <p className="chat-page__form-error">{error}</p> : null}
-    </form>
-  );
-}
 
 function Thread({ messages }: { messages: ChatMessage[] }) {
   return (
@@ -636,7 +573,8 @@ function OnboardThread({
 export function ChatPage() {
   const t = useT();
   const [bots, setBots] = useState<ChatView[]>([]);
-  const [activeId, setActiveId] = useState("");
+  const [currentChats, setCurrentChats] = useState<CurrentChats>({ registeredHandles: new Set(), chatIds: new Set() });
+  const [activeId, setActiveId] = useState(storedActiveChat);
   const [loadError, setLoadError] = useState("");
   const [panelOpen, setPanelOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -671,6 +609,9 @@ export function ChatPage() {
   const userWrapRef = useRef<HTMLDivElement | null>(null);
   const botListRef = useRef<HTMLDivElement | null>(null);
   const composerInputRef = useRef<HTMLInputElement | null>(null);
+  const [providerOpening, setProviderOpening] = useState(false);
+  const [providerOpenError, setProviderOpenError] = useState("");
+  const providerOpenLock = useRef(false);
   const activeIdRef = useRef(activeId);
   const readThroughRef = useRef<Record<string, number>>(storedReadThrough());
   const creatingRef = useRef(false);
@@ -689,13 +630,19 @@ export function ChatPage() {
     );
   }, [active, extra, outgoing]);
 
+  const chatGroups = useMemo(() => groupChatRooms(bots, OPERATOR.handle, currentChats), [bots, currentChats]);
+  const activeRooms = chatGroups.find((group) => group.rooms.some((room) => room.id === active?.id))?.rooms ?? [];
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) {
-      return bots;
-    }
-    return bots.filter((bot) => `${bot.name} ${bot.preview}`.toLowerCase().includes(needle));
-  }, [bots, query]);
+    return chatGroups.filter((group) => !needle || group.rooms.some((bot) =>
+      `${bot.name} ${bot.magiHandle ?? ""} ${bot.preview}`.toLowerCase().includes(needle),
+    )).map((group) => ({
+      ...group,
+      bot: group.rooms.find((room) => room.id === activeId)
+        ?? group.rooms.find((room) => room.unread) ?? group.rooms[0],
+      unread: group.rooms.some((room) => room.unread),
+    }));
+  }, [chatGroups, query, activeId]);
 
   const onboardingOpen = Boolean(active?.onboarding && active.answers.length < ONBOARD.length);
   const mention = mentionAt(draft, mentionCursor);
@@ -730,10 +677,13 @@ export function ChatPage() {
         setOutgoing(queued);
         const restored = local.map(fromAspChat);
         setBots(restored);
-        setActiveId((current) => current || restored[0]?.id || "");
-        const remote = await listAspChats();
+        setActiveId((current) => restored.some((bot) => bot.id === current)
+          ? current : restored[0]?.id || current);
+        const [remote, roster] = await Promise.all([listAspChats(), listAspBots()]);
         if (cancelled) return;
         await saveChats(remote);
+        if (cancelled) return;
+        setCurrentChats({ registeredHandles: new Set(roster.map((agent) => agent.handle)), chatIds: new Set(remote.map((room) => room.chat_id)) });
         const known = new Map(local.map((row) => [row.chat_id, row]));
         for (const row of remote) known.set(row.chat_id, row);
         setBots((current) => [...known.values()].map((row) => {
@@ -741,7 +691,7 @@ export function ChatPage() {
           const previous = current.find((bot) => bot.id === next.id);
           return previous ? { ...next, thread: previous.thread } : next;
         }));
-        setActiveId((current) => current || remote[0]?.chat_id || "");
+        setActiveId((current) => known.has(current) ? current : known.keys().next().value ?? "");
       } catch (error) {
         if (!cancelled) setLoadError(String(error));
       }
@@ -752,6 +702,15 @@ export function ChatPage() {
   useEffect(() => {
     activeIdRef.current = activeId;
   }, [activeId]);
+
+  useEffect(() => {
+    if (!bots.some((bot) => bot.id === activeId)) return;
+    try {
+      window.localStorage.setItem(ACTIVE_CHAT_KEY, activeId);
+    } catch {
+      // A blocked localStorage must not prevent selecting a conversation.
+    }
+  }, [activeId, bots]);
 
   const remoteIdsKey = useMemo(
     () => bots.flatMap((bot) => bot.remoteId ? [bot.remoteId] : []).sort().join("\n"),
@@ -768,11 +727,30 @@ export function ChatPage() {
       const events = await syncAspEvents(chatId);
       if (!cancelled) applyChatEvents(chatId, events);
     }
-    async function refreshAgentStatus() {
-      const listed = await listAspBots();
-      // An empty answer means "ASP did not say", not "everyone went offline".
-      if (cancelled || listed.length === 0) return;
-      setAgentStatus(Object.fromEntries(listed.map((bot) => [bot.handle, bot.online])));
+    async function refreshChatsAndStatus() {
+      try {
+        const [listed, remote] = await Promise.all([listAspBots(), listAspChats()]);
+        if (cancelled) return;
+        await saveChats(remote);
+        if (cancelled) return;
+        setCurrentChats({ registeredHandles: new Set(listed.map((agent) => agent.handle)), chatIds: new Set(remote.map((room) => room.chat_id)) });
+        if (listed.length > 0) setAgentStatus(Object.fromEntries(listed.map((bot) => [bot.handle, bot.online])));
+        setBots((current) => {
+          const known = new Map(current.map((room) => [room.id, room]));
+          for (const row of remote) {
+            const previous = known.get(row.chat_id);
+            const next = fromAspChat(row);
+            known.set(row.chat_id, previous ? {
+              ...previous, state: next.state, kind: next.kind, members: next.members,
+              magiHandle: next.magiHandle, participantsKnown: next.participantsKnown,
+            } : next);
+          }
+          return [...known.values()];
+        });
+      } catch (error) {
+        if (!cancelled) setCurrentChats({ registeredHandles: new Set(), chatIds: new Set() });
+        throw error;
+      }
     }
     async function refreshAll() {
       if (!flushingOutgoingRef.current) {
@@ -795,7 +773,7 @@ export function ChatPage() {
       }
       const results = await Promise.allSettled([
         ...chatIds.map(refreshChat),
-        refreshAgentStatus(),
+        refreshChatsAndStatus(),
       ]);
       const failure = results.find((result) => result.status === "rejected");
       if (!cancelled && failure?.status === "rejected") setLoadError(String(failure.reason));
@@ -1075,13 +1053,13 @@ export function ChatPage() {
 
   function applyChatEvents(chatId: string, events: AspEvent[]) {
     const messageEvents = events.filter((event) => event.type === "chat.message");
-    const thread: ChatMessage[] = messageEvents.map((event) => {
+    const thread: ChatMessage[] = messageEvents.filter((event) => !event.payload.metadata?.card_status).map((event) => {
       const text = typeof event.payload.content === "string"
         ? event.payload.content
         : JSON.stringify(event.payload.content);
       const card = event.payload.metadata?.card;
       if (card && !isOperatorSender(event.payload.sender)) {
-        return { type: "form" as const, text, chatId, card: card as CardSpec };
+        return { type: "form" as const, text, chatId, card: cardWithReceipt(card as CardSpec, messageEvents), state: cardStateFromEvents(card, messageEvents) };
       }
       // Old desktop caches may still contain events written before ASP renamed the
       // operator handle. Keep presenting those cached entries as user messages.
@@ -1513,23 +1491,24 @@ export function ChatPage() {
           ) : null}
           <div className="chat-page__bot-list-wrap">
             <div className="chat-page__bot-list" ref={botListRef}>
-              {filtered.map((bot) => {
+              {filtered.map(({ key, bot, unread }) => {
               const isActive = bot.id === active.id;
               return (
                 <button
-                  key={bot.id}
+                  key={key}
+                  title={bot.magiHandle}
                   type="button"
                   className={`chat-page__bot-row${isActive ? " is-active" : ""}${isAgentOffline(bot) ? " is-offline" : ""}`}
                   data-bot-id={bot.id}
-                  data-unread={bot.unread ? "true" : "false"}
+                  data-unread={unread ? "true" : "false"}
                   onClick={() => selectBot(bot.id)}
                 >
                   <Avatar color={bot.color} size={34} />
                   <span className="chat-page__bot-copy">
                     <span className="chat-page__bot-meta">
-                      <span className="chat-page__bot-name">{bot.name}</span>
+                      <span className="chat-page__bot-name">{bot.name}{bots.some((other) => other.name === bot.name && other.magiHandle !== bot.magiHandle) ? ` (${bot.magiHandle})` : ""}</span>
                       <span className="chat-page__bot-trailing">
-                        {bot.unread ? <span className="chat-page__unread-dot" aria-label={t("account.unread")} /> : null}
+                        {unread ? <span className="chat-page__unread-dot" aria-label={t("account.unread")} /> : null}
                         <span className="chat-page__bot-time">{bot.time}</span>
                       </span>
                     </span>
@@ -1616,6 +1595,16 @@ export function ChatPage() {
 
         <main className="chat-page__main">
           <div className="chat-page__topbar">
+            {active.kind !== "group" && active.remoteId && <button className="chat-page__provider-btn" type="button" title={t("providerForm.title")} aria-label={t("providerForm.title")} disabled={providerOpening} onClick={() => {
+              if (providerOpenLock.current) return;
+              providerOpenLock.current = true;
+              setProviderOpening(true);
+              setProviderOpenError("");
+              void sendAspMessage(active.remoteId!, t("providerForm.title"), { card_result: { id: crypto.randomUUID(), action: "open" } })
+                .catch(() => setProviderOpenError(t("providerForm.sendFailed")))
+                .finally(() => { providerOpenLock.current = false; setProviderOpening(false); });
+            }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" /><circle cx="8" cy="6" r="2" /><circle cx="16" cy="12" r="2" /><circle cx="10" cy="18" r="2" /></svg></button>}
+
             <div className="chat-page__topbar-left">
               <button
                 type="button"
@@ -1672,7 +1661,21 @@ export function ChatPage() {
             </button>
           </div>
 
+          {activeRooms.length > 1 ? (
+            <label className="chat-page__history">
+              {t("chatHistory.sessions")}
+              <select value={active.id} onChange={(event) => selectBot(event.target.value)}>
+                {activeRooms.map((room) => (
+                  <option key={room.id} value={room.id}>
+                    {room.time} · {room.id}{room.unread ? ` · ${t("account.unread")}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+
           <div className="chat-page__thread" ref={scrollRef}>
+            {providerOpenError ? <div role="alert" className="chat-page__empty-thread">{providerOpenError}</div> : null}
             {loadError ? <div role="alert" className="chat-page__empty-thread">{loadError}</div> : null}
             {active.onboarding ? (
               <OnboardThread answers={active.answers} onAnswer={answerOnboard} />

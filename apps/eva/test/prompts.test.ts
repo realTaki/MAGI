@@ -21,10 +21,14 @@ test("source checkout is this process's tree or an explicit refusal", () => {
   try {
     assert.match(sourceCheckout("@eva-000.magi", workspace), /checkout: none/);
     mkdirSync(join(workspace, "MAGI", ".git"), { recursive: true });
-    const present = sourceCheckout("@eva-000.magi", workspace);
+    const present = sourceCheckout("@eva-000.magi", workspace, "agent");
     assert.match(present, /checkout: MAGI\//);
     assert.match(present, /branch: magi\/eva-000/);
     assert.doesNotMatch(present, /apps\/asp/);
+    assert.match(sourceCheckout("@eva-000.magi", workspace, "shell"), /branch: magi\/shell/);
+    assert.match(sourceCheckout("@shell.magi", workspace, "shell"), /handle: @shell\.magi/);
+    assert.match(sourceCheckout("@shell.magi", workspace, "shell"), /branch: magi\/shell/);
+    assert.match(sourceCheckout("@eva-001.magi", workspace, "asp"), /branch: magi\/asp/);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

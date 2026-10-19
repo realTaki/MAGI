@@ -27,6 +27,8 @@
     "executableName": "MAGI",
     "files": [
       "main.mjs",
+      "source-checkout.mjs",
+      "interface.mjs",
       "process.mjs",
       "process-owner.mjs",
       "profile-layout.mjs",

@@ -16,7 +16,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BaseWorker, messageDelivery, replaceFailedPath, type Bus } from "@magi/bus";
 import { LAUNCHER_PROTOCOL } from "@magi/runtime/protocol.js";
-import { reviseCheckout, trackingRef } from "@magi/runtime/revise.js";
+import { reviseCheckout } from "@magi/runtime/revise.js";
 import { resolveToolchain } from "@magi/runtime/toolchain.js";
 
 export type AppBuild = {
@@ -102,7 +102,7 @@ export class ReplaceWorker extends BaseWorker {
       if (typeof process.send !== "function" || !process.connected) {
         throw new Error("this node has no launcher to switch to the new revision");
       }
-      const target = ref?.trim() || await trackingRef(checkout);
+      const target = ref?.trim() || undefined;
       const { revision, previous, dir } = await reviseCheckout(checkout, target);
       const launcher = join(dir, "apps", "eva", "eva.mjs");
       const running = process.env.MAGI_LAUNCHER;

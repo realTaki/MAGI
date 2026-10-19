@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
-import { Bus, messageDelivery } from "@magi/bus";
+import { ASP_MAGI_HANDLE, Bus, EVA_MAGI_HANDLE, SHELL_MAGI_HANDLE, USER_HANDLE, messageDelivery } from "@magi/bus";
 import { magiHome } from "@magi/runtime/home.js";
 import { ManagerWorker } from "@magi/manager";
 import { Asp } from "../../asp/asp.ts";
@@ -27,6 +27,20 @@ async function until(label: string, ready: () => boolean | Promise<boolean>, tim
 function cards(bus: Bus): string[] {
   return bus.chats.list().flatMap((chat) => bus.messages.list(chat.id, 50).map((message) => message.content))
     .filter((content) => content === "card: Provider");
+}
+
+function ownerAgentChats(asp: Asp, agent: string) {
+  const chats = [];
+  for (const chat of asp.store.chats.values()) {
+    const people = asp.store
+      .participantsIn(chat.id)
+      .filter((participant) => participant.status === "invited" || participant.status === "joined")
+      .map((participant) => participant.handle);
+    if (people.length === 2 && people.includes(USER_HANDLE) && people.includes(agent)) {
+      chats.push(chat);
+    }
+  }
+  return chats;
 }
 
 function writeBrokenApp(root: string, app: "eva" | "asp" | "shell", script: string): string {
@@ -68,7 +82,7 @@ async function expectRollback(bus: Bus, checkout: string, app: "eva" | "asp" | "
   assert.ok(notes.some((text) => text.startsWith("[replace] ") && text !== "[replace] replaced"));
 }
 
-test("a fresh MAGI shows the provider card on cold start and offers it again after a rejection", async () => {
+test("a fresh MAGI shows a card and the operator can reopen it after cancellation without a model", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-card-"));
   const asp = new Asp({
     databasePath: path.join(root, "asp.sqlite"),
@@ -129,7 +143,14 @@ test("a fresh MAGI shows the provider card on cold start and offers it again aft
       body: JSON.stringify({ content: "card rejected", metadata: { card_reject: { id: card } } }),
     });
     assert.equal(submitted.ok, true);
-    await until("provider card was not offered again", () => cards(magi!.bus).length >= 2);
+    await until("cancellation was not acknowledged", () => magi!.bus.settings.get(`card.receipt.${card}`) !== null);
+    const reopened = await fetch(new URL(`/chats/${address}/messages`, asp.origin), {
+      method: "POST",
+      headers: { authorization: `Bearer ${asp.operatorToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ content: "open provider", metadata: { card_result: { id: `open-${card}`, action: "open" } } }),
+    });
+    assert.equal(reopened.ok, true);
+    await until("provider card was not opened", () => cards(magi!.bus).length >= 2);
     assert.equal(cards(magi.bus).length, 2);
     let again = "";
     await until("the card was not sent a second time", async () => {
@@ -150,9 +171,8 @@ test("a fresh MAGI shows the provider card on cold start and offers it again aft
       body: JSON.stringify({ content: "card rejected", metadata: { card_reject: { id: again } } }),
     });
     assert.equal(againSubmitted.ok, true);
-    await until("the operator was not told the card had stopped", () => magi!.bus.chats.list().some((candidate) =>
-      magi!.bus.messages.list(candidate.id).some((message) => message.content.includes("will not be shown again"))));
-    assert.equal(magi.bus.settings.get("provider.card.rejections"), "2");
+    await until("second cancellation was not acknowledged", () => magi!.bus.settings.get(`card.receipt.${again}`) !== null);
+    assert.equal(magi.bus.settings.get("provider.card.stopped"), "1");
     const workspace = path.join(root, "receiver");
     await magi.stop();
     magi = new Magi(handle, {
@@ -166,7 +186,7 @@ test("a fresh MAGI shows the provider card on cold start and offers it again aft
     await magi.start();
     await sleep(400);
     assert.equal(cards(magi.bus).length, 2);
-    assert.equal(magi.bus.settings.get("provider.card.rejections"), "2");
+    assert.equal(magi.bus.settings.get("provider.card.stopped"), "1");
     assert.equal(calls, 0);
     assert.equal(magi.bus.secrets.get("provider.api_key"), null);
   } finally {
@@ -215,9 +235,10 @@ test("two restarts do not count as rejecting the provider card", async () => {
     await sleep(400);
     const texts = magi.bus.chats.list().flatMap((chat) => magi!.bus.messages.list(chat.id, 50).map((message) => message.content));
     assert.equal(texts.some((text) => text.includes("rejected") || text.includes("will not be shown again")), false);
-    assert.equal(magi.bus.settings.get("provider.card.offers"), "1");
+    assert.equal(magi.bus.settings.get("provider.card.offers"), null);
     assert.equal(magi.bus.settings.get("provider.card.rejections") ?? "0", "0");
     assert.equal(calls, 0);
+    assert.equal(ownerAgentChats(asp, handle).length, 1, "ConfigWorker restart must not open a second owner 1:1");
   } finally {
     await magi?.stop();
     await asp.stop();
@@ -225,7 +246,7 @@ test("two restarts do not count as rejecting the provider card", async () => {
   }
 });
 
-test("one rejection then a restart still shows the provider card", async () => {
+test("an explicitly reopened card survives a restart after cancellation", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-card-reject-restart-"));
   const asp = new Asp({
     databasePath: path.join(root, "asp.sqlite"),
@@ -277,9 +298,15 @@ test("one rejection then a restart still shows the provider card", async () => {
       body: JSON.stringify({ content: "card rejected", metadata: { card_reject: { id: card } } }),
     });
     assert.equal(submitted.ok, true);
-    await until("provider card was not offered again", () => cards(magi!.bus).length >= 2);
-    assert.equal(magi.bus.settings.get("provider.card.offers"), "2");
-    assert.equal(magi.bus.settings.get("provider.card.rejections"), "1");
+    await until("cancellation was not acknowledged", () => magi!.bus.settings.get(`card.receipt.${card}`) !== null);
+    const reopened = await fetch(new URL(`/chats/${address}/messages`, asp.origin), {
+      method: "POST",
+      headers: { authorization: `Bearer ${asp.operatorToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ content: "open provider", metadata: { card_result: { id: `open-${card}`, action: "open" } } }),
+    });
+    assert.equal(reopened.ok, true);
+    await until("provider card was not opened", () => cards(magi!.bus).length >= 2);
+    assert.equal(magi.bus.settings.get("provider.card.rejections"), "0");
     const before = cards(magi.bus).length;
     await magi.stop();
     magi = new Magi(handle, { workspace, asp: { base: asp.origin, token }, client });
@@ -288,8 +315,7 @@ test("one rejection then a restart still shows the provider card", async () => {
     await sleep(400);
     const texts = magi.bus.chats.list().flatMap((candidate) => magi!.bus.messages.list(candidate.id, 50).map((message) => message.content));
     assert.equal(texts.some((text) => text.includes("will not be shown again")), false);
-    assert.equal(magi.bus.settings.get("provider.card.offers"), "2");
-    assert.equal(magi.bus.settings.get("provider.card.rejections"), "1");
+    assert.equal(magi.bus.settings.get("provider.card.rejections"), "0");
   } finally {
     await magi?.stop();
     await asp.stop();
@@ -506,7 +532,7 @@ test("a broken shell build is restored and the operator is told", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-shell-rollback-"));
   const checkout = writeBrokenApp(root, "shell", "build:process");
   const workspace = path.join(root, "workspace");
-  const bus = new Bus("@eva-000.magi", workspace);
+  const bus = new Bus(SHELL_MAGI_HANDLE, workspace);
   bus.secrets.set("provider.api_key", "present");
   const manager = new ManagerWorker(bus, [], { build: { app: "shell", script: "build:process" } });
   try {
@@ -563,7 +589,7 @@ test("provider sync stores the key and keeps it out of the message text", async 
   let magi: Magi | null = null;
   try {
     await asp.start();
-    const known = new Set(["@eva-000.magi", "@eva-001.magi", "@eva-002.magi"]);
+    const known = new Set([SHELL_MAGI_HANDLE, ASP_MAGI_HANDLE, EVA_MAGI_HANDLE]);
     const bots: Array<{ handle: string; token: string }> = [];
     while (bots.length < 2 || !bots.some((bot) => !known.has(bot.handle))) {
       const created = await fetch(new URL("/chats", asp.origin), {

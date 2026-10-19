@@ -8,6 +8,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
+import { ASP_MAGI_HANDLE, EVA_MAGI_HANDLE, SHELL_MAGI_HANDLE } from "@magi/bus";
 import { agentBranch, agentSource, createMagiRuntime } from "@magi/webapp/magi-runtime.js";
 
 const exec = promisify(execFile);
@@ -136,21 +137,21 @@ test("in-process hosts are not spawned as eva.js children", async (t) => {
   const runtime = runtimeWith(origin, home, recorded);
 
   const started = await runtime.startAll([
-    { handle: "@eva-000.magi", token: "tok-0" },
-    { handle: "@eva-001.magi", token: "tok-1" },
-    { handle: "@eva-002.magi", token: "tok-2" },
+    { handle: SHELL_MAGI_HANDLE, token: "tok-0" },
+    { handle: ASP_MAGI_HANDLE, token: "tok-1" },
+    { handle: EVA_MAGI_HANDLE, token: "tok-2" },
   ]);
   assert.deepEqual(started.started, []);
   assert.equal(started.failed.length, 1);
-  assert.equal(started.failed[0].handle, "@eva-002.magi");
+  assert.equal(started.failed[0].handle, EVA_MAGI_HANDLE);
   assert.match(started.failed[0].detail, /eva --role agent/);
   assert.equal(recorded.spawns.length, 0);
   assert.deepEqual(runtime.running(), []);
-  assert.deepEqual(await runtime.start({ handle: "@eva-000.magi", token: "tok-0" }), {
-    handle: "@eva-000.magi",
+  assert.deepEqual(await runtime.start({ handle: SHELL_MAGI_HANDLE, token: "tok-0" }), {
+    handle: SHELL_MAGI_HANDLE,
     started: false,
   });
-  assert.equal(runtime.stop("@eva-001.magi"), false);
+  assert.equal(runtime.stop(ASP_MAGI_HANDLE), false);
   assert.equal(recorded.spawns.length, 0);
 });
 

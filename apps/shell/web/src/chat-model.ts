@@ -10,7 +10,7 @@ export type ChatMessage =
   | { type: "bot"; text: string }
   | { type: "typing" }
   | { type: "card"; lines: { k: string; v: string }[] }
-  | { type: "form"; text: string; chatId: string; card: CardSpec };
+  | { type: "form"; text: string; chatId: string; card: CardSpec; state?: import("./provider-form").CardState };
 
 export type RoutineRun = {
   mark: string;

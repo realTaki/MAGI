@@ -12,19 +12,19 @@ import path from "node:path";
 import { isInProcessMagiHandle } from "@magi/bus";
 import { ensureManagedClone } from "./clone.js";
 
-/** Branch per MAGI: `magi/eva-000`. */
+/** Branch per MAGI: `magi/<name>` (`magi/shell` for Balthasar). */
 export const AGENT_BRANCH_PREFIX = "magi/";
 
 export function agentName(handle) {
   return String(handle ?? "").replace(/^@/, "").replace(/\.magi$/, "");
 }
 
-/** `~/.magi/eva-000` — the workspace the MAGI's own state lives in. */
+/** `~/.magi/<name>` — the workspace the MAGI's own state lives in. */
 export function agentWorkspace(home, handle) {
   return path.join(home, ".magi", agentName(handle));
 }
 
-/** `~/.magi/eva-000/MAGI` — this MAGI's own checkout of the source. */
+/** `~/.magi/<name>/MAGI` — this MAGI's own checkout of the source. */
 export function agentSource(home, handle) {
   return path.join(agentWorkspace(home, handle), "MAGI");
 }

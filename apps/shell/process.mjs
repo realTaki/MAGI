@@ -13,6 +13,7 @@ import { ensureInstalledDependencies } from "./installation.mjs";
 import { spawn } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
+import { ASP_MAGI_HANDLE, SHELL_MAGI_HANDLE } from "@magi/bus";
 import { replaceFailedPath } from "@magi/bus/replaceMarker.js";
 import { LAUNCHER_PROTOCOL } from "@magi/runtime/protocol.js";
 import { createInterface } from "node:readline";
@@ -63,8 +64,8 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
   function markerHandle(spec) {
     const app = describeApp(spec);
     if (!app) return null;
-    if (app.kind === "asp") return "@eva-001.magi";
-    if (app.kind === "shell") return "@eva-000.magi";
+    if (app.kind === "asp") return ASP_MAGI_HANDLE;
+    if (app.kind === "shell") return SHELL_MAGI_HANDLE;
     return app.handle;
   }
 
@@ -207,6 +208,10 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
               recordReplaceFailure(record.spec, job, `${text}; ${detail}`);
             });
           });
+          return;
+        }
+        if (message?.type === "interface-updated" && isHost && entry.ready && !entry.stopping && message.v === LAUNCHER_PROTOCOL && typeof message.ui === "string") {
+          void host.emit?.({ event: "app.interface-updated", payload: { ui: message.ui } });
           return;
         }
         if (message?.type === "failed") {

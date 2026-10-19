@@ -40,6 +40,7 @@ export function SettingsPage() {
   const [shellUpdating, setShellUpdating] = useState(false);
 
   const [runtimeStatus, setRuntimeStatus] = useState("");
+  const [sourceCheckout, setSourceCheckout] = useState("");
   const [runtimeMessage, setRuntimeMessage] = useState("");
   const [runtimeBusy, setRuntimeBusy] = useState(false);
 
@@ -48,8 +49,9 @@ export function SettingsPage() {
     let cancelled = false;
     void window.magiDesktop?.invokeLocal?.("runtime.status").then((value) => {
       if (!cancelled) {
-        const state = value as { asp?: string };
+        const state = value as { asp?: string; sourceCheckout?: string };
         setRuntimeStatus(state?.asp ?? "");
+        setSourceCheckout(state?.sourceCheckout ?? "");
       }
     }).catch((error: unknown) => {
       if (!cancelled) setRuntimeMessage(error instanceof Error ? error.message : String(error));
@@ -76,9 +78,10 @@ export function SettingsPage() {
 
   async function refreshRuntimeStatus() {
     const state = await window.magiDesktop?.invokeLocal?.("runtime.status") as
-      | { asp?: string }
+      | { asp?: string; sourceCheckout?: string }
       | undefined;
     setRuntimeStatus(state?.asp ?? "");
+    setSourceCheckout(state?.sourceCheckout ?? "");
   }
 
   /** Stop or start ASP. */
@@ -392,11 +395,22 @@ export function SettingsPage() {
                 <div className="settings-card">
                   <div className="settings-card__label">{t("appSettings.sourceGroup")}</div>
                   <p className="settings-overlay__lede">{t("appSettings.sourceHint")}</p>
+                  {sourceCheckout ? <p className="settings-overlay__lede"><code style={{ overflowWrap: "anywhere" }}>{sourceCheckout}</code></p> : null}
                   <div className="settings-card__actions settings-card__actions--wrap">
                     <ActionButton
                       label={t("appSettings.sourceUpdate")}
                       disabled={runtimeBusy}
                       onRun={() => runSync("source.update")}
+                    />
+                  </div>
+                </div>
+                <div className="settings-card">
+                  <div className="settings-card__label">shell</div>
+                  <div className="settings-card__actions settings-card__actions--wrap">
+                    <ActionButton
+                      label={t("appSettings.syncButton")}
+                      disabled={runtimeBusy}
+                      onRun={() => runSync("runtime.syncApp")}
                     />
                   </div>
                 </div>
@@ -437,16 +451,6 @@ export function SettingsPage() {
                       label={t("appSettings.syncButton")}
                       disabled={runtimeBusy}
                       onRun={() => runMagiAll("magi.syncAll")}
-                    />
-                  </div>
-                </div>
-                <div className="settings-card">
-                  <div className="settings-card__label">App</div>
-                  <div className="settings-card__actions settings-card__actions--wrap">
-                    <ActionButton
-                      label={t("appSettings.syncButton")}
-                      disabled={runtimeBusy}
-                      onRun={() => runSync("runtime.syncApp")}
                     />
                   </div>
                 </div>

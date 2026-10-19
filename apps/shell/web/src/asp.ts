@@ -20,6 +20,7 @@ export type CreatedChat = {
   chat_id: string;
   kind: "bot" | "group";
   agents: string[];
+  state?: "active" | "ended";
   participants?: Array<{ handle: string; status: "invited" | "joined" | "left" }>;
   /** ASP-assigned MAGI name (`eva-000`, …). Present on `kind: "bot"`. */
   name?: string;
@@ -37,7 +38,7 @@ export type AspEvent = {
   payload: {
     sender?: string;
     content?: unknown;
-    metadata?: { card?: CardSpec };
+    metadata?: { card?: CardSpec; [key: string]: unknown };
   };
 };
 

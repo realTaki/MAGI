@@ -29,7 +29,7 @@ function args() {
 }
 
 function nodeName(role, rest) {
-  if (role === "shell") return "eva-000";
+  if (role === "shell") return "shell";
   if (role === "asp") return "eva-001";
   const handle = rest[0] || "agent";
   return handle.replace(/^@/, "").replace(/\.magi$/, "");
@@ -104,6 +104,7 @@ function spawnChild(role, rest, name, { script, revision, previous, replaceJob, 
     MAGI_HOME: magiHome(),
     MAGI_NODE_NAME: name,
     MAGI_LAUNCHER: launcherFile,
+    ...(role === "shell" ? { MAGI_APP_CHECKOUT: resolve(dirname(script), "..", "..", "..") } : {}),
     ...(rest[0] ? { MAGI_HANDLE: rest[0] } : {}),
     ...(rest[1] ? { MAGI_ASP: rest[1] } : {}),
     ...(rest[2] ? { MAGI_ASP_TOKEN: rest[2] } : {}),
@@ -264,6 +265,11 @@ async function main() {
     await switchTo(message);
   };
 
+  function interfaceUpdated(dir) {
+    if (role !== "shell" || process.env.MAGI_HOST !== "1" || !dir || typeof process.send !== "function") return;
+    process.send({ v: LAUNCHER_PROTOCOL, type: "interface-updated", ui: join(dir, "apps", "shell", "dist", "index.html") });
+  }
+
   async function switchTo(message) {
     replaced = true;
     const job = Number.isInteger(message.job) ? message.job : null;
@@ -282,6 +288,7 @@ async function main() {
       state.currentDir = message.dir;
       writeState(name, state);
       pruneRevisions(name, new Set([state.current, state.previous].filter(Boolean)));
+      interfaceUpdated(state.currentDir);
     } catch (error) {
       if (next) killTree(next);
       const text = report(name, error, job);
@@ -392,6 +399,7 @@ async function main() {
     pruneRevisions(name, new Set([state.current, state.previous].filter(Boolean)));
   }
   if (typeof process.send === "function") process.send({ v: LAUNCHER_PROTOCOL, type: "ready" });
+  if (Number.isInteger(inheritedJob) && !inheritedError) interfaceUpdated(state.currentDir);
   const stop = () => {
     replaced = true;
     void stopAndWait(current, role).then(() => process.exit(0));

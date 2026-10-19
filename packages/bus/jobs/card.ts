@@ -17,6 +17,9 @@ export type CardSpec = {
   handle: string;
   submit: string;
   fields: CardField[];
+  purpose?: "provider";
+  /** Public defaults only. Never include a secret. */
+  values?: { provider?: string; model?: string; base_url?: string };
 };
 
 export type CardJob = { spec: CardSpec };
@@ -30,10 +33,12 @@ export const PROVIDER_CHOICES = ["openai", "anthropic", "minimax-cn", "minimax-g
 export const CARD_RESTART_ERROR = "MAGI restarted before this card was filled";
 
 /** The provider form. Startup shows this before any model turn; the skill uses the same fields later. */
-export function providerCard(handle: string): CardSpec {
+export function providerCard(handle: string, values: CardSpec["values"] = {}): CardSpec {
   return {
     id: randomUUID(),
     title: "Provider",
+    purpose: "provider",
+    values: { provider: values.provider, model: values.model, base_url: values.base_url },
     handle,
     submit: "Save",
     fields: [

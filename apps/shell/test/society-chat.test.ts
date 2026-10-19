@@ -139,7 +139,7 @@ test("operator DMs each MAGI and MAGIs deliver to each other through ASP", async
   const melchior = await bot(EVA_MAGI_HANDLE);
 
   const magi000 = new Magi(SHELL_MAGI_HANDLE, {
-    workspace: path.join(root, "eva-000"),
+    workspace: path.join(root, "shell"),
     client: fakeClient(SHELL_MAGI_HANDLE),
   });
   const magi002 = new Magi(EVA_MAGI_HANDLE, {
@@ -162,7 +162,7 @@ test("operator DMs each MAGI and MAGIs deliver to each other through ASP", async
   await until("Melchior joined 1:1", () => joined(origin, token, melchior.chatId, EVA_MAGI_HANDLE));
 
   assert.equal((await request(origin, "POST", `/chats/${balthasar.chatId}/messages`, {
-    token, body: { content: "@eva-000.magi ping" },
+    token, body: { content: "@shell.magi ping" },
   })).status, 201);
   assert.equal((await request(origin, "POST", `/chats/${casper.chatId}/messages`, {
     token, body: { content: "@eva-001.magi ping" },
@@ -171,7 +171,7 @@ test("operator DMs each MAGI and MAGIs deliver to each other through ASP", async
     token, body: { content: "@eva-002.magi ping" },
   })).status, 201);
 
-  await waitForContent(origin, token, balthasar.chatId, SHELL_MAGI_HANDLE, "ok:eva-000");
+  await waitForContent(origin, token, balthasar.chatId, SHELL_MAGI_HANDLE, "ok:shell");
   await waitForContent(origin, token, casper.chatId, ASP_MAGI_HANDLE, "ok:eva-001");
   await waitForContent(origin, token, melchior.chatId, EVA_MAGI_HANDLE, "ok:eva-002");
 
@@ -190,8 +190,8 @@ test("operator DMs each MAGI and MAGIs deliver to each other through ASP", async
   await waitForContent(origin, token, groupId, EVA_MAGI_HANDLE, "ok:eva-002");
 
   const casperChat = asp.bus.chats.forChannel("asp", groupId);
-  messageDelivery.send(asp.bus, casperChat.id, "@eva-000.magi from casper", MAGI_CONTACT_ID, "asp");
-  await waitForContent(origin, token, groupId, SHELL_MAGI_HANDLE, "ok:eva-000");
+  messageDelivery.send(asp.bus, casperChat.id, "@shell.magi from casper", MAGI_CONTACT_ID, "asp");
+  await waitForContent(origin, token, groupId, SHELL_MAGI_HANDLE, "ok:shell");
 
   const balthasarChat = magi000.bus.chats.forChannel("asp", groupId);
   messageDelivery.send(magi000.bus, balthasarChat.id, "@eva-002.magi from balthasar", MAGI_CONTACT_ID, "asp");

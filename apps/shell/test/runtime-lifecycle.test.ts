@@ -7,6 +7,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { ASP_MAGI_HANDLE, EVA_MAGI_HANDLE, SHELL_MAGI_HANDLE } from "@magi/bus";
 import { createLocalApi } from "../shell.ts";
 
 function git(cwd, args) {
@@ -51,22 +52,22 @@ test("retiring the client leaves an ASP the shell did not start", async (t) => {
     if (endpoint === "/agents") {
       return Response.json({
         agents: [
-          { handle: "@eva-000.magi", token: "tok-0", name: "eva-000", managed: true, online: true },
-          { handle: "@eva-001.magi", token: "tok-1", name: "CASPER", managed: true, online: false },
+          { handle: SHELL_MAGI_HANDLE, token: "tok-0", name: "shell", managed: true, online: true },
+          { handle: ASP_MAGI_HANDLE, token: "tok-1", name: "CASPER", managed: true, online: false },
         ],
       });
     }
     if (endpoint === "/chats") {
       return Response.json({
         chats: [
-          { chat_id: "s0", kind: "bot", agents: ["@eva-000.magi"] },
-          { chat_id: "s1", kind: "bot", agents: ["@eva-001.magi"] },
-          { chat_id: "s2", kind: "bot", agents: ["@eva-002.magi"] },
+          { chat_id: "s0", kind: "bot", agents: [SHELL_MAGI_HANDLE] },
+          { chat_id: "s1", kind: "bot", agents: [ASP_MAGI_HANDLE] },
+          { chat_id: "s2", kind: "bot", agents: [EVA_MAGI_HANDLE] },
         ],
       });
     }
     if (endpoint === "/bots") {
-      return Response.json({ bots: [{ handle: "@eva-000.magi", online: true }] });
+      return Response.json({ bots: [{ handle: SHELL_MAGI_HANDLE, online: true }] });
     }
     throw new Error(`unexpected request: ${options.method ?? "GET"} ${url}`);
   };
@@ -155,21 +156,21 @@ test("the operator process creates and runs ASP from its own magi/asp clone", as
       return healthy ? Response.json({ status: "ok", runtime: "typescript" }) : Response.json({}, { status: 503 });
     }
     if (new URL(url).pathname === "/operator") return Response.json({ token: "operator-token" });
-    if (new URL(url).pathname === "/bots") return Response.json({ bots: [{ handle: "@eva-000.magi", online: true }] });
+    if (new URL(url).pathname === "/bots") return Response.json({ bots: [{ handle: SHELL_MAGI_HANDLE, online: true }] });
     if (new URL(url).pathname === "/agents") {
       return Response.json({
         agents: [
-          { handle: "@eva-000.magi", token: "tok-0", name: "eva-000", managed: true, online: true },
-          { handle: "@eva-001.magi", token: "tok-1", name: "CASPER", managed: true, online: false },
+          { handle: SHELL_MAGI_HANDLE, token: "tok-0", name: "shell", managed: true, online: true },
+          { handle: ASP_MAGI_HANDLE, token: "tok-1", name: "CASPER", managed: true, online: false },
         ],
       });
     }
     if (new URL(url).pathname === "/chats") {
       return Response.json({
         chats: [
-          { chat_id: "s0", kind: "bot", agents: ["@eva-000.magi"] },
-          { chat_id: "s1", kind: "bot", agents: ["@eva-001.magi"] },
-          { chat_id: "s2", kind: "bot", agents: ["@eva-002.magi"] },
+          { chat_id: "s0", kind: "bot", agents: [SHELL_MAGI_HANDLE] },
+          { chat_id: "s1", kind: "bot", agents: [ASP_MAGI_HANDLE] },
+          { chat_id: "s2", kind: "bot", agents: [EVA_MAGI_HANDLE] },
         ],
       });
     }
@@ -208,12 +209,12 @@ test("a MAGI's runtime is driven from its own profile methods", async (t) => {
     calls.push(`${options.method ?? "GET"} ${endpoint}`);
     if (endpoint === "/health") return Response.json({ status: "ok", runtime: "typescript" });
     if (endpoint === "/operator") return Response.json({ token: "operator-token" });
-    if (endpoint === "/bots") return Response.json({ bots: [{ handle: "@eva-000.magi", online: true }, { handle: "@eva-001.magi", online: false }] });
+    if (endpoint === "/bots") return Response.json({ bots: [{ handle: SHELL_MAGI_HANDLE, online: true }, { handle: ASP_MAGI_HANDLE, online: false }] });
     if (endpoint === "/agents") {
       return Response.json({
         agents: [
-          { handle: "@eva-000.magi", token: "tok-0", name: "eva-000", managed: true, online: true },
-          { handle: "@eva-001.magi", token: "tok-1", name: "eva-001", managed: true, online: false },
+          { handle: SHELL_MAGI_HANDLE, token: "tok-0", name: "shell", managed: true, online: true },
+          { handle: ASP_MAGI_HANDLE, token: "tok-1", name: "eva-001", managed: true, online: false },
         ],
       });
     }
@@ -232,18 +233,81 @@ test("a MAGI's runtime is driven from its own profile methods", async (t) => {
   });
   assert.deepEqual(await api["runtime.status"](), {
     asp: "ready", owned: false, magiOnline: 1,
+    sourceCheckout: root, runtimeCheckout: root,
   });
-  assert.deepEqual(await api["magi.info"]({ handle: "@eva-000.magi" }), {
-    handle: "@eva-000.magi",
+  assert.deepEqual(await api["magi.info"]({ handle: SHELL_MAGI_HANDLE }), {
+    handle: SHELL_MAGI_HANDLE,
     online: true,
     running: false,
     branch: "",
     source: root,
   });
-  assert.deepEqual(await api["magi.stop"]({ handle: "@eva-000.magi" }), { handle: "@eva-000.magi", stopped: false });
+  assert.deepEqual(await api["magi.stop"]({ handle: SHELL_MAGI_HANDLE }), { handle: SHELL_MAGI_HANDLE, stopped: false });
   await assert.rejects(api["magi.start"]({ handle: "@nobody.magi" }), /Unknown MAGI/);
   await assert.rejects(api["magi.start"]({}), /handle is required/);
   assert.equal(calls.includes("POST /runtime/magi/stop"), false);
   assert.ok(calls.includes("GET /agents"));
+  await api.dispose();
+});
+
+test("ensureDefaultMagis reuses an existing owner 1:1 and does not open a second", async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-default-1to1-"));
+  let api;
+  const checkout = path.join(root, "checkout");
+  mkdirSync(path.join(checkout, "apps", "asp", "dist"), { recursive: true });
+  writeFileSync(path.join(checkout, "apps", "asp", "dist", "asp.js"), "");
+  const originalFetch = globalThis.fetch;
+  const createdHandles = [];
+  const chats = [
+    { chat_id: "old-balthasar", name: "BALTHASAR", kind: "bot", agents: ["@eva-000.magi"], created_at: 0 },
+    { chat_id: "casper-1", kind: "bot", agents: [ASP_MAGI_HANDLE], created_at: 1 },
+  ];
+  globalThis.fetch = async (url, options = {}) => {
+    const endpoint = new URL(url).pathname;
+    const method = options.method ?? "GET";
+    if (endpoint === "/health") return Response.json({ status: "ok", runtime: "typescript" });
+    if (endpoint === "/operator") return Response.json({ token: "operator-token" });
+    if (endpoint === "/agents") {
+      return Response.json({
+        agents: [
+          { handle: SHELL_MAGI_HANDLE, token: "tok-0", name: "shell", managed: true, online: true },
+          { handle: ASP_MAGI_HANDLE, token: "tok-1", name: "CASPER", managed: true, online: true },
+        ],
+      });
+    }
+    if (endpoint === "/chats" && method === "GET") return Response.json({ chats });
+    if (endpoint === "/chats" && method === "POST") {
+      const body = JSON.parse(String(options.body ?? "{}"));
+      createdHandles.push(body.handle);
+      const chat_id = `new-${body.handle}`;
+      chats.push({ chat_id, kind: "bot", agents: [body.handle], created_at: Date.now() });
+      return Response.json({ chat_id, kind: "bot", agents: [body.handle] });
+    }
+    if (endpoint === "/bots") return Response.json({ bots: [] });
+    if (method === "PATCH" && endpoint.startsWith("/bots/")) return Response.json({ ok: true });
+    if (method === "POST" && endpoint.endsWith("/messages")) return Response.json({ ok: true });
+    throw new Error(`unexpected request: ${method} ${url}`);
+  };
+  t.after(async () => {
+    await api?.dispose();
+    globalThis.fetch = originalFetch;
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
+  api = createLocalApi({
+    paths: { home: root, userData: path.join(root, "userData"), checkout },
+    repository: "https://github.com/AgenticSocietyLab/MAGI.git",
+    tools: { git: "git", env: process.env },
+    emit: () => {},
+    openExternal: async () => {},
+    copy: () => {},
+  });
+  await api.start();
+  assert.equal(createdHandles.includes(ASP_MAGI_HANDLE), false, "Casper already has a 1:1");
+  assert.equal(createdHandles.filter((handle) => handle === ASP_MAGI_HANDLE).length, 0);
+  assert.equal(chats.filter((chat) => chat.agents[0] === ASP_MAGI_HANDLE).length, 1);
+  assert.equal(createdHandles.includes(SHELL_MAGI_HANDLE), true);
+  assert.equal(createdHandles.includes(EVA_MAGI_HANDLE), true);
+  assert.equal(chats.filter((chat) => chat.agents[0] === "@eva-000.magi").length, 1, "old Shell identity is retained");
+  assert.equal(chats.filter((chat) => chat.agents[0] === SHELL_MAGI_HANDLE).length, 1, "default setup creates the renamed handle separately");
   await api.dispose();
 });

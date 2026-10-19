@@ -12,6 +12,7 @@ import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 import { Bus, messageDelivery } from "@magi/bus";
 import { createSupervisor } from "../process.mjs";
+import { applyInterfaceUpdate } from "../interface.mjs";
 
 const repo = path.resolve(import.meta.dirname, "../../..");
 const launcher = path.join(repo, "apps", "eva", "eva.mjs");
@@ -60,11 +61,14 @@ setInterval(() => {}, 1000);
   const deadline = Date.now() + 8_000;
   while (Date.now() < deadline && proc.exitCode == null) {
     try {
-      assert.equal(readFileSync(proof, "utf8"), "from-b");
+      // The new child can write the proof before the launcher records current=b.
+      // Keep waiting for both; only ENOENT used to retry, so `'a' !== 'b'` aborted the test.
+      if (readFileSync(proof, "utf8") !== "from-b") {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        continue;
+      }
       const state = JSON.parse(readFileSync(path.join(home, "eva-002", "launcher.json"), "utf8"));
-      assert.equal(state.current, "b");
-      assert.equal(state.previous, "a");
-      return;
+      if (state.current === "b" && state.previous === "a") return;
     } catch (error) {
       if (error?.code !== "ENOENT") throw error;
     }
@@ -287,3 +291,56 @@ main();
 function exists(file) {
   try { readFileSync(file); return true; } catch { return false; }
 }
+
+test('a Shell switch activates its revision UI path and auto-reloads the open window', async (t) => {
+  const home = mkdtempSync(path.join(tmpdir(), 'magi-shell-ui-switch-'));
+  const proof = path.join(home, 'proof.json');
+  const source = path.join(home, 'shell', 'MAGI');
+  const next = path.join(home, 'shell', 'revisions', 'next');
+  mkdirSync(source, { recursive: true });
+  childAt(home, 'shell', 'next', `require('node:fs').writeFileSync(${JSON.stringify(proof)},JSON.stringify({checkout:process.env.MAGI_CHECKOUT,appCheckout:process.env.MAGI_APP_CHECKOUT}));import(${JSON.stringify(pathToFileURL(path.join(repo,'packages/node/dist/child.js')).href)});`);
+  const candidateChild = readFileSync(path.join(next, 'packages/node/dist/child.js'), 'utf8');
+  childAt(home, 'shell', 'old', `process.send({v:1,type:'hello'});process.send({v:1,type:'ready'});process.on('message',m=>{if(m.type==='shutdown')process.exit(0)});setTimeout(()=>{const f=require('node:fs');f.mkdirSync(${JSON.stringify(path.join(next,'packages/node/dist'))},{recursive:true});f.writeFileSync(${JSON.stringify(path.join(next,'packages/node/dist/child.js'))},${JSON.stringify(candidateChild)});f.mkdirSync(${JSON.stringify(path.join(next,'apps/shell/dist'))},{recursive:true});f.writeFileSync(${JSON.stringify(path.join(next,'apps/shell/dist/index.html'))},'candidate UI');process.send({v:1,type:'switch',revision:'next',dir:${JSON.stringify(next)},job:7})},100);setInterval(()=>{},1000);`);
+  mkdirSync(path.join(next, 'apps/shell/dist'), { recursive: true });
+  writeFileSync(path.join(next, 'apps/shell/dist/index.html'), 'candidate UI');
+  const events = [];
+  const loaded = [];
+  const win = { isDestroyed: () => false, loadFile: async (file) => { loaded.push(file); assert.equal(readFileSync(file, 'utf8'), 'candidate UI'); } };
+  const supervisor = createSupervisor({ node: process.execPath, env: { ...process.env, MAGI_NODE: process.execPath } });
+  t.after(async () => { await supervisor.close(); rmSync(home, { recursive: true, force: true }); });
+  const handle = await supervisor.start({ entry: launcher, cwd: path.dirname(launcher), args: ['--role', 'shell'], env: { MAGI_HOME: home, MAGI_HOST: '1', MAGI_REVISION: 'old', MAGI_REVISION_DIR: path.join(home, 'shell/revisions/old'), MAGI_CHECKOUT: source, MAGI_APP_CHECKOUT: source, MAGI_NODE: process.execPath, MAGI_GIT: 'git', MAGI_NPM: path.join(repo,'apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js'), MAGI_OS_HOME: home, MAGI_USER_DATA: path.join(home,'shell/electron'), MAGI_REPOSITORY: 'https://github.com/realTaki/MAGI.git' } }, { host: { emit: (event) => { events.push(event); if (event.event === 'app.interface-updated') void applyInterfaceUpdate(handle, win, event.payload); } } });
+  await handle.whenReady();
+  const deadline = Date.now() + 8000;
+  while (!exists(proof) && Date.now() < deadline) await new Promise(r => setTimeout(r, 20));
+  const paths = JSON.parse(readFileSync(proof, 'utf8'));
+  assert.equal(paths.checkout, source, 'editable Git authority stays at its original checkout');
+  assert.equal(paths.appCheckout, next, 'active UI must come from the new revision');
+  while ((!events.length || !loaded.length) && Date.now() < deadline) await new Promise(r => setTimeout(r, 20));
+  const ui = path.join(next, 'apps/shell/dist/index.html');
+  assert.deepEqual(events, [{ event: 'app.interface-updated', payload: { ui } }]);
+  assert.deepEqual(loaded, [ui], 'the open window loadFiles the revision UI without confirmation');
+  assert.equal(JSON.parse(readFileSync(path.join(home, 'shell/launcher.json'), 'utf8')).current, 'next');
+});
+
+test('a failed Shell candidate restores the old checkout and never offers UI activation', async (t) => {
+  const home = mkdtempSync(path.join(tmpdir(), 'magi-shell-ui-failed-'));
+  const proof = path.join(home, 'restored.json');
+  const source = path.join(home, 'shell/MAGI'), old = path.join(home, 'shell/revisions/old'), bad = path.join(home, 'shell/revisions/bad');
+  mkdirSync(source, { recursive: true });
+  childAt(home, 'shell', 'old', `process.send({v:1,type:'hello'});process.on('message',m=>{if(m.type==='shutdown')process.exit(0)});process.send({v:1,type:'ready'});if(process.env.MAGI_REPLACE_ERROR)require('node:fs').writeFileSync(${JSON.stringify(proof)},JSON.stringify({checkout:process.env.MAGI_CHECKOUT,appCheckout:process.env.MAGI_APP_CHECKOUT,error:process.env.MAGI_REPLACE_ERROR}));else setTimeout(()=>{const f=require('node:fs');f.mkdirSync(${JSON.stringify(path.join(bad,'packages/node/dist'))},{recursive:true});f.writeFileSync(${JSON.stringify(path.join(bad,'packages/node/dist/child.js'))},"process.send({v:1,type:'hello'});process.exit(2)");process.send({v:1,type:'switch',revision:'bad',dir:${JSON.stringify(bad)},job:8})},100);setInterval(()=>{},1000);`);
+  const events = [];
+  const loaded = [];
+  const win = { isDestroyed: () => false, loadFile: async (file) => { loaded.push(file); } };
+  const supervisor = createSupervisor({ node: process.execPath, env: { ...process.env, MAGI_NODE: process.execPath } });
+  t.after(async () => { await supervisor.close(); rmSync(home, { recursive: true, force: true }); });
+  const handle = await supervisor.start({ entry: launcher, cwd: path.dirname(launcher), args: ['--role','shell'], env: { MAGI_HOME: home, MAGI_HOST: '1', MAGI_REVISION: 'old', MAGI_REVISION_DIR: old, MAGI_CHECKOUT: source, MAGI_APP_CHECKOUT: source, MAGI_NODE: process.execPath, MAGI_GIT: 'git', MAGI_NPM: path.join(repo,'apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js'), MAGI_OS_HOME: home, MAGI_USER_DATA: path.join(home,'shell/electron'), MAGI_REPOSITORY: 'https://github.com/realTaki/MAGI.git' } }, { host: { emit: (event) => { events.push(event); if (event.event === 'app.interface-updated') void applyInterfaceUpdate(handle, win, event.payload); } } });
+  await handle.whenReady();
+  const deadline = Date.now() + 8000;
+  while (!exists(proof) && Date.now() < deadline) await new Promise(r => setTimeout(r,20));
+  const restored = JSON.parse(readFileSync(proof,'utf8'));
+  assert.equal(restored.checkout,source); assert.equal(restored.appCheckout,old); assert.match(restored.error,/exited 2/);
+  const state = JSON.parse(readFileSync(path.join(home,'shell/launcher.json'),'utf8'));
+  assert.equal(state.current,'old'); assert.equal(state.currentDir,old);
+  assert.deepEqual(events,[]);
+  assert.deepEqual(loaded, []);
+});

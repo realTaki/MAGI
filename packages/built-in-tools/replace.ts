@@ -5,14 +5,15 @@
  */
 
 import type { Bus, ExecutableTool } from "@magi/bus";
+import { editableSource } from "./source.js";
 
 export function replaceTools(bus: Bus): ExecutableTool[] {
   return [{
     name: "replace_self",
-    description: "Rebuild this MAGI's checkout and replace this process. Returns the job id and status immediately. A failed build is rolled back and reported in the chat.",
+    description: "Rebuild this node's editable source (Shell's startup checkout, or this node's MAGI/) and replace this process. No branch commit or push is needed. Returns the job id and status immediately. A failed build is rolled back and reported in the chat.",
     input_schema: { type: "object", properties: {} },
     async run() {
-      const id = bus.board("ReplaceSelfJob").publish({ swap: true }, "tools");
+      const id = bus.board("ReplaceSelfJob").publish({ checkout: editableSource(bus), swap: true }, "tools");
       return JSON.stringify({ id, status: "pending" });
     },
   }];
