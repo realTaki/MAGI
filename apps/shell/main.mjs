@@ -376,9 +376,11 @@ function createWindow() {
     minHeight: Math.min(MINIMUM_WINDOW_SIZE.height, initial.bounds.height),
     title: "MAGI",
     show: false,
+    // Keep native controls on every screen, including startup and failures.
+    // Only macOS has inset traffic lights alongside the renderer's drag regions.
     ...(process.platform === "darwin"
       ? { titleBarStyle: "hiddenInset" }
-      : { frame: false }),
+      : { frame: true }),
     autoHideMenuBar: true,
     webPreferences: {
       sandbox: true,
