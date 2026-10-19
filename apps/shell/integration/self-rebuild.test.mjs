@@ -368,7 +368,7 @@ test('a failed Shell candidate restores the old checkout and never offers UI act
 
 test('desktop handoff preserves rollback revisions and consumes its override before a later node switch', async t => {
   const home = mkdtempSync(path.join(tmpdir(), 'magi-desktop-launcher-'));
-  t.after(() => rmSync(home, { recursive: true, force: true }));
+  // start() owns teardown: stop the launcher tree before removing its live files.
   const trigger = path.join(home, 'switch'), proof = path.join(home, 'proof');
   const old = childAt(home, 'shell', 'old', '');
   const older = childAt(home, 'shell', 'older', '');
