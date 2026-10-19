@@ -120,3 +120,18 @@ passed 7/7. UI build/typecheck passed for the Windows command changes. This is
 Linux evidence; the next pushed revision's native CI must establish Windows
 acceptance. PowerShell transport follows the documented UTF-16LE
 [`-EncodedCommand` format](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_powershell_exe?view=powershell-5.1).
+
+Native Windows run `39327065849` at `717aaabb` confirmed root acceptance:
+188 passed, zero failed, two existing platform skips. Both previously failing
+cases, quoted foreground output/nonzero exit, and the manager shutdown race
+passed. Linux and macOS validation also passed for this revision.
+
+The Windows IPC step then exposed pre-existing fixture cleanup defects: negative
+PID termination is POSIX-only, and an after-hook removed a live launcher's
+workspace first (`EPERM` in the job-error test). All seven assertion cases had
+finished before the runner hung on leaked children; one case failed its cleanup.
+The run was explicitly cancelled rather than called green. The fixture now kills
+its exact owned Windows tree with taskkill, waits for close, and only then removes
+the temporary directory. Its diagnostic path is also inside the temporary fixture,
+not hard-coded `/tmp`. Linux real IPC remains 7/7 after this correction. Native
+Windows validation must be rerun for the final fixture revision.
