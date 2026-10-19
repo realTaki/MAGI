@@ -352,12 +352,11 @@ function failReplace(bus: Bus, error: string, chatId: number | undefined, kind: 
   const chat = typeof chatId === "number" && Number.isInteger(chatId) && chatId > 0 ? chatId : 0;
   const live = chat > 0 ? bus.chats.get(chat) : null;
   if (kind === "crash") {
-    const text = `[replace] the process was not replaced (launcher rollback or crash).\n\n${tail}`;
     if (live) {
-      messageDelivery.send(bus, chat, text, SYSTEM_CONTACT_ID, "replace");
+      messageDelivery.send(bus, chat, `[replace] the process was not replaced (launcher rollback or crash).\n\n${tail}`, SYSTEM_CONTACT_ID, "replace");
       return;
     }
-    tell(bus, text);
+    tell(bus, `[replace] ${tail}`);
     return;
   }
   if (!live) {
