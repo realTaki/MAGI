@@ -53,3 +53,6 @@ export { chat } from "./chat.js";
 export type { ChatInput, ChatDelivery, ChatReceipt, CardSubmission, ProviderEnvelope } from "./chat.js";
 
 export type { PeerInbound, PeerReceipt } from "./jobs/messageDelivery.js";
+
+export { groupPrincipal } from "./books/groupBook.js";
+export type { Group, GroupMember, GroupMembership, GroupEvent, SignedGroupMembership, SignedGroupEvent, GroupReceipt } from "./books/groupBook.js";

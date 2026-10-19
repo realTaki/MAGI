@@ -38,10 +38,7 @@ export type ChatReceipt = { type: "MessageDeliveryJob" | "InboundSecretJob"; id:
 export function chat(bus: Bus, chat_id: number, contact_id: number, input: ChatInput, publisher?: string): ChatReceipt;
 export function chat(bus: Bus, chat_id: number, contact_id: number, input: ChatInput, publisher: string, peer: PeerInbound): PeerReceipt;
 export function chat(bus: Bus, chat_id: number, contact_id: number, input: ChatInput, publisher = "channel", peer?: PeerInbound): ChatReceipt | PeerReceipt {
-  if (!bus.chats.get(chat_id)) throw new Error("chat does not exist");
-  const contact = bus.contacts.get(contact_id);
-  if (!contact || contact_id === MAGI_CONTACT_ID) throw new Error("chat requires an authenticated sender");
-  if (typeof input.content !== "string") throw new Error("chat content must be text");
+  const contact = validateChatInput(bus, chat_id, contact_id, input);
   if (peer) {
     const target = bus.chats.get(chat_id)!;
     if (input.metadata || contact.peer_principal !== peer.principal || target.peer_id !== peer.principal || target.conversation_uuid !== peer.conversationUUID || contact.peer_trust === "blocked") throw new Error("invalid authenticated peer context");
@@ -86,6 +83,15 @@ export function chat(bus: Bus, chat_id: number, contact_id: number, input: ChatI
     return { type: "InboundSecretJob", id };
   }
   return { type: "MessageDeliveryJob", id: messageDelivery.send(bus, chat_id, input.content, contact_id, publisher) };
+}
+
+/** Ordinary-text boundary shared by signed group replication and direct chat ingress. */
+export function validateChatInput(bus: Bus, chat_id: number, contact_id: number, input: ChatInput, allowSelf = false) {
+  if (!bus.chats.get(chat_id)) throw new Error("chat does not exist");
+  const contact = bus.contacts.get(contact_id);
+  if (!contact || (!allowSelf && contact_id === MAGI_CONTACT_ID)) throw new Error("chat requires an authenticated sender");
+  if (typeof input.content !== "string") throw new Error("chat content must be text");
+  return contact;
 }
 
 function record(value: unknown): value is Record<string, unknown> {

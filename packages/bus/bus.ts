@@ -5,6 +5,7 @@ import { and, eq, inArray, ne, or } from "drizzle-orm";
 import { openDatabase, pragma } from "./sqlite.js";
 import { workspaceDatabase, migrateBooks, migrateJobs, type BusDb } from "./drizzle/database.js";
 import { contacts, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "./books/contactBook.js";
+import { GroupBook } from "./books/groupBook.js";
 import { DeliveryBook } from "./books/deliveryBook.js";
 import { ChatBook } from "./books/chatBook.js";
 import { MessageBook } from "./books/messageBook.js";
@@ -39,6 +40,7 @@ export class Bus {
   readonly workspace: string;
   readonly chats: ChatBook;
   readonly deliveries: DeliveryBook;
+  readonly groups: GroupBook;
   readonly messages: MessageBook;
   readonly memoryBook: MemoryBook;
   readonly skills: SkillsBook;
@@ -133,6 +135,7 @@ export class Bus {
     this.identity = loadOrCreateIdentity(this.workspace);
     this.chats = new ChatBook(this.db);
     this.deliveries = new DeliveryBook(this.db);
+    this.groups = new GroupBook(this.db, this);
     this.messages = new MessageBook(this.db);
     this.memoryBook = new MemoryBook(this.db);
     this.skills = new SkillsBook();

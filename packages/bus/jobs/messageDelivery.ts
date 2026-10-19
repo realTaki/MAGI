@@ -27,6 +27,10 @@ export type MessageDeliveryJob = {
 function send(bus: Bus, chat_id: number, text: string, contact_id = SYSTEM_CONTACT_ID, publisher = "channel", metadata?: Record<string, unknown>): number {
   const target = bus.chats.get(chat_id);
   if (!target) throw new Error(`chat ${chat_id} does not exist`);
+  if (target.channel === "group" && contact_id === MAGI_CONTACT_ID) {
+    const replyTo = (metadata?.peer as { replyTo?: string } | undefined)?.replyTo;
+    return bus.groups.append(target.delivery_address, text, replyTo).job_id!;
+  }
   const peer = target.channel === "peer" && contact_id === MAGI_CONTACT_ID
     ? { messageId: randomUUID(), conversationUUID: target.conversation_uuid, ...((metadata?.peer as Record<string, unknown> | undefined) ?? {}) } : undefined;
   const stored = bus.deliveries.persist({ chat_id, contact_id, content: text, publisher, metadata: peer ? { ...metadata, peer } : metadata });
@@ -64,7 +68,7 @@ function notify(bus: Bus, text: string, chat_id?: number): number | null {
 function presentChat(bus: Bus): number | null {
   const home = homeChat(bus);
   const chat = home === null ? null : bus.chats.get(home);
-  if ((chat?.channel === "asp" || chat?.channel === "shell-owner") && chat.delivery_address) return chat.id;
+  if ((chat?.channel === "asp" || chat?.channel === "shell-owner" || chat?.channel === "local-owner") && chat.delivery_address) return chat.id;
   return null;
 }
 

@@ -134,7 +134,7 @@ export function validatePeerEndpoint(value: string): string {
   const url = new URL(value);
   const loopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]";
   if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) throw new Error("peer URL requires HTTPS or loopback HTTP");
-  if (url.username || url.password || url.search || url.hash) throw new Error("peer URL cannot contain credentials, query, or fragment");
+  if ((url.pathname !== "/" && url.pathname !== "") || url.username || url.password || url.search || url.hash) throw new Error("peer URL cannot contain credentials, query, or fragment");
   return url.href.replace(/\/$/, "");
 }
 
