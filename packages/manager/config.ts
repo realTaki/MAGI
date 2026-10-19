@@ -1,3 +1,5 @@
+import { providerFailureCode } from "@magi/bus/jobs/providerFailure.js";
+import type { CardReceipt } from "@magi/bus/jobs/card.js";
 /**
  * Cards, config, and decryption. The manager supervises this worker; it does
  * not do the work itself.
@@ -13,8 +15,6 @@ import {
   MAGI_CONTACT_ID,
   messageDelivery,
   providerCard,
-  SYSTEM_CONTACT_ID,
-  waitForJob,
   type Bus,
   type ChangeProviderNotify,
   type ConfigureJob,
@@ -71,8 +71,7 @@ export class ConfigWorker extends BaseWorker {
     if (this.cardJob !== null && !open) return;
     if (open && open.error !== CARD_RESTART_ERROR) {
       this.forgetCard();
-      if (open.status === "completed") this.announce(open.output?.fields ?? {});
-      else {
+      if (open.status !== "completed") {
         this.cardStopped = true;
         this.bus.settings.set("provider.card.stopped", "1");
       }
@@ -116,19 +115,6 @@ export class ConfigWorker extends BaseWorker {
     }
     this.ownerChat = output.chat_id;
     return this.ownerChat;
-  }
-
-  private announce(fields: Record<string, string>): void {
-    const chatId = this.ownerChat ?? messageDelivery.presentChat(this.bus);
-    if (chatId === null) return;
-    messageDelivery.send(this.bus, chatId, [
-      "Provider card submitted.",
-      `provider: ${fields.provider ?? ""}`,
-      `model: ${fields.model ?? ""}`,
-      `base_url: ${fields.base_url ?? ""}`,
-      "provider.api_key: updated",
-      "Load provider_setup and continue from step 2.",
-    ].join("\n"), SYSTEM_CONTACT_ID, this.worker_name);
   }
 
   private async pollConfigure(): Promise<boolean> {
@@ -188,12 +174,23 @@ export class ConfigWorker extends BaseWorker {
     if (result.action === "open") {
       const requestKey = `card.open.${result.id}`;
       if (this.bus.settings.get(requestKey)) return;
+      if (this.cardJob !== null && !this.bus.board("CardJob").result(this.cardJob)) {
+        const current = this.bus.settings.get("provider.card.spec");
+        if (current) {
+          const spec = JSON.parse(current) as import("@magi/bus").CardSpec;
+          this.bus.settings.set(requestKey, spec.id);
+          messageDelivery.send(this.bus, input.chat_id, "Provider configuration", MAGI_CONTACT_ID, this.worker_name, { card: spec });
+          const status = this.bus.settings.get(`card.receipt.${spec.id}`);
+          if (status) this.deliverReceipt(input.chat_id, JSON.parse(status) as CardReceipt);
+          return;
+        }
+      }
       const spec = providerCard(this.bus.handle, {
         provider: this.bus.settings.get("provider.name") ?? undefined,
         model: this.bus.settings.get("provider.model") ?? undefined,
         base_url: this.bus.settings.get("provider.base_url") ?? undefined,
       });
-      // This entry works without a model, even after a legacy retry limit.
+      // Profile configuration is available without any model call.
       if (this.cardJob !== null && this.bus.board("CardJob").fail(this.cardJob, "superseded")) {
         const previous = this.bus.settings.get("provider.card.spec");
         if (previous) {
@@ -207,36 +204,32 @@ export class ConfigWorker extends BaseWorker {
       this.cardStopped = false;
       this.bus.settings.set("provider.card.job", String(id));
       this.bus.settings.set("provider.card.stopped", "");
-      this.bus.settings.set("provider.card.rejections", "0");
       this.bus.settings.set(requestKey, spec.id);
       messageDelivery.send(this.bus, input.chat_id, "card: Provider", MAGI_CONTACT_ID, this.worker_name, { card: spec });
       return;
     }
     const receiptKey = `card.receipt.${result.id}`;
     const receipt = this.bus.settings.get(receiptKey);
-    if (receipt) {
-      const saved = JSON.parse(receipt) as { state: string; values?: { provider?: string; model?: string; base_url?: string }; reopened?: boolean };
-      if (result.action === "reopen" && saved.values && !saved.reopened) {
-        const spec = providerCard(this.bus.handle, saved.state === "saved" ? {
-          provider: this.bus.settings.get("provider.name") ?? undefined,
-          model: this.bus.settings.get("provider.model") ?? undefined,
-          base_url: this.bus.settings.get("provider.base_url") ?? undefined,
-        } : saved.values);
-        this.bus.settings.set("provider.card.spec", JSON.stringify(spec));
-        const id = this.bus.board("CardJob").publish({ spec }, this.worker_name);
-        // Explicit reopening also resumes startup after a dismissal or failed verification.
-        if (!this.bus.secrets.get("provider.api_key")) {
-          this.cardJob = id;
-          this.cardStopped = false;
-          this.bus.settings.set("provider.card.job", String(id));
-          this.bus.settings.set("provider.card.stopped", "");
-        }
-        this.bus.settings.set(receiptKey, JSON.stringify({ ...saved, reopened: true }));
-        messageDelivery.send(this.bus, input.chat_id, "card: Provider", MAGI_CONTACT_ID, this.worker_name, { card: spec });
-      }
-      return; // Replays cannot verify, save, or create a second replacement.
+    if (result.action === "status") {
+      const current = receipt ? JSON.parse(receipt) as CardReceipt : undefined;
+      if (typeof result.attempt === "string" && current?.attempt !== result.attempt && current?.state !== "saved" && current?.state !== "cancelled") {
+        this.deliverReceipt(input.chat_id, { id: result.id, attempt: result.attempt, state: "failed", error: "connection", values: current?.values });
+      } else if (current) this.deliverReceipt(input.chat_id, current);
+      return;
     }
-    if (result.action === "reopen") throw new Error("card has not finished");
+    const saved = receipt ? JSON.parse(receipt) as CardReceipt : undefined;
+    if (saved?.state === "saved" || saved?.state === "cancelled") {
+      this.deliverReceipt(input.chat_id, saved);
+      return;
+    }
+    if (typeof result.attempt !== "string" || !result.attempt) throw new Error("card submission is missing its attempt id");
+    const attemptKey = `card.attempt.${result.id}.${result.attempt}`;
+    const previous = this.bus.settings.get(attemptKey);
+    if (previous) {
+      // A replay acknowledges the authoritative current attempt, never starts another request.
+      if (receipt) this.deliverReceipt(input.chat_id, JSON.parse(receipt) as CardReceipt);
+      return;
+    }
     const board = this.bus.board("CardJob");
     const job = board.claim(this.worker_name, (card) => card.spec.id === result.id);
     if (!job) throw new Error(`no open card ${result.id}`);
@@ -261,6 +254,7 @@ export class ConfigWorker extends BaseWorker {
           throw new Error(`card field ${field.name} is missing a value`);
         }
       }
+      this.cardReceipt(input.chat_id, job.input.spec, "pending", visible, result.attempt);
       if (providerKey !== undefined) {
         await this.useProvider({
           provider: visible.provider,
@@ -273,14 +267,15 @@ export class ConfigWorker extends BaseWorker {
         this.bus.secrets.set(key, this.decrypt(key, ciphertext));
       }
       board.submit(this.worker_name, job.id, { output: { fields: visible } });
-      this.cardReceipt(input.chat_id, job.input.spec, "saved", visible);
+      this.cardReceipt(input.chat_id, job.input.spec, "saved", visible, result.attempt);
     } catch (error) {
-      board.submit(this.worker_name, job.id, { error: message(error) });
-      this.cardReceipt(input.chat_id, job.input.spec, "failed", visible);
-      // Keep the failed card available for an explicit retry instead of a duplicate startup card.
-      if (job.id === this.cardJob) {
-        this.cardStopped = true;
-        this.bus.settings.set("provider.card.stopped", "1");
+      if (job.input.spec.purpose === "provider") {
+        board.release(this.worker_name, job.id);
+        this.cardReceipt(input.chat_id, job.input.spec, "failed", visible, result.attempt, providerFailureCode(error));
+        // The form remains editable. No separate model turn, retry count or replacement card is needed.
+      } else {
+        board.submit(this.worker_name, job.id, { error: message(error) });
+        this.cardReceipt(input.chat_id, job.input.spec, "failed", visible, result.attempt, "unknown");
       }
       throw error;
     }
@@ -289,7 +284,8 @@ export class ConfigWorker extends BaseWorker {
   private async rejectCard(input: InboundSecretJob): Promise<void> {
     const id = typeof input.body.id === "string" ? input.body.id : "";
     if (id === "") throw new Error("card rejection is missing an id");
-    if (this.bus.settings.get(`card.receipt.${id}`)) return;
+    const receipt = this.bus.settings.get(`card.receipt.${id}`);
+    if (receipt && ["saved", "cancelled"].includes((JSON.parse(receipt) as CardReceipt).state)) return;
     const board = this.bus.board("CardJob");
     const job = board.claim(this.worker_name, (card) => card.spec.id === id);
     if (!job) throw new Error(`no open card ${id}`);
@@ -301,11 +297,16 @@ export class ConfigWorker extends BaseWorker {
     }
   }
 
-  private cardReceipt(chatId: number, spec: import("@magi/bus").CardSpec, state: "saved" | "failed" | "cancelled", fields: Record<string, string | undefined>): void {
-    const provider = spec.purpose === "provider" || ["provider", "model", "provider.api_key"].every((name) => spec.fields.some((field) => field.name === name));
-    const values = provider ? { provider: fields.provider, model: fields.model, base_url: fields.base_url } : undefined;
-    this.bus.settings.set(`card.receipt.${spec.id}`, JSON.stringify({ state, values }));
-    messageDelivery.send(this.bus, chatId, `card: ${state}`, MAGI_CONTACT_ID, this.worker_name, { card_status: { id: spec.id, state, values } });
+  private cardReceipt(chatId: number, spec: import("@magi/bus").CardSpec, state: CardReceipt["state"], fields: Record<string, string | undefined>, attempt?: string, error?: CardReceipt["error"]): void {
+    const values = spec.purpose === "provider" ? { provider: fields.provider, model: fields.model, base_url: fields.base_url } : undefined;
+    const receipt: CardReceipt = { id: spec.id, state, attempt, error, values };
+    this.bus.settings.set(`card.receipt.${spec.id}`, JSON.stringify(receipt));
+    if (attempt) this.bus.settings.set(`card.attempt.${spec.id}.${attempt}`, JSON.stringify(receipt));
+    this.deliverReceipt(chatId, receipt);
+  }
+
+  private deliverReceipt(chatId: number, receipt: CardReceipt): void {
+    messageDelivery.send(this.bus, chatId, `card: ${receipt.state}`, MAGI_CONTACT_ID, this.worker_name, { card_status: receipt });
   }
 
   private async applySync(input: InboundSecretJob): Promise<void> {
@@ -325,11 +326,12 @@ export class ConfigWorker extends BaseWorker {
   /** Verify, then store. The providers worker rejects a bad key before ConfigureJob runs. */
   private async useProvider(change: ChangeProviderNotify): Promise<void> {
     const id = this.bus.board("ChangeProviderNotify").publish(change, this.worker_name);
-    let result;
-    try {
-      result = await waitForJob(() => this.bus.board("ChangeProviderNotify").result(id), 30_000, "provider verify");
-    } catch (error) {
-      throw new Error(message(error));
+    // The providers worker owns its bounded verification/write timeouts. A second,
+    // shorter timeout here could declare failure while that worker later saves.
+    let result = this.bus.board("ChangeProviderNotify").result(id);
+    while (!result) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      result = this.bus.board("ChangeProviderNotify").result(id);
     }
     if (result.status === "failed") throw new Error(result.error ?? "provider was rejected");
   }

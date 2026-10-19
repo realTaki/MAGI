@@ -71,6 +71,26 @@ subdirectory; built revisions and `launcher.json` are separate. Casper also owns
 Electron's user data (including renderer storage) is separate from node state;
 `MAGI_HOME` alone is not a guarantee of a completely separate Electron profile.
 
+## Provider and runtime controls
+
+Open the intended MAGI's profile to choose its provider, model and endpoint,
+enter its key and see verification/retry status. Chat configuration prompts are
+handle-bound links into that profile; they do not contain a credential form.
+There is no separate Provider slider button in the chat header.
+
+The profile avatar has one Start/Stop control. It waits for backend-confirmed
+state and disables repeated clicks during transitions. A browser without the
+native bridge displays a disabled control. A visible control is not a guarantee
+that every remote node can be started locally: external-node policy still
+applies. There is no Runtime action-icon row or source-path block. Ask the
+relevant agent to perform authorized source synchronization, tests, builds and
+self-replacement in its own source; those mechanisms are not extra profile icons.
+
+A submitted key is cleared from the password input deliberately. That does not
+mean it was absent from the encrypted request. Wait for the node's saved/failed
+acknowledgement; for a retry, correct the fields and re-enter the key in the
+same profile. See [Provider recovery](provider-validation.md).
+
 ## Configuration
 
 | Variable | Meaning |

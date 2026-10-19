@@ -1,4 +1,4 @@
-# Provider card catalog
+# Provider catalog
 
 Checked **2026-10-19** against the project's locked `@earendil-works/pi-ai@0.87.1`
 model directory and the official references below. This is a curated list of
@@ -36,24 +36,37 @@ Known providers use their backend catalog endpoint; the card submits an empty
 custom URL and the manager clears any previous custom URL. Custom uses the
 existing URL validation (HTTPS, or localhost HTTP, without embedded credentials,
 query or fragment). Changing provider clears the draft model, URL and password.
-Unsupported model IDs require an explicit supported selection; opening the
-configuration interface alone does not change saved settings.
+Unknown model IDs remain visible with an explanation and must be replaced
+with a supported selection; opening the profile alone does not change saved settings.
 
-Configuration requests go to the receiving MAGI's config worker without requiring
-a working LLM turn. Transport acceptance is not successful verification or a
-saved configuration. Public receipt fields may be replayed; secret inputs must
-not be prefilled or included in receipts. See the
-[configuration worker](../packages/manager/config.ts) and [security limits](../SECURITY.md).
+The provider form now lives in the matching MAGI profile. Chat presents only an
+application link such as `#/magi/%40eva-000.magi/provider`, never a provider form or
+credentials. Opening the profile uses an operator-authenticated structured request
+directly to the config worker and does not require an LLM turn. A failed form stays
+editable; each save has an attempt ID, so stale failure receipts and replayed
+submissions cannot overwrite a newer attempt or verify/save twice. Status checks
+and retries contain no plaintext key in chat or links.
 
-## Manual acceptance with synthetic verification
+The avatar has one state-dependent Start/Stop button. During transitions it is
+disabled until local runtime information confirms the result. The old Runtime
+multi-button/path block and independent provider slider button are removed.
+Agent-callable self-rebuild/synchronization capabilities remain available.
 
-Check the actual configuration interface in the revision being tested; do not
-infer its entry point from an old screenshot. For each language and provider,
-verify defaults, custom endpoints, clearing secret drafts, failure/retry,
-cancellation and reopening. Delay verification to check duplicate submission
-handling. Confirm only the receiving node's acknowledgement marks a request as
-saved, and refresh/replay does not leak a secret or blend another node's state.
-A real-provider/account test is separate from synthetic worker or browser checks.
+## Acceptance in an isolated instance
+
+1. Open a MAGI profile before configuring a provider. Select MiniMax China and
+   confirm `MiniMax-M3`; switch to Custom and back to check fields/key clearing.
+2. Using a mock provider, fail a save with a connection error, HTTP 401, and an
+   unsupported-model response. Each error has its own explanation. Correct the
+   same form and retry without reopening it. Re-enter the key after submission;
+   clearing the password field is an explicit privacy behavior.
+3. Interrupt ASP during verification. The persisted result must arrive after
+   reconnection. Duplicate attempts must not produce another provider request.
+4. Follow a chat configuration link and verify that the exact handle's profile
+   opens. No provider form or secret should appear in the chat transcript.
+5. At the profile avatar, double-click Start or Stop while a mock runtime call is
+   delayed. Expect one command and a disabled progress state; the next action is
+   offered only after the backend confirms the new state.
 
 ## Reproducible checks
 

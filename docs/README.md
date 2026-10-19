@@ -8,7 +8,8 @@ Start with the [project overview](../README.md) ([中文](../README_zh.md)).
 | Understand processes, BUS, messages and self-replacement | [Architecture](architecture.md) |
 | Prepare source and contribute changes | [Contributing](../CONTRIBUTING.md) |
 | Check a change and distinguish tests from desktop acceptance | [Verification](verification.md) |
-| Understand supported provider fields and verification | [Provider catalog](provider-catalog.md) |
+| Choose provider fields/models | [Provider catalog](provider-catalog.md) |
+| Understand provider deadlines, failure recovery and retry evidence | [Provider recovery](provider-validation.md) |
 | Review trust boundaries or report a vulnerability | [Security](../SECURITY.md) |
 | Research goals and unfinished work | [Future work](future.md) |
 

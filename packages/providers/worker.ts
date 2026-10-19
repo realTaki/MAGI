@@ -1,3 +1,4 @@
+import { providerFailure } from "@magi/bus/jobs/providerFailure.js";
 import { BaseWorker, waitForJob, type CallLLMJob, type ExecutableTool } from "@magi/bus";
 import type { Bus } from "@magi/bus";
 import { PiAiClient, type LLMClient, type ProviderSettings } from "./client.js";
@@ -11,7 +12,7 @@ export class ProvidersWorker extends BaseWorker {
   private readonly own: ExecutableTool[];
   private started = false;
 
-  constructor(bus: Bus, client?: LLMClient) {
+  constructor(bus: Bus, client?: LLMClient, private readonly verifyTimeoutMs = 20_000) {
     super(bus);
     // A freshly started MAGI has no provider until it configures itself.
     // The key lives in the secret store. The model changes the rest with
@@ -113,7 +114,14 @@ export class ProvidersWorker extends BaseWorker {
     };
     try {
       if (!this.client.verify || !this.client.configure) throw new Error("provider client cannot be reconfigured");
-      await this.client.verify(candidate);
+      const controller = new AbortController();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          this.client.verify(candidate, controller.signal),
+          new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { controller.abort(); reject(providerFailure("timeout")); }, this.verifyTimeoutMs); }),
+        ]);
+      } finally { if (timer) clearTimeout(timer); }
     } catch (error) {
       throw new Error(redact(message(error), candidate.api_key));
     }
@@ -123,7 +131,13 @@ export class ProvidersWorker extends BaseWorker {
     if (change.base_url !== undefined) settings["provider.base_url"] = change.base_url;
     const secrets = change.api_key !== undefined ? { "provider.api_key": change.api_key } : undefined;
     const id = this.bus.board("ConfigureJob").publish({ settings, secrets }, this.worker_name);
-    const stored = await waitForJob(() => this.bus.board("ConfigureJob").result(id), 30_000, "ConfigureJob");
+    let stored;
+    try { stored = await waitForJob(() => this.bus.board("ConfigureJob").result(id), 30_000, "ConfigureJob"); }
+    catch {
+      // A timed-out write must not become a later surprise save.
+      stored = this.bus.board("ConfigureJob").result(id);
+      if (!stored) { this.bus.board("ConfigureJob").fail(id, "Provider configuration write timed out"); throw providerFailure("timeout"); }
+    }
     if (stored.status === "failed") throw new Error(stored.error ?? "configure failed");
     this.client.configure!(candidate);
     this.settings = candidate;

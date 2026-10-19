@@ -80,6 +80,11 @@ See [chat service](../packages/asp-server/service.ts),
 
 ## Provider configuration
 
+Provider fields, verification status and retry live in the matching MAGI profile;
+chat presents only a handle-bound link. The profile's avatar has a single
+backend-confirmed Start/Stop control. Source sync/build/update work is performed
+by the agent through its source tools, not a Runtime icon row.
+
 Provider configuration belongs to the receiving node. Its manager verifies a
 candidate through the providers worker before applying it. A failed candidate
 does not replace a working configuration. Public settings and private secrets

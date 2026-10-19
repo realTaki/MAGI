@@ -21,7 +21,7 @@ test("every offered model matches the installed backend's ID, endpoint, protocol
   }
 });
 
-test("provider cards survive repeated failures, legacy lockout, cancel, reopen and replay without a model", async () => {
+test("provider cards survive repeated failures, direct correction, cancel and replay without a model", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-provider-card-"));
   let attempts = 0;
   const configured: unknown[] = [];
@@ -46,7 +46,6 @@ test("provider cards survive repeated failures, legacy lockout, cancel, reopen a
   };
   const fields = (key: string) => ({ provider: "minimax-cn", model: "MiniMax-M3", base_url: "", "provider.api_key": { ciphertext: encryptFor(bus.identity.publicKey, key) } });
   try {
-    bus.settings.set("provider.card.rejections", "2");
     bus.settings.set("provider.card.stopped", "1");
     bus.settings.set("provider.base_url", "https://old.example/v1");
     await magi.start();
@@ -55,29 +54,28 @@ test("provider cards survive repeated failures, legacy lockout, cancel, reopen a
     await send({ id: "open-1", action: "open" });
     assert.equal(cards().length, 1, "duplicate open is idempotent");
     for (let i = 0; i < 3; i++) {
-      const card = cards().at(-1)!;
-      assert.equal((await send({ id: card.spec.id, fields: fields(`synthetic-bad-${i}`) })).status, "failed");
+      const card = cards()[0];
+      const attempt = `attempt-${i}`;
+      assert.equal((await send({ id: card.spec.id, attempt, fields: fields(`synthetic-bad-${i}`) })).status, "failed");
       assert.equal(bus.secrets.get("provider.api_key"), null);
       assert.equal(bus.settings.get("provider.base_url"), "https://old.example/v1");
       assert.equal(JSON.parse(bus.settings.get(`card.receipt.${card.spec.id}`)!).state, "failed");
-      await send({ id: card.spec.id, fields: fields(`synthetic-bad-${i}`) });
+      await send({ id: card.spec.id, attempt, fields: fields(`synthetic-bad-${i}`) });
       assert.equal(attempts, i + 1, "duplicate submission cannot verify again");
-      await send({ id: card.spec.id, action: "reopen" });
-      await send({ id: card.spec.id, action: "reopen" });
-      assert.equal(cards().length, i + 2, "one replacement per retry");
+      assert.equal(cards().length, 1, "failure leaves the same form editable");
     }
     const cancelled = cards().at(-1)!;
     await send({ id: cancelled.spec.id }, "card_reject");
     assert.equal(JSON.parse(bus.settings.get(`card.receipt.${cancelled.spec.id}`)!).state, "cancelled");
-    await send({ id: cancelled.spec.id, action: "reopen" });
+    await send({ id: "open-after-cancel", action: "open" });
     const good = cards().at(-1)!;
-    assert.equal((await send({ id: good.spec.id, fields: fields("synthetic-good") })).status, "completed");
+    assert.equal((await send({ id: good.spec.id, attempt: "good", fields: fields("synthetic-good") })).status, "completed");
     assert.equal(bus.settings.get("provider.name"), "minimax-cn");
     assert.equal(bus.settings.get("provider.model"), "MiniMax-M3");
     assert.equal(bus.settings.get("provider.base_url"), "");
     assert.equal(bus.secrets.get("provider.api_key"), "synthetic-good");
     assert.equal(JSON.parse(bus.settings.get(`card.receipt.${good.spec.id}`)!).state, "saved");
-    await send({ id: good.spec.id, fields: fields("synthetic-good") });
+    await send({ id: good.spec.id, attempt: "good", fields: fields("synthetic-good") });
     assert.equal(attempts, 4);
     assert.equal(configured.length, 1);
     await send({ id: "open-after-save", action: "open" });

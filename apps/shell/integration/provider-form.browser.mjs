@@ -51,5 +51,5 @@ try {
   }
   socket.close();
   assert.equal(outcome?.state, 'PASS', outcome?.text?.slice(-1000));
-  console.log('PASS Chromium provider form: zh/en/ja, defaults, custom, clearing secrets, duplicate submit, encrypted transport, pending/saved/failed/cancelled, retry, legacy model');
+  console.log('PASS Chromium provider form: zh/en/ja, defaults, custom, clearing secrets, duplicate submit, encrypted transport, pending/saved/failed/cancelled, direct retry, profile deep links, avatar start/stop');
 } finally { server?.close(); if(browser?.pid) { try { process.kill(-browser.pid, 'SIGKILL'); } catch {} await sleep(100); } await rm(dir, { recursive: true, force: true }); }

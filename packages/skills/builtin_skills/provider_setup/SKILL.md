@@ -1,23 +1,23 @@
 ---
 name: provider_setup
-description: Configure this MAGI's model provider, then optionally sync that provider to the other MAGIs.
-version: "1.0"
+description: Direct the user to this MAGI's profile to configure its model provider, then optionally sync the saved provider.
+version: "2.0"
 ---
 
 # Provider setup
 
-Use this when the user wants to change or share the provider.
+Provider selection, model selection, API key entry, verification and retries live in
+this MAGI's profile. The user fills and saves the credentials themselves.
 
-On startup with no API key, the node shows the Provider card itself. You will see `Provider card submitted.` with the provider, model, and base URL. The key is already stored. Continue from step 2. Do not call `show_card` for that first card.
-
-1. Call `show_card` only when the user wants to change an existing provider. Title "Provider", submit "Save", fields:
-   - `provider`: choice, one of `openai`, `anthropic`, `minimax-cn`, `minimax-global`, `deepseek`, `custom`
-   - `model`: text
-   - `base_url`: text, label "Base URL (custom only)"
-   - `provider.api_key`: secret, label "API key"
-2. The card result does not contain the key. `provider.api_key: "updated"` means the manager stored it. Call `provider_settings` with `action: "update"` and the provider, model, and base_url from the card. Do not pass `api_key`.
-3. Ask the user, in the chat, whether to sync this provider to the other MAGIs.
-4. Only if they say yes, call `sync_provider`. That messages each other MAGI. The key travels as ciphertext. You will not see it.
-5. If you receive `provider sync: <service>, <model>, key updated`, the manager has already stored the key. Confirm that in one line. Do not ask for the key and do not call `show_card` again for it.
-
-The first card is not your decision. Wait for `Provider card submitted.` and continue from step 2.
+1. Send an application link using the actual MAGI handle:
+   `[Configure model](#/magi/%40eva-002.magi/provider)` is the example for
+   `@eva-002.magi`; substitute this MAGI's handle, URL-encoded.
+2. Do not ask for a key in chat, include a key in a URL, or open a provider form
+   using `show_card`. Entering the profile does not require a successful model call.
+3. The profile reports verification, connection, credential/permission, model,
+   quota and timeout errors. The user can correct a failed configuration and retry
+   directly. A cleared password field is not evidence of a missing submission.
+4. Only after the user explicitly asks to share a successfully saved provider,
+   call `sync_provider`. Its existing encrypted peer exchange remains unchanged.
+5. A connection error is not proof of an invalid key. Report only the evidence
+   available; do not request or expose access to stored credentials.

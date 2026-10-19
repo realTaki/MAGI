@@ -8,6 +8,15 @@ GitHub sign-in is optional and happens in Settings after startup. The device-flo
 
 Runnable commands and configuration are in [Running MAGI](../../docs/running.md). Process and self-replace boundaries are in [Architecture](../../docs/architecture.md).
 
+## Per-node controls
+
+Provider configuration and retry are in the matching MAGI profile. Chat prompts
+link to it and carry no credential form; the independent Provider header button
+is removed. The avatar has one Start/Stop control, disabled without a native
+bridge or during transitions. It reflects backend state rather than assuming a
+command succeeded. The Runtime icon row/source-path block is removed; request
+source synchronization, builds and self-replacement from the relevant agent.
+
 ## Source authority and normal source launches
 
 A source launch derives its editable checkout from the location of Electron's
