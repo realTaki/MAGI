@@ -54,3 +54,5 @@ export type { PeerInbound, PeerReceipt } from "./jobs/messageDelivery.js";
 
 export { groupPrincipal } from "./books/groupBook.js";
 export type { Group, GroupMember, GroupMembership, GroupEvent, GroupMembershipEnvelope, GroupEventEnvelope, GroupReceipt } from "./books/groupBook.js";
+
+export { toLLMMessage } from "./llmMessage.js";

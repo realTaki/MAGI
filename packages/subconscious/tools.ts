@@ -1,4 +1,4 @@
-/** One private conversation, using the same chat runner and durable history. */
+/** Private observation and handoff tools owned by the subconscious module. */
 import { messageDelivery, type Bus, type ExecutableTool } from "@magi/bus";
 
 export const SUBCONSCIOUS_PROMPT = `You are this MAGI's subconscious: one continuous private conversation with yourself.
@@ -15,7 +15,6 @@ const ALLOWED = new Set([
   "schedule_task", "list_tasks", "update_task", "delete_task",
 ]);
 export function subconsciousTool(name: string): boolean { return ALLOWED.has(name); }
-export const INTERNAL_TOOLS = new Set(["observe_conversations", "read_conversation", "handoff_to_foreground"]);
 
 function integer(value: unknown, fallback: number): number {
   if (value === undefined) return fallback;
@@ -24,7 +23,7 @@ function integer(value: unknown, fallback: number): number {
 }
 
 export function subconsciousTools(bus: Bus): ExecutableTool[] {
-  return [
+  const tools: ExecutableTool[] = [
     {
       name: "observe_conversations", description: "Inspect recent foreground conversation activity, not an external inbox. Use after_message_id to avoid reviewing unchanged messages.",
       input_schema: { type: "object", properties: { after_message_id: { type: "integer", minimum: 0 } } },
@@ -60,4 +59,5 @@ export function subconsciousTools(bus: Bus): ExecutableTool[] {
       },
     },
   ];
+  return tools.map(tool => ({ ...tool, available: context => context.chat_id !== undefined && bus.chats.get(context.chat_id)?.channel === "subconscious" }));
 }

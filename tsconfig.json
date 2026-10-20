@@ -51,6 +51,12 @@
     },
     {
       "path": "packages/channel-a2a"
+    },
+    {
+      "path": "packages/subconscious"
+    },
+    {
+      "path": "packages/action-items"
     }
   ]
 }

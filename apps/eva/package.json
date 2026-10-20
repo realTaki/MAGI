@@ -30,6 +30,8 @@
     "@magi/mcp": "*",
     "@magi/skills": "*",
     "@magi/channel-tasks": "*",
-    "@magi/channel-telegram": "*"
+    "@magi/channel-telegram": "*",
+    "@magi/subconscious": "*",
+    "@magi/action-items": "*"
   }
 }

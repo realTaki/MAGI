@@ -123,7 +123,7 @@ test("private failures and restart notices remain private", async () => {
   } finally { await magi.stop(); }
   const reopened = new Magi("@private-errors.magi", { workspace: path });
   const queued = messageDelivery.send(reopened.bus, innerId, "interrupted", undefined, "task");
-  reopened.bus.board("MessageDeliveryJob").claimId("agent", queued);
+  reopened.bus.board("MessageDeliveryJob").claimId("subconscious", queued);
   reopened.bus.agentTurns.ensure(queued, { messages: [], tools: [] });
   await reopened.stop();
   const recovered = new Magi("@private-errors.magi", { workspace: path });
@@ -145,7 +145,11 @@ test("both role compositions own exactly one task worker and one private convers
     const shell = shellWorkers(bus, new EmptyWorker(bus), new EmptyWorker(bus));
     assert.equal(shell.filter(worker => worker.worker_name === "task").length, 1);
     assert.ok(HOSTED_NODE_WORKERS.includes("task"));
-    const task = shell.find(worker => worker.worker_name === "task")! as import("@magi/channel-tasks/worker.js").TaskWorker;
+    assert.equal(agent.filter(worker => worker.worker_name === "subconscious").length, 1);
+    assert.equal(shell.filter(worker => worker.worker_name === "subconscious").length, 1);
+    assert.equal(shell.filter(worker => worker.worker_name === "action-items").length, 1);
+    assert.ok(HOSTED_NODE_WORKERS.includes("subconscious"));
+    const task = shell.find(worker => worker.worker_name === "subconscious")! as import("@magi/subconscious/worker.js").SubconsciousWorker;
     await task.start();
     await task.start();
     assert.equal(bus.chats.list("subconscious").length, 1);
@@ -182,7 +186,7 @@ test("private context rolls through compaction without inventing a user particip
 
 test("ordinary message searches omit private history but preserve shared foreground and raw audit", async () => {
   const { messageTools } = await import("@magi/built-in-tools/messages.js");
-  const { subconsciousTools } = await import("@magi/agent/subconscious.js");
+  const { subconsciousTools } = await import("@magi/subconscious/tools.js");
   const magi = new Magi("@history-boundary.magi", { workspace: await workspace() });
   try {
     const inner = magi.bus.chats.forChannel("subconscious", "self");
@@ -200,4 +204,66 @@ test("ordinary message searches omit private history but preserve shared foregro
     assert.equal(read.messages.some((message: { content: string }) => message.content === "own internal finding"), false);
     assert.equal(read.messages[0].content, "search-token foreground");
   } finally { await magi.stop(); }
+});
+
+test("subconscious owns its conversation and presets without an AgentWorker", async () => {
+  const { Bus } = await import("@magi/bus");
+  const { SubconsciousWorker } = await import("@magi/subconscious/worker.js");
+  const { ProvidersWorker } = await import("@magi/providers/worker.js");
+  const { AgentWorker } = await import("@magi/agent/worker.js");
+  const bus = new Bus("@independent.magi", await workspace());
+  let calls = 0;
+  const subconscious = new SubconsciousWorker(bus);
+  const provider = new ProvidersWorker(bus, { async complete() { calls++; return { role: "assistant", content: "private independent note" }; } });
+  const foreground = new AgentWorker(bus);
+  try {
+    await foreground.start();
+    assert.equal(bus.tasks.list().length, 0, "foreground does not bootstrap private tasks");
+    await subconscious.start(); await provider.start();
+    assert.equal(bus.tasks.list().length, 1);
+    const inner = bus.chats.forChannel("subconscious", "self");
+    const id = messageDelivery.send(bus, inner.id, "continue", undefined, "task");
+    assert.equal(await foreground.poll(), false, "foreground must not claim the private continuation");
+    await foreground.stop();
+    for (let i = 0; i < 300 && !bus.board("MessageDeliveryJob").result(id); i++) {
+      await subconscious.poll(); await provider.poll(); await sleep(10);
+    }
+    assert.equal(bus.board("MessageDeliveryJob").result(id)?.status, "completed");
+    assert.equal(calls, 1);
+    assert.ok(bus.messages.list(inner.id).some(message => message.contact_id === MAGI_CONTACT_ID && message.content === "private independent note"));
+    const home = bus.chats.forChannel("local-owner", "home");
+    assert.equal(bus.tools.catalog({ chat_id: home.id }).some(tool => tool.name === "observe_conversations"), false);
+    assert.equal(bus.tools.catalog({ chat_id: inner.id }).some(tool => tool.name === "observe_conversations"), true);
+    await subconscious.stop();
+    const next = messageDelivery.send(bus, inner.id, "later", undefined, "task");
+    assert.equal(await subconscious.poll(), false);
+    assert.equal(bus.board("MessageDeliveryJob").result(next), null);
+  } finally { await subconscious.stop(); await provider.stop(); bus.close(); }
+});
+
+test("stopping subconscious during its internal tool wait aborts promptly and can restart", async () => {
+  const { Bus } = await import("@magi/bus");
+  const { SubconsciousWorker } = await import("@magi/subconscious/worker.js");
+  const { ProvidersWorker } = await import("@magi/providers/worker.js");
+  const bus = new Bus("@private-stop.magi", await workspace());
+  const worker = new SubconsciousWorker(bus);
+  const provider = new ProvidersWorker(bus, { async complete() { return { role: "assistant", content: "", tool_calls: [{ name: "observe_conversations", tool_call_id: "observe", arguments: {} }] }; } });
+  try {
+    await worker.start(); await provider.start();
+    const inner = bus.chats.forChannel("subconscious", "self");
+    const id = messageDelivery.send(bus, inner.id, "continue", undefined, "task");
+    await worker.poll();
+    // The launcher removes this worker's poll loop before calling targeted stop.
+    // Only provider polling continues; deliberately leave its own tool unclaimed.
+    for (let i = 0; i < 100 && !bus.board("RunToolJob").hasPending(); i++) { await provider.poll(); await sleep(10); }
+    assert.ok(bus.board("RunToolJob").hasPending());
+    const started = performance.now();
+    await worker.stop();
+    assert.ok(performance.now() - started < 1000, "stop must not wait for a tool timeout");
+    assert.equal(bus.board("MessageDeliveryJob").result(id)?.status, "failed");
+    assert.equal(bus.tools.catalog({ chat_id: inner.id }).some(tool => tool.name === "observe_conversations"), false);
+    await worker.start();
+    assert.equal(bus.chats.list("subconscious").length, 1);
+    assert.equal(bus.tasks.list().length, 1);
+  } finally { await worker.stop(); await provider.stop(); bus.close(); }
 });

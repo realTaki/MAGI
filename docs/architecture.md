@@ -284,3 +284,20 @@ On first open after this change, only old system-authored rows with matching loc
 human channel and delivery-journal provenance are reassigned to the new human
 contact. Ambiguous historical rows retain their original ID and an unknown-source
 header; existing contact IDs, including a peer already at ID 3, are not overwritten.
+
+### Independent internal modules
+
+`@magi/subconscious` owns its persistent self-only conversation, bounded private
+continuations, rolling summary, observation/handoff tools, and deterministic
+onboarding/action/task presets. It does not instantiate or depend on AgentWorker
+or its Chat class. AgentWorker only consumes foreground conversations. Both use
+BUS message/turn journals and the provider worker; background calls retain their
+bounded low-priority lane. TaskWorker remains the generic timed dispatcher and
+no longer seeds private policy. Subconscious handoffs are system events with the
+subconscious module header, not direct external messages.
+
+`@magi/action-items` owns shared note tools and active-note prompt contributions.
+Its worker lifecycle controls both; MemoryWorker no longer owns action items.
+The durable note Book, versions, and seed markers remain in BUS unchanged. Shell
+and hosted EVAs compose one worker of each kind. Stopping either module removes
+its tools/context without deleting its durable records.

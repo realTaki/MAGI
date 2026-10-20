@@ -66,9 +66,9 @@ test("cron matching supports ranges, lists, and steps in UTC", () => {
 
 test("subconscious presets seed once, and removal or edits survive restart", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-presets-")); workspaces.push(workspace);
-  const { TaskWorker } = await import("@magi/channel-tasks/worker.js");
+  const { SubconsciousWorker } = await import("@magi/subconscious/worker.js");
   let magi = new Magi("@seed.magi", { workspace });
-  let worker = new TaskWorker(magi.bus, { isReady: () => false });
+  let worker = new SubconsciousWorker(magi.bus);
   await worker.start();
   const preset = magi.bus.tasks.list()[0];
   expect(magi.bus.actionItems.list()).toHaveLength(3);
@@ -81,7 +81,7 @@ test("subconscious presets seed once, and removal or edits survive restart", asy
   magi.bus.actionItems.delete(magi.bus.actionItems.list()[0].id);
   await magi.stop();
   magi = new Magi("@seed.magi", { workspace });
-  worker = new TaskWorker(magi.bus, { isReady: () => false });
+  worker = new SubconsciousWorker(magi.bus);
   await worker.start();
   expect(magi.bus.tasks.list()).toHaveLength(0);
   expect(magi.bus.actionItems.list()).toHaveLength(2);
@@ -113,6 +113,8 @@ test("provider readiness gates private task firing without consuming it", async 
   try {
     const worker = new TaskWorker(magi.bus, { isReady: () => false });
     await worker.start();
+    const { seedSubconscious } = await import("@magi/subconscious/presets.js");
+    seedSubconscious(magi.bus);
     const task = magi.bus.tasks.list()[0];
     magi.bus.tasks.update(task.id, { cron: "", run_at: "2026-01-01T00:00:00Z" });
     magi.bus.tasks.markFired(task.id, "2020-01-01T00:00");
@@ -247,13 +249,13 @@ test("task identity migration preserves every field and only removes name unique
 });
 
 test("preset seed identity is independent of task label and survives restart", async () => {
-  const { TaskWorker } = await import("@magi/channel-tasks/worker.js");
+  const { SubconsciousWorker } = await import("@magi/subconscious/worker.js");
   const workspace = await mkdtemp(join(tmpdir(), "magi-seed-id-")); workspaces.push(workspace);
   let magi = new Magi("@seed-id.magi", { workspace });
   try {
     const chat = magi.bus.chats.forChannel("test-owner", "terminal");
     const user = magi.bus.tasks.create({ name: "Subconscious review", prompt: "user task", cron: "0 8 * * *", chat_id: chat.id });
-    const worker = new TaskWorker(magi.bus, { isReady: () => false });
+    const worker = new SubconsciousWorker(magi.bus);
     await worker.start();
     const preset = magi.bus.tasks.list().find(task => task.source === "subconscious")!;
     assert.notEqual(preset.id, user.id);
@@ -264,7 +266,7 @@ test("preset seed identity is independent of task label and survives restart", a
     magi.bus.tasks.delete(preset.id);
     await magi.stop();
     magi = new Magi("@seed-id.magi", { workspace });
-    await new TaskWorker(magi.bus, { isReady: () => false }).start();
+    await new SubconsciousWorker(magi.bus).start();
     assert.deepEqual(magi.bus.tasks.list().map(task => task.id), [user.id]);
     assert.equal(magi.bus.tasks.get(user.id)?.prompt, "user task");
   } finally { await magi.stop(); }

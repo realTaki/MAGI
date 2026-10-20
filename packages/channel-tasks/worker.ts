@@ -9,7 +9,6 @@
  */
 
 import { BaseWorker, SYSTEM_CONTACT_ID, type Bus, type ExecutableTool, type Task } from "@magi/bus";
-import { seedSubconscious } from "./presets.js";
 import { taskTools } from "./tools.js";
 
 /** Scanning the book costs more than claiming a job; a second is plenty for minute precision. */
@@ -29,7 +28,7 @@ export class TaskWorker extends BaseWorker {
     bus.tools.registerSource("tasks", () => (this.started ? this.own : []));
   }
 
-  async start(): Promise<void> { seedSubconscious(this.bus); this.started = true; }
+  async start(): Promise<void> { this.started = true; }
 
   async poll(): Promise<boolean> {
     if (!this.started) return false;

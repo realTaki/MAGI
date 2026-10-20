@@ -20,7 +20,7 @@ test("operator DMs independent EVAs and their direct peer replies do not create 
   try {
     for (const node of nodes) await node.start();
     for (const node of nodes) for (const other of nodes) if (node !== other) node.bus.contacts.savePeer(node.bus.contacts.forPeer({ principal: other.bus.settings.get("peer.principal")!, endpoint: other.bus.settings.get("peer.reachableURL")! }).id);
-    for (const node of nodes) { const owner = createOwnerApi(node.bus); owner["owner.chat"]({ content: "owner hello" }); await until(() => owner["owner.events"]().some(message => message.role === "assistant")); }
+    for (const node of nodes) { const owner = createOwnerApi(node.bus); owner["owner.chat"]({ content: "owner hello" }); await until(() => owner["owner.events"]().some(message => message.role === "assistant" && message.content === `reply:${node.bus.handle.slice(1).split(".")[0]}`)); }
     assert.deepEqual(calls, [1, 1, 1]);
     const target = nodes[0].bus.chats.forPeer(nodes[1].bus.settings.get("peer.principal")!);
     const job = messageDelivery.send(nodes[0].bus, target.id, "peer hello", MAGI_CONTACT_ID);

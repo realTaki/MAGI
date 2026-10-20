@@ -439,11 +439,11 @@ describe("local MAGI agent", () => {
     magi.bus.memoryBook.save({ topic: "goal", detail: "ship it", kind: "long_term" });
     await magi.start();
     await magi.chat("what can you do?");
-    const titles = ["Available skills", "Identity", "Members", "Long-term memory"];
+    const titles = ["Available skills", "Identity", "Members", "Long-term memory", "Action items"];
     for (const title of titles) expect(requests[0].messages[0].content).toContain(`## ${title}`);
 
     // Every block belongs to the worker that answers for it: stop one, it is gone.
-    for (const worker of ["skills", "contacts", "memory"]) {
+    for (const worker of ["skills", "contacts", "memory", "action-items"]) {
       const board = magi.bus.board("ManageWorkerNotify");
       const id = board.publish({ worker, action: "stop" }, "test");
       for (let attempt = 0; attempt < 500 && !board.result(id); attempt++) await sleep(10);

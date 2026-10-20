@@ -4,9 +4,11 @@
 
 import { LocalOwnerWorker } from "./owner.js";
 import type { Bus } from "@magi/bus";
+import { SubconsciousWorker } from "@magi/subconscious/worker.js";
 import { AgentWorker } from "@magi/agent/worker.js";
 import { ToolsWorker, type Tool } from "@magi/built-in-tools/worker.js";
 import { ContactsWorker } from "@magi/contacts/worker.js";
+import { ActionItemsWorker } from "@magi/action-items/worker.js";
 import { MemoryWorker } from "@magi/memory/worker.js";
 import { ProvidersWorker } from "@magi/providers/worker.js";
 import type { LLMClient } from "@magi/providers/client.js";
@@ -22,8 +24,10 @@ function shared(bus: Bus, client?: LLMClient, tools?: Tool[]): BaseWorker[] {
     new ContactsWorker(bus),
     new SkillWorker(bus),
     new AgentWorker(bus),
+    new SubconsciousWorker(bus),
     new ToolsWorker(bus, tools),
     new MemoryWorker(bus),
+    new ActionItemsWorker(bus),
     new ProvidersWorker(bus, client),
     new TaskWorker(bus, { isReady: () => Boolean(client || (bus.settings.get("provider.name") && bus.secrets.get("provider.api_key"))) }),
   ];
@@ -57,4 +61,4 @@ export function shellWorkers(bus: Bus, webapp: BaseWorker, peer: BaseWorker, cli
 }
 
 /** Pause a hosted MAGI without taking down its UI or peer listener. */
-export const HOSTED_NODE_WORKERS = ["contacts", "skills", "agent", "tools", "memory", "providers", "task", "mcp", "tg"];
+export const HOSTED_NODE_WORKERS = ["contacts", "skills", "agent", "subconscious", "tools", "memory", "action-items", "providers", "task", "mcp", "tg"];

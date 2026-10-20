@@ -112,7 +112,7 @@ export class Bus {
     // One process runs one replace, so a marker names the only claimed ReplaceSelfJob.
     // Claims without a turn journal never began execution (for example, queued
     // same-chat deliveries from an older build); leave those eligible for requeue.
-    const interruptedTurns = this.jobs.select().from(jobs).where(and(eq(jobs.type, "MessageDeliveryJob"), eq(jobs.status, "claimed"), eq(jobs.worker, "agent"))).all()
+    const interruptedTurns = this.jobs.select().from(jobs).where(and(eq(jobs.type, "MessageDeliveryJob"), eq(jobs.status, "claimed"), inArray(jobs.worker, ["agent", "subconscious"]))).all()
       .filter((turn) => this.jobs.select({ id: agentTurnsCache.id }).from(agentTurnsCache).where(eq(agentTurnsCache.turn_id, turn.id)).limit(1).get());
     for (const turn of interruptedTurns) this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted; this turn was interrupted and was not retried" }).where(eq(jobs.id, turn.id)).run();
     this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before this model call finished" })
@@ -185,7 +185,7 @@ export class Bus {
       this.agentTurns.evict(turn.id);
       const input = JSON.parse(turn.input) as JobInput["MessageDeliveryJob"];
       const message = this.messages.get(input.message_id);
-      if (message) messageDelivery.reportError(this, reason, { module: "agent", source: `restart:${turn.id}`, chat_id: message.chat_id, wake: !messageDelivery.isError(this, message.id) });
+      if (message) messageDelivery.reportError(this, reason, { module: turn.worker ?? "agent", source: `restart:${turn.id}`, chat_id: message.chat_id, wake: !messageDelivery.isError(this, message.id) });
     }
     this.deliveries.reconcile(this);
   }

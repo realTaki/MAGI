@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Bus, chat, messageDelivery, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "@magi/bus";
-import { toLLMMessage } from "@magi/agent/chats.js";
+import { toLLMMessage } from "@magi/bus";
 import { PiAiClient } from "@magi/providers/client.js";
 import { createOwnerApi } from "@magi/launcher/composition/owner.js";
 import { Magi } from "./harness.js";

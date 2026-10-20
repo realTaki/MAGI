@@ -4,6 +4,7 @@ export type LLMTool = { name: string; description: string; input_schema: Record<
 export type ToolRunContext = { chat_id?: number; message_id?: number };
 
 export type ExecutableTool = LLMTool & {
+  available?: (context: ToolRunContext) => boolean;
   run(args: Record<string, unknown>, signal?: AbortSignal, context?: ToolRunContext): Promise<string>;
 };
 
@@ -35,8 +36,8 @@ export class ToolBook {
     return this.snapshot().get(name) ?? null;
   }
 
-  catalog(): LLMTool[] {
-    return [...this.snapshot().values()].map(({ name, description, input_schema }) => ({ name, description, input_schema }));
+  catalog(context: ToolRunContext = {}): LLMTool[] {
+    return [...this.snapshot().values()].filter(tool => !tool.available || tool.available(context)).map(({ name, description, input_schema }) => ({ name, description, input_schema }));
   }
 
   private snapshot(): Map<string, ExecutableTool> {

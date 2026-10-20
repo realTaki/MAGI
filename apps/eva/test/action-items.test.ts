@@ -6,8 +6,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Bus, SYSTEM_CONTACT_ID, type LLMRequest } from "@magi/bus";
-import { actionItemTools } from "@magi/memory/actionItems.js";
-import { MemoryWorker } from "@magi/memory/worker.js";
+import { actionItemTools } from "@magi/action-items/tools.js";
+import { ActionItemsWorker } from "@magi/action-items/worker.js";
 import { Magi } from "./harness.js";
 
 test("working notes persist across restart, archive explicitly, and remain EVA-local", async () => {
@@ -44,7 +44,7 @@ test("working notes persist across restart, archive explicitly, and remain EVA-l
 test("action item tools validate CRUD and retire context with their worker", async () => {
   const path = await mkdtemp(join(tmpdir(), "magi-action-tools-"));
   const bus = new Bus("@notes.magi", path);
-  const worker = new MemoryWorker(bus);
+  const worker = new ActionItemsWorker(bus);
   try {
     const tools = new Map(actionItemTools(bus).map((tool) => [tool.name, tool]));
     const run = (name: string, args: Record<string, unknown>) => tools.get(name)!.run(args);

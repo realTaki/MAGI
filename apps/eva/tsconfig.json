@@ -51,6 +51,12 @@
     },
     {
       "path": "../../packages/channel-telegram"
+    },
+    {
+      "path": "../../packages/subconscious"
+    },
+    {
+      "path": "../../packages/action-items"
     }
   ]
 }

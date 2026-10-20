@@ -42,6 +42,8 @@
     "@magi/channel-tasks": "*",
     "@magi/channel-telegram": "*",
     "@magi/webapp": "*",
-    "@magi/channel-a2a": "*"
+    "@magi/channel-a2a": "*",
+    "@magi/subconscious": "*",
+    "@magi/action-items": "*"
   }
 }
