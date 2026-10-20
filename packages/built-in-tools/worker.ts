@@ -1,4 +1,4 @@
-import { abortable } from "@magi/bus/abort.js";
+import { abortable, MUTATION_SETTLE_MS, settleWithin } from "@magi/bus/abort.js";
 /**
  * The built-in tools, owned by the worker that runs them.
  *
@@ -57,7 +57,10 @@ export class ToolsWorker extends BaseWorker {
     bus.tools.registerSource("builtin", () => [...this.own.values()]);
   }
 
-  start(): void { if (this.controller.signal.aborted) this.controller = new AbortController(); }
+  start(): void {
+    if (this.controller.signal.aborted && this.pending.size) throw new Error("Cannot restart tools while an interrupted mutation still owns work");
+    if (this.controller.signal.aborted) this.controller = new AbortController();
+  }
 
   async interrupt(): Promise<void> { this.controller.abort(new Error("MAGI stopped")); await this.shells.shutdown(); }
 
@@ -91,5 +94,12 @@ export class ToolsWorker extends BaseWorker {
     }
   }
 
-  async stop(): Promise<void> { await this.interrupt(); await Promise.all(this.pending); await this.shells.shutdown(); }
+  async stop(): Promise<void> {
+    await this.interrupt();
+    // A timeout is NOT a graceful stop. Keep the raw promises and their claims;
+    // the caller must keep BUS open and must not activate a replacement yet.
+    await settleWithin(Promise.all(this.pending), MUTATION_SETTLE_MS,
+      "Cannot stop tools safely: an uncancellable mutation is still active; outcome unknown. Keep the workspace open and retry stop after it settles, or terminate the owning process before replacement.");
+    await this.shells.shutdown();
+  }
 }

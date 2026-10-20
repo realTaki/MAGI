@@ -43,6 +43,7 @@ export class Shell {
   private readonly manager: ManagerWorker;
   private ready: Promise<void> | null = null;
   private stopping: Promise<void> | null = null;
+  private stopRequested = false;
 
   constructor(context: ShellContext) {
     const workspace = prepareShellWorkspace(context.paths.home);
@@ -79,9 +80,10 @@ export class Shell {
   /** Null when the workers that should be up have nothing wrong. */
   healthy(): string | null { return this.manager.healthy(); }
 
-  get stopped(): boolean { return this.stopping !== null; }
+  get stopped(): boolean { return this.stopRequested; }
 
   async stop(shutdown = false): Promise<void> {
+    this.stopRequested = true;
     if (shutdown) {
       this.worker.requestShutdown();
 
@@ -94,8 +96,16 @@ export class Shell {
       }
       return;
     }
-    this.stopping = this.stopOnce();
-    await this.stopping;
+    const stopping = this.stopOnce();
+    this.stopping = stopping;
+    try { await stopping; }
+    catch (error) {
+      // A live mutation can refuse graceful shutdown. BUS is still open; allow
+      // the owner to settle and a subsequent stop to finish instead of caching
+      // the rejected promise forever.
+      if (this.stopping === stopping) this.stopping = null;
+      throw error;
+    }
   }
 
   private async stopOnce(): Promise<void> {

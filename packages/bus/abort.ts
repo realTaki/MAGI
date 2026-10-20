@@ -8,3 +8,15 @@ export function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promis
       (error) => { signal.removeEventListener("abort", aborted); reject(error); });
   });
 }
+
+/** A grace period, not cancellation: unfinished mutations retain their owner. */
+export const MUTATION_SETTLE_MS = 1_000;
+
+/** Bound an ownership wait without cancelling or discarding the underlying task. */
+export function settleWithin<T>(operation: Promise<T>, timeoutMs: number, error: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(error)), timeoutMs);
+    operation.then((value) => { clearTimeout(timer); resolve(value); },
+      (cause) => { clearTimeout(timer); reject(cause); });
+  });
+}

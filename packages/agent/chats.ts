@@ -1,3 +1,4 @@
+import { MUTATION_SETTLE_MS } from "@magi/bus/abort.js";
 import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, messageDelivery, type Bus, type LLMMessage, type Message } from "@magi/bus";
 import { COMPACTION_INVARIANT, SYSTEM_PROMPT } from "./prompt_defaults.js";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -44,19 +45,23 @@ export class Chat {
 
   private async settleInterruptedTools(turnId: number, reason: string): Promise<void> {
     const board = this.bus.board("RunToolJob");
+    // One budget for the whole turn, not one grace period per mutation. Cancel
+    // unclaimed calls up front so they cannot begin while another call settles.
+    const deadline = performance.now() + MUTATION_SETTLE_MS;
+    for (const id of this.pendingTools) board.failPending(id, reason);
     for (const id of this.pendingTools) {
       const input = board.peekInput(id);
       if (!input) continue;
-      board.failPending(id, reason);
       const mutation = input.call.name === "write_file" || input.call.name === "edit_file";
-      // Atomic file mutations do not support cancellation. Await their owned result
-      // instead of reporting failure while the worker is still committing the write.
-      if (mutation) while (!board.result(id)) await sleep(10);
+      // Atomic file mutations do not support cancellation. Give their owner time
+      // to report, but an orphaned claim must not strand the interrupted turn.
+      // Never fail a claimed mutation: a late owner still has the right to submit.
+      if (mutation) while (!board.result(id) && performance.now() < deadline) await sleep(10);
       else board.fail(id, reason);
       const result = board.result(id);
       this.bus.agentTurns.appendToolResult(turnId, {
         role: "tool", tool_call_id: input.call.tool_call_id, tool_name: input.call.name,
-        content: result?.status === "completed" ? result.output?.content ?? "" : result?.error ?? reason,
+        content: result?.status === "completed" ? result.output?.content ?? "" : result?.error ?? `${reason} Tool outcome is unknown; the mutation may still complete. Check the file before retrying.`,
         is_error: result?.status !== "completed",
       });
     }

@@ -60,7 +60,7 @@ export type StartableWorker = {
   health?(): string | null;
 };
 
-type RunningWorker = { worker: StartableWorker; loop: Promise<void> };
+type RunningWorker = { worker: StartableWorker; loop: Promise<void>; stopping?: Promise<void> };
 
 export type ManagerOptions = {
   /** Workers that must finish their current poll before anything else stops. */
@@ -79,6 +79,8 @@ export class ManagerWorker extends BaseWorker {
   private readonly drain: string[];
   private readonly nodeWorkers: Set<string>;
   private readonly running = new Map<string, RunningWorker>();
+  /** Failed stops still own work and must settle before restart or BUS closure. */
+  private readonly stopping = new Map<string, RunningWorker>();
   /** What was last reported about each running worker, so only changes notify. */
   private readonly health = new Map<string, string | null>();
   private readonly failures = new Map<string, number>();
@@ -124,6 +126,7 @@ export class ManagerWorker extends BaseWorker {
 
   /** Null when every worker that should be running is up and reports nothing wrong. */
   healthy(): string | null {
+    if (this.stopping.size) return `${[...this.stopping.keys()].join(", ")} still stopping; unfinished work retains ownership`;
     for (const worker of this.workers) {
       if (!this.wanted(worker)) continue;
       if (!this.running.has(worker.worker_name)) return `${worker.worker_name} is not running`;
@@ -135,6 +138,7 @@ export class ManagerWorker extends BaseWorker {
 
   /** Bring up every worker that is configured. Failures are reported, not thrown. */
   async start(): Promise<void> {
+    for (const name of this.stopping.keys()) await this.stopWorker(name);
     if (this.started) return;
     this.started = true;
     this.initializing = true;
@@ -152,7 +156,7 @@ export class ManagerWorker extends BaseWorker {
     this.started = false;
     await this.loop;
     this.loop = null;
-    for (const name of [...this.running.keys()]) await this.stopWorker(name);
+    await this.stopWorkers(new Set([...this.running.keys(), ...this.stopping.keys()]));
   }
 
   /**
@@ -162,10 +166,15 @@ export class ManagerWorker extends BaseWorker {
   async suspendForReplace(): Promise<void> {
     await this.interruptWorkers();
     for (const name of this.drain) await this.stopWorker(name);
-    for (const name of [...this.running.keys()]) {
-      if (name === "replace") continue;
-      await this.stopWorker(name);
+    await this.stopWorkers([...new Set([...this.running.keys(), ...this.stopping.keys()])].filter((name) => name !== "replace"));
+  }
+
+  private async stopWorkers(names: Iterable<string>): Promise<void> {
+    const errors: unknown[] = [];
+    for (const name of names) {
+      try { await this.stopWorker(name); } catch (error) { errors.push(error); }
     }
+    if (errors.length) throw new Error(errors.map(message).join("; "));
   }
 
   private async interruptWorkers(): Promise<void> {
@@ -222,6 +231,8 @@ export class ManagerWorker extends BaseWorker {
 
   /** Converge: run what is configured, stop what is not. */
   private async reconcile(): Promise<void> {
+    // No new worker generation while any old generation still owns mutations.
+    for (const name of this.stopping.keys()) await this.stopWorker(name);
     for (const worker of this.workers) {
       const name = worker.worker_name;
       const running = this.running.has(name);
@@ -257,15 +268,25 @@ export class ManagerWorker extends BaseWorker {
   }
 
   private async stopWorker(name: string): Promise<void> {
-    const running = this.running.get(name);
+    const running = this.running.get(name) ?? this.stopping.get(name);
     if (!running) return;
+    if (running.stopping) return running.stopping;
     // Dropping it first keeps the loop from starting one more poll while it stops.
     this.running.delete(name);
     this.health.delete(name);
     this.failures.delete(name);
     this.failing.delete(name);
-    await running.loop;
-    await running.worker.stop?.();
+    // Preserve legacy poll-generation detachment for workers without a stop
+    // hook. Retained shutdown ownership applies to explicit lifecycle owners.
+    if (!running.worker.stop) { await running.loop; return; }
+    this.stopping.set(name, running);
+    running.stopping = (async () => {
+      await running.loop;
+      await running.worker.stop?.();
+      this.stopping.delete(name);
+    })();
+    try { await running.stopping; }
+    finally { running.stopping = undefined; }
   }
 
   private runLoop(name: string, worker: StartableWorker): Promise<void> {

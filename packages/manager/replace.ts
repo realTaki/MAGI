@@ -81,8 +81,11 @@ export class ReplaceWorker extends BaseWorker {
       snapshot(dist, backup);
       await runBuild(appDir, this.build.script);
       await checkEntry(entry);
-      await this.host.suspendForReplace();
+      // Suspension may stop some workers before an uncancellable mutation
+      // refuses to drain. Attempt recovery even for that partial suspension;
+      // the manager will refuse to resume until the old owner settles.
       suspended = true;
+      await this.host.suspendForReplace();
       await healthCheck(this.build.app === "eva" ? "agent" : this.build.app);
       board.submit(this.worker_name, id, { output: { replaced: true } });
       rmSync(backup, { recursive: true, force: true });
