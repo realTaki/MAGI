@@ -347,9 +347,9 @@ export function createMagiRuntime({
   }
 
   /** Stop every MAGI this backend started (desktop shutdown). */
-  function stopAll() {
+  async function stopAll() {
     const handles = [...children.keys()];
-    for (const handle of handles) stop(handle);
+    await Promise.all(handles.map(handle => stopLocal(handle)));
     return { stopped: handles.length };
   }
 

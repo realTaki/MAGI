@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -208,7 +209,7 @@ test(`a conflicting merge is aborted and reported (autocrlf=${autocrlf})`, async
   assert.equal((await git(source, ["status", "--porcelain"])).trim(), "", "no half-finished merge is left behind");
 });
 
-test("only the explicit local default gets an independent launcher, with concurrent starts coalesced", async () => {
+test("only explicitly provisioned local EVAs get independent launchers, with concurrent starts coalesced", async () => {
   const specs = [];
   let exit;
   const runtime = createMagiRuntime({
@@ -220,20 +221,22 @@ test("only the explicit local default gets an independent launcher, with concurr
       return { stop() {}, onExit(callback) { exit = callback; } };
     },
   });
-  const local = { handle: EVA_MAGI_HANDLE, token: "synthetic-local-token" };
+  const local = { handle: EVA_MAGI_HANDLE, local: true, port: 45555, url: "http://127.0.0.1:45555" };
   await Promise.all([runtime.startLocal(local), runtime.startLocal(local)]);
   assert.equal(specs.length, 1);
   assert.equal(specs[0].entry, path.join(repository, "apps/eva/eva.mjs"));
   assert.deepEqual(specs[0].args, ["--role", "agent", EVA_MAGI_HANDLE]);
-  assert.equal(specs[0].env.MAGI_HOST, "0");
+  assert.equal(specs[0].env.MAGI_HOST, "1");
   assert.equal(specs[0].env.MAGI_HOME, "/isolated-profile");
   assert.equal(specs[0].env.MAGI_CHILD, undefined);
   assert.equal(specs[0].env.MAGI_REVISION_DIR, undefined);
   assert.equal(specs[0].env.MAGI_DESKTOP_UPDATE_JOURNAL, undefined);
   assert.equal(specs[0].env.MAGI_DESKTOP_UPDATE_ID, undefined);
-  assert.equal(specs[0].env.MAGI_ASP_TOKEN, local.token);
+  assert.equal(specs[0].env.MAGI_ASP_TOKEN, undefined);
+  assert.equal(specs[0].env.MAGI_PEER_PORT, "45555");
+  assert.equal(specs[0].env.MAGI_SERVER, "1");
   assert.deepEqual(await runtime.startLocal(local), { handle: EVA_MAGI_HANDLE, started: false });
-  await assert.rejects(runtime.startLocal({ handle: "@external.magi", token: "external" }), /Only the default local/);
+  await assert.rejects(runtime.startLocal({ handle: "@external.magi", token: "external" }), /Only explicitly provisioned/);
   exit(0, null);
   assert.deepEqual(runtime.running(), []);
 });
@@ -246,13 +249,14 @@ test("local launcher errors fail startup and leave no running record", async () 
     spawnProcess() {
       launches += 1;
       const child = new EventEmitter();
+      child.stdout = new PassThrough(); child.stdin = new PassThrough();
       child.kill = () => true;
       queueMicrotask(() => child.emit("error", new Error("synthetic launcher failure")));
       return child;
     },
   });
   for (let attempt = 0; attempt < 2; attempt++) {
-    await assert.rejects(runtime.startLocal({ handle: EVA_MAGI_HANDLE, token: "synthetic" }), /synthetic launcher failure/);
+    await assert.rejects(runtime.startLocal({ handle: EVA_MAGI_HANDLE, local: true, port: 45556, url: "http://127.0.0.1:45556" }), /synthetic launcher failure/);
     assert.deepEqual(runtime.running(), []);
   }
   assert.equal(launches, 2, "a failed start does not retain an in-flight request");
@@ -265,7 +269,7 @@ test("an operator stop remains running until the owned launcher confirms exit", 
     tools: { ...testRuntime, git: "git", env: {} }, run: async () => "",
     startProcess: async () => ({ stop() { stops++; }, onExit(callback) { exits.push(callback); } }),
   });
-  await runtime.startLocal({ handle: EVA_MAGI_HANDLE, token: "synthetic-owned" });
+  await runtime.startLocal({ handle: EVA_MAGI_HANDLE, local: true, port: 45557, url: "http://127.0.0.1:45557" });
   const stopped = runtime.stopLocal(EVA_MAGI_HANDLE);
   assert.equal(stops, 1);
   assert.deepEqual(runtime.running(), [EVA_MAGI_HANDLE]);

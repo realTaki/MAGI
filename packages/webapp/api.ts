@@ -807,7 +807,7 @@ export function createLocalApi(context) {
 
   async function shutdown() {
     await dispose();
-    magiRuntime.stopAll();
+    await magiRuntime.stopAll();
   }
 
   async function runtimeAction(action) {

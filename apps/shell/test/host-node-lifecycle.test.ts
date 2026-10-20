@@ -1,143 +1,76 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import { ASP_MAGI_HANDLE, SHELL_MAGI_HANDLE, EVA_MAGI_HANDLE } from "@magi/bus";
-import { ASP_ORIGIN } from "@magi/webapp";
 import { Shell } from "@magi/node";
-import { Asp } from "../../asp/asp.ts";
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-const repository = path.resolve(import.meta.dirname, "../../..");
-const bundledNpm = path.join(repository, "apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js");
-const npm = [process.env.MAGI_NPM?.trim(), process.env.npm_execpath?.trim(), bundledNpm].find((candidate) => candidate && existsSync(candidate));
-if (!npm) throw new Error("MAGI's bundled npm runtime is missing");
-async function until(read: () => boolean | Promise<boolean>, timeout = 8000) {
-  const deadline = Date.now() + timeout;
-  while (Date.now() < deadline) { if (await read()) return; await sleep(20); }
-  throw new Error("actual node lifecycle did not converge");
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+async function until(read: () => boolean) {
+  const end = Date.now() + 8000;
+  while (Date.now() < end) { if (read()) return; await sleep(20); }
+  throw new Error("lifecycle did not converge");
 }
-
-test("profile controls pause hosted Shell/Casper durably and stop/restart the real local Melchior launcher", async () => {
-  const root = await mkdtemp(path.join(tmpdir(), "magi-host-control-"));
-  const previous = { home: process.env.MAGI_HOME, os: process.env.MAGI_OS_HOME, origin: ASP_ORIGIN.href };
-  process.env.MAGI_HOME = path.join(root, "profile");
-  process.env.MAGI_OS_HOME = path.join(root, "os");
-  const asp = new Asp({ databasePath: path.join(root, "asp.sqlite"), workspace: path.join(root, "casper"), host: "127.0.0.1", port: 0,
-    client: { async complete() { return { role: "assistant" as const, content: "NO_REPLY" }; } },
-  });
+const repository = path.resolve(import.meta.dirname, "../../..");
+test("Shell explicitly creates, stops and restarts a real owned EVA without an ASP relay", { timeout: 45_000 }, async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "magi-owned-peer-"));
+  const prior = { home: process.env.MAGI_HOME, os: process.env.MAGI_OS_HOME };
+  process.env.MAGI_HOME = path.join(root, "profile"); process.env.MAGI_OS_HOME = path.join(root, "os");
   const children: ReturnType<typeof spawn>[] = [];
-  let shell: Shell | undefined;
   let entered = false;
   let requestSignal: AbortSignal | undefined;
   let finish!: (value: any) => void;
-  const pending = new Promise<any>((resolve) => { finish = resolve; });
+  const pending = new Promise<any>(resolve => { finish = resolve; });
+  const shell = new Shell({ paths: { home: process.env.MAGI_OS_HOME, userData: path.join(root, "electron"), checkout: repository }, repository: "https://github.com/realTaki/MAGI.git", managed: false,
+    tools: { git: "git", node: process.execPath, npm: path.join(repository, "apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js"), env: process.env },
+    client: { complete(_job, signal) { entered = true; requestSignal = signal; return pending; } },
+    emit() {}, async openExternal() {}, copy() {}, spawn(file, args, options) { const child = spawn(file, args, options); children.push(child); return child; } });
   try {
-    await asp.start(); ASP_ORIGIN.href = asp.origin;
-    shell = new Shell({
-      paths: { home: process.env.MAGI_OS_HOME, userData: path.join(root, "electron"), checkout: repository },
-      repository: "https://github.com/realTaki/MAGI.git", managed: false,
-      tools: { git: "git", node: process.execPath, npm, env: process.env },
-      emit: () => {}, openExternal: async () => {}, copy: () => {},
-      client: { complete(_job, signal) { entered = true; requestSignal = signal; return pending; } },
-      spawn(file, args, options) { const child = spawn(file, args, options); children.push(child); return child; },
-    });
-    await shell.start();
+    await shell.start(); assert.equal(children.length, 0);
     const api = shell.worker.methods;
-    await api.start();
-    await until(() => [SHELL_MAGI_HANDLE, ASP_MAGI_HANDLE, EVA_MAGI_HANDLE].every((handle) => asp.transport.isOnline(handle)));
-    for (const handle of [SHELL_MAGI_HANDLE, ASP_MAGI_HANDLE, EVA_MAGI_HANDLE]) assert.equal((await api["magi.info"]({ handle })).running, true, handle);
-
-    const stopShell = await api["magi.stop"]({ handle: SHELL_MAGI_HANDLE });
-    assert.equal(stopShell.stopped, true);
-    await until(() => !asp.transport.isOnline(SHELL_MAGI_HANDLE));
-    assert.equal((await api["magi.info"]({ handle: SHELL_MAGI_HANDLE })).online, false);
-    assert.equal((await api["magi.info"]({ handle: SHELL_MAGI_HANDLE })).running, false);
-    assert.equal(asp.transport.isOnline(ASP_MAGI_HANDLE), true);
-    assert.equal(asp.transport.isOnline(EVA_MAGI_HANDLE), true);
-    // A worker-start request and multiple supervisor health cycles must not undo an operator stop.
-    const wake = shell.bus.board("ManageWorkerNotify").publish({ worker: "asp", action: "start" }, "test");
-    await until(() => shell!.bus.board("ManageWorkerNotify").result(wake) !== null);
-    await sleep(1300);
-    assert.equal(asp.transport.isOnline(SHELL_MAGI_HANDLE), false);
-    assert.equal(shell.bus.settings.get("node.enabled"), "false");
-    await api.ready(); // The UI backend itself is still callable while Balthasar is stopped.
-
-    for (const method of ["GET", "POST"]) {
-      const denied = await fetch(new URL("/runtime/host", asp.origin), { method, headers: { "content-type": "application/json" }, ...(method === "POST" ? { body: JSON.stringify({ action: "stop" }) } : {}) });
-      assert.equal(denied.status, 401, "host controls require operator authentication");
-    }
-    await api["magi.stop"]({ handle: ASP_MAGI_HANDLE });
-    await until(() => !asp.transport.isOnline(ASP_MAGI_HANDLE));
-    assert.equal((await api["magi.info"]({ handle: ASP_MAGI_HANDLE })).running, false);
-    assert.equal((await (await fetch(new URL("/health", asp.origin))).json()).status, "ok", "stopping Casper keeps the relay alive");
-    assert.equal(asp.transport.isOnline(EVA_MAGI_HANDLE), true);
-    asp.bus.board("ManageWorkerNotify").publish({ worker: "asp", action: "start" }, "test");
-    await sleep(1300);
-    assert.equal(asp.transport.isOnline(ASP_MAGI_HANDLE), false);
-
-    await api["magi.start"]({ handle: SHELL_MAGI_HANDLE });
-    await api["magi.start"]({ handle: ASP_MAGI_HANDLE });
-    await until(() => asp.transport.isOnline(SHELL_MAGI_HANDLE) && asp.transport.isOnline(ASP_MAGI_HANDLE));
-    assert.equal((await api["magi.start"]({ handle: SHELL_MAGI_HANDLE })).started, false, "repeated host start is idempotent");
-
-    const heartbeat = path.join(root, "owned-command.json");
-    const code = `const fs=require('node:fs');let count=0;const beat=()=>fs.writeFileSync(${JSON.stringify(heartbeat)},JSON.stringify({pid:process.pid,count:++count}));beat();setInterval(beat,50)`;
-    const quote = (value: string) => process.platform === "win32" ? "'" + value.replaceAll("'", "''") + "'" : "'" + value.replaceAll("'", "'\"'\"'") + "'";
-    const script = path.join(root, "owned heartbeat.cjs");
-    writeFileSync(script, code);
-    // Windows PowerShell 5.1 reparses native arguments; keep JS source out of -e.
-    const command = `${process.platform === "win32" ? "& " : ""}${quote(process.execPath)} ${quote(script)}`;
-    const toolId = shell.bus.board("RunToolJob").publish({ call: { tool_call_id: "owned-command", name: "bash", arguments: { command } } }, "test");
-    await until(() => {
-      if (existsSync(heartbeat)) return true;
-      const result = shell!.bus.board("RunToolJob").result(toolId);
-      if (result) throw new Error(`heartbeat command exited before startup: ${JSON.stringify(result)}`);
-      return false;
-    });
-    const room = shell.bus.chats.list("asp")[0];
-    await fetch(new URL(`/chats/${room.delivery_address}/messages`, asp.origin), { method: "POST", headers: { authorization: `Bearer ${asp.operatorToken}`, "content-type": "application/json" }, body: JSON.stringify({ content: "synthetic in-flight request" }) });
+    const create = api.localManagement.find(tool => tool.name === "create_local_eva")!;
+    const result = JSON.parse(await create.run({ name: "owned-one" }));
+    assert.equal(result.ready, true); assert.equal(children.length, 1);
+    let row = api["peer.contacts"]().find(contact => contact.id === String(result.contact_id));
+    assert.equal(row?.handle, "@owned-one.magi"); assert.equal(row?.running, true);
+    assert.equal((await api["peer.profile"]({ id: String(result.contact_id) })).owner, true);
+    const lifecycle = api.localManagement.find(tool => tool.name === "local_eva_lifecycle")!;
+    assert.equal(JSON.parse(await lifecycle.run({ contact_id: result.contact_id, action: "stop" })).stopped, true);
+    assert.equal(api["peer.contacts"]().find(contact => contact.id === String(result.contact_id))?.running, false);
+    await lifecycle.run({ contact_id: result.contact_id, action: "start" });
+    row = api["peer.contacts"]().find(contact => contact.id === String(result.contact_id));
+    assert.equal(row?.running, true); assert.equal(children.length, 2);
+    await assert.rejects(lifecycle.run({ contact_id: 99999, action: "start" }), /not a locally provisioned/);
+    // Owner provenance is durable; an ordinary remote peer cannot launch this tool.
+    await api["peer.send"]({ id: "shell", content: "synthetic in-flight owner request" });
     await until(() => entered);
-    const beforeStop = Date.now();
-    await api["magi.stop"]({ handle: SHELL_MAGI_HANDLE });
-    assert.ok(Date.now() - beforeStop < 3000, "Stop cancels an active model request instead of waiting for a provider timeout");
+    const room = shell.bus.chats.list("shell-owner")[0];
+    const message = shell.bus.messages.list(room.id).find(item => item.content === "synthetic in-flight owner request")!;
+    const heartbeat = path.join(root, "owned-command.json");
+    const script = path.join(root, "owned heartbeat.cjs");
+    writeFileSync(script, `const fs=require('node:fs');let count=0;const beat=()=>fs.writeFileSync(${JSON.stringify(heartbeat)},JSON.stringify({pid:process.pid,count:++count}));beat();setInterval(beat,50)`);
+    const quote = (value: string) => "'" + value.replaceAll("'", process.platform === "win32" ? "''" : "'\"'\"'") + "'";
+    const toolId = shell.bus.board("RunToolJob").publish({ chat_id: room.id, message_id: message.id,
+      call: { tool_call_id: "owned-command", name: "bash", arguments: { command: `${process.platform === "win32" ? "& " : ""}${quote(process.execPath)} ${quote(script)}` } } }, "test");
+    await until(() => existsSync(heartbeat));
+    const before = Date.now();
+    await api["peer.send"]({ id: "shell", content: "", metadata: { local_eva_action: { contact_id: "shell", action: "stop" } } });
+    assert.ok(Date.now() - before < 3000, "operator stop cancels an active model request promptly");
     assert.equal(requestSignal?.aborted, true);
     const lastHeartbeat = readFileSync(heartbeat, "utf8");
     await sleep(200);
-    assert.equal(readFileSync(heartbeat, "utf8"), lastHeartbeat, "a real foreground command cannot keep executing after node Stop");
+    assert.equal(readFileSync(heartbeat, "utf8"), lastHeartbeat, "foreground command stops with the node");
     assert.equal(shell.bus.board("RunToolJob").result(toolId)?.status, "failed");
     finish({ role: "assistant", content: "late synthetic result must not be delivered" });
     await sleep(50);
-    assert.ok(!shell.bus.messages.list(room.id).some((row) => row.content.includes("late synthetic result")));
-
-    const first = children[0];
-    assert.ok(first?.pid && first.exitCode === null);
-    assert.equal((await api["magi.stop"]({ handle: EVA_MAGI_HANDLE })).stopped, true);
-    assert.ok(first.exitCode !== null || first.signalCode !== null, "the actual launcher exited before Stop returned");
-    await until(() => !asp.transport.isOnline(EVA_MAGI_HANDLE));
-    assert.equal((await api["magi.info"]({ handle: EVA_MAGI_HANDLE })).running, false);
-    await api.start();
-    assert.equal(children.length, 1, "ordinary startup/prepare cannot revive an explicitly stopped local node");
-    assert.equal(asp.transport.isOnline(SHELL_MAGI_HANDLE), false);
-    await api["magi.start"]({ handle: EVA_MAGI_HANDLE });
-    await until(() => asp.transport.isOnline(EVA_MAGI_HANDLE));
-    assert.equal(children.length, 2);
-    assert.notEqual(children[1].pid, first.pid);
-    assert.equal((await api["magi.info"]({ handle: EVA_MAGI_HANDLE })).running, true);
+    assert.ok(!shell.bus.messages.list(room.id).some(row => row.content.includes("late synthetic result")));
   } finally {
     finish({ role: "assistant", content: "NO_REPLY" });
-    await shell?.worker.methods["magi.stop"]({ handle: SHELL_MAGI_HANDLE }).catch(() => {});
-    await shell?.stop(true);
-    for (const child of children) {
-      for (let i = 0; i < 200 && child.exitCode === null && child.signalCode === null; i++) await sleep(25);
-      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-    }
-    await asp.stop(); ASP_ORIGIN.href = previous.origin;
-    if (previous.home === undefined) delete process.env.MAGI_HOME; else process.env.MAGI_HOME = previous.home;
-    if (previous.os === undefined) delete process.env.MAGI_OS_HOME; else process.env.MAGI_OS_HOME = previous.os;
-    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    await shell.stop(true);
+    for (const child of children) assert.ok(child.exitCode !== null || child.signalCode !== null, "owned launcher exits on Shell shutdown");
+    for (const [key, value] of [["MAGI_HOME", prior.home], ["MAGI_OS_HOME", prior.os]]) { if (value === undefined) delete process.env[key!]; else process.env[key!] = value; }
+    await rm(root, { recursive: true, force: true });
   }
 });
