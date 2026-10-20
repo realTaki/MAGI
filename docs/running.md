@@ -5,26 +5,25 @@ dependencies; see [Contributing](../CONTRIBUTING.md). Commands below run from th
 repository root on Linux/macOS. Windows uses `runtime/bin/node.exe` and the same
 npm CLI. Do not substitute a global runtime when the bundled runtime is missing.
 
-## Desktop and local relay
+## Desktop and the built-in Shell EVA
 
-Start Casper/ASP in one terminal:
-
-```sh
-apps/shell/runtime/bin/node apps/eva/eva.mjs --role asp
-```
-
-Then open Electron from the prepared source checkout in another terminal:
+Open Electron from the prepared source checkout:
 
 ```sh
 MAGI_REPOSITORY_URL=https://github.com/realTaki/MAGI.git apps/shell/runtime/bin/node node_modules/electron/cli.js apps/shell
 ```
 
-Keep both processes on the same reachable ASP address. Electron starts the Shell
-launcher; the Shell backend checks the relay, registers default chats, attaches
-Balthasar and starts the default **local** Melchior through its own agent launcher.
-It waits for that launcher before naming the new node. Repeated startup reuses an
-online node. ASP does not start processes. Other registered agents are not
-implicitly started by the desktop.
+Electron starts the Shell launcher and its built-in EVA, `@shell.magi`. No ASP
+relay or additional default EVA is required. In Shell chat, ask to create a local
+EVA or provide a remote EVA's URL. Created local EVAs have their own launchers,
+workspaces and peer endpoints; a remote contact never becomes a locally managed
+process. The sidebar follows Shell's contacts and conversation history.
+
+Connecting to a remote URL verifies its signing identity and sends a signed hello.
+The recipient records a pending contact and controls acceptance in its own
+contactBook. A received callback URL alone does not trigger a connection or grant
+authority. Groups use shared conversation UUIDs, separately stored signed histories,
+and explicit local invitation acceptance.
 
 The packaged app prepares its managed Shell checkout; source launches use the
 verified checkout containing Electron's entry. `MAGI_DEV_CHECKOUT` is optional
@@ -37,52 +36,58 @@ is not pinning a revision or publishing a release.
 
 The executable is the launcher `apps/eva/eva.mjs`. `apps/eva/dist/eva.js` and
 `apps/asp/dist/asp.js` export role classes; they are not standalone service CLIs.
-For a registered ASP-connected agent, supply its credential through a private
-process environment and use the same relay address as its registration:
+Start a standalone peer listener on a loopback development port:
 
 ```sh
-MAGI_ASP=http://127.0.0.1:42069 MAGI_ASP_TOKEN="$MAGI_AGENT_TOKEN" apps/shell/runtime/bin/node apps/eva/eva.mjs --role agent @alice.magi
+MAGI_SERVER=1 MAGI_PEER_PORT=42101 apps/shell/runtime/bin/node apps/eva/eva.mjs --role agent @alice.magi
 ```
 
-`MAGI_AGENT_TOKEN` above is a shell variable already populated by the operator,
-not a literal token to copy from documentation. Do not paste credentials into
-chat, logs or source control. Supplying only one of address/token is rejected.
-Ctrl-C stops the launcher and its child. Model replies require a verified
-provider configuration in that node.
+Each EVA owns its listener, signing identity and contactBook. The default bind is
+loopback on an available port; the actual port is persisted for stable restarts.
+For remote access, explicitly configure an HTTPS reverse-proxy origin with
+`MAGI_PEER_URL`; MAGI does not provision TLS or open firewall ports. Remote
+contact URLs require HTTPS except for loopback HTTP development. Do not put
+credentials into URLs, chat, logs or source control.
 
-The child has a terminal handler when no ASP credentials are supplied, but the
-current non-host launcher starts its child with stdin ignored. This guide does
-not present that path as a working interactive CLI. See the launcher source and
-[unfinished work](future.md) before relying on interactive terminal input.
+Ctrl-C stops the launcher and its child. Model replies require a verified provider
+configuration in that EVA. Peer endpoints accept ordinary signed conversation
+traffic, never owner/provider configuration. The server command above is not an
+interactive terminal-chat command.
+
+See the [peer channel contract](../packages/channel-peer/README.md) and
+[group synchronization boundaries](architecture/peer-group-sync.md). This MAGI
+peer subset is inspired by A2A 1.0, not a standards-compliant A2A implementation.
+Legacy ASP source and its launcher role remain available for legacy development,
+but are not prerequisites for the desktop or direct EVA communication.
 
 ## Roles and state
 
 | Role | Handle | Default workspace |
 | --- | --- | --- |
-| Desktop host / Balthasar | `@shell.magi` | `$MAGI_HOME/shell` |
-| Relay host / Casper | `@asp.magi` | `$MAGI_HOME/asp` |
-| Default independent agent / Melchior | `@eva-000.magi` | `$MAGI_HOME/eva-000` |
+| Built-in Shell EVA | `@shell.magi` | `$MAGI_HOME/shell` |
+| Independently created EVA | For example, `@alice.magi` | `$MAGI_HOME/alice` |
 | Operator speech | `@user.magi` | No separate operator node |
 
 A node workspace holds `memories/books.db`, `logs/jobs.db`, `secrets.json`,
 identity keys, prompts and skills. Managed editable source lives in its `MAGI/`
-subdirectory; built revisions and `launcher.json` are separate. Casper also owns
-`asp.sqlite`. The desktop chat cache uses the Shell BUS when available.
+subdirectory; built revisions and `launcher.json` are separate. Existing legacy
+ASP workspaces may contain `asp.sqlite`; they are not deleted or reused as a
+central peer registry. The desktop reads the corresponding EVA owner history or
+Shell's independently persisted peer/group history.
 Electron's user data (including renderer storage) is separate from node state;
 `MAGI_HOME` alone is not a guarantee of a completely separate Electron profile.
 
 ## Provider and runtime controls
 
-Open the intended MAGI's profile to choose its provider, model and endpoint,
+Open the intended locally owned EVA's profile to choose its provider, model and endpoint,
 enter its key and see verification/retry status. Chat configuration prompts are
 handle-bound links into that profile; they do not contain a credential form.
 There is no separate Provider slider button in the chat header.
 
-The profile avatar has one Start/Stop control. It waits for backend-confirmed
-state and disables repeated clicks during transitions. A browser without the
-native bridge displays a disabled control. A visible control is not a guarantee
-that every remote node can be started locally: external-node policy still
-applies. There is no Runtime action-icon row or source-path block. Ask the
+A locally managed EVA's profile avatar has one Start/Stop control. It sends a
+typed owner-chat action to Shell, waits for backend-confirmed state, and disables
+repeated clicks during transitions. Remote contacts have no local lifecycle or
+provider controls. There is no Runtime action-icon row or source-path block. Ask the
 relevant agent to perform authorized source synchronization, tests, builds and
 self-replacement in its own source; those mechanisms are not extra profile icons.
 
@@ -97,9 +102,9 @@ same profile. See [Provider recovery](provider-validation.md).
 | --- | --- |
 | `MAGI_HOME` | Node data root; defaults to the OS home plus `.magi`. Use a new empty directory for tests. |
 | `MAGI_OS_HOME` | OS-home context for headless Shell/tests. Electron supplies its application home context. |
-| `MAGI_ASP` | Relay URL; default `http://127.0.0.1:42069`. The ASP role binds this address. |
-| `MAGI_ASP_HOST`, `MAGI_ASP_PORT` | Used to construct the URL when `MAGI_ASP` is absent. |
-| `MAGI_ASP_TOKEN` | Registered agent's relay credential for a manually launched connected agent. Not a provider key. |
+| `MAGI_SERVER` | Set to `1` to keep a standalone EVA running as a server. |
+| `MAGI_PEER_HOST`, `MAGI_PEER_PORT` | Explicit listener bind settings; defaults to loopback and an available, then persisted, port. |
+| `MAGI_PEER_URL` | Advertised reachable origin, such as an explicitly configured HTTPS reverse proxy. It is separate from the local listen port. |
 | `MAGI_REPOSITORY_URL` | Repository selected by the desktop for managed source clones. |
 | `MAGI_DEV_CHECKOUT` | Optional verified source override for unpackaged Electron only. |
 | `MAGI_NODE`, `MAGI_NPM`, `MAGI_GIT` | Explicit MAGI-owned toolchain paths for child processes; npm is the `npm-cli.js` file. |
@@ -112,14 +117,13 @@ and [security boundaries](../SECURITY.md).
 
 ## Troubleshooting
 
-- **ASP is not running / incompatible:** start the ASP launcher first and check
-  that its address matches the desktop. A listening port from another service
-  is not a healthy MAGI relay.
-- **Creating defaults / naming returns 503:** inspect the non-secret `/bots`
-  handle/online fields and the relevant launcher error. Do not print `/agents`
-  credentials. Offline naming is bounded, not a successful boot.
-- **`worker "asp" recovered`:** a health transition back to connected/registered;
-  inspect the preceding error if there is one. The notice alone is not failure.
+- **Remote contact is pending:** acceptance is controlled by the receiving EVA;
+  a successful hello is not an owner grant or proof of accepted membership.
+- **Remote endpoint is unavailable:** check its configured reachable origin and
+  independently running EVA. The desktop cannot start a remote contact.
+- **Group history has not caught up:** verify local invitation acceptance,
+  accepted contact routes and current signed membership. Synchronization is
+  eventual convergence, not an instantaneous consensus guarantee.
 - **Source is detached / runtime revision is not editable:** launch Electron
   from the intended attached source branch, not a `revisions/` directory.
 - **Dependencies or bundled runtime missing:** prepare the checkout before

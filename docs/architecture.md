@@ -12,22 +12,21 @@ contact, skill and memory workers; roles add their interfaces:
 
 | Role | Handle | Additional responsibility |
 | --- | --- | --- |
-| `shell` | `@shell.magi` / Balthasar | Webapp backend and local startup coordination |
-| `asp` | `@asp.magi` / Casper | ASP HTTP/WebSocket relay |
-| `agent` | Default `@eva-000.magi` / Melchior | Independent agent interfaces, including CLI/tasks/MCP |
+| `shell` | `@shell.magi` | Built-in EVA, desktop owner backend, local startup coordination and peer listener |
+| `agent` | Individually selected handle | Independent EVA with its own peer listener, contacts and workspace |
 
-The human speaks as `@user.magi`; there is no separate User node. Additional
-independent agent names number from `eva-000`. The package entry files under
-`apps/eva` and `apps/asp` export classes; the launcher is the executable entry.
+The human speaks as `@user.magi`; there is no separate User node. Package entry
+files under `apps/eva` and `apps/asp` export classes; the launcher is the executable entry. Legacy ASP source/role remains in the repository
+but is not part of the required startup or direct peer path.
 
-Electron owns the window and starts the Shell launcher over its host bridge.
-ASP must be started separately. Shell checks it, opens default operator chats,
-attaches its ASP worker and starts the explicitly seeded local Melchior through
-another launcher. It waits for that launcher before naming the new agent.
-Startup does not boot arbitrary registered remote nodes. The default local
-launcher is deduplicated/restored by its process record and stopped on desktop
-shutdown. See [startup policy](../packages/webapp/api.ts),
-[local agent runtime](../packages/webapp/magi-runtime.ts) and
+Electron owns the window and starts only the built-in Shell EVA through its
+launcher/host bridge. The owner asks Shell in chat to create additional local
+EVAs or contact a remote URL. Each locally created EVA receives its own launcher,
+workspace and peer server; remote contacts are never implicitly started by Shell.
+Shell's sidebar follows contacts and shared-UUID conversations rather than a
+central registry. Managed local process records support readiness, start/stop
+and shutdown. See [Shell owner interface](../apps/shell/shell.ts),
+[local EVA runtime](../packages/webapp/magi-runtime.ts) and
 [Electron supervisor](../apps/shell/process.mjs).
 
 Each child's workers communicate through BUS Books and durable Jobs, rather than
@@ -36,13 +35,14 @@ recovered work, so the agent sees its provider, prompts and tool catalog.
 
 ## Workspaces and source
 
-`MAGI_HOME` defaults to `~/.magi`. Shell uses `shell/`, Casper uses `asp/`, and an
-agent uses its handle's local name, such as `eva-000/`. Books, jobs, prompts,
+`MAGI_HOME` defaults to `~/.magi`. Shell uses `shell/`, and an
+agent uses its handle's local name, such as `alice/`. Books, jobs, prompts,
 skills, identity keys and the node's `secrets.json` belong to that workspace.
-Casper also owns `asp.sqlite`. Electron renderer storage is separate.
+Existing legacy ASP data may also include `asp.sqlite`; this change does not
+delete or migrate those profiles. Electron renderer storage is separate.
 
 Managed nodes have an independent Git clone at `<workspace>/MAGI` with branch
-`magi/<name>` (`magi/shell`, `magi/asp`, `magi/eva-000`). A source-launched Shell
+`magi/<name>` (for example, `magi/shell` or `magi/alice`). A source-launched Shell
 instead has a verified editable source checkout. Development agents may run the
 same built source without owning an editable clone; that does not give them
 source-edit authority over another node.
@@ -59,30 +59,40 @@ explicit `MAGI_NODE`, `MAGI_NPM`, `MAGI_GIT`, bundled paths and a final PATH loo
 repository development instructions require a MAGI-owned runtime rather than
 silently accepting an unrelated system executable. SQLite uses `node:sqlite`.
 
-## Relay, chat identities and history
+## Direct peer identities, contacts and history
 
-ASP authenticates registered handles with bearer tokens. Nodes connect to
-`/connect`; the operator uses HTTP APIs. Casper participates through its own
-`AspWorker`. ASP stores relay events and each recipient acknowledges exact event
-IDs. Unacknowledged eligible events replay after reconnection. Acknowledgement
-permits relay cleanup; the desktop keeps its own durable chat history.
+Every EVA, including Shell, owns a peer endpoint, signing key, contactBook and
+conversation history. Public discovery exposes identity and a reachable origin;
+a signed challenge verifies possession of the pinned key before conversation
+content is sent. Signed hello/chat exchanges identify the sender by public-key
+fingerprint, not a body handle or display nickname. A stranger becomes a pending
+contact. The recipient controls acceptance; an advertised callback URL is never
+fetched merely because it arrived.
 
-Owner/agent open-chat requests reuse an existing active two-person chat. UI
-entries can group such rooms only with current ASP chat membership, an active
-state and a registered exact handle. Ended, unknown and cached-only rooms remain
-independent. Histories, read positions, cards and outbound chat IDs are not
-merged. Display names do not identify nodes. The current protocol identifies an
-agent by handle; it does not expose an immutable registration-generation ID.
+The peer HTTP boundary carries ordinary signed chat and bounded synchronization.
+It accepts no owner-role parameter, provider form, lifecycle command or privileged
+configuration envelope. Explicit owner interactions use the local host bridge;
+managed child RPC is restricted to owner chat, events and profile methods.
 
-See [chat service](../packages/asp-server/service.ts),
-[relay persistence](../packages/asp-server/relayWorker.ts) and
-[sidebar eligibility](../apps/shell/web/src/chat-list.ts).
+Conversation UUIDs identify shared histories. Group events preserve the original
+author's signature, event UUID, author sequence, Lamport clock and membership
+epoch. Each participant stores its own history and reconciles signed event sets;
+display order is deterministic after convergence. Invitations require explicit
+local acceptance and accepted routes. The creator signs membership changes.
+This provides eventual history convergence, not consensus or exactly-once external
+side effects. Removal cannot revoke data already disclosed to a participant.
+
+The [MAGI peer subset](../packages/channel-peer/README.md) is inspired by A2A 1.0,
+but is not a standards-compliant A2A implementation. See the
+[group synchronization design](architecture/peer-group-sync.md) for membership,
+replay, offline recovery, authorization and disclosure limits.
 
 ## Provider configuration
 
 Provider fields, verification status and retry live in the matching MAGI profile;
-chat presents only a handle-bound link. The profile's avatar has a single
-backend-confirmed Start/Stop control. Source sync/build/update work is performed
+chat presents only a handle-bound link. Only locally owned profiles expose
+provider controls. A locally managed EVA's avatar has a single backend-confirmed
+Start/Stop control, dispatched as a typed owner-chat request to Shell. Source sync/build/update work is performed
 by the agent through its source tools, not a Runtime icon row.
 
 Provider configuration belongs to the receiving node. Its manager verifies a
@@ -92,10 +102,11 @@ have different stores. UI secret fields are encrypted to the recipient's public
 key for transport; local secrets are not encrypted at rest by this mechanism.
 The model sees configuration status rather than a secret field's value.
 
-Provider sync is an explicit job, not a global operator-settings broadcast.
-`AspWorker` sends encrypted configuration only to built-in society identities with
-an available public key. See the [provider catalog](provider-catalog.md),
-[configuration worker](../packages/manager/config.ts) and [security limits](../SECURITY.md).
+Provider bootstrap/configuration requires an authenticated local owner channel.
+Remote peer messages cannot request it or acquire owner authority through contact
+acceptance. There is no global operator-settings broadcast. See the
+[provider catalog](provider-catalog.md), [configuration worker](../packages/manager/config.ts)
+and [security limits](../SECURITY.md).
 
 ## Source edits and activation
 
@@ -145,7 +156,7 @@ Jobs carry failures in their results. A replace safety-gate failure wakes the
 requesting agent (error summary and log tail, cap 3) before the operator's home
 chat. Workers otherwise deliver notices through the operator's home chat when
 available; startup and missing-home failures may still be logged.
-`worker "asp" recovered` is a health transition, not by itself a failed request.
+A worker recovery notice is a health transition, not by itself a failed request.
 Source verification, process readiness, provider verification and GUI acceptance
 are separate states.
 
@@ -162,15 +173,12 @@ model context. Ordinary text is never parsed as a privileged configuration comma
 
 Nickname requests are ordinary owner chat, interpreted by the agent through the
 internal `set_self_profile` tool. The tool checks the stored triggering message's
-author and chat, rather than trusting model arguments or chat membership. EVA's
-base role name and user nickname remain separate. Authenticated outgoing deliveries
-carry the current profile; ASP projects only the sending node's own identity after
-membership validation. A profile-only delivery refreshes the directory after
-reconnection. There is no nickname HTTP endpoint or WebSocket control protocol.
+author and conversation rather than trusting model arguments. EVA's base role
+name and user nickname remain separate. Peer identity is pinned to a signing-key
+fingerprint; a changed display handle cannot grant a new authority.
 
-These are runtime conversation boundaries, not process-launch interfaces. Shell
-still launches the owned local EVA with `eva.mjs --role agent @handle.magi`, and
-owns host process start/stop/readiness. Handle is identity; role selects workers;
-nickname is a display preference. Provider sharing is restricted to the owner and
-built-in society identities; observing an arbitrary `.magi` handle does not grant
-permission to send or receive provider credentials.
+These are runtime conversation boundaries, not network process-launch interfaces.
+Shell launches an owned local EVA with `eva.mjs --role agent @handle.magi` and
+owns its host process start/stop/readiness. A handle is a local/display name; role
+selects workers; nickname is a display preference. Remote contact acceptance and
+group membership never grant provider credentials or local owner privileges.

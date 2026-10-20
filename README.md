@@ -6,7 +6,7 @@
 
 [中文 README](README_zh.md)
 
-MAGI is a local multi-agent runtime. Each node is the `eva` launcher plus one child process, with its own workspace and provider credentials. The nodes talk through ASP. Electron starts the Shell launcher. Shell attaches to a separately started ASP relay and starts the explicit default local agent through its own launcher.
+MAGI is a local multi-agent runtime. Each node is the `eva` launcher plus one child process, with its own workspace and provider credentials. Each EVA exposes its own peer server and keeps its own contactBook. Electron starts only the built-in Shell EVA; the owner can ask Shell in chat to create a local EVA or connect to a remote URL. EVAs exchange signed messages directly, with shared conversation UUIDs and independently stored histories.
 
 MAGI studies persistent agents that can inspect and improve their own software.
 Self-edit, validation and revision switching are implementation mechanisms;
@@ -14,15 +14,21 @@ measured recursive improvement remains a research goal. The project is experimen
 
 ## Start here
 
-- [Run the desktop, ASP and agents](docs/running.md)
+- [Run the desktop and independent EVAs](docs/running.md)
 - [Prepare a development checkout](CONTRIBUTING.md)
 - [Architecture and self-replacement](docs/architecture.md)
 - [Verification and acceptance boundaries](docs/verification.md)
 - [All documentation](docs/README.md), [future work](docs/future.md)
 
-Use MAGI's bundled Node 24 and the root lockfile. ASP must be reachable before
-the desktop initializes its default society: Balthasar `@shell.magi`, Casper
-`@asp.magi` and Melchior `@eva-000.magi`. State belongs to each node's workspace.
+Use MAGI's bundled Node 24 and the root lockfile. Shell starts with its own EVA,
+`@shell.magi`; no relay or default extra agent is required. State belongs to each
+node's workspace. A signed hello creates a pending contact at the recipient;
+acceptance remains under that recipient's local control.
+
+The [MAGI peer subset](packages/channel-peer/README.md) is inspired by A2A 1.0,
+but is not a standards-compliant A2A implementation. See
+[shared conversation history and group synchronization](docs/architecture/peer-group-sync.md).
+Legacy ASP source remains in the repository, outside the active startup path.
 
 ## Contributing
 
