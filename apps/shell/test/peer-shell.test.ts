@@ -153,5 +153,9 @@ test("Built-in Shell reports running without an absent ASP worker", async t => {
   try {
     await shell.start();
     assert.equal(shell.worker.methods["peer.contacts"]()[0].running, true);
+    await shell.worker.methods["peer.send"]({ id: "shell", content: "", metadata: { local_eva_action: { contact_id: "shell", action: "stop" } } });
+    assert.equal(shell.worker.methods["peer.contacts"]()[0].running, false);
+    await shell.worker.methods["peer.send"]({ id: "shell", content: "", metadata: { local_eva_action: { contact_id: "shell", action: "start" } } });
+    assert.equal(shell.worker.methods["peer.contacts"]()[0].running, true);
   } finally { await shell.stop(true); }
 });
