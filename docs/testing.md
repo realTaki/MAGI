@@ -55,3 +55,16 @@ shutdown checks: an unconfigured instance that cannot stop must remain visible.
 [Verification](verification.md) separates these checks from native desktop,
 installer and real-provider acceptance. Passing or documenting the commands does
 not certify those outcomes; inspect the actual result at the target revision.
+
+### Bootstrap helper types
+
+The shell's `check:bootstrap` script runs a strict, no-emit TypeScript check over
+`interface.mjs`, `runtime-environment.mjs`, and their TypeScript tests. Both the
+root and shell test commands include this check. The bootstrap helpers deliberately
+remain directly executable JavaScript: this type gate does not generate files or
+add a compiler dependency to startup, UI reload, or runtime path preparation.
+Their tests run directly with the bundled Node, including before a workspace build:
+
+```bash
+apps/shell/runtime/bin/node --test apps/shell/test/interface.test.ts apps/shell/test/runtime-environment.test.ts
+```

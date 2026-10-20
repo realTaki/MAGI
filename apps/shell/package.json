@@ -19,7 +19,8 @@
     "start": "node ../eva/eva.mjs --role shell",
     "lint": "node scripts/i18n-lint.ts",
     "lint:i18n": "node scripts/i18n-lint.ts",
-    "test": "node --test test/*.test.mjs test/*.test.ts"
+    "test": "npm run check:bootstrap && node --test test/*.test.mjs test/*.test.ts",
+    "check:bootstrap": "tsc --noEmit -p tsconfig.bootstrap.json"
   },
   "build": {
     "appId": "ai.magi.app",
