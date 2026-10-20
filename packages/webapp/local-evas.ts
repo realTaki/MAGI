@@ -1,12 +1,12 @@
-/** Explicit owner-chat lifecycle. A contact entry never grants process ownership. */
+/** Local lifecycle bookkeeping. A contact entry never implies process ownership. */
 import { setTimeout as sleep } from "node:timers/promises";
 import { createServer } from "node:net";
 import { mkdirSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { createHash, createPublicKey, randomUUID } from "node:crypto";
-import { loadOrCreateIdentity, messageDelivery, MAGI_CONTACT_ID, type Bus, type ExecutableTool } from "@magi/bus";
+import { randomUUID } from "node:crypto";
+import { messageDelivery, MAGI_CONTACT_ID, type Bus, type ExecutableTool } from "@magi/bus";
 
-/** The composition root supplies authenticated transport; webapp owns no channel. */
+/** The composition root supplies trusted-network transport; webapp owns no channel. */
 export type PeerTransport = {
   discover(endpoint: string): Promise<{ principal: string; handle: string }>;
   send(endpoint: string, principal: string, message: {
@@ -36,8 +36,6 @@ export function localEvaManagement(bus: Bus, runtime, peerTransport?: PeerTransp
     inFlight.add(name);
     try {
       mkdirSync(workspace, { recursive: true });
-      const identity = loadOrCreateIdentity(workspace);
-      const principal = createHash("sha256").update(createPublicKey(identity.publicKey).export({ type: "spki", format: "der" })).digest("hex");
       const port = await freePort();
       const url = `http://127.0.0.1:${port}`;
       try {
@@ -53,8 +51,8 @@ export function localEvaManagement(bus: Bus, runtime, peerTransport?: PeerTransp
           await sleep(100);
         }
         if (!discovered) throw new Error("New EVA did not become ready");
-        const publicKey = discovered.publicKey ?? discovered.public_key;
-        if (!publicKey || createHash("sha256").update(createPublicKey(publicKey).export({ type: "spki", format: "der" })).digest("hex") !== principal) throw new Error("New EVA identity does not match its workspace");
+        if (discovered.handle !== handle || typeof discovered.principal !== "string") throw new Error("New EVA discovery does not match the created process");
+        const principal = discovered.principal;
         const contact = bus.contacts.forPeer({ principal, endpoint: url, name: handle });
         bus.contacts.acceptPeer(contact.id, url);
         bus.settings.set(`local.eva.${contact.id}`, JSON.stringify({ handle, port, url }));
@@ -82,9 +80,8 @@ export function localEvaManagement(bus: Bus, runtime, peerTransport?: PeerTransp
     const discovered = await peerTransport.discover(url);
     if (discovered.principal === bus.settings.get("peer.principal")) throw new Error("This is the Shell EVA itself");
     const contact = bus.contacts.forPeer({ principal: discovered.principal, endpoint: url, name: discovered.handle });
-    if (contact.peer_trust === "blocked") throw new Error("This peer is blocked");
     const conversation = bus.chats.forPeer(discovered.principal);
-    const hello = `Hello from ${bus.handle}. My EVA URL is ${ownURL}. Please decide whether to accept my contact using your own contact tool.`;
+    const hello = `Hello from ${bus.handle}. My EVA URL is ${ownURL}. Please add my URL to your contacts.`;
     await peerTransport.send(url, discovered.principal, {
       messageId: randomUUID(), conversationUUID: conversation.conversation_uuid!,
       content: hello,
@@ -92,11 +89,11 @@ export function localEvaManagement(bus: Bus, runtime, peerTransport?: PeerTransp
     });
     messageDelivery.record(bus, conversation.id, hello, MAGI_CONTACT_ID);
     bus.contacts.acceptPeer(contact.id, url);
-    return JSON.stringify({ contact_id: contact.id, handle: contact.name, url, hello_sent: true, remote_acceptance: "pending" });
+    return JSON.stringify({ contact_id: contact.id, handle: contact.name, url, hello_sent: true });
   }
   return [
-    { name: "connect_peer", description: "Owner requested a remote EVA URL: discover its pinned identity, send a signed hello containing this EVA URL, and add the local contact. The remote EVA independently decides whether to accept.", input_schema: { type: "object", properties: { url: { type: "string" } }, required: ["url"], additionalProperties: false }, run: connect },
-    { name: "create_local_eva", description: "Create and start a separate local EVA workspace and direct peer server, then add its contact. Owner chat only.", input_schema: { type: "object", properties: { name: { type: "string" } }, required: ["name"], additionalProperties: false }, run: create },
-    { name: "local_eva_lifecycle", description: "Start or stop an explicitly provisioned local EVA. Remote contacts never grant process control. Owner chat only.", input_schema: { type: "object", properties: { contact_id: { type: "integer" }, action: { enum: ["start", "stop"] } }, required: ["contact_id", "action"], additionalProperties: false }, run: lifecycle },
+    { name: "connect_peer", description: "Connect to a remote EVA on the trusted network: discover it, send a hello containing this EVA URL, and add its contact.", input_schema: { type: "object", properties: { url: { type: "string" } }, required: ["url"], additionalProperties: false }, run: connect },
+    { name: "create_local_eva", description: "Create and start a separate local EVA workspace and direct peer server, then add its contact.", input_schema: { type: "object", properties: { name: { type: "string" } }, required: ["name"], additionalProperties: false }, run: create },
+    { name: "local_eva_lifecycle", description: "Start or stop an explicitly provisioned local EVA. Remote contacts never grant process control.", input_schema: { type: "object", properties: { contact_id: { type: "integer" }, action: { enum: ["start", "stop"] } }, required: ["contact_id", "action"], additionalProperties: false }, run: lifecycle },
   ];
 }

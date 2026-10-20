@@ -48,13 +48,14 @@ test("Remote contact metadata cannot grant local process control", async t => {
   await api.dispose();
 });
 
-test("Management tool rejects a peer-triggered call even when it requests owner identity", async t => {
+test("Lifecycle bookkeeping rejects a contact that has no owned process", async t => {
   const { bus, context } = fixture(t); const worker = new WebappWorker(bus, context);
   const room = bus.chats.forChannel("peer", "remote");
   const id = bus.messages.add(room.id, MAGI_CONTACT_ID, "create an EVA");
-  const job = bus.board("RunToolJob").publish({ chat_id: room.id, message_id: id, call: { name: "create_local_eva", tool_call_id: "x", arguments: { name: "remote-spawn" } } }, "agent");
+  const job = bus.board("RunToolJob").publish({ chat_id: room.id, message_id: id, call: { name: "local_eva_lifecycle", tool_call_id: "x", arguments: { contact_id: 999, action: "stop" } } }, "agent");
   await worker.poll(); await new Promise(resolve => setImmediate(resolve));
   assert.equal(bus.board("RunToolJob").result(job)?.status, "failed");
+  assert.match(bus.board("RunToolJob").result(job)?.error ?? "", /not a locally provisioned EVA/);
   await worker.stop();
 });
 
@@ -65,7 +66,7 @@ test("Shell composition has no ASP process or relay worker", () => {
   assert.doesNotMatch(roles, /new AspWorker/);
 });
 
-test("Local create waits for peer identity before publishing contact and rolls back failures", async t => {
+test("Local create waits for matching process readiness and rolls back failures", async t => {
   const { bus } = fixture(t);
   const { localEvaManagement } = await import("@magi/webapp/local-evas.js");
   let running: string[] = [];
@@ -78,8 +79,7 @@ test("Local create waits for peer identity before publishing contact and rolls b
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
   globalThis.fetch = async () => {
-    const identity = JSON.parse(readFileSync(join(bus.workspace, "..", "new-eva", "identity.json"), "utf8"));
-    return new Response(JSON.stringify({ publicKey: identity.publicKey }), { status: 200 });
+    return new Response(JSON.stringify({ handle: "@new-eva.magi", principal: "c".repeat(64) }), { status: 200 });
   };
   const tool = localEvaManagement(bus, runtime).find(t => t.name === "create_local_eva")!;
   const result = JSON.parse(await tool.run({ name: "new-eva" }));
@@ -87,8 +87,8 @@ test("Local create waits for peer identity before publishing contact and rolls b
   assert.equal(bus.contacts.get(result.contact_id)?.peer_trust, "accepted");
   assert.equal(stopped, 0);
   await assert.rejects(tool.run({ name: "new-eva" }), /already exists/);
-  globalThis.fetch = async () => new Response(JSON.stringify({ publicKey: bus.identity.publicKey }), { status: 200 });
-  await assert.rejects(tool.run({ name: "failed-eva" }), /identity does not match/);
+  globalThis.fetch = async () => new Response(JSON.stringify({ handle: "@other.magi", principal: "d".repeat(64) }), { status: 200 });
+  await assert.rejects(tool.run({ name: "failed-eva" }), /discovery does not match/);
   assert.equal(stopped, 1);
   assert.equal(bus.contacts.list().some(c => c.name === "@failed-eva.magi"), false);
 });
@@ -124,7 +124,7 @@ test("Group UI lists signed membership and uses deterministic event identities",
   await api.dispose();
 });
 
-test("Remote URL connection sends hello and leaves recipient acceptance independent", async t => {
+test("Remote URL connection sends hello and shares a contact on the trusted network", async t => {
   const local = fixture(t); const remote = fixture(t);
   const { PeerServer } = await import("@magi/channel-peer/server.js");
   const { messageDelivery } = await import("@magi/bus");
@@ -142,7 +142,7 @@ test("Remote URL connection sends hello and leaves recipient acceptance independ
   assert.equal(api["peer.contacts"]().length, 2);
   assert.equal(api["peer.contacts"]()[1].local, false);
   const remoteContact = remote.bus.contacts.list().find(contact => contact.peer_id);
-  assert.equal(remoteContact?.peer_trust, "pending");
+  assert.ok(remoteContact);
   assert.equal(remoteContact?.role, "stranger");
   assert.equal(local.spawned(), 0);
   await api.dispose();

@@ -1,6 +1,6 @@
 /** The webapp worker: a user-facing webapp on a BUS. */
 
-import { BaseWorker, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, type Bus } from "@magi/bus";
+import { BaseWorker, MAGI_CONTACT_ID, type Bus } from "@magi/bus";
 
 import { createLocalApi } from "./api.js";
 import { localEvaManagement } from "./local-evas.js";
@@ -37,9 +37,6 @@ export class WebappWorker extends BaseWorker {
     if (call) {
       const task = (async () => {
         try {
-          const room = call.input.chat_id === undefined ? null : this.bus.chats.get(call.input.chat_id);
-          const trigger = call.input.message_id === undefined ? null : this.bus.messages.get(call.input.message_id);
-          if (room?.channel !== "shell-owner" || !trigger || trigger.chat_id !== room.id || trigger.contact_id !== SYSTEM_CONTACT_ID) throw new Error("Local EVA management requires an authenticated owner message");
           const tool = this.management.find(t => t.name === call.input.call.name)!;
           const content = await tool.run(call.input.call.arguments as never);
           tools.submit(this.worker_name, call.id, { output: { content } });

@@ -689,7 +689,7 @@ export function createLocalApi(context) {
     if (!bus) return [];
     return [
       { id: "shell", handle: SHELL_MAGI_HANDLE, name: "Shell EVA", nickname: "Shell EVA", url: bus.settings.get("peer.reachableURL") ?? "", local: true, running: context.nodeControl?.running() ?? true },
-      ...bus.contacts.list().filter(c => c.peer_trust === "accepted" && c.peer_url).map(c => {
+      ...bus.contacts.list().filter(c => c.peer_url).map(c => {
         const local = localOwned(String(c.id));
         return {
           id: String(c.id), handle: local?.handle ?? c.name, name: c.name, nickname: c.nickname, url: c.peer_url,
@@ -707,7 +707,7 @@ export function createLocalApi(context) {
     }
     if (id === "shell") return ownerChat();
     const contact = bus.contacts.get(Number(id));
-    if (!contact || contact.peer_trust !== "accepted" || !contact.peer_id) throw new Error("Peer is not an accepted contact");
+    if (!contact || !contact.peer_id) throw new Error("Peer contact does not exist");
     return bus.chats.forPeer(contact.peer_id);
   }
 
@@ -748,7 +748,7 @@ export function createLocalApi(context) {
       if (action?.action === "create" && typeof action.title === "string" && Array.isArray(action.members)) {
         const members = action.members.map(id => {
           const contact = bus.contacts.get(Number(id));
-          if (!contact || contact.peer_trust !== "accepted" || !contact.peer_principal || !contact.peer_url) throw new Error("Choose accepted peer contacts");
+          if (!contact || !contact.peer_principal || !contact.peer_url) throw new Error("Choose peer contacts");
           return { principal: contact.peer_principal, endpoint: contact.peer_url };
         });
         return bus.groups.create({ title: action.title, members });
@@ -758,7 +758,6 @@ export function createLocalApi(context) {
     if (typeof id === "string" && id.startsWith("conversation:")) {
       if (metadata) throw new Error("Groups accept ordinary chat only");
       const uuid = id.slice("conversation:".length);
-      if (bus.groups.get(uuid)?.trust !== "accepted") throw new Error("Accept the group invitation before sending");
       return bus.groups.append(uuid, content);
     }
     if (metadata?.local_eva_action !== undefined) {
