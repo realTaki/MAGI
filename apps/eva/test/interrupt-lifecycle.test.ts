@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { Bus, SYSTEM_CONTACT_ID } from "@magi/bus";
+import { Bus, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "@magi/bus";
 import { ShellManager } from "@magi/built-in-tools/shellManager.js";
 import { McpWorker } from "@magi/mcp/worker.js";
 
@@ -200,11 +200,29 @@ for (const mode of ["stop", "suspendForReplace"] as const) test(`${mode} retains
     assert.equal(bus.messages.list(chat.id, 20).filter((m) => m.content === "MAGI stopped").length, 1);
     await manager.stop(); bus.close();
     bus = new Bus("@queued.magi", workspace);
+    const diagnostic = bus.messages.list(chat.id, 20).find(message => bus.deliveries.get(message.id)?.publisher === "error:agent");
+    assert.ok(diagnostic);
+    const diagnosticJob = bus.deliveries.get(diagnostic.id)?.job_id;
+    assert.ok(diagnosticJob);
     let modelCalls = 0;
-    manager = new LauncherWorker(bus, [new AgentWorker(bus), new ProvidersWorker(bus, { async complete() { modelCalls++; return { role: "assistant", content: "second completed" }; } })], { drain: ["agent"], build: { app: "eva", script: "build" } });
+    let diagnosticCalls = 0;
+    manager = new LauncherWorker(bus, [new AgentWorker(bus), new ProvidersWorker(bus, { async complete(request) {
+      // Stopping creates a durable system diagnostic, independently of the retained
+      // business turn. Match its trigger, not older diagnostics in the history.
+      const trigger = request.messages.at(-1);
+      if (trigger?.role === "system" && trigger.content.includes("source error:agent")) {
+        diagnosticCalls++;
+        return { role: "assistant", content: "NO_REPLY" };
+      }
+      modelCalls++;
+      return { role: "assistant", content: "second completed" };
+    } })], { drain: ["agent"], build: { app: "eva", script: "build" } });
     await manager.start();
     await eventually(() => bus.board("MessageDeliveryJob").result(turns[1]!)?.status === "completed");
+    await eventually(() => bus.board("MessageDeliveryJob").result(diagnosticJob)?.status === "completed");
     assert.equal(modelCalls, 1);
+    assert.equal(diagnosticCalls, 1);
+    assert.deepEqual(bus.messages.list(chat.id, 20).filter(message => message.contact_id === MAGI_CONTACT_ID).map(message => message.content), ["second completed"]);
   } finally { await manager.stop(); bus.close(); await rm(workspace, { recursive: true, force: true }); }
 });
 
