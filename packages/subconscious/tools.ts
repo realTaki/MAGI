@@ -13,6 +13,7 @@ export const SUBCONSCIOUS_COMPACTION_PROMPT = `Summarize this MAGI's private con
 
 const ALLOWED = new Set([
   "observe_conversations", "read_conversation", "handoff_to_foreground",
+  "load_skill",
   "search_chat_messages", "search_contact_messages", "search_contacts",
   "list_action_items", "save_action_item", "archive_action_item", "delete_action_item",
   "list_memory", "save_memory", "complete_memory",
