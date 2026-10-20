@@ -19,10 +19,10 @@ const launcher = path.join(repo, "apps", "eva", "eva.mjs");
 const node = magiLocalName(EVA_MAGI_HANDLE);
 
 function childAt(home, name, revision, source) {
-  const file = path.join(home, name, "revisions", revision, "packages", "node", "dist", "child.js");
+  const file = path.join(home, name, "revisions", revision, "packages", "launcher", "dist", "composition", "child.js");
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, source);
-  return path.dirname(path.dirname(path.dirname(path.dirname(file))));
+  return path.join(home, name, "revisions", revision);
 }
 
 function start(home, args, env, t) {
@@ -67,7 +67,7 @@ test("a switch runs the new revision's child", async (t) => {
   const home = mkdtempSync(path.join(tmpdir(), "magi-switch-"));
   const proof = path.join(home, "proof");
   const dirB = path.join(home, node, "revisions", "b");
-  const childB = path.join(dirB, "packages", "node", "dist", "child.js");
+  const childB = path.join(dirB, "packages", "launcher", "dist", "composition", "child.js");
   childAt(home, node, "a", `const { mkdirSync, writeFileSync } = require("node:fs");
 const { dirname } = require("node:path");
 process.send({ v: 1, type: "hello" });
@@ -141,7 +141,7 @@ process.send({ v: 1, type: "hello" });
 process.on("message", (message) => { if (message?.type === "shutdown") process.exit(0); });
 process.send({ v: 1, type: "ready" });
 if (n === 0) setTimeout(() => {
-  const file = ${JSON.stringify(path.join(bad, "packages", "node", "dist", "child.js"))};
+  const file = ${JSON.stringify(path.join(bad, "packages", "launcher", "dist", "composition", "child.js"))};
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, "process.exit(2);\\n");
   process.send({ v: 1, type: "switch", revision: "bad", dir: ${JSON.stringify(bad)}, job: 8 });
@@ -174,7 +174,7 @@ test("a hosted upgrade finishes the job after the old launcher exits", async (t)
   const oldPid = path.join(home, "old.pid");
   const done = path.join(home, "done");
   const dir = path.join(home, node, "revisions", "next");
-  const nextChild = path.join(dir, "packages", "node", "dist", "child.js");
+  const nextChild = path.join(dir, "packages", "launcher", "dist", "composition", "child.js");
   childAt(home, node, "old", `const { mkdirSync, writeFileSync } = require("node:fs");
 const { dirname } = require("node:path");
 writeFileSync(${JSON.stringify(oldPid)}, String(process.ppid));

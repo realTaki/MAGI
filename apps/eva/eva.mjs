@@ -90,7 +90,7 @@ function childScript(name, dir) {
   if (resolved !== root && !resolved.startsWith(root + sep)) {
     throw new Error("revision directory is outside MAGI_HOME");
   }
-  const script = join(resolved, "packages", "node", "dist", "child.js");
+  const script = join(resolved, "packages", "launcher", "dist", "composition", "child.js");
   if (!existsSync(script)) throw new Error(`revision has no child at ${script}`);
   return script;
 }
@@ -108,7 +108,7 @@ function spawnChild(role, rest, name, { script, revision, previous, replaceJob, 
     MAGI_NODE_NAME: name,
     MAGI_LAUNCHER: launcherFile,
     MAGI_TOOL_PROCESS_SUPERVISOR_PID: String(process.pid),
-    ...(role === "shell" ? { MAGI_APP_CHECKOUT: resolve(dirname(script), "..", "..", "..") } : {}),
+    ...(role === "shell" ? { MAGI_APP_CHECKOUT: resolve(dirname(script), "..", "..", "..", "..") } : {}),
     ...(rest[0] ? { MAGI_HANDLE: rest[0] } : {}),
     ...(revision ? { MAGI_REVISION: revision } : {}),
     ...(previous ? { MAGI_PREVIOUS_REVISION: previous } : {}),

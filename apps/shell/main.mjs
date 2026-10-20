@@ -279,7 +279,7 @@ async function launchLocalOperator(win) {
         const packagedRevision = JSON.parse(readFileSync(path.join(SHELL_DIR, "package.json"), "utf8")).magiRevision;
         const context = desktopUpdateLaunchContext({ artifact: process.env.APPIMAGE });
         const expectedUi = path.join(context.sourceDir, "apps", "shell", "dist", "index.html");
-        const expectedEntry = path.join(context.sourceDir, "packages", "node", "dist", "child.js");
+        const expectedEntry = path.join(context.sourceDir, "packages", "launcher", "dist", "composition", "child.js");
         if (packagedRevision !== identity.revision || realpathSync(identity.checkout) !== realpathSync(context.sourceDir)
           || realpathSync(identity.entry) !== realpathSync(expectedEntry) || realpathSync(ui) !== realpathSync(expectedUi)
           || realpathSync(identity.ui) !== realpathSync(expectedUi)) throw new Error("Desktop artifact and running Shell/UI revision differ");
