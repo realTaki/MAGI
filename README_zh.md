@@ -90,6 +90,14 @@ MAGI 仍是实验项目。愿景可以走得远，当前能力要说清楚：
 
 ## 许可
 
-MAGI 以 [Business Source License 1.1](LICENSE) 作为 source-available 软件发布。
-许可允许的个人非商业使用、学术研究、教育与评估，以及商业使用条件，以 LICENSE 为准。
-每个版本首次公开发布满六个月后转为 MIT；在此之前，不属于 OSI 认可的开源许可。
+MAGI 以 [Business Source License 1.1](LICENSE) 作为 source-available 软件发布，
+许可人为 realTaki。允许非生产使用；Additional Use Grant 还允许条款所列的学术研究、
+教育、评估与个人非商业生产使用。每个版本的前六个月内，商业生产使用须向 realTaki
+购买单独的书面商业许可。商业许可事宜请通过[本仓库](https://github.com/realTaki/MAGI)
+联系 realTaki。
+
+每个版本自许可人首次公开发布满六个月后转为 [MIT](https://opensource.org/license/mit)。
+重新分发或修改该版本不会重置其转换日期。转换前，副本及衍生作品继续受 BSL 约束；
+这不是 OSI 认可的开源许可，也不代表具有 GPL 式的源码提供义务。转换后，MIT 允许
+商业使用及闭源衍生作品，但须保留适用的版权与许可声明。第三方及贡献者的声明仍然适用。
+此次更新不撤销此前已发布版本已授予的权利。具体以 [LICENSE](LICENSE) 条款为准。

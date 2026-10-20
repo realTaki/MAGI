@@ -120,8 +120,20 @@ Report vulnerabilities through [Security](SECURITY.md), not a public issue.
 
 ## License
 
-MAGI is source-available under [Business Source License 1.1](LICENSE).
-See the license for the permitted personal noncommercial, research, educational
-and evaluation uses, and commercial-use conditions. Each version changes to MIT
-six months after its first public distribution; before then, it is not under an
-OSI-approved open-source license.
+MAGI is source-available under [Business Source License 1.1](LICENSE), with
+realTaki as the Licensor. Non-production use is permitted; the Additional Use
+Grant also permits the specified research, educational, evaluation, and personal
+non-commercial production uses. Commercial production use during a version's
+first six months requires purchasing a separate written commercial license from
+realTaki. Contact realTaki through [this repository](https://github.com/realTaki/MAGI)
+for commercial licensing.
+
+Each version changes to [MIT](https://opensource.org/license/mit) six months after
+its first public distribution by the Licensor. Redistributing or modifying that
+version does not restart its clock. Before the Change Date, copies and derivative
+works remain subject to BSL; this is not an OSI-approved open-source license or a
+promise of GPL-style source disclosure. After the Change Date, MIT permits
+commercial use and closed-source derivatives while requiring preservation of the
+applicable copyright and permission notices. Third-party and contributor notices
+remain applicable. This update does not revoke rights already granted for
+previously published versions. See [LICENSE](LICENSE) for the governing terms.
