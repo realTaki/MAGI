@@ -73,7 +73,7 @@ export const jobs = sqliteTable("jobs", {
 }, (table) => [index("jobs_claim").on(table.type, table.status, table.id)]);
 
 export class JobBoard<K extends JobType> {
-  constructor(private readonly db: BusDb, readonly type: K) {}
+  constructor(private readonly db: BusDb, readonly type: K, private readonly authorize?: (input: unknown) => void) {}
 
   publish(input: JobInput[K], publisher: string): number {
     return this.db.insert(jobs)
@@ -100,6 +100,8 @@ export class JobBoard<K extends JobType> {
       for (const row of rows) {
         const input = JSON.parse(row.input) as JobInput[K];
         if (predicate && !predicate(input)) continue;
+        try { this.authorize?.(input); }
+        catch (error) { this.fail(row.id, error instanceof Error ? error.message : String(error)); continue; }
         // The SQL result is the portable claim signal: ask for the row the update won.
         const claimed = this.db.update(jobs)
           .set({ status: "claimed", worker, updated_at: sql`(CURRENT_TIMESTAMP)` })
@@ -119,6 +121,8 @@ export class JobBoard<K extends JobType> {
         .where(and(eq(jobs.id, id), eq(jobs.type, this.type), eq(jobs.status, "pending")))
         .get();
       if (!row) return null;
+      try { this.authorize?.(JSON.parse(row.input) as JobInput[K]); }
+      catch (error) { this.fail(row.id, error instanceof Error ? error.message : String(error)); return null; }
       const claimed = this.db.update(jobs)
         .set({ status: "claimed", worker, updated_at: sql`(CURRENT_TIMESTAMP)` })
         .where(and(eq(jobs.id, row.id), eq(jobs.status, "pending")))

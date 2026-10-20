@@ -1,3 +1,5 @@
+import { authorizeToolCall } from "./toolAuthorization.js";
+import type { RunToolJob } from "./jobs/runTool.js";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { magiHome } from "@magi/runtime/home.js";
@@ -166,7 +168,7 @@ export class Bus {
   board<K extends JobType>(type: K): JobBoard<K> {
     let board = this.boards.get(type);
     if (!board) {
-      board = new JobBoard(this.jobs, type);
+      board = new JobBoard(this.jobs, type, type === "RunToolJob" ? (input) => authorizeToolCall(this, input as RunToolJob) : undefined);
       this.boards.set(type, board);
     }
     return board as JobBoard<K>;

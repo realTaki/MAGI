@@ -63,3 +63,18 @@ replace full scans later without changing signed event identity.
 The design follows the separation of immutable history, local storage, and
 transport-independent synchronization described in the [Automerge concepts](https://automerge.org/docs/reference/concepts/).
 It does not depend on Automerge or claim to implement Automerge's CRDT protocol.
+
+## Tool authority
+
+RunToolJob claim and claim-by-ID validate the durable triggering message before any
+worker may execute it. Pending peers can only request acceptance when the owner
+has enabled agent-message-only acceptance. Accepted peers can search only their
+current conversation by default. The owner may grant exact tool names to one
+accepted signing principal; shell, filesystem and MCP tools need such explicit
+grants. Tool grants do not allow crossing conversation boundaries, provider or
+MCP configuration, home-chat changes, task scheduling, process replacement, or
+local administration. Those require an actual owner-authored triggering message.
+Claims with absent or conflicting peer provenance fail closed. Worker-side checks
+remain authoritative for recovered turns even if an older cached catalog contains
+more tools. Peer model prompts exclude private workspace instructions and global
+memory; only peer-scoped history and public identity/member context are included.

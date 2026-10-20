@@ -60,9 +60,10 @@ export class PromptBook {
    * What the agent renders between its own blocks, asked in registration order. The
    * conversation is passed through for the blocks that are about one chat.
    */
-  sections(chat_id: number): PromptSection[] {
+  sections(chat_id: number, allowedOwners?: readonly string[]): PromptSection[] {
     const sections: PromptSection[] = [];
-    for (const { title, source } of this.sources.values()) {
+    for (const [owner, { title, source }] of this.sources) {
+      if (allowedOwners && !allowedOwners.includes(owner)) continue;
       const body = source(chat_id);
       if (body) sections.push({ title, body });
     }

@@ -1,7 +1,7 @@
 import { Client, SSEClientTransport, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { setTimeout as sleep } from "node:timers/promises";
-import { BaseWorker, messageDelivery, type Bus, type ExecutableTool, type McpServerConfig, type ToolSource } from "@magi/bus";
+import { authorizeToolCall, BaseWorker, messageDelivery, type Bus, type ExecutableTool, type McpServerConfig, type ToolSource, type RunToolJob } from "@magi/bus";
 import { mcpTools } from "./tools.js";
 
 export type McpConnection = { tools: ExecutableTool[]; close(): Promise<void> };
@@ -78,15 +78,17 @@ export class McpWorker extends BaseWorker {
     const names = new Set(this.tools().map((tool) => tool.name));
     const job = board.claim(this.worker_name, (input) => names.has(input.call.name));
     if (!job) return false;
-    const task = this.callTool(job.id, job.input.call.name, job.input.call.arguments);
+    const task = this.callTool(job.id, job.input);
     this.pending.add(task);
     void task.finally(() => this.pending.delete(task));
     return true;
   }
 
-  private async callTool(id: number, name: string, args: Record<string, unknown>): Promise<void> {
+  private async callTool(id: number, input: RunToolJob): Promise<void> {
     const board = this.bus.board("RunToolJob");
     try {
+      authorizeToolCall(this.bus, input);
+      const { name, arguments: args } = input.call;
       const tool = this.tools().find((candidate) => candidate.name === name);
       if (!tool) throw new Error(`unknown tool ${name}`);
       board.submit(this.worker_name, id, { output: { content: await tool.run(args) } });

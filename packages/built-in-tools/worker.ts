@@ -20,7 +20,7 @@ import { abortable } from "@magi/bus/abort.js";
  * describes, scans for it, and fires it, so that worker carries the tool.
  */
 
-import { BaseWorker } from "@magi/bus";
+import { BaseWorker, authorizeToolCall } from "@magi/bus";
 import type { Bus, ExecutableTool } from "@magi/bus";
 import { cardTools } from "./card.js";
 import { fileTools } from "./files.js";
@@ -70,15 +70,16 @@ export class ToolsWorker extends BaseWorker {
     if (!job) return false;
     // Requester chat stays job context, never a model-facing argument. send_message
     // / search_chat_messages / set_home_chat keep their own chat_id fields.
-    const task = this.run(job.id, job.input.call.name, job.input.call.arguments, { chat_id: job.input.chat_id });
+    const task = this.run(job.id, job.input.call.name, job.input.call.arguments, { chat_id: job.input.chat_id, message_id: job.input.message_id });
     this.pending.add(task);
     void task.finally(() => this.pending.delete(task));
     return true;
   }
 
-  private async run(id: number, name: string, args: Record<string, unknown>, context?: { chat_id?: number }): Promise<void> {
+  private async run(id: number, name: string, args: Record<string, unknown>, context?: { chat_id?: number; message_id?: number }): Promise<void> {
     const board = this.bus.board("RunToolJob");
     try {
+      authorizeToolCall(this.bus, { call: { name, arguments: args, tool_call_id: String(id) }, ...context });
       const tool = this.own.get(name);
       if (!tool) throw new Error(`unknown tool ${name}`);
       board.submit(this.worker_name, id, { output: { content: await abortable(tool.run(args, this.controller.signal, context), this.controller.signal) } });

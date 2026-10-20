@@ -1,6 +1,6 @@
 /** Contacts and the notes attached to them. */
 
-import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, messageDelivery, type Bus, type ContactRole, type ExecutableTool, type NoteKind } from "@magi/bus";
+import { ownerOnlyTool, peerToolPolicyKey, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, messageDelivery, type Bus, type ContactRole, type ExecutableTool, type NoteKind } from "@magi/bus";
 
 /** Local on purpose: this package must not depend on the tools package. */
 function stringArg(args: Record<string, unknown>, key: string): string {
@@ -54,6 +54,18 @@ export function contactTools(bus: Bus, context?: ContactToolContext): Executable
       name: "accept_group_invitation", description: "Accept a group invitation only when the local owner explicitly approves joining and sharing future group messages with its listed members.",
       input_schema: { type: "object", properties: { conversation_uuid: { type: "string" } }, required: ["conversation_uuid"], additionalProperties: false },
       async run(args) { requireOwner(bus, context); return JSON.stringify({ accepted: bus.groups.accept(stringArg(args, "conversation_uuid")) }); },
+    },
+    {
+      name: "set_peer_tool_policy", description: "Set exact tool names the local owner delegates to an accepted peer. Grants apply to that tool's full ordinary capability, including file or external-service access where applicable; no wildcards. Provider, configuration, administration and cross-chat access remain owner-only. Only the local owner may grant or revoke these capabilities.",
+      input_schema: { type: "object", properties: { contact_id: { type: "integer" }, tools: { type: "array", items: { type: "string" }, maxItems: 64 } }, required: ["contact_id", "tools"], additionalProperties: false },
+      async run(args) {
+        requireOwner(bus, context);
+        const contact = bus.contacts.get(integerArg(args, "contact_id"));
+        if (!contact?.peer_principal || contact.peer_trust !== "accepted") throw new Error("capabilities require an accepted peer");
+        if (!Array.isArray(args.tools) || args.tools.length > 64 || !args.tools.every(name => typeof name === "string" && /^[a-zA-Z0-9_-]{1,160}$/.test(name) && !ownerOnlyTool(name))) throw new Error("tools must be exact non-administrative tool names");
+        bus.settings.set(peerToolPolicyKey(contact.peer_principal), JSON.stringify([...new Set(args.tools)]));
+        return JSON.stringify({ contact_id: contact.id, tools: [...new Set(args.tools)] });
+      },
     },
     {
       name: "set_peer_contact_policy", description: "Set the local owner's peer acceptance policy. owner-only requires owner approval for each contact; agent-message-only allows this EVA to decide whether to accept a verified hello for ordinary messages, without granting privileged access. Only an owner-authored turn may change this.",

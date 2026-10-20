@@ -49,10 +49,10 @@ export function messageTools(bus: Bus): ExecutableTool[] {
     {
       name: "send_message", description: "Queue a visible message to an existing chat.",
       input_schema: { type: "object", properties: { chat_id: { type: "integer" }, text: { type: "string" } }, required: ["chat_id", "text"] },
-      async run(args) {
+      async run(args, _signal, context) {
         const chatId = integerArg(args, "chat_id");
         if (!bus.chats.get(chatId)) throw new Error(`unknown chat ${chatId}`);
-        messageDelivery.send(bus, chatId, stringArg(args, "text"), MAGI_CONTACT_ID, "tools");
+        messageDelivery.send(bus, chatId, stringArg(args, "text"), MAGI_CONTACT_ID, "tools", context?.chat_id === chatId ? messageDelivery.replyMetadata(bus, context.message_id) : undefined);
         return `queued to chat ${chatId}`;
       },
     },
