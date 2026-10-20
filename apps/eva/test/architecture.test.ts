@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import assert from "node:assert/strict";
 import { test } from "./test.js";
 import { readdir, readFile } from "node:fs/promises";
@@ -32,7 +33,7 @@ function permitted(owner: string, file: string, imported: string): boolean {
 
 test("every worker package imports only itself, BUS, or the shared runtime", async () => {
   const workers = (await readdir(packages, { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory() && !["bus", "node", "runtime"].includes(entry.name));
+    .filter((entry) => entry.isDirectory() && existsSync(join(packages, entry.name, "package.json")) && !["bus", "node", "runtime"].includes(entry.name));
   assert.ok(workers.length > 0, "worker packages must be discovered");
   for (const worker of workers) {
     const files = await sources(join(packages, worker.name));

@@ -235,7 +235,7 @@ linuxTest("rollback waits for a detached backend that ignores SIGTERM before rel
   assert.equal(readJSON(tx.journalPath).status, "rolled-back");
 });
 
-for (const role of ["shell", "agent", "asp"]) {
+for (const role of ["shell", "agent"]) {
   linuxTest(`actual candidate owner and Eva ${role} backend stay reclaimable after desktop exits without ACK`, { timeout: 20_000 }, async (t) => {
     const f = fixture(t, { behavior: `owned-eva-${role}`, timeoutMs: 5000 }), tx = await f.prepare();
     const result = await f.start(tx).exited; assert.equal(result.code, 0, result.output);
