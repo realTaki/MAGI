@@ -93,14 +93,13 @@ test("restart terminalizes claimed turns and model calls without retrying tool s
 test("launcher ownership gate reaps shell groups when the EVA worker is SIGKILLed", { skip: process.platform === "win32" }, async () => {
   const { spawn } = await import("node:child_process");
   const { runInNewContext } = await import("node:vm");
-  const { fileURLToPath } = await import("node:url");
   const workspace = await mkdtemp(join(tmpdir(), "magi-supervised-stop-"));
   // Execute the actual launcher's ownership handlers against a real IPC child.
   const source = await readFile(new URL("../../eva.mjs", import.meta.url), "utf8");
   const noteSource = source.slice(source.indexOf("function note(child)"), source.indexOf("function waitFor(child"));
   const reapSource = source.slice(source.indexOf("function reapToolProcesses(child)"), source.indexOf("function killTree(child)"));
   const handlers = runInNewContext(`${noteSource}\n${reapSource}\n({ note, reapToolProcesses })`, { LAUNCHER_PROTOCOL: 1, process, spawn }) as { note(child: unknown): void; reapToolProcesses(child: unknown): void };
-  const shellModule = fileURLToPath(new URL("../../../../packages/built-in-tools/dist/shellManager.js", import.meta.url));
+  const shellModule = new URL("../../../../packages/built-in-tools/dist/shellManager.js", import.meta.url).href;
   const child = spawn(process.execPath, ["--input-type=module", "-e", `import { ShellManager } from ${JSON.stringify(shellModule)}; new ShellManager().start('echo $$ > owned.pid; while :; do sleep 1; done', ${JSON.stringify(workspace)});`], { env: { ...process.env, MAGI_TOOL_PROCESS_SUPERVISOR_PID: String(process.pid) }, stdio: ["ignore", "ignore", "ignore", "ipc"] });
   handlers.note(child);
   let pid = 0;
@@ -237,15 +236,18 @@ test("interrupted agent records the actual result of an active uncancellable edi
   } finally { release(); await manager.stop(); bus.close(); await rm(workspace, { recursive: true, force: true }); }
 });
 
-test("unrelated IPC parent gets a clear shell ownership error without spawning a command", async () => {
+test("unrelated IPC parent gets a clear shell ownership error without spawning a command", { timeout: 20_000 }, async () => {
   const { spawn } = await import("node:child_process");
-  const { fileURLToPath } = await import("node:url");
   const workspace = await mkdtemp(join(tmpdir(), "magi-unrelated-ipc-"));
-  const modulePath = fileURLToPath(new URL("../../../../packages/built-in-tools/dist/shellManager.js", import.meta.url));
+  const modulePath = new URL("../../../../packages/built-in-tools/dist/shellManager.js", import.meta.url).href;
   const env = { ...process.env }; delete env.MAGI_TOOL_PROCESS_SUPERVISOR_PID; delete env.MAGI_LAUNCHER;
   const child = spawn(process.execPath, ["--input-type=module", "-e", `import { ShellManager } from ${JSON.stringify(modulePath)}; try { new ShellManager().start('touch should-not-exist', ${JSON.stringify(workspace)}); } catch (error) { process.send({ error: error.message }); } process.disconnect();`], { env, stdio: ["ignore", "ignore", "inherit", "ipc"] });
   try {
-    const received = new Promise<{ error: string }>((resolve) => child.once("message", resolve));
+    const received = new Promise<{ error: string }>((resolve, reject) => {
+      child.once("message", resolve);
+      child.once("error", reject);
+      child.once("exit", (code) => reject(new Error(`IPC fixture exited before its message: ${code}`)));
+    });
     const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
     assert.match((await received).error, /IPC parent is not the MAGI launcher/);
     await exited;
@@ -253,18 +255,17 @@ test("unrelated IPC parent gets a clear shell ownership error without spawning a
   } finally { child.kill("SIGKILL"); await rm(workspace, { recursive: true, force: true }); }
 });
 
-test("naturally completed background shell removes launcher ownership while keeping output", async () => {
+test("naturally completed background shell removes launcher ownership while keeping output", { timeout: 20_000 }, async () => {
   const { spawn } = await import("node:child_process");
-  const { fileURLToPath } = await import("node:url");
-  const modulePath = fileURLToPath(new URL("../../../../packages/built-in-tools/dist/shellManager.js", import.meta.url));
-  const child = spawn(process.execPath, ["--input-type=module", "-e", `import { ShellManager } from ${JSON.stringify(modulePath)}; const manager = new ShellManager(); const shell = manager.start('echo naturally-done', process.cwd()); shell.process.once('close', () => setTimeout(() => { process.send({ output: manager.read(shell.id) }); process.disconnect(); }, 50));`], { env: { ...process.env, MAGI_TOOL_PROCESS_SUPERVISOR_PID: String(process.pid) }, stdio: ["ignore", "ignore", "inherit", "ipc"] });
+  const modulePath = new URL("../../../../packages/built-in-tools/dist/shellManager.js", import.meta.url).href;
+  const child = spawn(process.execPath, ["--input-type=module", "-e", `import { ShellManager } from ${JSON.stringify(modulePath)}; const manager = new ShellManager(); const shell = manager.start('echo naturally-done', process.cwd()); shell.process.once('close', async () => { await shell.closing; process.send({ output: manager.read(shell.id) }, () => process.disconnect()); });`], { env: { ...process.env, MAGI_TOOL_PROCESS_SUPERVISOR_PID: String(process.pid) }, stdio: ["ignore", "ignore", "inherit", "ipc"] });
   const events: { type?: string; action?: string; pid?: number; output?: string }[] = [];
   child.on("message", (message) => {
     const value = message as typeof events[number]; events.push(value);
     if (value.type === "tool-process" && value.action === "add") child.send({ v: 1, type: "tool-process-ready", pid: value.pid });
   });
   try {
-    await new Promise<void>((resolve) => child.once("exit", () => resolve()));
+    await new Promise<void>((resolve, reject) => { child.once("error", reject); child.once("exit", (code) => code === 0 ? resolve() : reject(new Error(`Shell fixture exited ${code}`))); });
     const added = events.find((e) => e.action === "add");
     assert.ok(added?.pid);
     assert.ok(events.some((e) => e.action === "remove" && e.pid === added.pid));
