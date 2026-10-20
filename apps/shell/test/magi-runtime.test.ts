@@ -287,16 +287,19 @@ test("an operator stop remains running until the owned launcher confirms exit", 
 
 for (const route of ["host", "fallback"]) test(`fresh local clone compiles before ${route} launcher start`, async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-local-unbuilt-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+  let starts = 0, child;
+  let childClosed: Promise<void> | undefined;
+  // Node runs after hooks in order and stops at the first failure. Removing a
+  // live child's cwd can fail on Windows, so terminate and await close first in
+  // this single hook; otherwise its IPC channel/interval can hang the test file.
+  t.after(async () => {
+    if (child && child.exitCode === null && child.signalCode === null) child.kill();
+    await childClosed;
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
   const { origin } = await makeOrigin(root);
   const home = path.join(root, "home"), source = agentSource(home, agent.handle);
   const recorded = recorder();
-  let starts = 0, child;
-  const closed = () => child && new Promise<void>((resolve) => {
-    if (child.exitCode !== null || child.signalCode !== null) return resolve();
-    child.once("close", resolve); child.kill();
-  });
-  t.after(closed);
   const runtime = createMagiRuntime({ checkout: origin, repository: origin, home,
     base: "http://127.0.0.1:9", tools: { ...testRuntime, git: "git", env: process.env }, managed: true,
     run: async (binary, args, options) => {
@@ -316,6 +319,7 @@ for (const route of ["host", "fallback"]) test(`fresh local clone compiles befor
       starts++;
       assert.ok(builtFiles.every((file) => existsSync(path.join(source, file))));
       child = spawn(binary, args, { ...options, detached: false });
+      childClosed = new Promise<void>((resolve) => child.once("close", resolve));
       return child;
     },
   });
