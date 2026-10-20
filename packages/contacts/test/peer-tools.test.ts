@@ -11,7 +11,7 @@ test("trusted-LAN agent saves a peer contact without approval policy or owner co
   try {
     const contact = bus.contacts.forPeer({ principal: "a".repeat(64), endpoint: "http://192.168.1.2:8080", name: "Other EVA" });
     const tools = contactTools(bus);
-    const save = tools.find(tool => tool.name === "accept_peer_contact")!;
+    const save = tools.find(tool => tool.name === "save_peer_contact")!;
     await save.run({ contact_id: contact.id, endpoint: "http://192.168.1.3:8080" });
     assert.equal(bus.contacts.get(contact.id)?.peer_url, "http://192.168.1.3:8080");
     assert.equal(bus.contacts.get(contact.id)?.peer_trust, "accepted");

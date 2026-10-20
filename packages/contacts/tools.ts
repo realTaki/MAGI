@@ -51,24 +51,12 @@ export function contactTools(bus: Bus, context?: ContactToolContext): Executable
       async run() { return JSON.stringify({ groups: bus.groups.list() }); },
     },
     {
-      name: "accept_group_invitation", description: "Save a local group conversation. Membership controls replication routing, not access authorization.",
-      input_schema: { type: "object", properties: { conversation_uuid: { type: "string" } }, required: ["conversation_uuid"], additionalProperties: false },
-      async run(args) { return JSON.stringify({ accepted: bus.groups.accept(stringArg(args, "conversation_uuid")) }); },
-    },
-    {
-      name: "accept_peer_contact", description: "Save or update an EVA contact and its address on the trusted private network.",
+      name: "save_peer_contact", description: "Save or update an EVA contact and its address on the trusted private network.",
       input_schema: { type: "object", properties: { contact_id: { type: "integer" }, endpoint: { type: "string" } }, required: ["contact_id"], additionalProperties: false },
       async run(args) {
         const contactId = integerArg(args, "contact_id");
         if (args.endpoint !== undefined && typeof args.endpoint !== "string") throw new Error("endpoint must be a string");
-        return JSON.stringify({ accepted: bus.contacts.acceptPeer(contactId, args.endpoint as string | undefined) });
-      },
-    },
-    {
-      name: "block_peer_contact", description: "Mark an EVA contact as blocked in the local contact book. This is not a network access-control boundary.",
-      input_schema: { type: "object", properties: { contact_id: { type: "integer" } }, required: ["contact_id"], additionalProperties: false },
-      async run(args) {
-        return JSON.stringify({ blocked: bus.contacts.blockPeer(integerArg(args, "contact_id")) });
+        return JSON.stringify({ contact: bus.contacts.acceptPeer(contactId, args.endpoint as string | undefined) });
       },
     },
     {
