@@ -15,9 +15,9 @@ apps/shell/runtime/bin/node apps/shell/integration/chat-history.browser.mjs
 apps/shell/runtime/bin/node apps/shell/integration/provider-form.browser.mjs
 ```
 
-Root `npm test` builds the workspace and runs EVA, ASP and all Shell `.test.ts`
-and `.test.mjs` files. The runner selects compiled EVA/ASP tests from their
-current source names; obsolete files left in `dist` are not discovered. Running the entire Shell suite again in the same CI job
+Root `npm test` builds the workspace and runs EVA, Shell, bus, contacts and
+peer-channel tests. Shell includes both `.test.ts` and `.test.mjs` files. The
+runner selects compiled EVA and package tests from their current source names; obsolete files left in `dist` are not discovered. Running the entire Shell suite again in the same CI job
 adds no coverage. Tests use disposable local workspaces and fake providers;
 they must close workers/databases before removing their workspaces. Never use a
 real profile, credentials or paid model service as a test fixture.
