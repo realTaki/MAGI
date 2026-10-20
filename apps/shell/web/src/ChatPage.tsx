@@ -7,8 +7,9 @@ import { ProviderLink, ProviderProfile } from "./ProviderProfile";
 import { RuntimeToggle } from "./RuntimeToggle";
 import { providerFailureCode } from "@magi/bus/jobs/providerFailure.js";
 import { OPERATOR, type ChatMessage } from "./chat-model";
-import { getPeerProfile, listContacts, listConversations, listPeerEvents, sendPeerMessage, type PeerContact, type PeerEvent, type PeerProfile } from "./peer";
+import { listContacts, listConversations, sendPeerMessage, type PeerContact, type PeerEvent, type PeerProfile } from "./peer";
 import { contactLabel, conversationContact, peerMessages } from "./peer-messages";
+import { loadContactDetails, providerProfileState } from "./peer-profile";
 import { providerProfileHandle } from "./provider-form";
 import { initialsFromLogin, useGitHubAccount } from "./github-connect";
 import { openSettingsRoute, useHashPath } from "./hash-route";
@@ -54,6 +55,7 @@ export function ChatPage() {
   const profileHandle = providerProfileHandle(path);
   const [contacts, setContacts] = useState<PeerContact[]>([]);
   const [events, setEvents] = useState<Record<string, PeerEvent[]>>({});
+  const [failedContacts, setFailedContacts] = useState<string[]>([]);
   const [profiles, setProfiles] = useState<Record<string, PeerProfile>>({});
   const [activeId, setActiveId] = useState(() => readLocal(ACTIVE_CONTACT, "shell"));
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -70,7 +72,8 @@ export function ChatPage() {
   const menuRef = useRef<HTMLButtonElement>(null);
   const active = contacts.find((contact) => contact.id === activeId) ?? contacts[0];
   const profile = active && profiles[active.id];
-  const owner = !!(active?.local && profile?.owner && profile.handle === active.handle);
+  const providerState = active ? providerProfileState(active, profile) : undefined;
+  const owner = providerState === "ready";
   const messages = useMemo(() => active ? peerMessages(active, events[active.id] ?? [], profiles[active.id]) : [], [active, events, profiles]);
 
   // One polling loop, including the empty/error state. New contacts created in
@@ -84,17 +87,14 @@ export function ChatPage() {
         const next = [...listed, ...conversations.map(conversationContact)];
         if (cancelled) return;
         setContacts(next);
-        const results = await Promise.allSettled(next.map(async (contact) => {
-          const [history, details] = await Promise.all([listPeerEvents(contact.id), contact.group ? undefined : getPeerProfile(contact.id)]);
-          return { id: contact.id, history, details };
-        }));
+        const loaded = await Promise.all(next.map(loadContactDetails));
         if (cancelled) return;
-        const loaded = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
-        // A failed remote peer cannot block the Shell owner's conversation.
-        // Keep that peer's last history; discard records removed from contacts.
+        // A stopped local EVA is expected to have no owner RPC. Keep its last
+        // history, but never retain a stale profile's actionable credentials UI.
         setEvents((current) => Object.fromEntries(next.map((contact) => [contact.id, loaded.find((item) => item.id === contact.id)?.history ?? current[contact.id] ?? []])));
         setProfiles(Object.fromEntries(loaded.flatMap((result) => result.details ? [[result.id, result.details]] : [])));
-        setError(results.some((result) => result.status === "rejected") ? t("peer.connectionFailed") : "");
+        setFailedContacts(loaded.filter((result) => result.failed).map((result) => result.id));
+        setError(loaded.some((result) => result.id === "shell" && result.failed) ? t("peer.connectionFailed") : "");
       } catch { if (!cancelled) setError(t("peer.connectionFailed")); }
       finally { if (!cancelled) timer = setTimeout(() => void refresh(), 3000); }
     }
@@ -182,6 +182,7 @@ export function ChatPage() {
       </div>
       <div className="chat-page__thread" ref={threadRef}>
         {error && <div role="alert" className="chat-page__empty-thread">{error}</div>}
+        {active && active.id !== "shell" && failedContacts.includes(active.id) && <p role="status" className="chat-page__empty-thread">{t("peer.refreshFailed")}</p>}
         {!active && <p className="chat-page__empty-thread">{t("peer.loading")}</p>}
         {active && messages.length === 0 && <p className="chat-page__empty-thread">{t(active.id === "shell" ? "peer.shellIntro" : "peer.chatIntro")}</p>}
         <Thread messages={messages} ownerHandle={owner ? active?.handle : undefined} />
@@ -194,7 +195,9 @@ export function ChatPage() {
       <p>{t(active.group ? "peer.group" : active.local ? "peer.local" : "peer.remote")}</p>
       {active.group && <><p>{active.id.slice("conversation:".length)}</p>{active.members?.map((member) => <p key={member.principal}>{member.principal} · {member.endpoint}</p>)}</>}
       {owner && <ProviderProfile key={active.id} handle={active.handle} chatId={active.id} message={messages.filter((message): message is Extract<ChatMessage, { type: "form" }> => message.type === "form" && message.card.purpose === "provider").at(-1)} />}
-      {!owner && !active.group && <p>{t("peer.remoteProfile")}</p>}
+      {providerState === "remote" && <p>{t("peer.remoteProfile")}</p>}
+      {providerState === "offline" && <p role="status">{t("peer.localProfileOffline")}</p>}
+      {providerState === "unavailable" && <p role="status">{t("peer.localProfileUnavailable")}</p>}
     </div></aside>}
   </div></div>;
 }
