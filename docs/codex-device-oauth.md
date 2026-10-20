@@ -25,9 +25,9 @@ Only `shell-owner` / `local-owner` plus the authenticated owner's contact ID are
 
 The interaction adapter selects only pi-ai's `device_code` method. Browser/manual-code fallback is rejected. Only the exact `https://auth.openai.com/codex/device` verification URL and bounded device fields can be rendered. Device codes expire and disappear from the UI; expired historical metadata is not a new authorization.
 
-Tokens are staged under a random opaque key in MAGI's existing local secret store (a mode-0600 local file, not encrypted-at-rest storage). Jobs/settings carry only that reference. Provider verification must complete before the active settings change. A rejected candidate is discarded and the existing provider remains active. A stop racing with commit does not delete a potentially committed credential; startup cleans uncommitted staging entries. The device-grant timeout stops after authorization; verification uses the provider worker's own bounded timeout. Cancel is available while awaiting authorization, not during the atomic verification/activation stage.
+Tokens are staged under a random opaque key in MAGI's existing local secret store (a mode-0600 local file, not encrypted-at-rest storage). Normal OAuth jobs/settings carry only that reference. Provider verification must complete before the active settings change. A rejected candidate is discarded and the existing provider remains active. A stop racing with commit does not delete a potentially committed credential; startup cleans uncommitted staging entries. The device-grant timeout stops after authorization; verification uses the provider worker's own bounded timeout. Cancel is available while awaiting authorization, not during the verification/activation stage.
 
-OAuth refresh is single-flight per runtime vault, saves rotated credentials, and does not resurrect deleted/replaced records. No OAuth credentials are propagated to other EVA instances. Ordinary history contains fixed status summaries only; device display information is separate structured metadata. Raw provider errors are not surfaced.
+OAuth refresh is single-flight per runtime vault, saves rotated credentials, and does not resurrect deleted/replaced records. No OAuth credentials are propagated to other EVA instances. The normal authentication flow writes fixed status summaries to ordinary history; device display information is separate structured metadata. Raw provider errors are not surfaced.
 
 ## Verified sources (2026-10-20)
 
@@ -42,4 +42,30 @@ OpenAI's code establishes the mechanism; OpenClaw's documentation establishes th
 
 ## Validation
 
-Use the MAGI-owned Node binary. Adapter tests inject a mock OAuth driver; owner/config tests inject both a mock driver and model client. They assert owner boundaries, same-instance correlation, replay, cancellation/late replies, safe URLs, failed verification, secret-free jobs/history, rotation and timeout. They do not create device codes, credentials or real grants. A real provider login and entitlement test remain a user-initiated activation step.
+Use the MAGI-owned Node binary. Adapter tests inject a mock OAuth driver; owner/config tests inject both a mock driver and model client. They assert owner boundaries, same-instance correlation, replay, cancellation/late replies, safe URLs, failed verification, secret-free normal-auth jobs/history, rotation and timeout. They do not create device codes, credentials or real grants. A real provider login and entitlement test remain a user-initiated activation step.
+
+## Storage and tool trust limits
+
+The normal authentication path keeps access/refresh tokens out of model requests,
+chat history and job payloads. This is data-flow hygiene, **not enforced secret
+isolation**: existing unsandboxed `read_file` and shell tools run with the same OS
+user and can read the plaintext secret store, then expose its contents to model
+context or logs. Those tools remain trusted. This patch does not add a sandbox,
+separate OS identity or external credential broker; a filename denylist alone
+would not solve that boundary.
+
+Secret updates now write a unique same-directory mode-0600 temporary file, flush
+it, and atomically rename it before updating memory. Failed writes/renames retain
+the previous file and in-memory state. This does not encrypt credentials or claim
+power-loss durability of the directory entry on every filesystem. Successful
+refresh rotation is persisted before reporting caller cancellation.
+
+Paused instances reject a new login before contacting the driver; pausing during
+a grant rejects activation. Unclaimed OAuth provider jobs have bounded admission,
+without imposing a competing timeout on a claimed configuration commit.
+
+The UI retains the submitted attempt while event delivery is delayed or uncertain
+and does not allow a second Connect to replace it. Terminal events cannot regress
+to pending from an older poll. If submission delivery remains unknown and no
+event arrives, reload the owner view to reconcile persisted events before trying
+again; automatic transport-level retry/reconciliation is not implemented here.

@@ -40,6 +40,7 @@ export class ConfigWorker extends BaseWorker {
     const committedRef = bus.settings.get("provider.oauth_ref");
     for (const name of bus.secrets.names()) if (validOAuthRef(name) && name !== committedRef) bus.secrets.set(name, "");
     this.oauth = new CodexDeviceSessions(new CodexOAuthVault(bus.secrets, oauthDriver), async (ref, model, signal) => {
+      if (bus.settings.get("node.enabled") === "false") throw new Error("OAuthError:paused");
       await this.useProvider({ provider: "openai-codex", model, base_url: "", oauth_ref: ref }, signal);
     }, (binding, update) => {
       bus.settings.set(`provider.oauth.attempt.${binding.attempt}`, JSON.stringify({ binding, update: { ...update, device: undefined } }));
@@ -173,6 +174,12 @@ export class ConfigWorker extends BaseWorker {
       if (!model) throw new Error("OAuthError:model_required");
       const old = this.bus.settings.get(`provider.oauth.attempt.${binding.attempt}`);
       if (old) { this.oauthStatusAfterRestart(binding, old); return; }
+      if (this.bus.settings.get("node.enabled") === "false") {
+        const update: OAuthUpdate = { attempt: binding.attempt, instance: binding.instance, state: "failed" };
+        this.bus.settings.set(`provider.oauth.attempt.${binding.attempt}`, JSON.stringify({ binding, update }));
+        messageDelivery.send(this.bus, binding.chat, "Provider connection: failed", MAGI_CONTACT_ID, this.worker_name, { provider_oauth: update });
+        return;
+      }
       this.oauth.start(binding, model);
     } else if (input.body.action === "cancel") this.oauth.cancel(binding);
     else if (input.body.action === "status") {
@@ -362,8 +369,11 @@ export class ConfigWorker extends BaseWorker {
     const id = this.bus.board("ChangeProviderNotify").publish(change, this.worker_name);
     // The providers worker owns its bounded verification/write timeouts. A second,
     // shorter timeout here could declare failure while that worker later saves.
+    const admittedBy = Date.now() + 30_000;
     let result = this.bus.board("ChangeProviderNotify").result(id);
     while (!result) {
+      // Cancel only unclaimed OAuth work: never time out an already-owned commit.
+      if (change.oauth_ref && (this.bus.settings.get("node.enabled") === "false" || Date.now() >= admittedBy) && this.bus.board("ChangeProviderNotify").failPending(id, "Provider unavailable")) throw new Error("OAuthError:unavailable");
       if (signal?.aborted) { this.bus.board("ChangeProviderNotify").fail(id, "Provider connection interrupted"); throw new Error("OAuthError:interrupted"); }
       await new Promise((resolve) => setTimeout(resolve, 20));
       result = this.bus.board("ChangeProviderNotify").result(id);

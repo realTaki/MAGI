@@ -153,7 +153,7 @@ export class PiAiClient implements LLMClient {
   configure(settings: ProviderSettings): void { this.settings = { ...this.settings, ...settings, oauth_ref: settings.oauth_ref }; }
 
   async verify(settings: ProviderSettings, signal?: AbortSignal): Promise<void> {
-    await this.request({ messages: [{ role: "user", content: "Reply OK." }], tools: [] }, { ...this.settings, ...settings }, 256, signal);
+    await this.request({ messages: [{ role: "user", content: "Reply OK." }], tools: [] }, { ...this.settings, ...settings, oauth_ref: settings.oauth_ref }, 256, signal);
   }
 
   complete(job: LLMRequest, signal?: AbortSignal): Promise<LLMMessage> { return this.request(job, this.settings, undefined, signal); }

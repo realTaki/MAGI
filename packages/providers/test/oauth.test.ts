@@ -58,3 +58,31 @@ test("timeout terminates pending login without credentials or activation", async
   const sessions=new CodexDeviceSessions(f.vault,async()=>assert.fail(),(_,u)=>updates.push(u),5);
   sessions.start(binding,"model"); await sessions.settled(); assert.equal(updates.at(-1)?.state,"failed"); assert.equal(f.data.size,0);
 });
+test("successful refresh rotation survives caller cancellation after response", async () => {
+  let finish!: (value: OAuthCredential) => void;
+  const f = fixture(undefined, async () => new Promise(resolve => { finish = resolve; }));
+  const ref = f.vault.stage({ ...token(), expires: 0 });
+  const controller = new AbortController();
+  const access = f.vault.access(ref, controller.signal);
+  controller.abort();
+  const rotated = { ...token(), access: "new-access", refresh: "new-refresh" };
+  finish(rotated);
+  await assert.rejects(access, /OAuthError:authentication/);
+  assert.deepEqual(JSON.parse(f.data.get(ref)!), rotated);
+  assert.equal(await f.vault.access(ref), "new-access");
+});
+test("verification clears active OAuth for both API-key and non-Codex candidates", async () => {
+  const { PiAiClient } = await import("../client.js");
+  for (const provider of ["openai-codex", "openai"]) {
+    const client = new PiAiClient({ provider: "openai-codex", model: "old-model", oauth_ref: "old-ref" });
+    let candidate: import("../client.js").ProviderSettings | undefined;
+    // Capture the exact settings delivered to the request boundary, without network.
+    (client as unknown as { request: (_job: unknown, settings: import("../client.js").ProviderSettings) => Promise<void> }).request = async (_job, settings) => { candidate = settings; };
+    await client.verify({ provider, model: "candidate-model", api_key: "new-key" });
+    assert.equal(candidate?.oauth_ref, undefined);
+    assert.equal(candidate?.api_key, "new-key");
+    assert.equal(candidate?.provider, provider);
+    await client.complete({ messages: [], tools: [] });
+    assert.equal(candidate?.oauth_ref, "old-ref", "verification must not mutate active provider");
+  }
+});

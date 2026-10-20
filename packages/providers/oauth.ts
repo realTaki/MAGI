@@ -38,11 +38,12 @@ export class CodexOAuthVault {
       let value = credential(JSON.parse(raw));
       if (value.expires <= Date.now() + 60_000) {
         value = credential(await this.driver.refresh(value, signal ?? new AbortController().signal));
-        signal?.throwIfAborted();
+        // Persist successful rotation even if the caller aborted after the response.
         // A logout/replacement during refresh must never recreate a removed session.
         if (this.secrets.get(ref) !== raw) throw new Error();
         this.secrets.set(ref, JSON.stringify(value));
       }
+      signal?.throwIfAborted();
       return value.access;
     } catch { throw new Error("OAuthError:authentication"); }
   }

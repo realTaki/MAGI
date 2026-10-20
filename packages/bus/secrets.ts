@@ -1,12 +1,14 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 
 /**
- * The workspace secret store. Plaintext lives in this file and nowhere the
- * model reads: not SettingsBook, not MessageBook, not a tool result.
+ * The workspace secret store. Normal auth/config paths keep plaintext out of
+ * SettingsBook, MessageBook and tool results. This is not an OS isolation
+ * boundary: trusted same-user filesystem/shell tools can still read this file.
  */
 export class SecretStore {
-  private readonly values = new Map<string, string>();
+  private values = new Map<string, string>();
 
   constructor(private readonly file: string) {
     if (!existsSync(file)) return;
@@ -33,13 +35,21 @@ export class SecretStore {
   }
 
   set(key: string, value: string): void {
-    if (value === "") {
-      this.values.delete(key);
-    } else {
-      this.values.set(key, value);
+    const next = new Map(this.values);
+    if (value === "") next.delete(key); else next.set(key, value);
+    const body = `${JSON.stringify(Object.fromEntries(next), null, 2)}\n`;
+    const temporary = `${this.file}.${randomUUID()}.tmp`;
+    let fd: number | undefined;
+    try {
+      fd = openSync(temporary, "wx", 0o600);
+      writeFileSync(fd, body);
+      fsyncSync(fd);
+      closeSync(fd); fd = undefined;
+      renameSync(temporary, this.file);
+      this.values = next;
+    } finally {
+      if (fd !== undefined) closeSync(fd);
+      try { unlinkSync(temporary); } catch { /* Renamed, or creation failed. */ }
     }
-    const body = `${JSON.stringify(Object.fromEntries(this.values), null, 2)}\n`;
-    writeFileSync(this.file, body, { mode: 0o600 });
-    try { chmodSync(this.file, 0o600); } catch { /* Windows has no POSIX mode bits. */ }
   }
 }

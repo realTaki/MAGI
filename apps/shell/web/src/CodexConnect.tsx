@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getPeerProfile, listPeerEvents, sendPeerMessage } from "./peer";
 
+import { CodexAttempt } from "./codex-attempt";
 import { useT } from "./i18n";
 
 const verificationUri = "https://auth.openai.com/codex/device";
@@ -13,7 +14,7 @@ export function CodexConnect({ chatId, handle, model }: { chatId: string; handle
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(Date.now());
-  const attempt = useRef<string | undefined>(undefined);
+  const attempt = useRef(new CodexAttempt());
   const lock = useRef(false);
   const statusChecked = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -24,10 +25,10 @@ export function CodexConnect({ chatId, handle, model }: { chatId: string; handle
         if (!profile.owner || profile.handle !== handle || !profile.public_key) return;
         const events = await listPeerEvents(chatId);
         const candidates = events.filter(e => e.role === "assistant").map(e => e.metadata?.provider_oauth as Update | undefined)
-          .filter((u): u is Update => !!u && u.instance === profile.public_key && typeof u.attempt === "string" && (!attempt.current || u.attempt === attempt.current)
+          .filter((u): u is Update => !!u && u.instance === profile.public_key && typeof u.attempt === "string" && (!attempt.current.id || u.attempt === attempt.current.id)
             && ["pending", "verifying", "saved", "cancelled", "failed"].includes(u.state));
         const latest = candidates.at(-1);
-        if (!disposed && latest) {
+        if (!disposed && latest && attempt.current.observe(latest.attempt, latest.state)) {
           if (["pending", "verifying"].includes(latest.state) && statusChecked.current !== latest.attempt) {
             statusChecked.current = latest.attempt;
             void sendPeerMessage(chatId, "Provider connection status", { provider_oauth: { action: "status", attempt: latest.attempt } }).catch(() => {});
@@ -42,15 +43,17 @@ export function CodexConnect({ chatId, handle, model }: { chatId: string; handle
     return () => { disposed = true; clearInterval(timer); };
   }, [chatId, handle]);
   async function send(action: "start" | "cancel") {
-    if (lock.current) return; lock.current = true; setBusy(true); setError("");
+    if (lock.current || (action === "start" && attempt.current.pending)) return; lock.current = true; setBusy(true); setError("");
     try {
       const profile = await getPeerProfile(chatId);
       if (!profile.owner || profile.handle !== handle) throw new Error();
       if (action === "start") {
         if (!codexModel.trim()) { setError(t("codexConnect.choose")); return; }
-        attempt.current = crypto.randomUUID(); setUpdate(undefined);
+        const id = crypto.randomUUID();
+        if (!attempt.current.begin(id)) return;
+        setUpdate({ attempt: id, instance: profile.public_key ?? "", state: "pending" });
       }
-      const id = action === "start" ? attempt.current : update?.attempt;
+      const id = attempt.current.id;
       if (!id) throw new Error();
       await sendPeerMessage(chatId, "Provider connection request", { provider_oauth: { action, attempt: id, ...(action === "start" ? { model: codexModel } : {}) } });
     } catch { setError(t("codexConnect.uncertain")); }

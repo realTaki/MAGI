@@ -68,3 +68,22 @@ test("restart cannot replay a consumed device-login attempt",async()=>{
   assert.equal(logins,0);assert.ok(f.bus.messages.list(owner.id,20).some(m=>m.content==="Provider connection: cancelled"));
  }finally{await config.stop();f.close();}
 });
+test("paused node refuses OAuth before login and stop during grant prevents activation", async () => {
+ for (const stoppedDuringGrant of [false, true]) {
+  const f = fixture(); let logins = 0;
+  if (!stoppedDuringGrant) f.bus.settings.set("node.enabled", "false");
+  const config = new ConfigWorker(f.bus, { ...driver, async login(i) {
+    logins++; const value = await driver.login(i);
+    f.bus.settings.set("node.enabled", "false"); return value;
+  } });
+  try {
+   const owner = f.bus.chats.forChannel("local-owner", "owner");
+   chat(f.bus, owner.id, f.bus.userContactId, { content: "", metadata: { provider_oauth: { action: "start", attempt, model: "gpt-6-sol" } } });
+   await config.poll(); await new Promise(r => setTimeout(r, 20));
+   assert.equal(logins, stoppedDuringGrant ? 1 : 0);
+   assert.equal(f.bus.settings.get("provider.oauth_ref"), null);
+   assert.deepEqual(f.bus.secrets.names(), []);
+   assert.ok(f.bus.messages.list(owner.id, 30).some(m => m.content === "Provider connection: failed"));
+  } finally { await config.stop(); f.close(); }
+ }
+});
