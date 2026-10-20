@@ -1,6 +1,6 @@
-import type { ChatMessage } from "./chat-model";
-import type { PeerContact, PeerConversation, PeerEvent, PeerProfile } from "./peer";
-import { cardReceiptFromEvents, cardWithReceipt } from "./provider-form";
+import type { ChatMessage } from "./chat-model.ts";
+import type { PeerContact, PeerConversation, PeerEvent, PeerProfile } from "./peer.ts";
+import { cardReceiptFromEvents, cardWithReceipt } from "./provider-form.ts";
 
 /** Only an authenticated local owner session can render actionable provider cards. */
 export function peerMessages(contact: PeerContact, events: PeerEvent[], profile?: PeerProfile): ChatMessage[] {
