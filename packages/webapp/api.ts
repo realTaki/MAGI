@@ -710,7 +710,7 @@ export function createLocalApi(context) {
 
   function peerConversations() {
     return bus.groups.list().map(group => ({ id: `conversation:${group.conversation_uuid}`, title: group.title,
-      trust: group.trust, members: bus.groups.membership(group.conversation_uuid)?.payload?.members ?? [], local: false, group: true }));
+      members: bus.groups.membership(group.conversation_uuid)?.payload?.members ?? [], local: false, group: true }));
   }
 
   async function peerEvents({ id }) {
@@ -735,7 +735,6 @@ export function createLocalApi(context) {
     if (metadata?.group_action !== undefined) {
       if (id !== "shell" || Object.keys(metadata).length !== 1) throw new Error("Group decisions require the local owner conversation");
       const action = metadata.group_action;
-      if (action?.action === "accept" && typeof action.id === "string") return bus.groups.accept(action.id);
       if (action?.action === "create" && typeof action.title === "string" && Array.isArray(action.members)) {
         const members = action.members.map(id => {
           const contact = bus.contacts.get(Number(id));

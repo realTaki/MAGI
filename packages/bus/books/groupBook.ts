@@ -13,7 +13,7 @@ export type GroupMembership = { v: 1; kind: "membership"; conversationUUID: stri
 export type GroupEvent = { v: 1; kind: "message"; conversationUUID: string; eventId: string; author: string; sequence: number; lamport: number; epoch: number; content: string; replyTo?: string };
 export type GroupMembershipEnvelope = { publicKey: string; payload: GroupMembership };
 export type GroupEventEnvelope = { publicKey: string; payload: GroupEvent };
-export type Group = { conversation_uuid: string; owner: string; title: string; epoch: number; trust: "pending" | "accepted"; chat_id: number };
+export type Group = { conversation_uuid: string; owner: string; title: string; epoch: number; chat_id: number };
 export type GroupReceipt = { event: GroupEventEnvelope; message_id: number; job_id: number | null; duplicate: boolean };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -61,7 +61,7 @@ export class GroupBook {
     const members = [{ principal: owner, endpoint }, ...input.members.filter(member => member.principal !== owner)];
     checkMembers(members);
     const snapshot = this.envelope({ v: 1, kind: "membership", conversationUUID: randomUUID(), owner, epoch: 1, previousDigest: null, title: input.title, members });
-    const group = this.offerMembership(snapshot); return this.accept(group.conversation_uuid);
+    return this.offerMembership(snapshot);
   }
   updateMembers(uuid: string, members: GroupMember[]): GroupMembershipEnvelope {
     const group = this.get(uuid); const owner = groupPrincipal(this.bus.identity.publicKey);
@@ -91,18 +91,12 @@ export class GroupBook {
         const self = groupPrincipal(this.bus.identity.publicKey);
         if (!value.members.some(member => member.principal === self)) throw new Error("not invited to group");
         const chat = this.bus.chats.forChannel("group", value.conversationUUID);
-        this.db.$client.prepare("INSERT INTO books_groups(conversation_uuid, owner, title, epoch, trust, chat_id) VALUES(?, ?, ?, ?, 'accepted', ?)").run(value.conversationUUID, signer, value.title, value.epoch, chat.id);
+        this.db.$client.prepare("INSERT INTO books_groups(conversation_uuid, owner, title, epoch, chat_id) VALUES(?, ?, ?, ?, ?)").run(value.conversationUUID, signer, value.title, value.epoch, chat.id);
       }
       this.db.$client.prepare("INSERT INTO books_group_memberships(conversation_uuid, epoch, envelope) VALUES(?, ?, ?)").run(value.conversationUUID, value.epoch, JSON.stringify(envelope));
       this.db.$client.prepare("UPDATE books_groups SET title = ?, epoch = ? WHERE conversation_uuid = ?").run(value.title, value.epoch, value.conversationUUID);
       return this.get(value.conversationUUID)!;
     }, "immediate");
-  }
-  accept(uuid: string): Group {
-    const self = groupPrincipal(this.bus.identity.publicKey);
-    if (!this.membership(uuid).payload.members.some(member => member.principal === self)) throw new Error("not a current group member");
-    this.db.$client.prepare("UPDATE books_groups SET trust = 'accepted' WHERE conversation_uuid = ?").run(uuid);
-    return this.get(uuid)!;
   }
   /** Membership selects replication recipients; it is not an authorization check. */
   allows(uuid: string, principal: string): boolean {

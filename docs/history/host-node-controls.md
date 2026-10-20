@@ -1,0 +1,139 @@
+> Historical implementation and test evidence. See [current lifecycle controls](../host-node-controls.md).
+
+# Hosted MAGI lifecycle controls
+
+The profile Stop report at `a5e8496d` was reproduced against the current control
+path. The old API delegated every stop to the EVA child map. That map deliberately
+returned `false` for the in-process Shell/ASP handles, so no worker was stopped.
+The profile continued reading ASP presence as online and offered Stop again.
+This was a no-op, not evidence that a stopped host had automatically respawned.
+The default local EVA's public Start entry also used the external-node refusal
+path instead of its existing owned launcher.
+
+## Control boundaries
+
+- Balthasar (`@shell.magi`): pause/resume its agent workers and ASP/Telegram
+  channels. Keep the UI backend and the Shell-owned service infrastructure alive
+  so the operator can still issue Start.
+- Casper (`@asp.magi`): pause/resume the hosted agent workers and channels, while
+  keeping the relay HTTP/WebSocket server serving the other nodes. Its control
+  endpoint is operator-authenticated.
+- Melchior (the `EVA_MAGI_HANDLE` local default): stop its actual owned launcher,
+  await confirmed exit, and start a fresh owned launcher on Start. External roster
+  nodes remain outside Shell's process authority.
+
+A durable `node.enabled` decision gates the hosted worker group. It is separate
+from individual worker configuration and survives reconcile/recovery requests.
+Stopping does not close a BUS or replace a checkout. The lifecycle request runs
+through the node manager; cancelling current model/tool waits prevents an active
+turn from delaying Stop until a provider or card timeout. Foreground and background
+commands share the tool worker's process ownership, including process-group
+termination on POSIX and tree termination on Windows.
+
+`magi.info.running` now reads the hosted manager for Shell/ASP and the owned child
+for the local EVA. A stopped hosted node cannot be reported online merely because
+an old relay presence value was true. An owned child remains running until its
+exit callback. The child closes its launcher IPC after session cleanup, allowing
+normal shutdown to finish rather than waiting for the launcher's force-kill timer.
+
+Normal startup/prepare does not revive an explicitly stopped local default or wait
+for offline naming of intentionally paused hosts. Explicit Start re-enables it.
+Self-rebuild still uses its existing graceful replacement path; interruption is
+reserved for an operator's node Stop.
+
+## Evidence
+
+`apps/shell/test/host-node-lifecycle.test.ts` runs an actual Shell BUS/manager, an
+actual local ASP and two successive real Melchior launcher processes, using only
+synthetic model responses and temporary workspaces. It verifies:
+
+- all three profile APIs report running after initial startup;
+- Shell Stop closes its real ASP socket, keeps the UI API usable and leaves the
+  other nodes online;
+- supervisor health cycles and an explicit channel-start request cannot revive a
+  paused host;
+- Casper Stop closes its agent socket while the relay health endpoint and
+  Melchior's socket remain usable;
+- unauthenticated callers cannot invoke hosted ASP controls;
+- Stop interrupts an in-flight model request and a real foreground command; the
+  command heartbeat stops and a late model result is not delivered;
+- local EVA Stop waits for the actual launcher exit; ordinary startup leaves it
+  stopped; Start obtains a different PID and a real online socket.
+
+`apps/shell/test/magi-runtime.test.ts` additionally checks the pending-stop presence
+contract. `apps/shell/test/runtime-lifecycle.test.ts` now rejects the old no-op
+expectation and checks that stale relay presence does not undo a host stop.
+
+Run root acceptance and `apps/shell/integration/self-rebuild.test.mjs` with the
+MAGI-owned runtime. Native Electron clicking remains a separate parent-session
+acceptance; these tests exercise the underlying control path, sockets and processes
+rather than a mocked button state. No live model account is used or inspected.
+
+## Merged-source verification
+
+At `64d72a80`, after integrating `418b79b6` (self_update and replace safety-gate
+wake), the project-owned Node ran root `npm test`: 186 passed, zero failed,
+zero skipped. The real self-rebuild IPC integration passed all 7 tests. Shell UI
+build/typecheck and locale lint also passed. Conflict resolution retains the
+upstream toolchain environment for both foreground and background commands while
+keeping foreground commands owned and cancellable.
+
+These are Linux source checks with temporary profiles and synthetic model
+responses. Native Electron Stop interaction remains for parent-session acceptance.
+Native Windows PowerShell/WMI timeout failures remain a separate open item; no
+Windows regression was removed or skipped for this change.
+
+## Windows command regression follow-up
+
+Native Windows run `39325808753` at `bc6533e1` failed before Stop: the
+heartbeat command never created its first file. The fixture sent quoted JSON
+inside `node -e` through Windows PowerShell 5.1's native argument parser.
+The heartbeat now runs from a real temporary `.cjs` file, including a space in
+its path, and reports a finished tool job immediately instead of hiding its
+output behind a generic startup timeout. The same cancellation, stopped
+heartbeat, late-result and real launcher assertions remain enabled.
+
+The other Windows failure was already present at Cursor baseline `418b79b6`
+(run `39324622626`): the self-update test used POSIX environment expansion and
+`&&` even though the Windows tool runs PowerShell 5.1. The fixture now uses
+`$env:MAGI_NODE`, the call operator and explicit native exit-code checks on
+Windows. The self_update skill documents both platforms. No timeout was raised.
+
+PowerShell script transport uses UTF-16LE `-EncodedCommand` to preserve script
+quotes across the Windows process-argument boundary. This does not change
+PowerShell 5.1's native argument semantics into PowerShell 7's; callers must
+still use valid platform syntax. A real foreground regression checks literal
+quotes/braces/spaces, stderr capture and nonzero exit status on each platform.
+Native Windows CI remains the authority for Windows execution. WMI contention
+and timeout investigation is separate; no regression was deleted or skipped.
+
+The first Linux full follow-up run hung in cold-start cleanup and was terminated;
+it is recorded as a failed run, not accepted as green. Investigation found a
+separate manager shutdown race: a concurrent start request can recreate the
+same worker name while shutdown waits for the old poll loop. Name membership
+alone lets that old loop adopt the new generation and never retire. The loop
+now requires its original running-record identity. A controlled regression
+fails against the pre-fix loop and passes with the identity guard. This leaves
+normal graceful draining and replacement semantics intact.
+
+Local merged-source check at `bb7b320c` (including parent profile bootstrap fix
+`10633ba0`): root acceptance passed 190/190 with zero skips; real self-rebuild IPC
+passed 7/7. UI build/typecheck passed for the Windows command changes. This is
+Linux evidence; the next pushed revision's native CI must establish Windows
+acceptance. PowerShell transport follows the documented UTF-16LE
+[`-EncodedCommand` format](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_powershell_exe?view=powershell-5.1).
+
+Native Windows run `39327065849` at `717aaabb` confirmed root acceptance:
+188 passed, zero failed, two existing platform skips. Both previously failing
+cases, quoted foreground output/nonzero exit, and the manager shutdown race
+passed. Linux and macOS validation also passed for this revision.
+
+The Windows IPC step then exposed pre-existing fixture cleanup defects: negative
+PID termination is POSIX-only, and an after-hook removed a live launcher's
+workspace first (`EPERM` in the job-error test). All seven assertion cases had
+finished before the runner hung on leaked children; one case failed its cleanup.
+The run was explicitly cancelled rather than called green. The fixture now kills
+its exact owned Windows tree with taskkill, waits for close, and only then removes
+the temporary directory. Its diagnostic path is also inside the temporary fixture,
+not hard-coded `/tmp`. Linux real IPC remains 7/7 after this correction. Native
+Windows validation must be rerun for the final fixture revision.

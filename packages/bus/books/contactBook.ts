@@ -16,8 +16,7 @@ export const contacts = sqliteTable("books_contacts", {
   // group chat, a Telegram group. Who spoke is therefore a contact, and the identity
   // they spoke with belongs to that contact: one per channel, learned from the message.
   tg_id: text("tg_id").unique(),
-  // Historical SQL column retained so existing profile identities remain intact.
-  handle: text("asp_handle").unique(),
+  handle: text("handle").unique(),
   peer_id: text("peer_id").unique(),
   peer_principal: text("peer_principal").unique(),
   peer_url: text("peer_url"),

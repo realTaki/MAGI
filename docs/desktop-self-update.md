@@ -44,7 +44,7 @@ candidate process tree, restores the original AppImage and exact launcher
 state, and relaunches the old desktop with the replace error. Unrelated process
 identities and externally changed artifacts are not overwritten or signaled.
 During candidate activation, Electron-owned launchers and their backends stay
-in the helper-owned process group, including ASP and agent launchers that do not
+in the helper-owned process group, including Shell and agent launchers that do not
 receive the Shell activation journal. This keeps them reachable for rollback
 even if Electron crashes before the helper observes its descendants. Ordinary
 desktop launches retain their existing detached-process ownership behavior.

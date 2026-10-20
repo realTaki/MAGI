@@ -28,7 +28,7 @@ test("three independent HTTP peers converge through offline restart and paginate
     const uuid = a.groups.create({ title: "Network group", members: f.peers.slice(1) }).conversation_uuid;
     for (const index of [1, 2]) {
       await sync(f.workers[0], uuid, f.peers[index].principal);
-      assert.equal(f.buses[index].groups.get(uuid)?.trust, "accepted");
+      assert.equal(f.buses[index].groups.get(uuid)?.conversation_uuid, uuid);
     }
     const a1 = a.groups.append(uuid, "first").event;
     const a2 = a.groups.append(uuid, "second arrives first").event;

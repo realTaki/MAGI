@@ -22,7 +22,7 @@ The following items are goals or limitations, not shipped guarantees:
   child ignored stdin even though the child has a terminal handler. Verify and
   implement forwarding before claiming an interactive CLI through that entry.
 - **Additional integrations and isolation:** capabilities outside the current
-  desktop, ASP, CLI, Telegram, tasks and MCP workers require implementation and
+  desktop, peer channels, CLI, Telegram, tasks and MCP workers require implementation and
   verification. Native tools are not an OS sandbox.
 
 Material in `not_implemented/` and historical Python release notes is design

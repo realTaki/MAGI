@@ -8,8 +8,8 @@ const OAEP = { padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" } a
 
 /**
  * This MAGI's keypair. Created the first time the workspace opens.
- * The private key stays in the workspace file. The public key is what ASP
- * stores on the agent profile.
+ * The private key stays in the workspace file. The public key supplies the peer
+ * identity label and encrypts provider form submissions.
  */
 export function loadOrCreateIdentity(workspace: string): Identity {
   const file = join(workspace, "identity.json");

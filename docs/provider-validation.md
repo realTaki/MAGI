@@ -1,10 +1,12 @@
 # Provider configuration and recovery
 
-This guide records provider recovery mechanisms and their verification boundaries.
+This guide retains historical provider recovery findings and their verification
+boundaries. References to the former relay describe those recorded revisions;
+current forms and receipts use local owner IPC and durable BUS delivery.
 The original implementation report is retained at
 [`54a0a8b6`](https://github.com/realTaki/MAGI/blob/54a0a8b6/docs/provider-validation.md).
-Automated evidence uses synthetic credentials, mock provider responses and a
-local temporary ASP; it does not diagnose a particular account's DNS, proxy,
+The historical automated evidence used synthetic credentials, mock provider responses and a
+local temporary relay; it does not diagnose a particular account's DNS, proxy,
 TLS, routing or entitlement. Model fields are in the [catalog](provider-catalog.md).
 
 ## Findings

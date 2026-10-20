@@ -41,7 +41,7 @@ export function cardTools(bus: Bus): ExecutableTool[] {
     }, required: ["title", "fields"] },
     async run(args, signal) {
       const chatId = messageDelivery.presentChat(bus);
-      if (chatId === null) throw new Error("no ASP chat can present a card");
+      if (chatId === null) throw new Error("no local owner conversation can present a card");
       let spec: CardSpec = {
         id: randomUUID(),
         title: stringArg(args, "title"),

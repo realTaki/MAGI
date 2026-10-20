@@ -4,7 +4,7 @@
  * It belongs to this package because `ProviderSettings` *is* this package's
  * vocabulary, and because the worker beside it is what verifies a candidate and
  * then makes it active. The tool therefore publishes nothing: `ChangeProviderNotify`
- * exists for another worker (the ASP channel) to ask this one, and here the tool
+ * exists for another worker (a channel) to ask this one, and here the tool
  * already runs inside it.
  *
  * A change is never applied straight: the candidate is tried against the provider

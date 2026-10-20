@@ -289,8 +289,7 @@ function exec(file: string, args: string[], cwd: string): Promise<void> {
 }
 
 /**
- * Boot the new entry in a throwaway workspace. It must not be given the relay
- * token: ASP is checked later, in the replacement process, with the real identity.
+ * Boot the new entry in a throwaway workspace before replacing the live process.
  */
 function childScript(): string {
   const override = process.env.MAGI_CHILD?.trim();
@@ -306,8 +305,6 @@ function healthCheck(role: "agent" | "shell"): Promise<void> {
     MAGI_HEALTH_WORKSPACE: workspace,
     MAGI_ROLE: role,
   };
-  delete env.MAGI_HEALTH_ASP_BASE;
-  delete env.MAGI_HEALTH_ASP_TOKEN;
   delete env.MAGI_REPLACE_JOB;
   delete env.MAGI_REPLACE_ERROR;
   const entry = childScript();

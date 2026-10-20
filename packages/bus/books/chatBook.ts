@@ -61,7 +61,7 @@ export class ChatBook {
   /**
    * How far this workspace has read a channel's stream: -1 until anything is taken in.
    *
-   * Channels that number their events — ASP numbers every chat event — can replay what
+   * Channels that number their events can replay what
    * they have not seen acknowledged. The reader records the last number it took in, so a
    * replay of something already handled is recognised instead of handled twice. The
    * reading lives on the chat because a chat *is* a channel address.

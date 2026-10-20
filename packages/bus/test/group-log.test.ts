@@ -30,7 +30,7 @@ test("three peers converge after offline, reorder, duplicate and gapped sequence
   const f = cluster(); const [a, b, c] = f.buses;
   try {
     const group = a.groups.create({ title: "Explicit group", members: f.peers.slice(1) }); const uuid = group.conversation_uuid;
-    for (const peer of [b, c]) { assert.equal(peer.groups.offerMembership(a.groups.membership(uuid)).trust, "accepted"); peer.groups.accept(uuid); }
+    for (const peer of [b, c]) { assert.equal(peer.groups.offerMembership(a.groups.membership(uuid)).conversation_uuid, uuid); }
     const a1 = a.groups.append(uuid, "A one").event, a2 = a.groups.append(uuid, "A two").event;
     b.groups.ingest(a2); b.groups.ingest(a2); // seq 2 arrives before seq 1; a high-water cursor would lose it.
     b.groups.append(uuid, "B concurrent"); c.groups.append(uuid, "C offline");
@@ -52,8 +52,7 @@ test("membership epochs preserve routing order and removed participants leave th
     const group = a.groups.create({ title: "Members", members: f.peers.slice(1) }); const uuid = group.conversation_uuid;
     const invitation = a.groups.membership(uuid); b.groups.offerMembership(invitation);
     const event = a.groups.append(uuid, "private group message").event;
-    assert.equal(b.groups.ingest(event).duplicate, false);
-    b.groups.accept(uuid); c.groups.offerMembership(invitation); c.groups.accept(uuid);
+    assert.equal(b.groups.ingest(event).duplicate, false); c.groups.offerMembership(invitation);
     assert.throws(() => b.groups.updateMembers(uuid, f.peers.slice(0, 2)), /creator/);
     const forged = structuredClone(invitation); forged.payload.members = f.peers.slice(0, 2); forged.payload.epoch = 2;
     assert.throws(() => b.groups.offerMembership(forged), /gap or conflict/);
@@ -69,7 +68,7 @@ test("forwarded original author is retained and conflicting duplicate content is
   const f = cluster(); const [a, b] = f.buses;
   try {
     const group = a.groups.create({ title: "Signed", members: f.peers.slice(1) }); const uuid = group.conversation_uuid;
-    b.groups.offerMembership(a.groups.membership(uuid)); b.groups.accept(uuid);
+    b.groups.offerMembership(a.groups.membership(uuid));
     const request = a.groups.append(uuid, "request"); b.groups.ingest(request.event);
     const answer = b.groups.append(uuid, "reply", request.event.payload.eventId);
     const receipt = a.groups.ingest(answer.event); assert.equal(receipt.job_id, null);
@@ -84,7 +83,7 @@ test("historical event does not revert an explicitly changed peer endpoint", () 
   const f = cluster(); const [a, b] = f.buses;
   try {
     const group = a.groups.create({ title: "Moved peer", members: f.peers.slice(1) }); const uuid = group.conversation_uuid;
-    b.groups.offerMembership(a.groups.membership(uuid)); b.groups.accept(uuid);
+    b.groups.offerMembership(a.groups.membership(uuid));
     const beforeMove = a.groups.append(uuid, "before move").event;
     const contact = b.contacts.list().find(contact => contact.peer_id === f.peers[0].principal)!;
     b.contacts.savePeer(contact.id, "https://new.example");

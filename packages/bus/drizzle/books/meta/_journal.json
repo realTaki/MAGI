@@ -92,6 +92,13 @@
       "when": 1792455000000,
       "tag": "0012_group_log",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1792456000000,
+      "tag": "0013_direct_peer_schema",
+      "breakpoints": true
     }
   ]
 }

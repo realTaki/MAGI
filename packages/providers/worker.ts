@@ -46,7 +46,7 @@ export class ProvidersWorker extends BaseWorker {
     return this.pollCompletion();
   }
 
-  /** The ASP channel asking for a change: a job, because that crosses workers. */
+  /** Another worker asking for a change: a job, because that crosses workers. */
   private async pollChange(): Promise<boolean> {
     const changes = this.bus.board("ChangeProviderNotify");
     const change = changes.claim(this.worker_name);

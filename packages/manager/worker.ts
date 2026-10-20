@@ -12,7 +12,7 @@ import { ReplaceWorker, type AppBuild, type ReplaceHost } from "./replace.js";
 
 const POLL_MS = 20;
 const HEALTH_MS = 1_000;
-/** Live replace reconnects the ASP socket after the previous child exits. The
+/** Live replace restarts the peer server after the previous child exits. The
  * launcher waits 30s for `ready`; an 8s budget makes that look like a crash. */
 const REPLACE_HEALTH_MS = 30_000;
 /** A poll loop that throws this many times in a row is worth telling the operator about. */

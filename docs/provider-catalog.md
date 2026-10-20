@@ -60,7 +60,7 @@ Agent-callable self-rebuild/synchronization capabilities remain available.
    unsupported-model response. Each error has its own explanation. Correct the
    same form and retry without reopening it. Re-enter the key after submission;
    clearing the password field is an explicit privacy behavior.
-3. Interrupt ASP during verification. The persisted result must arrive after
+3. Interrupt the local owner connection during verification. The persisted result must arrive after
    reconnection. Duplicate attempts must not produce another provider request.
 4. Follow a chat configuration link and verify that the exact handle's profile
    opens. No provider form or secret should appear in the chat transcript.

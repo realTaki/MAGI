@@ -26,7 +26,7 @@ async function freePort(): Promise<number> {
 export function localEvaManagement(bus: Bus, runtime, peerTransport?: PeerTransport): ExecutableTool[] {
   const inFlight = new Set<string>();
   async function create({ name }: Record<string, unknown>) {
-    if (typeof name !== "string" || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(name) || ["shell", "asp", "user"].includes(name)) throw new Error("Choose a unique lowercase EVA name (letters, digits, hyphens)");
+    if (typeof name !== "string" || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(name) || ["shell", "user"].includes(name)) throw new Error("Choose a unique lowercase EVA name (letters, digits, hyphens)");
     const handle = `@${name}.magi`;
     const workspace = join(dirname(bus.workspace), name);
     if (existsSync(workspace) || inFlight.has(name)) throw new Error("That workspace already exists; nothing was overwritten");

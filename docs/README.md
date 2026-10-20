@@ -21,8 +21,7 @@ engineering rationale; they are not current startup or deployment instructions.
 [CHANGELOG](../CHANGELOG.md) preserves earlier runtime history.
 
 Shell starts only its built-in EVA; additional local EVAs and remote contacts are
-added through owner chat. Legacy ASP source is retained but is not a required
-startup service. The MAGI peer subset is inspired by A2A 1.0 and does not claim
+added through owner chat. Each EVA serves its own peer endpoint. The MAGI peer subset is inspired by A2A 1.0 and does not claim
 standards compliance.
 
 The project is experimental. A source implementation, passing fixture test,
