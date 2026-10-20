@@ -78,7 +78,9 @@ test("memory migration is transactional, journal-idempotent, and has no schema d
     const originalJournal = db.prepare("SELECT * FROM __drizzle_migrations ORDER BY id").all();
     const migration = readFileSync(new URL("0020_memory_versions.sql", folder), "utf8");
     const target = join(migrationPath, "0020_memory_versions.sql");
-    writeFileSync(journalPath, JSON.stringify(journal));
+    // This fixture deliberately tests the transition through memory migration 20;
+    // later migrations have their own upgrade tests and are not copied here.
+    writeFileSync(journalPath, JSON.stringify({ ...journal, entries: journal.entries.filter((entry: { idx: number }) => entry.idx <= 20) }));
     // Fail after the production rebuild/rename, through the actual migrator.
     writeFileSync(target, `${migration}\n--> statement-breakpoint\nSELECT * FROM deliberate_missing_migration_table;`);
     assert.throws(() => migrate(wrapped, migrationPath), /deliberate_missing_migration_table/);
