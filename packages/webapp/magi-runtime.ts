@@ -106,7 +106,7 @@ export function createMagiRuntime({
 
   async function install(root) {
     // A checkout is one workspace now: the packages hang off the root, so that is
-    // where dependencies are installed. The node builds itself when it replaces itself.
+    // where dependencies are installed before the first launcher can start.
     const cwd = root;
     if (prepareDependencies) await prepareDependencies(cwd);
     if (!prepareDependencies && !existsSync(path.join(cwd, "node_modules", "drizzle-orm"))) {
@@ -142,6 +142,15 @@ export function createMagiRuntime({
       if (configureGit) await configureGit(root);
     }
     await install(root);
+    // The launcher is tracked source, but imports generated runtime modules.
+    // Compile this clone before caching readiness or using either launch route.
+    await npm(["run", "build", "--", "--force"], {
+      cwd: root, env: tools.env,
+      description: `Could not build local EVA workspace in ${root}`,
+    });
+    const required = ["apps/eva/eva.mjs", "packages/runtime/dist/home.js", "packages/runtime/dist/protocol.js", "packages/runtime/dist/toolchain.js", "packages/node/dist/child.js", "packages/node/dist/agent.js", "packages/bus/dist/index.js", "packages/manager/dist/worker.js"];
+    const missing = required.filter((file) => !existsSync(path.join(root, file)));
+    if (missing.length) throw new Error(`Local EVA build is incomplete; missing: ${missing.join(", ")}`);
     sources.set(handle, root);
     return root;
   }

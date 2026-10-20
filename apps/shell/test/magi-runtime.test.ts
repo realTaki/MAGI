@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -14,6 +14,7 @@ import { agentBranch, agentSource, createMagiRuntime } from "@magi/webapp/magi-r
 
 const exec = promisify(execFile);
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+const builtFiles = ["packages/runtime/dist/home.js", "packages/runtime/dist/protocol.js", "packages/runtime/dist/toolchain.js", "packages/node/dist/child.js", "packages/node/dist/agent.js", "packages/bus/dist/index.js", "packages/manager/dist/worker.js"];
 const agent = { handle: EVA_MAGI_HANDLE, token: "tok" };
 
 // Node is supplied by the project test runner; npm execution is stubbed.
@@ -32,6 +33,12 @@ async function makeOrigin(root, autocrlf = false) {
   await git(seed, ["config", "user.email", "a@b"]);
   await git(seed, ["config", "user.name", "a"]);
   writeFileSync(path.join(seed, "README.md"), "one\n");
+  mkdirSync(path.join(seed, "apps/eva"), { recursive: true });
+  writeFileSync(path.join(seed, ".gitignore"), "**/dist/\nnode_modules/\n");
+  writeFileSync(path.join(seed, "apps/eva/eva.mjs"), 'import "../../packages/runtime/dist/home.js"; import "../../packages/node/dist/child.js"; if (process.send) { process.send({type:"ready"}); setInterval(() => {}, 1000); }');
+  // No compiled files are committed or prebuilt. This small build driver makes
+  // clone/bootstrap ordering executable without running a whole MAGI build.
+  writeFileSync(path.join(seed, "build.mjs"), `import {mkdirSync,writeFileSync} from 'node:fs'; import path from 'node:path'; for(const file of ${JSON.stringify(builtFiles)}) { mkdirSync(path.dirname(file),{recursive:true}); writeFileSync(file, 'export const compiled = true;'); }`);
   await git(seed, ["add", "."]);
   await git(seed, ["commit", "--quiet", "-m", "one"]);
   await git(seed, ["branch", "-M", "main"]);
@@ -47,6 +54,7 @@ function recorder() {
   const run = async (binary, args, options) => {
     if (args[0] === testRuntime.npm) {
       npm.push({ args: args.slice(1), cwd: options.cwd });
+      if (args[1] === "run" && args[2] === "build") await exec(binary, [path.join(options.cwd, "build.mjs")], { cwd: options.cwd });
       return "";
     }
     try {
@@ -107,8 +115,8 @@ test("every MAGI gets its own branch checked out inside its workspace", async (t
   // Dependencies belong to that checkout, and the process runs from it.
   assert.deepEqual(recorded.npm, [
     // `--ignore-scripts` keeps a desktop install from reaching node-gyp.
-    // The node builds itself; this checkout is not compiled here.
     { args: ["ci", "--ignore-scripts"], cwd: source },
+    { args: ["run", "build", "--", "--force"], cwd: source },
   ]);
   assert.equal(recorded.spawns.length, 0);
   assert.deepEqual(runtime.running(), []);
@@ -275,4 +283,63 @@ test("an operator stop remains running until the owned launcher confirms exit", 
   for (const exit of exits) exit();
   assert.equal(await stopped, true);
   assert.deepEqual(runtime.running(), []);
+});
+
+for (const route of ["host", "fallback"]) test(`fresh local clone compiles before ${route} launcher start`, async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-local-unbuilt-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const { origin } = await makeOrigin(root);
+  const home = path.join(root, "home"), source = agentSource(home, agent.handle);
+  const recorded = recorder();
+  let starts = 0, child;
+  const closed = () => child && new Promise<void>((resolve) => {
+    if (child.exitCode !== null || child.signalCode !== null) return resolve();
+    child.once("close", resolve); child.kill();
+  });
+  t.after(closed);
+  const runtime = createMagiRuntime({ checkout: origin, repository: origin, home,
+    base: "http://127.0.0.1:9", tools: { ...testRuntime, git: "git", env: process.env }, managed: true,
+    run: async (binary, args, options) => {
+      if (args[0] === testRuntime.npm && args[1] === "ci") {
+        assert.ok(existsSync(path.join(source, "apps/eva/eva.mjs")));
+        assert.ok(builtFiles.every((file) => !existsSync(path.join(source, file))), "fresh clone must be genuinely unbuilt");
+      }
+      return recorded.run(binary, args, options);
+    },
+    startProcess: route === "host" ? async (spec) => {
+      starts++;
+      assert.ok(builtFiles.every((file) => existsSync(path.join(source, file))));
+      await exec(process.execPath, [spec.entry], { cwd: spec.cwd });
+      return { onExit() {}, stop() {} };
+    } : undefined,
+    spawnProcess: (binary, args, options) => {
+      starts++;
+      assert.ok(builtFiles.every((file) => existsSync(path.join(source, file))));
+      child = spawn(binary, args, { ...options, detached: false });
+      return child;
+    },
+  });
+  assert.deepEqual(await runtime.startLocal({ handle: agent.handle, local: true, port: 45558, url: "http://127.0.0.1:45558" }), { handle: agent.handle, started: true });
+  assert.equal(starts, 1);
+  assert.deepEqual(recorded.npm.map(call => call.args), [["ci", "--ignore-scripts"], ["run", "build", "--", "--force"]]);
+  await runtime.ensureSource(agent.handle);
+  assert.equal(recorded.npm.length, 2, "source is cached only after successful compilation");
+});
+
+test("failed local build is not cached and never reaches either spawn route", async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-local-build-fail-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const { origin } = await makeOrigin(root), recorded = recorder();
+  let builds = 0;
+  const runtime = createMagiRuntime({ checkout: origin, repository: origin, home: path.join(root, "home"),
+    base: "http://127.0.0.1:9", tools: { ...testRuntime, git: "git", env: process.env }, managed: true,
+    run: async (binary, args, options) => {
+      if (args[0] === testRuntime.npm && args[1] === "run") { builds++; if (builds <= 2) throw new Error("compile failed"); return ""; }
+      return recorded.run(binary, args, options);
+    },
+    startProcess: () => assert.fail("must not reach host spawn"), spawnProcess: () => assert.fail("must not reach fallback spawn"),
+  });
+  for (let i = 0; i < 2; i++) await assert.rejects(runtime.startLocal({ handle: agent.handle, local: true, port: 45559, url: "http://127.0.0.1:45559" }), /compile failed/);
+  assert.equal(builds, 2, "failed compilation must be retried");
+  await assert.rejects(runtime.startLocal({ handle: agent.handle, local: true, port: 45559, url: "http://127.0.0.1:45559" }), /Local EVA build is incomplete/);
 });
