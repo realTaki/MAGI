@@ -170,8 +170,8 @@ async function spawnShell(runtimeRoot, appCheckout) {
         ...tools.env,
         MAGI_CHECKOUT: runtimeRoot,
         MAGI_APP_CHECKOUT: appCheckout,
-        MAGI_OS_HOME: app.getPath("home"),
-        MAGI_HOME: process.env.MAGI_HOME?.trim() || path.join(app.getPath("home"), ".magi"),
+        MAGI_OS_HOME: osHome,
+        MAGI_HOME: MAGI_DATA_ROOT,
         MAGI_HOST: "1",
         MAGI_USER_DATA: app.getPath("userData"),
         MAGI_REPOSITORY,
@@ -507,7 +507,7 @@ async function installLocalDesktopUpdate(manifest, job) {
   if (!app.isPackaged || process.platform !== "linux") throw new Error("Desktop self-update requires a Linux AppImage");
   if (desktopInstallPending) throw new Error("A desktop update is already pending");
   if (!Number.isInteger(job) || job <= 0 || !manifest || !/^[a-f0-9]{40}$/.test(manifest.revision)) throw new Error("Invalid desktop update request");
-  const home = process.env.MAGI_HOME?.trim() || path.join(app.getPath("home"), ".magi");
+  const home = MAGI_DATA_ROOT;
   const expected = path.join(home, "shell", "revisions", manifest.revision);
   if (realpathSync(manifest.dir) !== realpathSync(expected)) throw new Error("Desktop update is outside Shell-owned revisions");
   desktopInstallPending = true;

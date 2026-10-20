@@ -140,4 +140,7 @@ test('explicit MAGI data root owns clone, cache, and journals without touching t
   const main = await fs.readFile(new URL('../main.mjs', import.meta.url), 'utf8');
   assert.match(main, /profilePaths\(osHome, path, process\.env\.MAGI_HOME\?\.trim\(\)\)/);
   assert.match(main, /home: osHome, dataDirectory: MAGI_DATA_ROOT/);
+  assert.match(main, /MAGI_OS_HOME: osHome/);
+  assert.match(main, /MAGI_HOME: MAGI_DATA_ROOT/);
+  assert.match(main, /const home = MAGI_DATA_ROOT/);
 });
