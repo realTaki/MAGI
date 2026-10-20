@@ -30,7 +30,12 @@ for (const mode of ["stop", "suspendForReplace", "tool timeout"] as const) test(
     claimed.push(job.id); return true;
   }, interrupt() { polling = false; }, stop() { polling = false; } };
   let modelCalls = 0;
-  const manager = new LauncherWorker(bus, [new AgentWorker(bus), new ProvidersWorker(bus, { async complete() { modelCalls++; return { role: "assistant", content: "", tool_calls: calls }; } }), orphan], { drain: ["agent"], build: { app: "eva", script: "build" } });
+  const manager = new LauncherWorker(bus, [new AgentWorker(bus), new ProvidersWorker(bus, { async complete(request) {
+    // A timeout now produces an internal diagnostic turn. It is not a replay of
+    // the original mutation request, and must not ask the mock to mutate again.
+    if (request.messages.some(message => message.role === "system" && message.content.includes("source error:agent"))) return { role: "assistant", content: "NO_REPLY" };
+    modelCalls++; return { role: "assistant", content: "", tool_calls: calls };
+  } }), orphan], { drain: ["agent"], build: { app: "eva", script: "build" } });
   const turns: number[] = [];
   try {
     await manager.start();
