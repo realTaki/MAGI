@@ -25,32 +25,18 @@ test("cache initialization failure is reported by ready and disposal still close
   assert.equal(existsSync(path.join(f.current, "chat.sqlite")), true);
 });
 
-test("disposing Shell aborts an in-flight ASP request", async (t) => {
+test("Shell status and disposal do not contact a central service", async (t) => {
   const f = fixture(t);
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
-  let aborted = false;
-  let began: () => void = () => {};
-  const started = new Promise<void>((resolve) => { began = resolve; });
-  globalThis.fetch = async (url, options: RequestInit = {}) => {
-    const endpoint = new URL(String(url)).pathname;
-    if (endpoint === "/health") return Response.json({ status: "ok", runtime: "typescript" });
-    if (endpoint === "/operator") return Response.json({ token: "test" });
-    if (endpoint === "/bots") {
-      began();
-      return await new Promise((_resolve, reject) => {
-        options.signal?.addEventListener("abort", () => { aborted = true; reject(options.signal?.reason); }, { once: true });
-      });
-    }
-    throw new Error(`Unexpected endpoint ${endpoint}`);
-  };
+  let requests = 0;
+  globalThis.fetch = async () => { requests++; throw new Error("Unexpected central network request"); };
   const api = f.app();
-  const pending = api["runtime.status"]().then(
-    () => false,
-    () => true,
-  );
-  await started;
+  await api.ready();
+  const status = await api["runtime.status"]();
+  assert.equal(status.shell, "ready");
+  assert.equal(status.magiOnline, 1);
   await api.dispose();
-  assert.equal(await pending, true);
-  assert.equal(aborted, true, "closing Shell cancels its network request");
+  await api.dispose();
+  assert.equal(requests, 0);
 });
