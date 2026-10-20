@@ -1,8 +1,17 @@
 import type { CardSpec } from "@magi/bus";
+import type { PeerAttachment, PeerReaction } from "./peer.ts";
 
 export type { CardSpec };
 
-export type ChatMessage =
+export type MessageDetails = {
+  /** Persisted event identity, never an array position. */
+  id?: number | string;
+  reply_to?: number | string;
+  attachments?: PeerAttachment[];
+  reactions?: PeerReaction[];
+};
+
+export type ChatMessage = MessageDetails & (
   | { type: "time"; text: string }
   | { type: "meta"; text: string }
   | { type: "user"; text: string }
@@ -10,7 +19,7 @@ export type ChatMessage =
   | { type: "bot"; text: string; sender?: string }
   | { type: "typing" }
   | { type: "card"; lines: { k: string; v: string }[] }
-  | { type: "form"; text: string; chatId: string; card: CardSpec; receipt?: import("@magi/bus/jobs/card.js").CardReceipt };
+  | { type: "form"; text: string; chatId: string; card: CardSpec; receipt?: import("@magi/bus/jobs/card.js").CardReceipt });
 
 export type RoutineRun = {
   mark: string;

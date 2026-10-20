@@ -29,7 +29,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSyn
 import path from "node:path";
 import {
   chat, messageDelivery, MAGI_CONTACT_ID, loadOrCreateIdentity,
-  SHELL_MAGI_HANDLE,
+  SHELL_MAGI_HANDLE, groupPrincipal, prepareRich, richMetadata, stableMessageId, reactionsFor, reactToMessage, readMessageAttachment, visibleMessage, findMessage,
 } from "@magi/bus";
 
 import { ensureManagedClone } from "./clone.js";
@@ -694,7 +694,7 @@ export function createLocalApi(context) {
     ];
   }
 
-  function conversation(id) {
+  function conversation(id, reference?) {
     if (typeof id === "string" && id.startsWith("conversation:")) {
       const group = bus.groups.get(id.slice("conversation:".length));
       if (!group) throw new Error("Unknown group conversation");
@@ -703,7 +703,12 @@ export function createLocalApi(context) {
     if (id === "shell") return ownerChat();
     const contact = bus.contacts.get(Number(id));
     if (!contact || !contact.peer_id) throw new Error("Peer contact does not exist");
-    return bus.chats.forPeer(contact.peer_id);
+    const rooms = bus.chats.list("peer").filter(room => room.peer_id === contact.peer_id);
+    if (reference !== undefined) {
+      for (const room of rooms) { try { findMessage(bus, room.id, reference); return room; } catch { /* Try only rooms for this contact. */ } }
+      throw new Error("message is not in this conversation");
+    }
+    return rooms.sort((a, b) => (bus.messages.list(b.id, 1)[0]?.id ?? 0) - (bus.messages.list(a.id, 1)[0]?.id ?? 0))[0] ?? bus.chats.forPeer(contact.peer_id);
   }
 
   function localOwned(id) {
@@ -721,21 +726,27 @@ export function createLocalApi(context) {
     const local = localOwned(id);
     if (local) return await magiRuntime.invokeOwner(local.handle, "owner.events", {});
     if (typeof id === "string" && id.startsWith("conversation:")) {
-      return bus.groups.history(id.slice("conversation:".length), 500).map(({ payload }) => ({
-        id: payload.eventId, content: payload.content, role: payload.author === bus.settings.get("peer.principal") ? "user" : "assistant",
-        sender: bus.contacts.list().find(c => c.peer_principal === payload.author)?.nickname ?? payload.author,
-        created_at: "", lamport: payload.lamport,
-      }));
+      const room = conversation(id);
+      const self = groupPrincipal(bus.identity.publicKey);
+      return bus.groups.history(id.slice("conversation:".length), 500).filter(({ payload }) => !payload.reaction).map(({ payload }) => {
+        const message = bus.messages.findPeer(room.id, payload.eventId);
+        return { id: payload.eventId, content: message?.content ?? payload.content, role: payload.author === self ? "user" : "assistant",
+          sender: bus.contacts.list().find(c => c.peer_principal === payload.author)?.nickname ?? payload.author,
+          ...(message ? richMetadata(bus, message.id) : {}), reactions: reactionsFor(bus, room.id, payload.eventId, self),
+          created_at: message?.created_at ?? "", lamport: payload.lamport };
+      });
     }
     const room = conversation(id);
-    return bus.messages.list(room.id, 500).filter(message => !messageDelivery.isInternal(bus, message.id)).map(m => ({ id: m.id, content: m.content,
+    const rooms = id === "shell" ? [room] : bus.chats.list("peer").filter(candidate => candidate.peer_id === room.peer_id);
+    return rooms.flatMap(candidate => bus.messages.list(candidate.id, 500)).filter(message => visibleMessage(bus, message.id)).sort((a, b) => a.id - b.id).slice(-500).map(m => ({ id: stableMessageId(bus, m.id), content: m.content,
+      ...richMetadata(bus, m.id), reactions: reactionsFor(bus, m.chat_id, stableMessageId(bus, m.id), id === "shell" ? String(bus.userContactId) : groupPrincipal(bus.identity.publicKey)),
       role: (id === "shell" ? m.contact_id !== MAGI_CONTACT_ID : m.contact_id === MAGI_CONTACT_ID) ? "user" : "assistant",
       sender: bus.contacts.get(m.contact_id)?.nickname ?? bus.contacts.get(m.contact_id)?.name,
       metadata: JSON.parse(bus.settings.get(`webapp.message.${m.id}`) ?? "null") ?? undefined, created_at: m.created_at,
     }));
   }
 
-  async function peerSend({ id, content, metadata }) {
+  async function peerSend({ id, content, metadata, reply_to, attachments }) {
     if (metadata?.group_action !== undefined) {
       if (id !== "shell" || Object.keys(metadata).length !== 1) throw new Error("Group decisions require the local owner conversation");
       const action = metadata.group_action;
@@ -752,7 +763,9 @@ export function createLocalApi(context) {
     if (typeof id === "string" && id.startsWith("conversation:")) {
       if (metadata) throw new Error("Groups accept ordinary chat only");
       const uuid = id.slice("conversation:".length);
-      return bus.groups.append(uuid, content);
+      const room = conversation(id);
+      const reply = reply_to === undefined ? undefined : String(stableMessageId(bus, findMessage(bus, room.id, reply_to).id));
+      return bus.groups.append(uuid, content, reply, undefined, { attachments, requestReply: reply !== undefined });
     }
     if (metadata?.local_eva_action !== undefined) {
       if (id !== "shell" || Object.keys(metadata).length !== 1) throw new Error("Lifecycle commands require the local owner conversation");
@@ -769,13 +782,25 @@ export function createLocalApi(context) {
       return { accepted: true };
     }
     const local = localOwned(id);
-    if (local) return await magiRuntime.invokeOwner(local.handle, "owner.chat", { content, metadata });
-    const room = conversation(id);
-    if (id === "shell") return chat(bus, room.id, bus.userContactId, { content, metadata }, "webapp");
+    if (local) return await magiRuntime.invokeOwner(local.handle, "owner.chat", { content, metadata, reply_to, attachments });
+    const room = conversation(id, reply_to);
+    if (id === "shell") return chat(bus, room.id, bus.userContactId, { content, metadata, reply_to, attachments }, "webapp");
     if (metadata) throw new Error("Owner-only structured actions are available in the Shell conversation");
-    return { id: messageDelivery.send(bus, room.id, content, MAGI_CONTACT_ID, "webapp") };
+    const prepared = prepareRich(bus, room.id, content, { reply_to, attachments });
+    return { id: messageDelivery.send(bus, room.id, prepared.content, MAGI_CONTACT_ID, "webapp", Object.keys(prepared.rich).length ? { rich: prepared.rich } : undefined) };
   }
 
+  async function peerReact({ id, message_id, emoji, remove = false }) {
+    const local = localOwned(id);
+    if (local) return await magiRuntime.invokeOwner(local.handle, "owner.react", { message_id, emoji, remove });
+    const room = conversation(id, message_id);
+    return reactToMessage(bus, room.id, id === "shell" ? String(bus.userContactId) : groupPrincipal(bus.identity.publicKey), message_id, emoji, remove);
+  }
+  async function peerAttachment({ id, message_id, attachment_id }) {
+    const local = localOwned(id);
+    if (local) return await magiRuntime.invokeOwner(local.handle, "owner.attachment", { message_id, attachment_id });
+    return readMessageAttachment(bus, conversation(id, message_id).id, message_id, attachment_id);
+  }
   async function peerProfile({ id }) {
     const local = localOwned(id);
     if (local) return await magiRuntime.invokeOwner(local.handle, "owner.profile", {});
@@ -1133,6 +1158,8 @@ export function createLocalApi(context) {
     "peer.conversations": peerConversations,
     "peer.events": peerEvents,
     "peer.send": peerSend,
+    "peer.react": peerReact,
+    "peer.attachment": peerAttachment,
     "peer.profile": peerProfile,
     "runtime.interface": () => ({ ui: uiEntry(), revision: process.env.MAGI_REVISION ?? "", checkout: appCheckout, entry: process.argv[1] }),
     "shell.updateStatus": shellUpdateStatus,

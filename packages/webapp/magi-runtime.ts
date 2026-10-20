@@ -412,7 +412,7 @@ export function createMagiRuntime({
     invokeOwner: async (handle, method, params) => {
       const record = children.get(handle);
       if (!record || typeof record.child.invoke !== "function") throw new Error("Local owner connection is unavailable");
-      if (!["owner.chat", "owner.events", "owner.profile"].includes(method)) throw new Error("Unknown local owner method");
+      if (!["owner.chat", "owner.events", "owner.profile", "owner.react", "owner.attachment"].includes(method)) throw new Error("Unknown local owner method");
       return await record.child.invoke(method, params);
     },
     ensureSource,

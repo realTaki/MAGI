@@ -42,7 +42,7 @@ export class GroupReplica {
     const memberships = this.bus.groups.memberships(request.conversationUUID, request.afterEpoch ?? 0, 8);
     const lastEpoch = memberships.at(-1)?.payload.epoch ?? request.afterEpoch ?? 0;
     const moreMemberships = lastEpoch < group.epoch;
-    const page = moreMemberships ? { events: [], nextCursor: request.after ?? 0 } : this.bus.groups.events(request.conversationUUID, { after: request.after, limit: 8 });
+    const page = moreMemberships ? { events: [], nextCursor: request.after ?? 0 } : this.bus.groups.events(request.conversationUUID, { after: request.after, limit: 1 });
     return { ...page, memberships, moreMemberships, receivedEpoch: group.epoch };
   }
   async deliver(event: GroupEventEnvelope): Promise<void> {

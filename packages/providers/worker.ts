@@ -23,7 +23,7 @@ export class ProvidersWorker extends BaseWorker {
     // `provider_settings`, which the manager writes. Nothing reads the
     // environment and there is no default provider.
     this.settings = this.readSettings();
-    this.client = client ?? new PiAiClient(this.settings);
+    this.client = client ?? new PiAiClient(this.settings, fetch, bus.workspace);
     this.own = providerTools(() => this.settings, (settings) => this.apply(settings));
     // Offered only while this worker runs: a stopped worker would leave the model
     // holding a tool whose changes nobody verifies.

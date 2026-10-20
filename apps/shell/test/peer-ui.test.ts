@@ -74,5 +74,5 @@ test("shared conversation UUID and author identity survive group presentation wi
   const group = conversationContact({ id, title: "Research", local: false, group: true, members: [{ principal: "magi:peer", endpoint: "https://peer.example" }] });
   assert.equal(group.id, id);
   const rows = peerMessages(group, [{ ...event(1, { card }), id: "66affcf7-e7e9-43ce-a773-bf137aab3109", sender: "magi:peer" }], { ...owner, handle: "" });
-  assert.deepEqual(rows, [{ type: "bot", text: "hello", sender: "magi:peer" }]);
+  assert.deepEqual(rows, [{ id: "66affcf7-e7e9-43ce-a773-bf137aab3109", type: "bot", text: "hello", sender: "magi:peer" }]);
 });

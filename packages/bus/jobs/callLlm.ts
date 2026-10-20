@@ -1,5 +1,6 @@
 import type { LLMTool } from "../books/toolBook.js";
 import type { LLMToolCall } from "./runTool.js";
+import type { StoredAttachment } from "../attachments.js";
 
 /**
  * One message in the conversation the provider is asked to continue: what was
@@ -9,6 +10,9 @@ import type { LLMToolCall } from "./runTool.js";
 export type LLMMessage = {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
+  /** Local, scoped descriptors only; base64 never enters the durable turn cache. */
+  attachments?: StoredAttachment[];
+  attachment_scope?: string;
   tool_calls?: LLMToolCall[];
   tool_call_id?: string;
   tool_name?: string;

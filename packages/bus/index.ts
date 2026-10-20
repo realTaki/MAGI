@@ -56,3 +56,6 @@ export { groupPrincipal } from "./books/groupBook.js";
 export type { Group, GroupMember, GroupMembership, GroupEvent, GroupMembershipEnvelope, GroupEventEnvelope, GroupReceipt } from "./books/groupBook.js";
 
 export { toLLMMessage } from "./llmMessage.js";
+
+export * from "./richMessage.js";
+export * from "./attachments.js";

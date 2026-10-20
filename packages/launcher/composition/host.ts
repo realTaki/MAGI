@@ -123,7 +123,7 @@ export function connectHost(stdin: Readable, stdout: Writable) {
     return {
       id,
       invoke(method, params) {
-        if (!["owner.chat", "owner.events", "owner.profile"].includes(method)) return Promise.reject(new Error("Unknown local owner method"));
+        if (!["owner.chat", "owner.events", "owner.profile", "owner.react", "owner.attachment"].includes(method)) return Promise.reject(new Error("Unknown local owner method"));
         return rpc("process.invoke", { id, method, params });
       },
       stop() {

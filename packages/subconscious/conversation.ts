@@ -74,7 +74,7 @@ export class Conversation {
       const tools = this.bus.tools.catalog({ chat_id: this.chat_id }).filter(tool => subconsciousTool(tool.name));
       const summary = await this.compact(jobId, record.summary, [prompt, beforeSummary, chat].filter(Boolean).join("\n\n"), tools, messageId);
       const system = [prompt, beforeSummary, this.context([["Prior chat summary", summary]]), chat].filter(Boolean).join("\n\n");
-      const history: LLMMessage[] = this.bus.messages.list(this.chat_id, COMPACT_KEEP_RECENT, messageId).map(message => toLLMMessage(message, this.bus.deliveries.get(message.id)?.publisher));
+      const history: LLMMessage[] = this.bus.messages.list(this.chat_id, COMPACT_KEEP_RECENT, messageId).map(message => toLLMMessage(message, this.bus.deliveries.get(message.id)?.publisher, this.bus.deliveries.get(message.id)?.metadata, String(message.chat_id)));
       // Keep the cacheable instruction/context prefix byte-for-byte stable through a
       // tool loop.  Step metadata is a separate trailing system message.
       this.bus.agentTurns.ensure(jobId, { messages: [{ role: "system", content: system }, { role: "system", content: "" }, ...history], tools });
@@ -149,7 +149,7 @@ export class Conversation {
     const old = active.slice(0, -COMPACT_KEEP_RECENT);
     if (!old.length) return previousSummary;
     const content = old.map((message) => {
-      const llm = toLLMMessage(message, this.bus.deliveries.get(message.id)?.publisher);
+      const llm = toLLMMessage(message, this.bus.deliveries.get(message.id)?.publisher, this.bus.deliveries.get(message.id)?.metadata, String(message.chat_id));
       return `[${llm.role}]\n${llm.content}`;
     }).join("\n\n");
     this.bus.agentTurns.ensure(turnId, { messages: [

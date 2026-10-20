@@ -11,6 +11,12 @@ export function peerMessages(contact: PeerContact, events: PeerEvent[], profile?
   } }));
   const cards = new Set<string>();
   return events.flatMap((event): ChatMessage[] => {
+    const details = {
+      id: event.id,
+      ...(event.reply_to !== undefined ? { reply_to: event.reply_to } : {}),
+      ...(event.attachments?.length ? { attachments: event.attachments } : {}),
+      ...(event.reactions?.length ? { reactions: event.reactions } : {}),
+    };
     const metadata = event.metadata;
     if (metadata?.card_status || metadata?.card_result || metadata?.card_reject) return [];
     const card = metadata?.card;
@@ -18,10 +24,10 @@ export function peerMessages(contact: PeerContact, events: PeerEvent[], profile?
       if (cards.has(card.id)) return [];
       cards.add(card.id);
       const receipt = cardReceiptFromEvents(card, receipts);
-      return [{ type: "form", text: event.content, chatId: contact.id, card: cardWithReceipt(card, receipt), receipt }];
+      return [{ ...details, type: "form", text: event.content, chatId: contact.id, card: cardWithReceipt(card, receipt), receipt }];
     }
-    return event.role === "user" ? [{ type: "user", text: event.content }]
-      : [{ type: "bot", text: event.content, ...(contact.group && event.sender ? { sender: event.sender } : {}) }];
+    return event.role === "user" ? [{ ...details, type: "user", text: event.content }]
+      : [{ ...details, type: "bot", text: event.content, ...(contact.group && event.sender ? { sender: event.sender } : {}) }];
   });
 }
 

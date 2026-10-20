@@ -1,9 +1,10 @@
+import { validateAttachmentInputs, validateReaction, type Reaction, type AttachmentInput } from "@magi/bus";
 import { createHash, createPublicKey } from "node:crypto";
 
 /** MAGI-only chat subset inspired by A2A. conversationUUID has contextId semantics. */
 export const PEER_PROTOCOL = "magi-peer/1";
-export const MAX_BODY_BYTES = 256 * 1024;
-export const MAX_SYNC_BYTES = 2 * 1024 * 1024;
+export const MAX_BODY_BYTES = 15 * 1024 * 1024;
+export const MAX_SYNC_BYTES = 16 * 1024 * 1024;
 export type PeerIdentity = { publicKey: string; privateKey: string };
 export type PeerMessage = {
   messageId: string;
@@ -12,6 +13,9 @@ export type PeerMessage = {
   reachableURL: string;
   handle?: string;
   replyTo?: string;
+  requestReply?: boolean;
+  attachments?: AttachmentInput[];
+  reaction?: Reaction;
 };
 export type PeerReceipt = { messageId: string; conversationUUID: string; accepted: true; duplicate: boolean };
 export type PeerCard = { protocol: typeof PEER_PROTOCOL; principal: string; publicKey: string; handle: string; reachableURL: string };
@@ -34,10 +38,13 @@ export function decodeEnvelope(body: string, audience: string, kind: EnvelopeKin
   return { principal: parsed.sender, data: parsed.data };
 }
 export function parseMessage(value: unknown): PeerMessage {
-  if (!record(value) || Object.keys(value).some(key => !["messageId", "conversationUUID", "content", "reachableURL", "handle", "replyTo"].includes(key))) throw new PeerError("only ordinary peer chat is supported");
+  if (!record(value) || Object.keys(value).some(key => !["messageId", "conversationUUID", "content", "reachableURL", "handle", "replyTo", "attachments", "reaction", "requestReply"].includes(key))) throw new PeerError("only ordinary peer chat is supported");
   if (typeof value.messageId !== "string" || !value.messageId || value.messageId.length > 200 || typeof value.conversationUUID !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.conversationUUID) || typeof value.content !== "string" || value.content.length > 32_000 || typeof value.reachableURL !== "string") throw new PeerError("invalid peer chat");
   if (value.handle !== undefined && (typeof value.handle !== "string" || value.handle.length > 200)) throw new PeerError("invalid handle");
   if (value.replyTo !== undefined && (typeof value.replyTo !== "string" || !value.replyTo || value.replyTo.length > 200)) throw new PeerError("invalid reply reference");
+  try { if (value.attachments !== undefined) validateAttachmentInputs(value.attachments); } catch { throw new PeerError("invalid peer attachments"); }
+  if (value.requestReply !== undefined && typeof value.requestReply !== "boolean") throw new PeerError("invalid reply request");
+  try { if (value.reaction !== undefined) validateReaction(value.reaction); } catch { throw new PeerError("invalid peer reaction"); }
   peerURL(value.reachableURL);
   return value as PeerMessage;
 }

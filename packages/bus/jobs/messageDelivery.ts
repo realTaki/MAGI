@@ -1,3 +1,5 @@
+import { attachmentText, wireAttachments, type AttachmentInput } from "../attachments.js";
+import type { RichMessage, Reaction } from "../richMessage.js";
 /**
  * One message, one job, both directions.
  *
@@ -57,8 +59,11 @@ function send(bus: Bus, chat_id: number, text: string, contact_id = SYSTEM_CONTA
     throw new Error("subconscious accepts only internal scheduled continuations");
   }
   if (target.channel === "group" && contact_id === MAGI_CONTACT_ID) {
-    const replyTo = (metadata?.peer as { replyTo?: string } | undefined)?.replyTo;
-    return bus.groups.append(target.delivery_address, text, replyTo, typeof metadata?.system_error_source === "number" ? metadata.system_error_source : undefined).job_id!;
+    const rich = metadata?.rich as RichMessage | undefined;
+    const replyTo = (metadata?.peer as { replyTo?: string } | undefined)?.replyTo ?? (rich?.reply_to === undefined ? undefined : String(rich.reply_to));
+    const suffix = rich?.attachments?.length ? `\n\n${attachmentText(rich.attachments)}` : "";
+    const content = suffix && text.endsWith(suffix) ? text.slice(0, -suffix.length) : text;
+    return bus.groups.append(target.delivery_address, content, replyTo, typeof metadata?.system_error_source === "number" ? metadata.system_error_source : undefined, { attachments: rich?.attachments ? wireAttachments(bus.workspace, String(chat_id), rich.attachments) : undefined, reaction: rich?.reaction, requestReply: rich?.reply_to !== undefined }).job_id!;
   }
   const peer = target.channel === "peer" && contact_id === MAGI_CONTACT_ID
     ? { messageId: randomUUID(), conversationUUID: target.conversation_uuid, ...((metadata?.peer as Record<string, unknown> | undefined) ?? {}) } : undefined;
@@ -111,7 +116,7 @@ function presentChat(bus: Bus): number | null {
   return null;
 }
 
-export type PeerInbound = { principal: string; endpoint: string; conversationUUID: string; messageId: string; content: string; replyTo?: string };
+export type PeerInbound = { principal: string; endpoint: string; conversationUUID: string; messageId: string; content: string; replyTo?: string; requestReply?: boolean; attachments?: AttachmentInput[]; reaction?: Reaction };
 export type PeerReceipt = { job_id: number | null; message_id: number; duplicate: boolean; chat_id: number };
 
 /** Authenticated adapter only. The shared chat boundary validates text and sender. */

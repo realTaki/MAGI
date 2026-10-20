@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 import type { BusDb } from "../drizzle/database.js";
 import { transaction } from "../sqlite.js";
@@ -17,6 +17,9 @@ export class SettingsBook {
 
   get(key: string): string | null {
     return this.db.select().from(settings).where(eq(settings.key, key)).get()?.value ?? null;
+  }
+  withPrefix(prefix: string): Setting[] {
+    return this.db.select().from(settings).where(sql`substr(${settings.key}, 1, ${prefix.length}) = ${prefix}`).all();
   }
   setMany(values: Record<string, string>): void {
     transaction(this.db.$client, () => {

@@ -1,4 +1,4 @@
-import { BaseWorker, MAGI_CONTACT_ID, messageDelivery, type Bus } from "@magi/bus";
+import { BaseWorker, MAGI_CONTACT_ID, messageDelivery, type Bus, wireAttachments, attachmentText, type RichMessage } from "@magi/bus";
 import { GroupReplica } from "./groups.js";
 import { PeerClient } from "./client.js";
 import { PeerError, type PeerMessage } from "./protocol.js";
@@ -23,7 +23,7 @@ export class PeerWorker extends BaseWorker {
     const server = new PeerServer(this.bus.identity, this.bus.handle, (principal, message) => {
       return messageDelivery.receivePeer(this.bus, {
         principal, endpoint: message.reachableURL, conversationUUID: message.conversationUUID,
-        messageId: message.messageId, content: message.content, replyTo: message.replyTo,
+        messageId: message.messageId, content: message.content, replyTo: message.replyTo, attachments: message.attachments, reaction: message.reaction, requestReply: message.requestReply,
       });
     }, {
       host: this.options.host ?? this.bus.settings.get("peer.host") ?? "127.0.0.1", port,
@@ -60,12 +60,18 @@ export class PeerWorker extends BaseWorker {
       const contact = this.bus.contacts.list().find(contact => contact.peer_id === chat.peer_id);
       if (!contact?.peer_url || !contact.peer_principal) throw new PeerError("peer contact has no delivery route");
       const metadata = job.input.metadata?.peer as { messageId?: string; replyTo?: string } | undefined;
-      if (job.input.metadata && Object.keys(job.input.metadata).some(key => key !== "peer" && key !== "system_error_source")) throw new PeerError("peer transport accepts ordinary chat only");
+      if (job.input.metadata && Object.keys(job.input.metadata).some(key => key !== "peer" && key !== "system_error_source" && key !== "rich")) throw new PeerError("peer transport accepts ordinary chat only");
+      const rich = job.input.metadata?.rich as RichMessage | undefined;
+      const suffix = rich?.attachments?.length ? `\n\n${attachmentText(rich.attachments)}` : "";
+      const content = suffix && message.content.endsWith(suffix) ? message.content.slice(0, -suffix.length) : message.content;
       const payload: PeerMessage = {
         messageId: metadata?.messageId ?? `${this.client.principal}:${message.id}`,
-        conversationUUID: chat.conversation_uuid, content: message.content,
+        conversationUUID: chat.conversation_uuid, content,
         reachableURL: this.server.origin, handle: this.bus.handle,
-        ...(metadata?.replyTo ? { replyTo: metadata.replyTo } : {}),
+        ...(metadata?.replyTo || rich?.reply_to !== undefined ? { replyTo: metadata?.replyTo ?? String(rich?.reply_to) } : {}),
+        ...(rich?.reply_to !== undefined ? { requestReply: true } : {}),
+        ...(rich?.attachments?.length ? { attachments: wireAttachments(this.bus.workspace, String(message.chat_id), rich.attachments) } : {}),
+        ...(rich?.reaction ? { reaction: rich.reaction } : {}),
       };
       await this.client.send(contact.peer_url, contact.peer_principal, payload);
       board.submit(this.worker_name, job.id, { output: {} });

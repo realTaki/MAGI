@@ -16,6 +16,8 @@ export const messages = sqliteTable("books_messages", {
 export type Message = typeof messages.$inferSelect;
 
 /** Case-insensitive substring match, the same ``instr`` test the agent tools describe. */
+const ordinary = sql`NOT EXISTS (SELECT 1 FROM books_deliveries d WHERE d.message_id = ${messages.id} AND json_extract(d.metadata, '$.rich.reaction') IS NOT NULL)`;
+
 const matches = (query: string) => sql`instr(lower(${messages.content}), lower(${query})) > 0`;
 
 export class MessageBook {
@@ -35,9 +37,13 @@ export class MessageBook {
     return this.db.select().from(messages).where(eq(messages.id, id)).get();
   }
 
+  findPeer(chatId: number, peerId: string): Message | undefined {
+    return this.db.select().from(messages).where(and(eq(messages.chat_id, chatId), sql`${messages.id} IN (SELECT message_id FROM books_deliveries WHERE json_extract(metadata, '$.peer.messageId') = ${peerId})`)).get();
+  }
+
   list(chatId: number, lastN = 20, throughId?: number): Message[] {
     return this.db.select().from(messages)
-      .where(and(eq(messages.chat_id, chatId), eq(messages.archived, false), throughId === undefined ? undefined : lte(messages.id, throughId)))
+      .where(and(ordinary, eq(messages.chat_id, chatId), eq(messages.archived, false), throughId === undefined ? undefined : lte(messages.id, throughId)))
       .orderBy(desc(messages.id))
       .limit(lastN)
       .all()
@@ -49,7 +55,7 @@ export class MessageBook {
     return this.db.select({ id: messages.id, chat_id: messages.chat_id, contact_id: messages.contact_id,
       content: messages.content, created_at: messages.created_at, archived: messages.archived })
       .from(messages).innerJoin(chats, eq(messages.chat_id, chats.id))
-      .where(and(gt(messages.id, afterId), ne(chats.channel, "subconscious")))
+      .where(and(ordinary, gt(messages.id, afterId), ne(chats.channel, "subconscious")))
       .orderBy(messages.id).limit(limit).all();
   }
 

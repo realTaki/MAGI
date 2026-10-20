@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { prepareRich, applyReaction, validateReaction, type RichInput } from "./richMessage.js";
 /** The conversational boundary shared by embedded EVA and channel adapters.
  * Identity comes from the authenticated adapter, never from message content.
  */
@@ -20,7 +22,7 @@ export type ProviderEnvelope = {
   model?: string;
   base_url?: string;
 };
-export type ChatInput = {
+export type ChatInput = RichInput & {
   content: string;
   metadata?: {
     card_result?: CardSubmission;
@@ -42,8 +44,27 @@ export function chat(bus: Bus, chat_id: number, contact_id: number, input: ChatI
   if (peer) {
     const target = bus.chats.get(chat_id)!;
     if (input.metadata || contact.peer_principal !== peer.principal || target.peer_id !== peer.principal || target.conversation_uuid !== peer.conversationUUID) throw new Error("invalid peer conversation context");
-    const metadata = { peer: { messageId: peer.messageId, conversationUUID: peer.conversationUUID, ...(peer.replyTo ? { replyTo: peer.replyTo } : {}) } };
-    const stored = bus.deliveries.persist({ chat_id, contact_id, content: input.content, publisher, key: `peer:${peer.principal}:${peer.messageId}`, metadata, enqueue: !peer.replyTo });
+    if (peer.reaction) validateReaction(peer.reaction);
+    if (peer.reaction && (peer.content || peer.attachments?.length || peer.replyTo || peer.requestReply)) throw new Error("reaction cannot carry chat content");
+    const wireHash = createHash("sha256").update(JSON.stringify({ conversationUUID: peer.conversationUUID, messageId: peer.messageId, content: peer.content, replyTo: peer.replyTo, attachments: peer.attachments, reaction: peer.reaction, requestReply: peer.requestReply })).digest("hex");
+    const prior = bus.messages.findPeer(chat_id, peer.messageId);
+    if (prior) {
+      const delivery = bus.deliveries.get(prior.id)!;
+      const previous = JSON.parse(delivery.metadata ?? "{}");
+      const matches = previous.wireHash ? previous.wireHash === wireHash
+        : prior.content === peer.content && previous.peer?.replyTo === peer.replyTo && !peer.attachments?.length && !peer.reaction && !peer.requestReply;
+      if (!matches) throw new Error("message ID reused with different payload");
+      return { message_id: prior.id, job_id: bus.deliveries.enqueue(bus, delivery), duplicate: true, chat_id };
+    }
+    const prepared = prepareRich(bus, chat_id, input.content, { attachments: peer.attachments });
+    if (peer.replyTo) {
+      prepared.rich.reply_to = peer.replyTo;
+      prepared.rich.reply_excerpt = bus.messages.findPeer(chat_id, peer.replyTo)?.content.slice(0, 2000);
+    }
+    if (peer.reaction) prepared.rich.reaction = peer.reaction;
+    const metadata = { rich: prepared.rich, wireHash, peer: { messageId: peer.messageId, conversationUUID: peer.conversationUUID, ...(peer.replyTo ? { replyTo: peer.replyTo } : {}) } };
+    const stored = bus.deliveries.persist({ chat_id, contact_id, content: prepared.content, publisher, key: `peer:${peer.principal}:${peer.messageId}`, metadata, enqueue: (!peer.replyTo || peer.requestReply === true) && !peer.reaction });
+    if (peer.reaction) applyReaction(bus, chat_id, peer.principal, peer.reaction);
     return { message_id: stored.delivery.message_id, job_id: bus.deliveries.enqueue(bus, stored.delivery), duplicate: stored.duplicate, chat_id };
   }
   const metadata = input.metadata;
@@ -51,6 +72,7 @@ export function chat(bus: Bus, chat_id: number, contact_id: number, input: ChatI
   const kinds = ["card_result", "card_reject", "envelope"].filter(key => metadata && key in metadata);
   if (kinds.length > 1) throw new Error("chat must contain only one structured action");
   if (kinds.length) {
+    if (input.reply_to !== undefined || input.attachments?.length) throw new Error("structured actions cannot carry rich chat fields");
     const kind = kinds[0];
     const body = (metadata as Record<string, unknown>)[kind];
     if (!record(body)) throw new Error("invalid structured chat");
@@ -82,7 +104,8 @@ export function chat(bus: Bus, chat_id: number, contact_id: number, input: ChatI
     messageDelivery.record(bus, chat_id, type === "provider.sync" ? "provider sync received" : type === "card_reject" ? "card rejected" : "card submitted", contact_id);
     return { type: "InboundSecretJob", id };
   }
-  return { type: "MessageDeliveryJob", id: messageDelivery.send(bus, chat_id, input.content, contact_id, publisher) };
+  const prepared = prepareRich(bus, chat_id, input.content, input);
+  return { type: "MessageDeliveryJob", id: messageDelivery.send(bus, chat_id, prepared.content, contact_id, publisher, Object.keys(prepared.rich).length ? { rich: prepared.rich } : undefined) };
 }
 
 /** Ordinary-text boundary shared by signed group replication and direct chat ingress. */

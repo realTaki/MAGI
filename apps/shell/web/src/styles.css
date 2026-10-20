@@ -2387,3 +2387,71 @@ body {
 
 /* Peer authors remain visible in shared UUID conversations. */
 .chat-page__sender { display: block; margin-bottom: 0.35rem; opacity: 0.65; overflow-wrap: anywhere; }
+
+.chat-page__message-stack { max-width: 85%; min-width: 0; }
+.chat-page__message-stack > .chat-page__bubble { max-width: 100%; }
+.chat-page__message-text { white-space: pre-wrap; }
+.chat-page__message-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+.chat-page__message--user .chat-page__message-actions { justify-content: flex-end; }
+.chat-page__message-actions button,
+.chat-page__reaction-picker button,
+.chat-page__attachment-actions button {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 4px 7px;
+  background: transparent;
+  color: var(--panel-muted);
+  font: inherit;
+  font-size: 12px;
+  min-height: 28px;
+  cursor: pointer;
+}
+.chat-page__message-actions button:hover,
+.chat-page__reaction-picker button:hover,
+.chat-page__attachment-actions button:hover { background: var(--surface-subtle); color: var(--text-primary); }
+.chat-page__message-actions .chat-page__reaction { border-color: var(--panel-line-2); background: var(--surface-input); }
+.chat-page__message-actions .chat-page__reaction.is-mine { border-color: var(--panel-cream); background: color-mix(in srgb, var(--panel-cream) 16%, var(--surface-input)); color: var(--text-primary); }
+.chat-page__message-actions button:disabled,
+.chat-page__composer button:disabled,
+.chat-page__attachment-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+.chat-page__reaction-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-top: 6px; padding: 5px; max-width: 320px; border: 1px solid var(--panel-line-2); border-radius: 12px; background: var(--surface-input); }
+.chat-page__reaction-picker button { font-size: 18px; }
+.chat-page__reaction-picker label { min-width: 0; }
+.chat-page__reaction-picker input { width: 64px; border: 1px solid var(--panel-line-2); border-radius: 6px; background: transparent; color: var(--text-primary); padding: 4px; font: inherit; font-size: 12px; }
+.chat-page__reply-quote { display: flex; flex-direction: column; width: 100%; gap: 3px; border: 0; border-left: 3px solid currentColor; border-radius: 4px; padding: 5px 9px; margin: 2px 0 8px; background: color-mix(in srgb, currentColor 7%, transparent); color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.chat-page__reply-quote small { font-size: 11px; opacity: 0.75; }
+.chat-page__reply-quote span { font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.chat-page__reply-quote:disabled { cursor: default; }
+.chat-page__reply-draft { display: flex; align-items: center; gap: 12px; border-left: 3px solid var(--panel-cream); padding: 6px 10px; margin-bottom: 10px; background: var(--surface-message); border-radius: 5px; color: var(--panel-copy); }
+.chat-page__reply-draft > div { display: flex; flex: 1; flex-direction: column; min-width: 0; gap: 3px; }
+.chat-page__reply-draft small { color: var(--panel-muted); font-size: 11px; }
+.chat-page__reply-draft span { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-page__reply-draft button,
+.chat-page__pending-attachment button { flex: none; border: 0; background: transparent; color: var(--panel-muted); font-size: 22px; cursor: pointer; }
+.chat-page__attachments { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.chat-page__attachment { display: flex; flex-direction: column; gap: 7px; width: 100%; max-width: 340px; border: 1px solid color-mix(in srgb, currentColor 20%, transparent); border-radius: 10px; padding: 9px; }
+.chat-page__attachment-image { display: block; max-height: 260px; max-width: 100%; width: auto; object-fit: contain; border-radius: 6px; align-self: flex-start; }
+.chat-page__attachment-info { display: flex; align-items: center; gap: 9px; }
+.chat-page__attachment-info > div { min-width: 0; }
+.chat-page__attachment-info strong { display: block; font-size: 12px; overflow-wrap: anywhere; }
+.chat-page__attachment-info small { display: block; font-size: 10px; opacity: 0.7; overflow-wrap: anywhere; }
+.chat-page__attachment-path { font: 10px/1.5 ui-monospace, monospace; opacity: 0.75; overflow-wrap: anywhere; user-select: text; }
+.chat-page__attachment-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+.chat-page__attachment-actions button { border-color: color-mix(in srgb, currentColor 20%, transparent); color: inherit; }
+.chat-page__attachment-error, .chat-page__composer-error { font-size: 12px; color: #c45140; margin: 0 0 8px; }
+.chat-page__pending-attachments { display: flex; flex-wrap: wrap; gap: 8px; max-height: 160px; overflow-y: auto; margin-bottom: 6px; }
+.chat-page__pending-attachment { display: flex; align-items: center; min-width: 0; max-width: 260px; gap: 8px; border: 1px solid var(--panel-line-2); border-radius: 9px; padding: 5px 8px; color: var(--panel-copy); background: var(--surface-message); }
+.chat-page__pending-attachment img { width: 38px; height: 38px; border-radius: 5px; object-fit: cover; }
+.chat-page__pending-attachment > span { min-width: 0; }
+.chat-page__pending-attachment strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.chat-page__pending-attachment small { display: block; color: var(--panel-muted); font-size: 10px; }
+.chat-page__attachment-hint { color: var(--panel-muted); font-size: 11px; margin: 4px 0 8px; }
+.chat-page__file-input { display: none; }
+.chat-page__composer-plus { border: 0; cursor: pointer; }
+.chat-page__input-shell input { min-width: 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@media (max-width: 860px) {
+  .chat-page__message-stack { max-width: 100%; }
+  .chat-page__message-actions button { min-height: 32px; }
+  .chat-page__attachment { max-width: 100%; }
+}

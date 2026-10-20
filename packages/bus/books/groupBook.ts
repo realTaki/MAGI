@@ -1,3 +1,5 @@
+import { prepareRich, applyReaction, validateReaction, type Reaction } from "../richMessage.js";
+import { validateAttachmentInputs, type AttachmentInput } from "../attachments.js";
 /** Immutable group history on a trusted private network. Replication unions events, never overwrites messages.
  * Membership is a creator-sequenced routing log, not authentication or consensus.
  */
@@ -10,7 +12,7 @@ import { MAGI_CONTACT_ID, validatePeerEndpoint, validatePeerPrincipal } from "./
 
 export type GroupMember = { principal: string; endpoint: string };
 export type GroupMembership = { v: 1; kind: "membership"; conversationUUID: string; owner: string; epoch: number; previousDigest: string | null; title: string; members: GroupMember[] };
-export type GroupEvent = { v: 1; kind: "message"; conversationUUID: string; eventId: string; author: string; sequence: number; lamport: number; epoch: number; content: string; replyTo?: string };
+export type GroupEvent = { v: 1; kind: "message"; conversationUUID: string; eventId: string; author: string; sequence: number; lamport: number; epoch: number; content: string; replyTo?: string; requestReply?: boolean; attachments?: AttachmentInput[]; reaction?: Reaction };
 export type GroupMembershipEnvelope = { publicKey: string; payload: GroupMembership };
 export type GroupEventEnvelope = { publicKey: string; payload: GroupEvent };
 export type Group = { conversation_uuid: string; owner: string; title: string; epoch: number; chat_id: number };
@@ -25,7 +27,7 @@ export function groupPrincipal(publicKey: string): string {
 function digest(value: unknown): string { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
 function object(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === "object" && !Array.isArray(value); }
 function checkEnvelope(value: unknown): string {
-  if (!object(value) || typeof value.publicKey !== "string" || value.publicKey.length > 8192 || !object(value.payload) || JSON.stringify(value.payload).length > 48_000) throw new Error("invalid group envelope");
+  if (!object(value) || typeof value.publicKey !== "string" || value.publicKey.length > 8192 || !object(value.payload) || JSON.stringify(value.payload).length > 15 * 1024 * 1024) throw new Error("invalid group envelope");
   // The public key supplies a stable label, not proof of the remote process.
   return groupPrincipal(value.publicKey);
 }
@@ -104,19 +106,23 @@ export class GroupBook {
     const members = this.membership(uuid).payload.members;
     return members.some(member => member.principal === principal) && members.some(member => member.principal === groupPrincipal(this.bus.identity.publicKey));
   }
-  append(uuid: string, content: string, replyTo?: string, systemErrorSource?: number): GroupReceipt {
+  append(uuid: string, content: string, replyTo?: string, systemErrorSource?: number, rich?: { attachments?: AttachmentInput[]; reaction?: Reaction; requestReply?: boolean }): GroupReceipt {
     const author = groupPrincipal(this.bus.identity.publicKey);
     if (!this.allows(uuid, author)) throw new Error("local process is not a current group member");
     {
       const sequence = Number(this.db.$client.prepare("SELECT COALESCE(MAX(sequence), 0) + 1 AS n FROM books_group_events WHERE conversation_uuid = ? AND author = ?").get(uuid, author)!.n);
       const lamport = Number(this.db.$client.prepare("SELECT COALESCE(MAX(lamport), 0) + 1 AS n FROM books_group_events WHERE conversation_uuid = ?").get(uuid)!.n);
-      const event = this.envelope({ v: 1, kind: "message", conversationUUID: uuid, eventId: randomUUID(), author, sequence, lamport, epoch: this.get(uuid)!.epoch, content, ...(replyTo ? { replyTo } : {}) });
+      const event = this.envelope({ v: 1, kind: "message", conversationUUID: uuid, eventId: randomUUID(), author, sequence, lamport, epoch: this.get(uuid)!.epoch, content, ...(replyTo ? { replyTo } : {}), ...(rich?.attachments?.length ? { attachments: rich.attachments } : {}), ...(rich?.reaction ? { reaction: rich.reaction } : {}), ...(rich?.requestReply ? { requestReply: true } : {}) });
       return this.ingest(event, systemErrorSource);
     }
   }
   ingest(event: GroupEventEnvelope, systemErrorSource?: number): GroupReceipt {
     const signer = checkEnvelope(event); const value = event.payload;
     if (value.v !== 1 || value.kind !== "message" || value.author !== signer || !UUID.test(value.conversationUUID) || !UUID.test(value.eventId) || !Number.isSafeInteger(value.sequence) || value.sequence < 1 || !Number.isSafeInteger(value.lamport) || value.lamport < 1 || !Number.isSafeInteger(value.epoch) || value.epoch < 1 || typeof value.content !== "string" || value.content.length > 32000 || (value.replyTo !== undefined && (typeof value.replyTo !== "string" || !UUID.test(value.replyTo)))) throw new Error("invalid group event");
+    if (value.attachments !== undefined) validateAttachmentInputs(value.attachments);
+    if (value.requestReply !== undefined && typeof value.requestReply !== "boolean") throw new Error("invalid reply request");
+    if (value.reaction) validateReaction(value.reaction);
+    if (value.reaction && (value.content || value.attachments?.length || value.replyTo || value.requestReply)) throw new Error("reaction cannot carry chat content");
     const group = this.get(value.conversationUUID);
     const self = groupPrincipal(this.bus.identity.publicKey);
     if (!group || !this.allows(value.conversationUUID, self)) throw new Error("local process is not a current group member");
@@ -135,9 +141,16 @@ export class GroupBook {
       const contact = local ? this.bus.contacts.get(MAGI_CONTACT_ID)! : known ?? this.bus.contacts.forPeer({ principal: signer, endpoint: member.endpoint });
       if (!local && contact.peer_principal !== signer) throw new Error("event author identity mismatch");
       validateChatInput(this.bus, group.chat_id, contact.id, { content: value.content }, local);
-      const metadata = { ...(local && systemErrorSource ? { system_error_source: systemErrorSource } : {}), group: { event }, peer: { messageId: value.eventId, conversationUUID: value.conversationUUID, ...(value.replyTo ? { replyTo: value.replyTo } : {}) } };
-      const stored = this.bus.deliveries.persist({ chat_id: group.chat_id, contact_id: contact.id, content: value.content, publisher: local ? "agent" : "peer", key: `group:${value.conversationUUID}:${signer}:${value.eventId}`, metadata, enqueue: local || !value.replyTo });
+      const prepared = prepareRich(this.bus, group.chat_id, value.content, { attachments: value.attachments });
+      if (value.replyTo) {
+        prepared.rich.reply_to = value.replyTo;
+        prepared.rich.reply_excerpt = this.bus.messages.findPeer(group.chat_id, value.replyTo)?.content.slice(0, 2000);
+      }
+      if (value.reaction) prepared.rich.reaction = value.reaction;
+      const metadata = { rich: prepared.rich, ...(local && systemErrorSource ? { system_error_source: systemErrorSource } : {}), group: { event }, peer: { messageId: value.eventId, conversationUUID: value.conversationUUID, ...(value.replyTo ? { replyTo: value.replyTo } : {}) } };
+      const stored = this.bus.deliveries.persist({ chat_id: group.chat_id, contact_id: contact.id, content: prepared.content, publisher: local ? "agent" : "peer", key: `group:${value.conversationUUID}:${signer}:${value.eventId}`, metadata, enqueue: local || ((!value.replyTo || value.requestReply === true) && !value.reaction) });
       this.db.$client.prepare("INSERT INTO books_group_events(conversation_uuid, author, event_id, sequence, lamport, epoch, envelope, message_id) VALUES(?, ?, ?, ?, ?, ?, ?, ?)").run(value.conversationUUID, signer, value.eventId, value.sequence, value.lamport, value.epoch, JSON.stringify(event), stored.delivery.message_id);
+      if (value.reaction) applyReaction(this.bus, group.chat_id, signer, value.reaction);
       this.bus.chatMembers.add(group.chat_id, contact.id);
       return { event, duplicate: false, message_id: stored.delivery.message_id };
     }, "immediate");

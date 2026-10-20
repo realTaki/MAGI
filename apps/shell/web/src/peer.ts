@@ -21,6 +21,10 @@ export type PeerConversation = {
   group: true;
 };
 export type PeerProfile = { handle: string; public_key: string | null; owner: boolean };
+export type PeerAttachment = { id: string; name: string; mime_type: string; size: number; path: string };
+export type PeerUpload = { name: string; mime_type: string; data_base64: string };
+export type PeerReaction = { actor: string; emoji: string; mine?: boolean };
+export type PeerMessageOptions = { reply_to?: number | string; attachments?: PeerUpload[] };
 export type PeerEvent = {
   id: number | string;
   content: string;
@@ -28,6 +32,9 @@ export type PeerEvent = {
   metadata?: { card?: CardSpec; [key: string]: unknown };
   created_at: string;
   sender?: string;
+  reply_to?: number | string;
+  attachments?: PeerAttachment[];
+  reactions?: PeerReaction[];
 };
 
 async function invoke<T>(method: string, payload?: unknown): Promise<T> {
@@ -39,8 +46,14 @@ export function listConversations(): Promise<PeerConversation[]> { return invoke
 export function listContacts(): Promise<PeerContact[]> { return invoke("peer.contacts"); }
 export function listPeerEvents(id: string): Promise<PeerEvent[]> { return invoke("peer.events", { id }); }
 export function getPeerProfile(id: string): Promise<PeerProfile> { return invoke("peer.profile", { id }); }
-export async function sendPeerMessage(id: string, content: string, metadata?: Record<string, unknown>): Promise<void> {
-  await invoke("peer.send", { id, content, ...(metadata ? { metadata } : {}) });
+export async function sendPeerMessage(id: string, content: string, metadata?: Record<string, unknown>, options?: PeerMessageOptions): Promise<void> {
+  await invoke("peer.send", { id, content, ...(metadata ? { metadata } : {}), ...options });
+}
+export async function reactPeerMessage(id: string, message_id: number | string, emoji: string, remove = false): Promise<void> {
+  await invoke("peer.react", { id, message_id, emoji, remove });
+}
+export function readPeerAttachment(id: string, message_id: number | string, attachment_id: string): Promise<PeerUpload> {
+  return invoke("peer.attachment", { id, message_id, attachment_id });
 }
 
 /** Encrypt a card secret to the MAGI that asked for it. The plaintext stays in this form. */

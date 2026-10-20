@@ -3,6 +3,7 @@ import { createProvider, type Api, type AssistantMessage, type Context, type Mes
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { LLMRequest, LLMMessage, LLMToolCall } from "@magi/bus";
+import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, nativeImageMime, readStoredAttachment } from "@magi/bus/attachments.js";
 
 export interface LLMClient {
   complete(job: LLMRequest, signal?: AbortSignal): Promise<LLMMessage>;
@@ -85,11 +86,45 @@ function resolveModel(models: MutableModels, settings: ProviderSettings): Model<
   return model;
 }
 
-function toContext(job: LLMRequest, model: Model<Api>): Context {
+function toContext(job: LLMRequest, model: Model<Api>, workspace?: string): Context {
+  let imageBytes = 0;
+  let imageCount = 0;
+  const selectedImages = new Map<LLMMessage, import("@earendil-works/pi-ai").ImageContent[]>();
+  if (workspace && model.input.includes("image")) {
+    const perMessage = Math.min(MAX_ATTACHMENTS, model.inputLimits?.images?.maxPerMessage ?? MAX_ATTACHMENTS);
+    const perRequest = Math.min(MAX_ATTACHMENTS, model.inputLimits?.images?.maxPerRequest ?? MAX_ATTACHMENTS);
+    // Favor the newest attachments when conversation history exceeds a provider's
+    // limits; older messages keep their stable workspace-path text.
+    for (const message of [...job.messages].reverse()) {
+      if (message.role !== "user" || typeof message.attachment_scope !== "string" || !Array.isArray(message.attachments)) continue;
+      const images: import("@earendil-works/pi-ai").ImageContent[] = [];
+      for (const attachment of message.attachments.slice(0, MAX_ATTACHMENTS)) {
+        if (images.length >= perMessage || imageCount >= perRequest) break;
+        try {
+          if (!attachment.mime_type.startsWith("image/")) continue;
+          // A conservative per-image bound also fits providers with a 5 MiB
+          // image limit. Respect tighter catalog base64 limits where supplied.
+          const encodedLimit = model.inputLimits?.images?.resize?.maxBytes;
+          const readLimit = Math.min(5 * 1024 * 1024, MAX_ATTACHMENT_BYTES - imageBytes,
+            encodedLimit === undefined ? Infinity : Math.floor(encodedLimit * 3 / 4));
+          const data = readStoredAttachment(workspace, message.attachment_scope, attachment, readLimit);
+          const mimeType = nativeImageMime(data, attachment.mime_type);
+          if (!mimeType) continue;
+          images.push({ type: "image", data: data.toString("base64"), mimeType });
+          imageBytes += data.length;
+          imageCount++;
+        } catch { /* Deleted/unsafe/oversize files retain the ordinary text-path fallback. */ }
+      }
+      if (images.length) selectedImages.set(message, images);
+    }
+  }
   const messages: Message[] = job.messages.map((message): Message => {
     const timestamp = Date.now();
     if (message.role === "system") return { role: "system", content: message.content, timestamp };
-    if (message.role === "user") return { role: "user", content: message.content, timestamp };
+    if (message.role === "user") {
+      const images = selectedImages.get(message) ?? [];
+      return { role: "user", content: images.length ? [{ type: "text", text: message.content }, ...images] : message.content, timestamp };
+    }
     if (message.role === "tool") return {
       role: "toolResult", toolCallId: message.tool_call_id ?? "", toolName: message.tool_name ?? "tool",
       content: [{ type: "text", text: message.content }], isError: message.is_error ?? false, timestamp,
@@ -113,7 +148,7 @@ function toContext(job: LLMRequest, model: Model<Api>): Context {
 
 export class PiAiClient implements LLMClient {
   private readonly models: MutableModels = builtinModels();
-  constructor(private settings: ProviderSettings, private readonly fetcher: typeof fetch = fetch) {}
+  constructor(private settings: ProviderSettings, private readonly fetcher: typeof fetch = fetch, private readonly workspace?: string) {}
 
   configure(settings: ProviderSettings): void { this.settings = { ...this.settings, ...settings }; }
 
@@ -158,7 +193,7 @@ export class PiAiClient implements LLMClient {
       }
     };
     let response: AssistantMessage;
-    try { response = await this.models.completeSimple(model, toContext(job, model), {
+    try { response = await this.models.completeSimple(model, toContext(job, model, this.workspace), {
       // pi-ai maps this neutral level to each provider's native reasoning API and
       // ignores it for models which do not advertise reasoning support.  Thinking
       // remains internal: only ordinary text is delivered to the user.
