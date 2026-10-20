@@ -84,10 +84,11 @@ test("tracked EVA launcher in a fresh clone builds dependencies before it can la
   mkdirSync(path.join(origin, "apps/eva"), { recursive: true });
   writeFileSync(path.join(origin, "package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: {} }));
   writeFileSync(path.join(origin, ".gitignore"), "**/dist/\nnode_modules/\n");
-  writeFileSync(path.join(origin, "apps/eva/eva.mjs"), 'import { ready } from "../../packages/runtime/dist/home.js"; import "../../packages/node/dist/child.js"; console.log(ready);');
+  writeFileSync(path.join(origin, "backend-version.txt"), "compiled-after-clone");
+  writeFileSync(path.join(origin, "apps/eva/eva.mjs"), 'import {readFileSync} from "node:fs"; import { ready } from "../../packages/runtime/dist/home.js"; import "../../packages/node/dist/child.js"; if(ready !== readFileSync(new URL("../../backend-version.txt", import.meta.url), "utf8")) throw new Error("old backend with new source schema"); console.log(ready);');
   // Small deterministic build driver keeps this regression independent of npm
   // downloads/global builds while executing a real build subprocess in the clone.
-  writeFileSync(path.join(origin, "build.mjs"), `import {mkdirSync,writeFileSync} from 'node:fs'; import path from 'node:path'; for(const file of ${JSON.stringify(output)}) { mkdirSync(path.dirname(file),{recursive:true}); writeFileSync(file, 'export const ready = "compiled-after-clone";'); }`);
+  writeFileSync(path.join(origin, "build.mjs"), `import {mkdirSync,writeFileSync,readFileSync} from 'node:fs'; import path from 'node:path'; const version = readFileSync('backend-version.txt','utf8'); for(const file of ${JSON.stringify(output)}) { mkdirSync(path.dirname(file),{recursive:true}); writeFileSync(file, 'export const ready = '+JSON.stringify(version)+';'); }`);
   execFileSync("git", ["init", "-q", origin]);
   execFileSync("git", ["-C", origin, "add", "."]);
   execFileSync("git", ["-C", origin, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "unbuilt source"]);
@@ -114,11 +115,19 @@ test("tracked EVA launcher in a fresh clone builds dependencies before it can la
   await prepareShellProcess({ cwd, entry }, tools);
   assert.equal(calls.length, 2, "install and compilation precede first launch");
   assert.equal(execFileSync(process.execPath, [entry], { encoding: "utf8" }).trim(), "compiled-after-clone");
+  // Upgrade tracked source while retaining every old compiled output.
+  writeFileSync(path.join(origin, "backend-version.txt"), "upgraded-backend");
+  execFileSync("git", ["-C", origin, "add", "."]);
+  execFileSync("git", ["-C", origin, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "new source schema"]);
+  execFileSync("git", ["-C", checkout, "pull", "--ff-only", "--quiet"]);
+  assert.ok(output.every((file) => existsSync(path.join(checkout, file))), "all stale output still exists");
+  assert.throws(() => execFileSync(process.execPath, [entry], { stdio: "pipe" }), /Command failed/, "new source rejects old backend before preparation");
   await prepareShellProcess({ cwd, entry }, tools);
-  assert.equal(calls.length, 2, "complete checkout skips unnecessary rebuild");
+  assert.equal(calls.length, 3, "managed editable checkout recompiles before launching after source upgrade");
+  assert.equal(execFileSync(process.execPath, [entry], { encoding: "utf8" }).trim(), "upgraded-backend");
   rmSync(path.join(checkout, "packages/runtime/dist/home.js"));
   await prepareShellProcess({ cwd, entry }, tools);
-  assert.equal(calls.length, 3, "partially deleted output forces recompilation");
+  assert.equal(calls.length, 4, "partially deleted output forces recompilation");
 });
 
 test("EVA bootstrap cannot proceed after a failed or incomplete workspace build", async (t) => {
@@ -130,4 +139,16 @@ test("EVA bootstrap cannot proceed after a failed or incomplete workspace build"
   const tools = { node: process.execPath, npm: "owned-npm-cli.js", env: {}, managed: false };
   await assert.rejects(prepareShellProcess({ cwd, entry }, { ...tools, command: async () => { throw new Error("compiler failed"); } }), /compiler failed/);
   await assert.rejects(prepareShellProcess({ cwd, entry }, { ...tools, command: async () => {} }), /build is incomplete.*runtime.*home.js/);
+});
+
+test("verified activation revisions are never installed or rebuilt, and missing output fails", async t => {
+  const checkout = mkdtempSync(path.join(tmpdir(), "magi-verified-bootstrap-"));
+  t.after(() => rmSync(checkout, { recursive: true, force: true }));
+  const files = ["apps/eva/eva.mjs", "packages/runtime/dist/home.js", "packages/runtime/dist/protocol.js", "packages/runtime/dist/toolchain.js", "packages/node/dist/child.js", "packages/node/dist/shell.js", "packages/bus/dist/index.js", "packages/manager/dist/worker.js"];
+  for (const file of files) { mkdirSync(path.dirname(path.join(checkout, file)), { recursive: true }); writeFileSync(path.join(checkout, file), "verified"); }
+  const spec = { cwd: path.join(checkout, "apps/eva"), entry: path.join(checkout, files[0]), env: { MAGI_REVISION_DIR: checkout } };
+  const tools = { node: process.execPath, npm: "owned-npm-cli.js", env: {}, managed: true, command: async () => { assert.fail("verified revision must not install or compile"); } };
+  await prepareShellProcess(spec, tools);
+  rmSync(path.join(checkout, files[1]));
+  await assert.rejects(prepareShellProcess(spec, tools), /Verified desktop revision is missing/);
 });

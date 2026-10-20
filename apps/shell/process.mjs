@@ -22,7 +22,10 @@ import { createInterface } from "node:readline";
 export async function prepareShellProcess(spec, { node, npm, env, managed, command, assertOpen = () => {} }) {
   assertOpen();
   const checkout = resolve(spec.cwd, "..", "..");
-  if (managed) await ensureInstalledDependencies(checkout, { node, npm, env, command, assertOpen });
+  const revision = spec.env?.MAGI_REVISION_DIR?.trim();
+  if (revision && resolve(revision) !== checkout) throw new Error("Verified revision does not match the Shell process checkout");
+  const verifiedRevision = Boolean(revision);
+  if (managed && !verifiedRevision) await ensureInstalledDependencies(checkout, { node, npm, env, command, assertOpen });
   assertOpen();
   // eva.mjs is tracked source, not evidence that its TypeScript dependencies
   // exist. A freshly cloned managed checkout already contains this launcher.
@@ -35,7 +38,12 @@ export async function prepareShellProcess(spec, { node, npm, env, managed, comma
     resolve(checkout, "packages/bus/dist/index.js"),
     resolve(checkout, "packages/manager/dist/worker.js"),
   ] : [spec.entry];
-  if (required.some((file) => !existsSync(file))) {
+  const needsOutputs = required.some((file) => !existsSync(file));
+  if (verifiedRevision && needsOutputs) throw new Error("Verified desktop revision is missing compiled Shell dependencies; it must not be rebuilt during activation");
+  // An editable managed checkout can have been fast-forwarded while old dist
+  // files remain. Compile before the launcher can load code/run SQL migrations.
+  // Activation revisions are immutable, already-verified artifacts.
+  if (!verifiedRevision && (needsOutputs || (managed && launcher))) {
     await command(node, launcher ? [npm, "run", "build", "--", "--force"] : [npm, "run", "build:process"], {
       cwd: launcher ? checkout : spec.cwd,
       env,
