@@ -14,6 +14,7 @@ export class ProvidersWorker extends BaseWorker {
   private started = false;
   private paused = false;
   private current: AbortController | null = null;
+  private readonly active = new Map<number, { background: boolean; controller: AbortController; work: Promise<void> }>();
 
   constructor(bus: Bus, client?: LLMClient, private readonly verifyTimeoutMs = 20_000) {
     super(bus);
@@ -41,8 +42,11 @@ export class ProvidersWorker extends BaseWorker {
 
   async poll(): Promise<boolean> {
     if (this.paused) return false;
-    if (await this.pollChange()) return true;
-    if (await this.pollToolCall()) return true;
+    if (this.active.size && (this.bus.board("ChangeProviderNotify").hasPending()
+      || this.bus.board("RunToolJob").hasPending(input => this.own.some(tool => tool.name === input.call.name)))) return false;
+    // Configuration cannot mutate the shared client while either lane uses it.
+    if (!this.active.size && await this.pollChange()) return true;
+    if (!this.active.size && await this.pollToolCall()) return true;
     return this.pollCompletion();
   }
 
@@ -77,28 +81,35 @@ export class ProvidersWorker extends BaseWorker {
 
   private async pollCompletion(): Promise<boolean> {
     const board = this.bus.board("CallLLMJob");
-    const job = board.claim(this.worker_name);
+    const foregroundBusy = [...this.active.values()].some(call => !call.background);
+    const backgroundBusy = [...this.active.values()].some(call => call.background);
+    // One foreground slot is never consumed by background work. Prefer a waiting
+    // foreground call, but permit one low-traffic internal call alongside it.
+    const job = (!foregroundBusy ? board.claim(this.worker_name, input => !input.background) : null)
+      ?? (!backgroundBusy ? board.claim(this.worker_name, input => input.background === true) : null);
     if (!job) return false;
-    try {
-      const turn_id = (job.input as CallLLMJob).turn_id;
-      // An append may have survived a process exit immediately before this Job was
-      // marked complete. Reuse it rather than asking the provider a second time.
-      let message: import("@magi/bus").LLMMessage;
-      try { message = this.bus.agentTurns.assistant(turn_id, job.id); }
-      catch {
-        const controller = new AbortController();
-        this.current = controller;
-        try {
-          message = await abortable(this.client.complete(this.bus.agentTurns.get(turn_id), controller.signal), controller.signal);
-          controller.signal.throwIfAborted();
-        } finally { if (this.current === controller) this.current = null; }
-        this.bus.agentTurns.appendAssistant(turn_id, job.id, message);
-      }
-      board.submit(this.worker_name, job.id, { output: { turn_id } });
-    } catch (error) {
-      board.submit(this.worker_name, job.id, { error: message(error) });
-    }
+    const controller = new AbortController();
+    const work = this.complete(job.id, job.input, controller);
+    this.active.set(job.id, { background: job.input.background === true, controller, work });
+    void work.finally(() => this.active.delete(job.id));
     return true;
+  }
+
+  private async complete(jobId: number, input: CallLLMJob, controller: AbortController): Promise<void> {
+    const board = this.bus.board("CallLLMJob");
+    try {
+      const { turn_id } = input;
+      let message: import("@magi/bus").LLMMessage;
+      try { message = this.bus.agentTurns.assistant(turn_id, jobId); }
+      catch {
+        message = await abortable(this.client.complete(this.bus.agentTurns.get(turn_id), controller.signal), controller.signal);
+        controller.signal.throwIfAborted();
+        this.bus.agentTurns.appendAssistant(turn_id, jobId, message);
+      }
+      board.submit(this.worker_name, jobId, { output: { turn_id } });
+    } catch (error) {
+      board.submit(this.worker_name, jobId, { error: message(error) });
+    }
   }
 
   private readSettings(): ProviderSettings {
@@ -176,9 +187,10 @@ export class ProvidersWorker extends BaseWorker {
   interrupt(): void {
     this.paused = true;
     this.current?.abort(new Error("MAGI stopped"));
+    for (const call of this.active.values()) call.controller.abort(new Error("MAGI stopped"));
   }
 
-  async stop(): Promise<void> { this.started = false; }
+  async stop(): Promise<void> { await Promise.all([...this.active.values()].map(call => call.work)); this.started = false; }
 }
 
 /** A rejected key belongs in no message: the model or the operator reads this one. */

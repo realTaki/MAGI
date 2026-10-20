@@ -1,4 +1,4 @@
-import { and, count, desc, eq, lte, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, lte, ne, sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import type { BusDb } from "../drizzle/database.js";
 import { chats } from "./chatBook.js";
@@ -42,6 +42,15 @@ export class MessageBook {
       .limit(lastN)
       .all()
       .reverse();
+  }
+
+  /** A bounded, ordered foreground delta, including archived rows. */
+  observe(afterId: number, limit = 100): Message[] {
+    return this.db.select({ id: messages.id, chat_id: messages.chat_id, contact_id: messages.contact_id,
+      content: messages.content, created_at: messages.created_at, archived: messages.archived })
+      .from(messages).innerJoin(chats, eq(messages.chat_id, chats.id))
+      .where(and(gt(messages.id, afterId), ne(chats.channel, "subconscious")))
+      .orderBy(messages.id).limit(limit).all();
   }
 
   count(chatId: number): number {

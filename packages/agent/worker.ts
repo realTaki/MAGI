@@ -1,6 +1,7 @@
 import { BaseWorker, MAGI_CONTACT_ID, type Bus } from "@magi/bus";
 import { Chat } from "./chats.js";
 import { sourceCheckout } from "./checkout.js";
+import { subconsciousTools, SUBCONSCIOUS_PROMPT, SUBCONSCIOUS_COMPACTION_PROMPT } from "./subconscious.js";
 import { PROMPT_DEFAULTS } from "./prompt_defaults.js";
 
 export class AgentWorker extends BaseWorker {
@@ -12,10 +13,13 @@ export class AgentWorker extends BaseWorker {
 
   constructor(bus: Bus) {
     super(bus);
+    bus.prompts.register("subconscious/AGENT", SUBCONSCIOUS_PROMPT);
+    bus.prompts.register("subconscious/compaction", SUBCONSCIOUS_COMPACTION_PROMPT);
+    bus.tools.registerSource("subconscious", () => this.started ? subconsciousTools(bus) : []);
     for (const [key, value] of PROMPT_DEFAULTS) bus.prompts.register(key, value);
     // Present only while this worker is up, same as the other live blocks.
-    bus.prompts.registerSource("agent/source", "Source checkout", () =>
-      this.started ? sourceCheckout(bus.handle, bus.workspace) : "");
+    bus.prompts.registerSource("agent/source", "Source checkout", chatId =>
+      this.started && bus.chats.get(chatId)?.channel !== "subconscious" ? sourceCheckout(bus.handle, bus.workspace) : "");
   }
 
   async start(): Promise<void> {
@@ -24,6 +28,7 @@ export class AgentWorker extends BaseWorker {
 
   async poll(): Promise<boolean> {
     if (!this.started) return false;
+    if (await this.pollInternalTool()) return true;
     const board = this.bus.board("MessageDeliveryJob");
     // What someone else said is this MAGI's to answer. Its own words are not: they are
     // for a channel to deliver, and nobody answers them here.
@@ -51,6 +56,21 @@ export class AgentWorker extends BaseWorker {
     });
     this.queues.set(id, next);
     void next.finally(() => { if (this.queues.get(id) === next) this.queues.delete(id); });
+    return true;
+  }
+
+  private async pollInternalTool(): Promise<boolean> {
+    const own = subconsciousTools(this.bus);
+    const board = this.bus.board("RunToolJob");
+    const job = board.claim(this.worker_name, input => own.some(tool => tool.name === input.call.name));
+    if (!job) return false;
+    try {
+      if (job.input.chat_id === undefined || this.bus.chats.get(job.input.chat_id)?.channel !== "subconscious") throw new Error("internal tool requires the subconscious conversation");
+      const tool = own.find(tool => tool.name === job.input.call.name)!;
+      board.submit(this.worker_name, job.id, { output: { content: await tool.run(job.input.call.arguments) } });
+    } catch (error) {
+      board.submit(this.worker_name, job.id, { error: error instanceof Error ? error.message : String(error) });
+    }
     return true;
   }
 

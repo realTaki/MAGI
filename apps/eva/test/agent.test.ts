@@ -420,7 +420,7 @@ describe("local MAGI agent", () => {
     // place that knows every module. Source checkout is the agent's own block and
     // sits where the agent itself is constructed.
     expect(magi.bus.prompts.sections(chat.id).map((section) => section.title))
-      .toEqual(["Identity", "Members", "Available skills", "Source checkout", "Long-term memory"]);
+      .toEqual(["Identity", "Members", "Available skills", "Source checkout", "Long-term memory", "Action items"]);
     await magi.stop();
   });
 

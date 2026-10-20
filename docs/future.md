@@ -49,7 +49,9 @@ The following items are goals or limitations, not shipped guarantees:
   desktop, peer channels, CLI, Telegram, tasks and MCP workers require implementation and
   verification. Native tools are not an OS sandbox.
 
-Material in `not_implemented/` and historical Python release notes is design
-history or unfinished work; its presence does not enable a feature in the
-TypeScript worker composition. Proposals should state a falsifiable outcome,
-a bounded change and the evidence needed to adopt it.
+Historical Python release notes describe older runtime generations, not the
+current TypeScript worker composition. Working action notes and the continuing
+subconscious conversation are now described in [Architecture](architecture.md).
+Their operation is tested; broad gains in proactive usefulness still need user
+evaluation. Proposals should state a falsifiable outcome, a bounded change and
+the evidence needed to adopt it.

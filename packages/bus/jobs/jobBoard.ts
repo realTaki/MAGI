@@ -87,6 +87,13 @@ export class JobBoard<K extends JobType> {
     return row.id;
   }
 
+  /** Inspect demand without claiming it, for bounded worker admission. */
+  hasPending(predicate?: (input: JobInput[K]) => boolean): boolean {
+    const rows = this.db.select({ input: jobs.input }).from(jobs)
+      .where(and(eq(jobs.type, this.type), eq(jobs.status, "pending"))).all();
+    return predicate ? rows.some(row => predicate(JSON.parse(row.input) as JobInput[K])) : rows.length > 0;
+  }
+
   claim(worker: string, predicate?: (input: JobInput[K]) => boolean): Job<K> | null {
     return transaction(this.db.$client, () => {
       const rows = this.db.select({ id: jobs.id, input: jobs.input }).from(jobs)

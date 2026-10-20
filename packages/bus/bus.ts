@@ -9,6 +9,7 @@ import { GroupBook } from "./books/groupBook.js";
 import { DeliveryBook } from "./books/deliveryBook.js";
 import { ChatBook } from "./books/chatBook.js";
 import { MessageBook } from "./books/messageBook.js";
+import { ActionItemBook } from "./books/actionItemBook.js";
 import { MemoryBook } from "./books/memoryBook.js";
 import { SkillsBook } from "./books/skillsBook.js";
 import { TaskBook } from "./books/taskBook.js";
@@ -44,6 +45,7 @@ export class Bus {
   readonly groups: GroupBook;
   readonly messages: MessageBook;
   readonly memoryBook: MemoryBook;
+  readonly actionItems: ActionItemBook;
   readonly skills: SkillsBook;
   readonly tasks: TaskBook;
   readonly contacts: ContactBook;
@@ -144,6 +146,7 @@ export class Bus {
     this.groups = new GroupBook(this.db, this);
     this.messages = new MessageBook(this.db);
     this.memoryBook = new MemoryBook(this.db);
+    this.actionItems = new ActionItemBook(this.db);
     this.skills = new SkillsBook();
     this.tasks = new TaskBook(this.db);
     this.contacts = new ContactBook(this.db);
@@ -167,7 +170,7 @@ export class Bus {
       this.agentTurns.evict(turn.id);
       const input = JSON.parse(turn.input) as JobInput["MessageDeliveryJob"];
       const message = this.messages.get(input.message_id);
-      if (message) messageDelivery.send(this, message.chat_id, reason, MAGI_CONTACT_ID, "agent", messageDelivery.replyMetadata(this, message.id));
+      if (message) messageDelivery.respond(this, message.chat_id, reason, messageDelivery.replyMetadata(this, message.id));
     }
     this.deliveries.reconcile(this);
   }

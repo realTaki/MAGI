@@ -87,7 +87,9 @@ export function chat(bus: Bus, chat_id: number, contact_id: number, input: ChatI
 
 /** Ordinary-text boundary shared by signed group replication and direct chat ingress. */
 export function validateChatInput(bus: Bus, chat_id: number, contact_id: number, input: ChatInput, allowSelf = false) {
-  if (!bus.chats.get(chat_id)) throw new Error("chat does not exist");
+  const target = bus.chats.get(chat_id);
+  if (!target) throw new Error("chat does not exist");
+  if (target.channel === "subconscious") throw new Error("subconscious is an internal conversation");
   const contact = bus.contacts.get(contact_id);
   if (!contact || (!allowSelf && contact_id === MAGI_CONTACT_ID)) throw new Error("chat requires an authenticated sender");
   if (typeof input.content !== "string") throw new Error("chat content must be text");

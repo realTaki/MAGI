@@ -728,7 +728,7 @@ export function createLocalApi(context) {
       }));
     }
     const room = conversation(id);
-    return bus.messages.list(room.id, 500).map(m => ({ id: m.id, content: m.content,
+    return bus.messages.list(room.id, 500).filter(message => !messageDelivery.isInternal(bus, message.id)).map(m => ({ id: m.id, content: m.content,
       role: (id === "shell" ? m.contact_id === SYSTEM_CONTACT_ID : m.contact_id === MAGI_CONTACT_ID) ? "user" : "assistant",
       sender: bus.contacts.get(m.contact_id)?.nickname ?? bus.contacts.get(m.contact_id)?.name,
       metadata: JSON.parse(bus.settings.get(`webapp.message.${m.id}`) ?? "null") ?? undefined, created_at: m.created_at,

@@ -1,5 +1,6 @@
 import { MUTATION_SETTLE_MS } from "@magi/bus/abort.js";
 import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, messageDelivery, type Bus, type LLMMessage, type Message } from "@magi/bus";
+import { INTERNAL_TOOLS, subconsciousTool, SUBCONSCIOUS_PROMPT, SUBCONSCIOUS_COMPACTION_PROMPT } from "./subconscious.js";
 import { COMPACTION_INVARIANT, SYSTEM_PROMPT } from "./prompt_defaults.js";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const COMPACT_KEEP_RECENT = 20;
@@ -15,6 +16,7 @@ export function toLLMMessage(message: Message): LLMMessage {
 }
 
 export class Chat {
+  private get background(): boolean { return this.bus.chats.get(this.chat_id)?.channel === "subconscious"; }
   private readonly pendingTools = new Set<number>();
   constructor(
     private readonly bus: Bus,
@@ -35,7 +37,7 @@ export class Chat {
       const interrupted = `${message}; execution was interrupted. Unconfirmed tool side effects may have completed; check before retrying.`;
       await this.settleInterruptedTools(jobId, interrupted);
       this.bus.agentTurns.interrupt(jobId, interrupted);
-      messageDelivery.send(this.bus, this.chat_id, message, MAGI_CONTACT_ID, "agent", messageDelivery.replyMetadata(this.bus, messageId));
+      messageDelivery.respond(this.bus, this.chat_id, message, messageDelivery.replyMetadata(this.bus, messageId));
       chatBoard.submit("agent", jobId, { error: message });
     } finally {
       // Keep the cold append-only trace, but release this process's materialized context.
@@ -71,7 +73,7 @@ export class Chat {
   private async initialize(jobId: number, messageId?: number): Promise<void> {
       const record = this.bus.chats.get(this.chat_id);
       if (!record) throw new Error("chat does not exist");
-      const agentPrompt = this.bus.prompts.get("agent/AGENT") ?? "You are a helpful assistant.";
+      const agentPrompt = this.background ? this.bus.prompts.get("subconscious/AGENT") ?? SUBCONSCIOUS_PROMPT : this.bus.prompts.get("agent/AGENT") ?? "You are a helpful assistant.";
       // Blocks the running modules answer for: the agent renders them without knowing
       // which worker is behind one, or whether any worker is behind it at all.
       const contributed: ReadonlyArray<readonly [string, string]> = this.bus.prompts.sections(this.chat_id)
@@ -86,7 +88,7 @@ export class Chat {
       ]);
       // A turn receives one fixed catalog.  A worker starting midway through a turn
       // becomes available on the next turn instead of changing the model's contract.
-      const tools = this.bus.tools.catalog();
+      const tools = this.bus.tools.catalog().filter(tool => this.background ? subconsciousTool(tool.name) : !INTERNAL_TOOLS.has(tool.name));
       const summary = await this.compact(jobId, record.summary, [agentPrompt, SYSTEM_PROMPT, beforeSummary, chat].filter(Boolean).join("\n\n"), tools, messageId);
       const system = [agentPrompt, SYSTEM_PROMPT, beforeSummary, this.context([["Prior chat summary", summary]]), chat].filter(Boolean).join("\n\n");
       const history: LLMMessage[] = this.bus.messages.list(this.chat_id, COMPACT_KEEP_RECENT, messageId).map(toLLMMessage);
@@ -101,9 +103,16 @@ export class Chat {
       // No step limit is enforced: the model is told which step it is on and that it
       // should stop and ask the user before going much past the suggested number.
       for (let step = 1; ; step++) {
+        if (this.background && step > 6) {
+          messageDelivery.respond(this.bus, this.chat_id, "Paused after the background step budget; continue from these notes on the next scheduled task.");
+          chatBoard.submit("agent", jobId, { output: {} });
+          return;
+        }
         this.signal?.throwIfAborted();
-        messages[1] = { role: "system", content: this.section("Turn", `step: ${step}\nsuggested maximum: ${SUGGESTED_STEPS}\nStop and ask the user whether to continue once you reach the suggested maximum without finishing.`) };
-        const llmId = this.bus.board("CallLLMJob").publish({ turn_id: jobId }, "agent");
+        messages[1] = { role: "system", content: this.section("Turn", this.background
+          ? `step: ${step}\nbackground maximum: 6\nFinish briefly with private working notes; scheduled tasks will continue this conversation. Do not ask the user to continue.`
+          : `step: ${step}\nsuggested maximum: ${SUGGESTED_STEPS}\nStop and ask the user whether to continue once you reach the suggested maximum without finishing.`) };
+        const llmId = this.bus.board("CallLLMJob").publish({ turn_id: jobId, ...(this.background ? { background: true } : {}) }, "agent");
         const llm = await this.waitFor("CallLLMJob", llmId, 300_000);
         if (llm.status === "failed" || llm.output?.turn_id !== jobId) throw new Error(llm.error ?? "LLM failed");
         const response = this.bus.agentTurns.assistant(jobId, llmId);
@@ -114,21 +123,22 @@ export class Chat {
           if (reply.toUpperCase() !== NO_REPLY) {
             // A Notify is published and not awaited: a channel that cannot deliver reports
             // its own trouble, and there is nothing the agent could do about it here.
-            messageDelivery.send(this.bus, this.chat_id, reply || "处理完毕。", MAGI_CONTACT_ID, "agent", messageDelivery.replyMetadata(this.bus, messageId));
+            messageDelivery.respond(this.bus, this.chat_id, reply || "处理完毕。", messageDelivery.replyMetadata(this.bus, messageId));
           }
           chatBoard.submit("agent", jobId, { output: {} });
           return;
         }
-        if (response.content) messageDelivery.send(this.bus, this.chat_id, response.content, MAGI_CONTACT_ID, "agent", messageDelivery.replyMetadata(this.bus, messageId));
+        if (response.content) messageDelivery.respond(this.bus, this.chat_id, response.content, messageDelivery.replyMetadata(this.bus, messageId));
         // A name the catalog does not have is answered here: no worker would claim its job.
-        const calls = response.tool_calls.map((call) => this.bus.tools.get(call.name)
+        const allowed = new Set(this.bus.agentTurns.get(jobId).tools.map(tool => tool.name));
+        const calls = response.tool_calls.map((call) => allowed.has(call.name) && this.bus.tools.get(call.name)
           ? { call, jobId: this.bus.board("RunToolJob").publish({ call, chat_id: this.chat_id, message_id: messageId }, "agent") as number | null }
           : { call, jobId: null });
         for (const pending of calls) if (pending.jobId !== null) this.pendingTools.add(pending.jobId);
         for (const pending of calls) {
           this.signal?.throwIfAborted();
           if (pending.jobId === null) {
-            this.bus.agentTurns.appendToolResult(jobId, { role: "tool", tool_call_id: pending.call.tool_call_id, tool_name: pending.call.name, content: `unknown tool ${pending.call.name}`, is_error: true });
+            this.bus.agentTurns.appendToolResult(jobId, { role: "tool", tool_call_id: pending.call.tool_call_id, tool_name: pending.call.name, content: this.bus.tools.get(pending.call.name) ? `tool not available in this conversation: ${pending.call.name}` : `unknown tool ${pending.call.name}`, is_error: true });
             continue;
           }
           const result = await this.waitFor("RunToolJob", pending.jobId, 120_000);
@@ -164,10 +174,10 @@ export class Chat {
       return `[${llm.role}]\n${llm.content}`;
     }).join("\n\n");
     this.bus.agentTurns.ensure(turnId, { messages: [
-        { role: "system", content: `${this.bus.prompts.get("agent/compaction") ?? "Summarize the chat."}\n\n${COMPACTION_INVARIANT}` },
+        { role: "system", content: `${this.background ? this.bus.prompts.get("subconscious/compaction") ?? SUBCONSCIOUS_COMPACTION_PROMPT : this.bus.prompts.get("agent/compaction") ?? "Summarize the chat."}\n\n${COMPACTION_INVARIANT}` },
         { role: "user", content: `${previousSummary ? `Previous summary:\n${previousSummary}\n\n` : ""}Transcript:\n${content}\n\n请仅总结上面的对话历史，并遵循 system 指令。` },
       ], tools: [] });
-    const id = this.bus.board("CallLLMJob").publish({ turn_id: turnId }, "agent");
+    const id = this.bus.board("CallLLMJob").publish({ turn_id: turnId, ...(this.background ? { background: true } : {}) }, "agent");
     const result = await this.waitFor("CallLLMJob", id, 300_000);
     const response = result.status === "completed" && result.output?.turn_id === turnId ? this.bus.agentTurns.assistant(turnId, id) : null;
     const summary = response?.content.trim() ?? "";

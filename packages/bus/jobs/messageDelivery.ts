@@ -23,10 +23,19 @@ export type MessageDeliveryJob = {
   metadata?: Record<string, unknown>;
 };
 
+/** Internal analysis may inform a foreground turn without appearing in its UI. */
+function isInternal(bus: Bus, messageId: number): boolean {
+  const delivery = bus.deliveries.get(messageId);
+  return delivery?.publisher === "subconscious";
+}
+
 /** Record the message, then hand it to whoever must act on it. Returns the job id. */
 function send(bus: Bus, chat_id: number, text: string, contact_id = SYSTEM_CONTACT_ID, publisher = "channel", metadata?: Record<string, unknown>): number {
   const target = bus.chats.get(chat_id);
   if (!target) throw new Error(`chat ${chat_id} does not exist`);
+  if (target.channel === "subconscious" && (contact_id !== SYSTEM_CONTACT_ID || publisher !== "task")) {
+    throw new Error("subconscious accepts only internal scheduled continuations");
+  }
   if (target.channel === "group" && contact_id === MAGI_CONTACT_ID) {
     const replyTo = (metadata?.peer as { replyTo?: string } | undefined)?.replyTo;
     return bus.groups.append(target.delivery_address, text, replyTo).job_id!;
@@ -35,6 +44,15 @@ function send(bus: Bus, chat_id: number, text: string, contact_id = SYSTEM_CONTA
     ? { messageId: randomUUID(), conversationUUID: target.conversation_uuid, ...((metadata?.peer as Record<string, unknown> | undefined) ?? {}) } : undefined;
   const stored = bus.deliveries.persist({ chat_id, contact_id, content: text, publisher, metadata: peer ? { ...metadata, peer } : metadata });
   return bus.deliveries.enqueue(bus, stored.delivery)!;
+}
+
+/** An agent's output stays private in its internal conversation, including errors. */
+function respond(bus: Bus, chat_id: number, text: string, metadata?: Record<string, unknown>): number | null {
+  if (bus.chats.get(chat_id)?.channel === "subconscious") {
+    record(bus, chat_id, text, MAGI_CONTACT_ID);
+    return null;
+  }
+  return send(bus, chat_id, text, MAGI_CONTACT_ID, "agent", metadata);
 }
 
 /** Keep it as history only: it was asked of someone else, so nobody delivers it. */
@@ -51,6 +69,7 @@ function homeChat(bus: Bus): number | null {
 
 /** Persist the operator's chosen notice destination. Callers validate the chat first. */
 function setHomeChat(bus: Bus, chat_id: number): void {
+  if (bus.chats.get(chat_id)?.channel === "subconscious") throw new Error("an internal conversation cannot be home");
   bus.settings.set("home.chat_id", String(chat_id));
 }
 
@@ -94,4 +113,4 @@ function replyMetadata(bus: Bus, messageId?: number): Record<string, unknown> | 
   return metadata?.peer?.messageId ? { peer: { replyTo: metadata.peer.messageId } } : undefined;
 }
 
-export const messageDelivery = { send, record, homeChat, setHomeChat, notify, presentChat, receivePeer, replyMetadata };
+export const messageDelivery = { send, respond, record, isInternal, homeChat, setHomeChat, notify, presentChat, receivePeer, replyMetadata };

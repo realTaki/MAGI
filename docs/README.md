@@ -48,5 +48,6 @@ acceptance are different kinds of evidence. Do not substitute one for another.
 
 [Lifecycle acceptance notes](history/shell-rebuild-acceptance.md) retain earlier
 engineering rationale, not current startup instructions. [CHANGELOG](../CHANGELOG.md)
-also includes older runtime generations. Material in `not_implemented/` is not a
-list of features available today.
+also includes older runtime generations. The retired Python action/proactive
+reference modules remain in Git history; current working notes and subconscious
+execution are described in [Architecture](architecture.md#subconscious-one-continuing-private-conversation).

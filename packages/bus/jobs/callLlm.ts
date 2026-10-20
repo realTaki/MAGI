@@ -18,7 +18,7 @@ export type LLMMessage = {
 };
 
 /** The durable queue wake-up for one already-materialized agent turn. */
-export type CallLLMJob = { turn_id: number };
+export type CallLLMJob = { turn_id: number; /** One reserved low-traffic lane for the internal conversation. */ background?: boolean };
 
 /** The full request is held by AgentTurnCache, never copied into the Job payload. */
 export type LLMRequest = { messages: LLMMessage[]; tools: LLMTool[] };

@@ -202,3 +202,44 @@ Shell launches an owned local EVA with `eva.mjs --role agent @handle.magi` and
 owns its host process start/stop/readiness. A handle is a local/display name; role
 selects workers; nickname is a display preference. Remote contact registration and group routing do not expose provider credentials
 or make the remote EVA a locally supervised process.
+
+## Subconscious: one continuing private conversation
+
+Each EVA, including Shell's built-in EVA, has one `subconscious/self` chat.
+It uses the existing AgentWorker, message history and compaction rather than a
+second runtime or a workflow engine. Preset tasks continue that same conversation;
+ordinary background text, narration and errors stay in its private history.
+External chat ingress cannot target it. Its working history remains available for
+local inspection, but internal handoffs are not rendered as user messages in the
+normal owner UI.
+
+The subconscious can read foreground conversation deltas through tools, maintain
+working notes and manage its own scheduled continuations. `handoff_to_foreground`
+is the explicit way to give a finding to the foreground agent. The foreground
+still decides whether a visible message is useful; an internal finding is not a
+new user instruction or authorization. Tool availability is checked at execution,
+not just hidden from the model's catalog. Shell/file mutation and external
+messaging tools are not in the subconscious tool set.
+
+`ActionItemBook` contains working notes and reminders, not timed work. MemoryWorker
+owns its CRUD tools and contributes active notes to the next turn's context.
+Updates, archive and deletion require the version observed by the caller, so a
+stale background snapshot cannot overwrite a newer foreground note.
+`TaskBook` contains recurring or one-time timed prompts. TaskWorker records a fire
+and its delivery in one transaction; one-time tasks disable after firing.
+Foreground and subconscious share notes, while subconscious task tools can only
+manage tasks targeting its own conversation.
+
+Onboarding notes and an hourly review task are seeded with persistent keys, so
+restarting cannot recreate a deleted note or re-enable a disabled preset. Before
+a provider is configured, setup is deterministic and private task firing waits;
+credentials never belong in onboarding notes. The default review runs at minute
+17 of each UTC hour, with no immediate first-start call. Users can edit, disable
+or remove presets using the normal tools.
+
+Low traffic comes from these existing task schedules and a six-step background
+turn budget, not a perpetual busy loop. Providers reserve one foreground call
+slot and one background slot, so a slow background call does not occupy the
+foreground slot. Provider reconfiguration drains both slots before changing the
+client. This bounds local concurrency; it does not override a provider's own
+rate limits or guarantee that its server processes requests in parallel.

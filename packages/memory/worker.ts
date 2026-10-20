@@ -8,6 +8,7 @@
  */
 
 import { BaseWorker, type Bus, type ExecutableTool, type Memory } from "@magi/bus";
+import { actionItemContext, actionItemTools } from "./actionItems.js";
 import { memoryTools } from "./tools.js";
 
 export class MemoryWorker extends BaseWorker {
@@ -18,11 +19,12 @@ export class MemoryWorker extends BaseWorker {
 
   constructor(bus: Bus) {
     super(bus);
-    this.own = memoryTools(bus);
+    this.own = [...memoryTools(bus), ...actionItemTools(bus)];
     bus.tools.registerSource("memory", () => (this.started ? this.own : []));
     // Stopping this worker takes the block out with the tools: one answer to
     // "what does this module offer right now?".
     bus.prompts.registerSource("memory", "Long-term memory", () => (this.started ? catalog(bus.memoryBook.list()) : ""));
+    bus.prompts.registerSource("memory/action-items", "Action items", () => (this.started ? actionItemContext(bus.actionItems.list()) : ""));
   }
 
   async start(): Promise<void> { this.started = true; }

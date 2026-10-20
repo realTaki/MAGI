@@ -62,3 +62,119 @@ test("cron matching supports ranges, lists, and steps in UTC", () => {
   expect(cronMatches("30 15 * * 3", date)).toBeTrue();
   expect(cronMatches("0 8 * * 7", new Date("2026-09-27T08:00:00Z"))).toBeTrue();
 });
+
+test("subconscious presets seed once, and removal or edits survive restart", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "magi-presets-")); workspaces.push(workspace);
+  const { TaskWorker } = await import("@magi/channel-tasks/worker.js");
+  let magi = new Magi("@seed.magi", { workspace });
+  let worker = new TaskWorker(magi.bus, { isReady: () => false });
+  await worker.start();
+  const preset = magi.bus.tasks.list()[0];
+  expect(magi.bus.actionItems.list()).toHaveLength(3);
+  expect(magi.bus.chats.get(preset.chat_id)?.channel).toBe("subconscious");
+  magi.bus.tasks.update(preset.id, { enabled: false, prompt: "User edited review" });
+  await worker.start();
+  expect(magi.bus.tasks.get(preset.id)?.enabled).toBeFalse();
+  expect(magi.bus.tasks.get(preset.id)?.prompt).toBe("User edited review");
+  magi.bus.tasks.delete(preset.id);
+  magi.bus.actionItems.delete(magi.bus.actionItems.list()[0].id);
+  await magi.stop();
+  magi = new Magi("@seed.magi", { workspace });
+  worker = new TaskWorker(magi.bus, { isReady: () => false });
+  await worker.start();
+  expect(magi.bus.tasks.list()).toHaveLength(0);
+  expect(magi.bus.actionItems.list()).toHaveLength(2);
+  expect(magi.bus.chats.list("subconscious")).toHaveLength(1);
+  await magi.stop();
+});
+
+test("one-time tasks atomically disable and concurrent scanners deduplicate", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "magi-once-")); workspaces.push(workspace);
+  const magi = new Magi("@once.magi", { workspace });
+  try {
+    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    const once = magi.bus.tasks.save({ name: "once", prompt: "review", cron: "", run_at: "2026-01-01T00:00:00Z", chat_id: chat.id });
+    expect(magi.bus.tasks.claimFire(once.id, "2026-01-01T00:00")).toBeTrue();
+    expect(magi.bus.tasks.claimFire(once.id, "2026-01-01T00:00")).toBeFalse();
+    expect(magi.bus.tasks.claimFire(once.id, "2026-01-01T00:01")).toBeFalse();
+    expect(magi.bus.tasks.get(once.id)?.enabled).toBeFalse();
+    const recurring = magi.bus.tasks.save({ name: "recurring", prompt: "review", cron: "* * * * *", chat_id: chat.id });
+    expect(magi.bus.tasks.claimFire(recurring.id, "2026-01-01T00:00")).toBeTrue();
+    expect(magi.bus.tasks.claimFire(recurring.id, "2026-01-01T00:00")).toBeFalse();
+    expect(magi.bus.tasks.claimFire(recurring.id, "2026-01-01T00:01")).toBeTrue();
+  } finally { await magi.stop(); }
+});
+
+test("provider readiness gates private task firing without consuming it", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "magi-ready-")); workspaces.push(workspace);
+  const { TaskWorker } = await import("@magi/channel-tasks/worker.js");
+  const magi = new Magi("@ready.magi", { workspace });
+  try {
+    const worker = new TaskWorker(magi.bus, { isReady: () => false });
+    await worker.start();
+    const task = magi.bus.tasks.list()[0];
+    magi.bus.tasks.update(task.id, { cron: "", run_at: "2026-01-01T00:00:00Z" });
+    magi.bus.tasks.markFired(task.id, "2020-01-01T00:00");
+    await worker.poll();
+    expect(magi.bus.tasks.get(task.id)?.last_fired_minute).toBe("2020-01-01T00:00");
+    expect(magi.bus.tasks.get(task.id)?.enabled).toBeTrue();
+    const readyWorker = new TaskWorker(magi.bus, { isReady: () => true });
+    await readyWorker.start(); await readyWorker.poll();
+    expect(magi.bus.tasks.get(task.id)?.enabled).toBeFalse();
+  } finally { await magi.stop(); }
+});
+
+test("private task tools cannot inspect, retarget or change external tasks", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "magi-task-scope-")); workspaces.push(workspace);
+  const { TaskWorker } = await import("@magi/channel-tasks/worker.js");
+  const magi = new Magi("@scope.magi", { workspace });
+  try {
+    const worker = new TaskWorker(magi.bus, { isReady: () => false }); await worker.start();
+    const internal = magi.bus.chats.forChannel("subconscious", "self");
+    const external = magi.bus.chats.forChannel("cli", "terminal");
+    const task = magi.bus.tasks.save({ name: "external reminder", prompt: "external private text", cron: "0 8 * * *", chat_id: external.id });
+    async function call(name: string, args: Record<string, unknown>) {
+      const board = magi.bus.board("RunToolJob");
+      const id = board.publish({ chat_id: internal.id, call: { tool_call_id: name, name, arguments: args } }, "test");
+      await worker.poll(); return board.result(id);
+    }
+    const listed = await call("list_tasks", { chat_id: external.id });
+    expect(listed?.output?.content.includes("external private text")).toBeFalse();
+    expect((await call("delete_task", { task_id: task.id }))?.status).toBe("failed");
+    expect((await call("update_task", { task_id: task.id, enabled: false }))?.status).toBe("failed");
+    expect((await call("schedule_task", { name: task.name, prompt: "hijack", frequency: "hourly", target: "subconscious" }))?.status).toBe("failed");
+    expect((await call("schedule_task", { name: "loop", prompt: "wake again", frequency: "once", target: "subconscious", run_at: "2026-01-01T00:00:00Z" }))?.status).toBe("failed");
+    expect(magi.bus.tasks.get(task.id)?.chat_id).toBe(external.id);
+    expect(magi.bus.tasks.get(task.id)?.enabled).toBeTrue();
+  } finally { await magi.stop(); }
+});
+
+test("task fire rolls back on persistence failure and committed journal recovers after restart", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "magi-task-journal-")); workspaces.push(workspace);
+  let magi = new Magi("@journal.magi", { workspace });
+  const chat = magi.bus.chats.forChannel("cli", "terminal");
+  const task = magi.bus.tasks.save({ name: "once journal", prompt: "review", cron: "", run_at: "2026-01-01T00:00:00Z", chat_id: chat.id });
+  expect(() => magi.bus.tasks.fire(task.id, "2026-01-01T00:00", () => { throw new Error("disk failure"); })).toThrow("disk failure");
+  expect(magi.bus.tasks.get(task.id)?.enabled).toBeTrue();
+  expect(magi.bus.tasks.get(task.id)?.last_fired_minute).toBeNull();
+  const stored = magi.bus.tasks.fire(task.id, "2026-01-01T00:00", () => magi.bus.deliveries.persist({ chat_id: chat.id, contact_id: SYSTEM_CONTACT_ID, content: "durable wake", publisher: "task" }));
+  expect(stored?.delivery.job_id).toBeNull();
+  await magi.stop();
+  magi = new Magi("@journal.magi", { workspace });
+  expect(magi.bus.tasks.get(task.id)?.enabled).toBeFalse();
+  expect(magi.bus.deliveries.get(stored!.delivery.message_id)?.job_id).not.toBeNull();
+  await magi.stop();
+});
+
+test("stopped task workers neither fire nor claim tools", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "magi-task-stop-")); workspaces.push(workspace);
+  const { TaskWorker } = await import("@magi/channel-tasks/worker.js");
+  const magi = new Magi("@stop.magi", { workspace });
+  try {
+    const worker = new TaskWorker(magi.bus); await worker.start(); await worker.stop();
+    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    const task = magi.bus.tasks.save({ name: "stopped", prompt: "review", cron: "* * * * *", chat_id: chat.id });
+    expect(await worker.poll()).toBeFalse();
+    expect(magi.bus.tasks.get(task.id)?.last_fired_minute).toBeNull();
+  } finally { await magi.stop(); }
+});

@@ -26,7 +26,7 @@ function boundedInteger(value: unknown, key: string, min: number, max: number): 
   return value;
 }
 
-function presetCron(args: Record<string, unknown>): string {
+export function presetCron(args: Record<string, unknown>): string {
   const frequency = args.frequency;
   const minute = boundedInteger(args.minute ?? 0, "minute", 0, 59);
   const hour = boundedInteger(args.hour ?? 0, "hour", 0, 23);
@@ -43,22 +43,54 @@ function presetCron(args: Record<string, unknown>): string {
 export function taskTools(bus: Bus): ExecutableTool[] {
   return [
     {
-      name: "schedule_task", description: "Create or update a recurring task for a chat.",
+      name: "schedule_task", description: "Create or update a recurring or one-time task. Use target subconscious for private background thinking; no external delivery. Times are UTC.",
       input_schema: { type: "object", properties: {
         name: { type: "string" }, prompt: { type: "string" },
-        frequency: { type: "string", enum: ["hourly", "daily", "weekly", "monthly"] },
+        frequency: { type: "string", enum: ["hourly", "daily", "weekly", "monthly", "once"] },
         hour: { type: "integer", minimum: 0, maximum: 23 }, minute: { type: "integer", minimum: 0, maximum: 59 },
         day_of_week: { type: "integer", minimum: 0, maximum: 6 }, day_of_month: { type: "integer", minimum: 1, maximum: 31 },
-        chat_id: { type: "integer" },
-      }, required: ["name", "prompt", "frequency", "chat_id"] },
+        chat_id: { type: "integer" }, target: { type: "string", enum: ["chat", "subconscious"] }, run_at: { type: "string" },
+      }, required: ["name", "prompt", "frequency"] },
       async run(args) {
         const name = stringArg(args, "name");
         const prompt = stringArg(args, "prompt");
-        const chatId = positiveInteger(args.chat_id, "chat_id");
+        const chatId = args.target === "subconscious" ? bus.chats.forChannel("subconscious", "self").id : positiveInteger(args.chat_id, "chat_id");
         if (!bus.chats.get(chatId)) throw new Error(`unknown chat ${chatId}`);
-        const task = bus.tasks.save({ name, prompt, cron: presetCron(args), chat_id: chatId });
+        const task = bus.tasks.save({ name, prompt, cron: args.frequency === "once" ? "" : presetCron(args), run_at: args.frequency === "once" ? stringArg(args, "run_at") : null, chat_id: chatId });
         return JSON.stringify({ task_id: task.id, name: task.name, cron: task.cron, chat_id: task.chat_id });
       },
+    },
+    {
+      name: "list_tasks", description: "List task IDs, prompts, targets, schedules and enabled state.",
+      input_schema: { type: "object", properties: { chat_id: { type: "integer" } } },
+      async run(args) { return JSON.stringify(bus.tasks.list().filter(task => args.chat_id === undefined || task.chat_id === args.chat_id)); },
+    },
+    {
+      name: "update_task", description: "Edit a task by ID, including disabling or re-enabling it. Times are UTC. Omitted fields stay unchanged.",
+      input_schema: { type: "object", properties: {
+        task_id: { type: "integer" }, name: { type: "string" }, prompt: { type: "string" }, enabled: { type: "boolean" },
+        frequency: { type: "string", enum: ["hourly", "daily", "weekly", "monthly", "once"] },
+        run_at: { type: "string" }, hour: { type: "integer" }, minute: { type: "integer" }, day_of_week: { type: "integer" }, day_of_month: { type: "integer" },
+      }, required: ["task_id"] },
+      async run(args) {
+        const patch: Parameters<typeof bus.tasks.update>[1] = {};
+        if (args.name !== undefined) patch.name = stringArg(args, "name");
+        if (args.prompt !== undefined) patch.prompt = stringArg(args, "prompt");
+        if (args.enabled !== undefined) {
+          if (typeof args.enabled !== "boolean") throw new Error("enabled must be boolean");
+          patch.enabled = args.enabled;
+        }
+        if (args.frequency !== undefined) {
+          patch.cron = args.frequency === "once" ? "" : presetCron(args);
+          patch.run_at = args.frequency === "once" ? stringArg(args, "run_at") : null;
+        } else if (args.run_at !== undefined) throw new Error("run_at requires frequency once");
+        return JSON.stringify(bus.tasks.update(positiveInteger(args.task_id, "task_id"), patch));
+      },
+    },
+    {
+      name: "delete_task", description: "Remove a task permanently from the schedule. Built-in presets stay removed after restart.",
+      input_schema: { type: "object", properties: { task_id: { type: "integer" } }, required: ["task_id"] },
+      async run(args) { return JSON.stringify({ deleted: bus.tasks.delete(positiveInteger(args.task_id, "task_id")) }); },
     },
   ];
 }

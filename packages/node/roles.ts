@@ -26,6 +26,7 @@ function shared(bus: Bus, client?: LLMClient, tools?: Tool[]): BaseWorker[] {
     new ToolsWorker(bus, tools),
     new MemoryWorker(bus),
     new ProvidersWorker(bus, client),
+    new TaskWorker(bus, { isReady: () => Boolean(client || (bus.settings.get("provider.name") && bus.secrets.get("provider.api_key"))) }),
   ];
 }
 
@@ -41,7 +42,6 @@ export function agentWorkers(bus: Bus, options: {
   return [
     ...shared(bus, options.client, options.tools),
     new CliWorker(bus, options.deliver),
-    new TaskWorker(bus),
     new McpWorker(bus, options.mcpConnector),
     new PeerWorker(bus, options.peer),
     ...(options.owner ? [new LocalOwnerWorker(bus)] : []),
@@ -60,4 +60,4 @@ export function shellWorkers(bus: Bus, webapp: BaseWorker, peer: BaseWorker, cli
 }
 
 /** Pause a hosted MAGI without taking down its UI or peer listener. */
-export const HOSTED_NODE_WORKERS = ["contacts", "skills", "agent", "tools", "memory", "providers", "mcp", "tg"];
+export const HOSTED_NODE_WORKERS = ["contacts", "skills", "agent", "tools", "memory", "providers", "task", "mcp", "tg"];
