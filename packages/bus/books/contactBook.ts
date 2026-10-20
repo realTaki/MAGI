@@ -16,11 +16,11 @@ export const contacts = sqliteTable("books_contacts", {
   // group chat, a Telegram group. Who spoke is therefore a contact, and the identity
   // they spoke with belongs to that contact: one per channel, learned from the message.
   tg_id: text("tg_id").unique(),
-  asp_handle: text("asp_handle").unique(),
+  // Historical SQL column retained so existing profile identities remain intact.
+  handle: text("asp_handle").unique(),
   peer_id: text("peer_id").unique(),
   peer_principal: text("peer_principal").unique(),
   peer_url: text("peer_url"),
-  peer_trust: text("peer_trust").$type<"pending" | "accepted" | "blocked">().notNull().default("pending"),
   last_seen_at: text("last_seen_at").notNull().default(sql`(CURRENT_TIMESTAMP)`),
 });
 
@@ -45,36 +45,31 @@ export class ContactBook {
     const known = this.db.select().from(contacts).where(eq(contacts.peer_id, principal)).get();
     if (known) {
       // Incoming announcements refresh presence, not locally saved routing preferences.
-      // Only an explicit contact save may change its route or unblock it.
+      // Only an explicit contact save may change its route.
       return this.db.update(contacts).set({ peer_principal: principal, last_seen_at: sql`(CURRENT_TIMESTAMP)` }).where(eq(contacts.id, known.id)).returning().get();
     }
     return this.db.insert(contacts).values({ name: `peer:${principal}`, nickname: input.name?.trim() || null,
-      role: "stranger", peer_id: principal, peer_principal: principal, peer_url: endpoint, peer_trust: "accepted" }).returning().get();
+      role: "stranger", peer_id: principal, peer_principal: principal, peer_url: endpoint }).returning().get();
   }
 
-  acceptPeer(id: number, endpoint?: string): Contact {
+  savePeer(id: number, endpoint?: string): Contact {
     const current = this.get(id);
     if (!current?.peer_id || id <= MAGI_CONTACT_ID) throw new Error("peer contact not found");
-    return this.db.update(contacts).set({ peer_trust: "accepted", peer_url: validatePeerEndpoint(endpoint ?? current.peer_url ?? "") })
+    return this.db.update(contacts).set({ peer_url: validatePeerEndpoint(endpoint ?? current.peer_url ?? "") })
       .where(eq(contacts.id, id)).returning().get();
   }
 
-  blockPeer(id: number): Contact {
-    if (!this.get(id)?.peer_id || id <= MAGI_CONTACT_ID) throw new Error("peer contact not found");
-    return this.db.update(contacts).set({ peer_trust: "blocked" }).where(eq(contacts.id, id)).returning().get();
-  }
-
-  /** The contact behind an ASP handle, created the first time they are heard from. */
-  forAspHandle(handle: string): Contact {
+  /** The contact identified by a handle, created the first time they are heard from. */
+  forHandle(handle: string): Contact {
     const clean = handle.trim();
-    const known = this.db.select().from(contacts).where(eq(contacts.asp_handle, clean)).get();
+    const known = this.db.select().from(contacts).where(eq(contacts.handle, clean)).get();
     if (known) return this.seen(known);
     // A workspace from before identities were recorded has the contact already, under
     // the name the handle carries: remember the identity instead of making a second row.
     const named = this.db.select().from(contacts).where(eq(contacts.name, clean)).get();
-    if (named) return this.db.update(contacts).set({ asp_handle: clean }).where(eq(contacts.id, named.id)).returning().get();
+    if (named) return this.db.update(contacts).set({ handle: clean }).where(eq(contacts.id, named.id)).returning().get();
     return this.db.insert(contacts)
-      .values({ name: clean, asp_handle: clean, role: clean.endsWith(".magi") ? "magi" : "stranger" })
+      .values({ name: clean, handle: clean, role: clean.endsWith(".magi") ? "magi" : "stranger" })
       .returning().get();
   }
 
@@ -88,7 +83,7 @@ export class ContactBook {
     return this.db.insert(contacts).values({ name: `tg:${clean}`, tg_id: clean }).returning().get();
   }
 
-  create(input: { name: string; nickname?: string; role?: ContactRole; tg_id?: string; asp_handle?: string }): Contact {
+  create(input: { name: string; nickname?: string; role?: ContactRole; tg_id?: string; handle?: string }): Contact {
     if (!input.name.trim()) throw new Error("contact name is required");
     try {
       return this.db.insert(contacts)
@@ -97,7 +92,7 @@ export class ContactBook {
           nickname: input.nickname?.trim() || null,
           role: input.role ?? "stranger",
           tg_id: input.tg_id?.trim() || null,
-          asp_handle: input.asp_handle?.trim() || null,
+          handle: input.handle?.trim() || null,
         })
         .returning().get();
     } catch (error) {
@@ -106,7 +101,7 @@ export class ContactBook {
     }
   }
 
-  update(id: number, input: { name?: string; nickname?: string | null; role?: ContactRole; tg_id?: string | null; asp_handle?: string | null }): Contact {
+  update(id: number, input: { name?: string; nickname?: string | null; role?: ContactRole; tg_id?: string | null; handle?: string | null }): Contact {
     const current = this.get(id);
     if (!current) throw new Error(`contact ${id} not found`);
     return this.db.update(contacts)
@@ -115,7 +110,7 @@ export class ContactBook {
         nickname: input.nickname === undefined ? current.nickname : input.nickname?.trim() || null,
         role: input.role ?? current.role,
         tg_id: input.tg_id === undefined ? current.tg_id : input.tg_id?.trim() || null,
-        asp_handle: input.asp_handle === undefined ? current.asp_handle : input.asp_handle?.trim() || null,
+        handle: input.handle === undefined ? current.handle : input.handle?.trim() || null,
         last_seen_at: sql`(CURRENT_TIMESTAMP)`,
       })
       .where(eq(contacts.id, id))

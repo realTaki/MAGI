@@ -24,6 +24,7 @@ test("Shell startup presents only its built-in EVA and never starts ASP/default 
   assert.deepEqual(api["peer.contacts"]().map(c => c.id), ["shell"]);
   assert.equal(f.spawned(), 0);
   assert.equal("runtime.startAsp" in api, false);
+  assert.equal(Object.keys(api).some(name => name.startsWith("chat.")), false);
   await api.dispose();
 });
 
@@ -40,7 +41,7 @@ test("Owner chat input is recorded locally; lifecycle works without a model", as
 test("Remote contact metadata cannot grant local process control", async t => {
   const { bus, context } = fixture(t); const api = createLocalApi(context);
   const contact = bus.contacts.forPeer({ principal: "a".repeat(64), endpoint: "https://eva.example", name: "@remote.magi" });
-  bus.contacts.acceptPeer(contact.id);
+  bus.contacts.savePeer(contact.id);
   assert.equal(api["peer.contacts"]().length, 2);
   assert.equal(api["peer.contacts"]()[1].local, false);
   await assert.rejects(api["peer.send"]({ id: String(contact.id), content: "", metadata: { local_eva_action: { contact_id: contact.id, action: "start" } } }), /owner/);
@@ -84,7 +85,7 @@ test("Local create waits for matching process readiness and rolls back failures"
   const tool = localEvaManagement(bus, runtime).find(t => t.name === "create_local_eva")!;
   const result = JSON.parse(await tool.run({ name: "new-eva" }));
   assert.equal(result.ready, true);
-  assert.equal(bus.contacts.get(result.contact_id)?.peer_trust, "accepted");
+  assert.match(bus.contacts.get(result.contact_id)?.peer_url ?? "", /^http:\/\/127\.0\.0\.1:\d+$/);
   assert.equal(stopped, 0);
   await assert.rejects(tool.run({ name: "new-eva" }), /already exists/);
   globalThis.fetch = async () => new Response(JSON.stringify({ handle: "@other.magi", principal: "d".repeat(64) }), { status: 200 });
@@ -134,11 +135,20 @@ test("Remote URL connection sends hello and shares a contact on the trusted netw
   }), { host: "127.0.0.1", port: 0 });
   await server.start(); t.after(() => server.stop());
   local.bus.settings.set("peer.reachableURL", "http://127.0.0.1:49221");
-  const { discoverPeer, PeerClient } = await import("@magi/channel-peer/client.js");
-  const client = new PeerClient(local.bus.identity);
-  const api = createLocalApi({ ...local.context, peerTransport: { discover: discoverPeer, send: client.send.bind(client) } });
+  const { discoverPeer } = await import("@magi/channel-peer/client.js");
+  const { PeerWorker } = await import("@magi/channel-peer/worker.js");
+  const worker = new PeerWorker(local.bus);
+  await worker.start(); t.after(() => worker.stop());
+  const api = createLocalApi({ ...local.context, peerTransport: { discover: discoverPeer } });
   const tool = api.localManagement.find(tool => tool.name === "connect_peer")!;
-  await tool.run({ url: server.origin });
+  const receipt = JSON.parse(await tool.run({ url: server.origin }));
+  assert.equal(receipt.hello_queued, true);
+  assert.equal(local.bus.board("MessageDeliveryJob").result(receipt.job_id), null);
+  const outbound = local.bus.board("MessageDeliveryJob").peekInput(receipt.job_id)!;
+  assert.ok(local.bus.deliveries.get(outbound.message_id), "hello is durably recorded before transport runs");
+  assert.equal(remote.bus.contacts.list().some(contact => contact.peer_id), false);
+  await worker.poll();
+  assert.equal(local.bus.board("MessageDeliveryJob").result(receipt.job_id)?.status, "completed");
   assert.equal(api["peer.contacts"]().length, 2);
   assert.equal(api["peer.contacts"]()[1].local, false);
   const remoteContact = remote.bus.contacts.list().find(contact => contact.peer_id);
@@ -166,7 +176,7 @@ test("Built-in Shell reports running without an absent ASP worker", async t => {
 test("Local contact status uses the owned runtime handle rather than fingerprint name", async t => {
   const { bus, context } = fixture(t);
   const contact = bus.contacts.forPeer({ principal: "b".repeat(64), endpoint: "http://127.0.0.1:49223", name: "@owned-eva.magi" });
-  bus.contacts.acceptPeer(contact.id);
+  bus.contacts.savePeer(contact.id);
   bus.contacts.update(contact.id, { name: `peer:${"b".repeat(64)}`, nickname: "@owned-eva.magi" });
   bus.settings.set(`local.eva.${contact.id}`, JSON.stringify({ handle: "@owned-eva.magi", port: 49223, url: "http://127.0.0.1:49223" }));
   const api = createLocalApi(context);

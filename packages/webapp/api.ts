@@ -215,11 +215,7 @@ export function createLocalApi(context) {
   const gitAt = (cwd) => ({ cwd, env: tools.env });
   let deviceFlowPending = false;
   let runtimeBusy = false;
-  let chatStorePromise = null;
   let disposed = false;
-  let disposal = null;
-  let initialization = null;
-  const lifetime = new AbortController();
   const magiRuntime = createMagiRuntime({
     checkout: paths.checkout,
     home: paths.home,
@@ -250,12 +246,6 @@ export function createLocalApi(context) {
   const magiDataRoot = path.join(paths.home, ".magi");
   const appData = path.join(magiDataRoot, "shell");
   mkdirSync(appData, { recursive: true });
-  async function chatStore() {
-    if (disposed) throw new Error("The Shell backend is disposed.");
-    chatStorePromise ??= import("./chat-store.js")
-      .then(({ openChatStore }) => openChatStore(path.join(appData, "chat.sqlite"), bus));
-    return chatStorePromise;
-  }
   const tokenPath = path.join(appData, "github-token");
   const metadataPath = path.join(appData, "github.json");
   const avatarPath = path.join(appData, "github-avatar");
@@ -791,19 +781,7 @@ export function createLocalApi(context) {
       provider: bus.settings.get("provider.name") ?? "", model: bus.settings.get("provider.model") ?? "" };
   }
 
-  async function dispose() {
-    if (disposal !== null) return await disposal;
-    disposed = true;
-    lifetime.abort();
-    const pendingStore = chatStorePromise;
-    chatStorePromise = null;
-    disposal = (async () => {
-      // Initialization failures retain their ready error; no open store exists.
-      const store = pendingStore === null ? null : await pendingStore.catch(() => null);
-      store?.close();
-    })();
-    await disposal;
-  }
+  async function dispose() { disposed = true; }
 
   async function shutdown() {
     await dispose();
@@ -1138,7 +1116,7 @@ export function createLocalApi(context) {
   }
 
   return {
-    ready: () => { initialization ??= chatStore().then(() => undefined); return initialization; },
+    ready: async () => { if (disposed) throw new Error("The Shell backend is disposed."); },
     prepare,
     resume: async () => undefined,
     start,
@@ -1161,16 +1139,5 @@ export function createLocalApi(context) {
     "github.connect": connect,
     "source.status": sourceStatus,
     "source.update": () => sourceAction(updateSource),
-    "chat.listChats": async () => (await chatStore()).listChats(),
-    "chat.saveChats": async (rows) => (await chatStore()).saveChats(rows),
-    "chat.listEvents": async (id) => (await chatStore()).listEvents(id),
-    "chat.saveEvents": async ({ id, events }) => (await chatStore()).saveEvents(id, events),
-    "chat.lastSequence": async (id) => (await chatStore()).lastSequence(id),
-    "chat.pendingAcks": async (id) => (await chatStore()).pendingAcks(id),
-    "chat.markAcknowledged": async ({ id, sequence }) =>
-      (await chatStore()).markAcknowledged(id, sequence),
-    "chat.queueOutgoingMessage": async (message) => (await chatStore()).queueOutgoingMessage(message),
-    "chat.listOutgoingMessages": async () => (await chatStore()).listOutgoingMessages(),
-    "chat.removeOutgoingMessage": async (id) => (await chatStore()).removeOutgoingMessage(id),
   };
 }

@@ -362,7 +362,7 @@ describe("local MAGI agent", () => {
       client: { async complete(job) { requests.push(job); return { role: "assistant", content: "ok" }; } },
     });
     const chat = magi.bus.chats.forChannel("cli", "terminal");
-    const guest = magi.bus.contacts.forAspHandle(sequentialMagiHandle(1));
+    const guest = magi.bus.contacts.forHandle(sequentialMagiHandle(1));
     magi.bus.contacts.update(guest.id, { nickname: "EVA" });
     magi.bus.chatMembers.add(chat.id, SYSTEM_CONTACT_ID);
     magi.bus.chatMembers.add(chat.id, guest.id);

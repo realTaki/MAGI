@@ -56,7 +56,7 @@ export function contactTools(bus: Bus, context?: ContactToolContext): Executable
       async run(args) {
         const contactId = integerArg(args, "contact_id");
         if (args.endpoint !== undefined && typeof args.endpoint !== "string") throw new Error("endpoint must be a string");
-        return JSON.stringify({ contact: bus.contacts.acceptPeer(contactId, args.endpoint as string | undefined) });
+        return JSON.stringify({ contact: bus.contacts.savePeer(contactId, args.endpoint as string | undefined) });
       },
     },
     {

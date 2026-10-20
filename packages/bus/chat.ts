@@ -58,7 +58,7 @@ export function chat(bus: Bus, chat_id: number, contact_id: number, input: ChatI
     if (kind !== "envelope" && !owner) throw new Error("only the owner may submit a card");
     if (kind === "envelope") {
       // Being seen in a chat or choosing a .magi handle does not confer trust.
-      const trusted = [SHELL_MAGI_HANDLE, EVA_MAGI_HANDLE].includes(contact.asp_handle ?? "");
+      const trusted = [SHELL_MAGI_HANDLE, EVA_MAGI_HANDLE].includes(contact.handle ?? "");
       if (!owner && !trusted) throw new Error("provider sync requires a trusted sender");
       if (body.kind !== "provider.sync" || typeof body.ciphertext !== "string" || !body.ciphertext) throw new Error("invalid provider envelope");
       for (const key of ["provider", "model", "base_url"]) if (body[key] !== undefined && typeof body[key] !== "string") throw new Error("invalid provider field");
@@ -78,7 +78,7 @@ export function chat(bus: Bus, chat_id: number, contact_id: number, input: ChatI
       }
     }
     const type = kind === "envelope" ? "provider.sync" : kind as "card_result" | "card_reject";
-    const id = bus.board("InboundSecretJob").publish({ sender: contact.asp_handle ?? contact.name, chat_id, kind: type, body }, publisher);
+    const id = bus.board("InboundSecretJob").publish({ sender: contact.handle ?? contact.name, chat_id, kind: type, body }, publisher);
     messageDelivery.record(bus, chat_id, type === "provider.sync" ? "provider sync received" : type === "card_reject" ? "card rejected" : "card submitted", contact_id);
     return { type: "InboundSecretJob", id };
   }

@@ -31,7 +31,7 @@ function secureShellDatabases(workspace: string): void {
 import { Bus, SHELL_MAGI_HANDLE } from "@magi/bus";
 import { ManagerWorker, healthyOrExit } from "@magi/manager";
 import { WebappWorker } from "@magi/webapp";
-import { PeerWorker, PeerClient, discoverPeer } from "@magi/channel-peer/worker.js";
+import { PeerWorker, discoverPeer } from "@magi/channel-peer/worker.js";
 import { shellWorkers, HOSTED_NODE_WORKERS } from "./roles.js";
 
 type ShellContext = ConstructorParameters<typeof WebappWorker>[1];
@@ -51,9 +51,8 @@ export class Shell {
     try {
       secureShellDatabases(workspace);
       this.peer = new PeerWorker(this.bus);
-      const peerClient = new PeerClient(this.bus.identity);
       this.worker = new WebappWorker(this.bus, { ...context,
-        peerTransport: { discover: discoverPeer, send: peerClient.send.bind(peerClient) },
+        peerTransport: { discover: discoverPeer },
         nodeControl: { running: () => this.manager.nodeRunning(), setRunning: (enabled: boolean) => this.manager.setNodeRunning(enabled) },
       });
       this.manager = new ManagerWorker(this.bus, shellWorkers(this.bus, this.worker, this.peer, context.client), {

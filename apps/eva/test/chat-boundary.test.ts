@@ -47,7 +47,7 @@ test("typed ingress rejects untrusted controls and never parses command-looking 
   const bus = new Bus(EVA_MAGI_HANDLE, workspace);
   try {
     const room = bus.chats.forChannel("test", "room");
-    const guest = bus.contacts.forAspHandle("@untrusted.magi");
+    const guest = bus.contacts.forHandle("@untrusted.magi");
     assert.throws(() => chat(bus, room.id, guest.id, {content:"", metadata:{card_result:{id:"open", action:"open"}}}), /only the owner/);
     assert.throws(() => chat(bus, room.id, guest.id, {content:"", metadata:{envelope:{kind:"provider.sync", ciphertext:"sealed"}}}), /trusted sender/);
     assert.throws(() => chat(bus, room.id, SYSTEM_CONTACT_ID, {content:"", metadata:{card_result:{id:"one",fields:{"provider.api_key":"plaintext"}}}}), /must be sealed/);

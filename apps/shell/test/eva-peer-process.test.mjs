@@ -51,7 +51,7 @@ test('real independent EVA launchers exchange direct chat and expose owner API o
   const ports = [await freePort(), await freePort()];
   const buses = ['one', 'two'].map(name => new Bus(`@${name}.magi`, join(home, name)));
   const principals = buses.map(bus => principalFor(bus.identity.publicKey));
-  buses.forEach((bus, index) => { bus.settings.set('peer.port', String(ports[index])); const other = 1 - index; bus.contacts.acceptPeer(bus.contacts.forPeer({ principal: principals[other], endpoint: `http://127.0.0.1:${ports[other]}` }).id); });
+  buses.forEach((bus, index) => { bus.settings.set('peer.port', String(ports[index])); const other = 1 - index; bus.contacts.savePeer(bus.contacts.forPeer({ principal: principals[other], endpoint: `http://127.0.0.1:${ports[other]}` }).id); });
   const room = buses[0].chats.forPeer(principals[1]);
   // Correlated delivery avoids asking a real provider: this test has no credentials.
   const job = messageDelivery.send(buses[0], room.id, 'real launcher direct peer delivery', MAGI_CONTACT_ID, 'test', { peer: { replyTo: randomUUID() } });

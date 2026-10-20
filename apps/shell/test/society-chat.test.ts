@@ -18,7 +18,7 @@ test("operator DMs independent EVAs and their direct peer replies do not create 
     deliver(text) { outputs[index].push(text); }, client: { async complete() { calls[index]++; return { role: "assistant" as const, content: `reply:${name}` }; } } }));
   try {
     for (const node of nodes) await node.start();
-    for (const node of nodes) for (const other of nodes) if (node !== other) node.bus.contacts.acceptPeer(node.bus.contacts.forPeer({ principal: other.bus.settings.get("peer.principal")!, endpoint: other.bus.settings.get("peer.reachableURL")! }).id);
+    for (const node of nodes) for (const other of nodes) if (node !== other) node.bus.contacts.savePeer(node.bus.contacts.forPeer({ principal: other.bus.settings.get("peer.principal")!, endpoint: other.bus.settings.get("peer.reachableURL")! }).id);
     for (const [index, node] of nodes.entries()) { await node.chat("owner hello"); await until(() => outputs[index].length > 0); }
     assert.deepEqual(calls, [1, 1, 1]);
     const target = nodes[0].bus.chats.forPeer(nodes[1].bus.settings.get("peer.principal")!);

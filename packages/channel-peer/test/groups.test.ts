@@ -13,7 +13,7 @@ async function cluster() {
   const workers = buses.map(bus => new PeerWorker(bus));
   for (const worker of workers) await worker.start();
   const peers = buses.map((bus, index) => ({ principal: principalFor(bus.identity.publicKey), endpoint: workers[index].origin! }));
-  for (const bus of buses) for (const peer of peers) if (peer.principal !== principalFor(bus.identity.publicKey)) bus.contacts.acceptPeer(bus.contacts.forPeer(peer).id);
+  for (const bus of buses) for (const peer of peers) if (peer.principal !== principalFor(bus.identity.publicKey)) bus.contacts.savePeer(bus.contacts.forPeer(peer).id);
   return { root, buses, workers, peers, async close() { for (const worker of workers) await worker.stop(); for (const bus of buses) bus.close(); rmSync(root, { recursive: true, force: true }); } };
 }
 async function sync(worker: PeerWorker, uuid: string, principal: string) {

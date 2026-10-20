@@ -13,7 +13,7 @@ test("cold Shell starts only its built-in EVA and preserves existing peer/profil
   process.env.MAGI_HOME = path.join(root, "profile"); process.env.MAGI_OS_HOME = path.join(root, "os");
   const existing = new Bus(SHELL_MAGI_HANDLE, path.join(process.env.MAGI_HOME, "shell"));
   existing.contacts.update(MAGI_CONTACT_ID, { nickname: "preserved nickname" });
-  existing.contacts.acceptPeer(existing.contacts.forPeer({ principal: "a".repeat(64), endpoint: "https://peer.example" }).id);
+  existing.contacts.savePeer(existing.contacts.forPeer({ principal: "a".repeat(64), endpoint: "https://peer.example" }).id);
   existing.close();
   let spawned = 0;
   const shell = new Shell({ paths: { home: process.env.MAGI_OS_HOME, userData: path.join(root, "electron"), checkout: repository }, repository: "https://github.com/realTaki/MAGI.git", managed: false,
@@ -23,7 +23,7 @@ test("cold Shell starts only its built-in EVA and preserves existing peer/profil
     await shell.start(); await shell.worker.methods.start(); await shell.worker.methods.start();
     assert.equal(spawned, 0);
     assert.equal(shell.bus.contacts.get(MAGI_CONTACT_ID)?.nickname, "preserved nickname");
-    assert.equal(shell.bus.contacts.list().filter(contact => contact.peer_trust === "accepted").length, 1);
+    assert.equal(shell.bus.contacts.list().filter(contact => Boolean(contact.peer_id)).length, 1);
     const contacts = shell.worker.methods["peer.contacts"]();
     assert.equal(contacts.filter(contact => contact.id === "shell").length, 1);
     assert.equal(contacts[0].running, true);

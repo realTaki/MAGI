@@ -41,8 +41,8 @@ test("reserved system and MAGI contacts are seeded", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-contact-seed-"));
   const magi = new Magi("@seed.magi", { workspace, client: { async complete() { return { role: "assistant", content: "unused" }; } } });
   try {
-    expect(magi.bus.contacts.get(1)).toMatchObject({ name: "system", role: "system", asp_handle: "@user.magi" });
-    expect(magi.bus.contacts.get(2)).toMatchObject({ name: "@seed.magi", role: "magi", asp_handle: "@seed.magi" });
+    expect(magi.bus.contacts.get(1)).toMatchObject({ name: "system", role: "system", handle: "@user.magi" });
+    expect(magi.bus.contacts.get(2)).toMatchObject({ name: "@seed.magi", role: "magi", handle: "@seed.magi" });
   } finally {
     await magi.stop();
     await rm(workspace, { recursive: true, force: true });
@@ -53,24 +53,24 @@ test("a channel identity belongs to one contact, learned when it first speaks", 
   const workspace = await mkdtemp(join(tmpdir(), "magi-contact-identity-"));
   const magi = new Magi("@identity.magi", { workspace, client: { async complete() { return { role: "assistant", content: "unused" }; } } });
   try {
-    const other = magi.bus.contacts.forAspHandle(sequentialMagiHandle(1));
-    expect(other).toMatchObject({ name: sequentialMagiHandle(1), asp_handle: sequentialMagiHandle(1), role: "magi" });
-    expect(magi.bus.contacts.forAspHandle(sequentialMagiHandle(1)).id).toBe(other.id);
+    const other = magi.bus.contacts.forHandle(sequentialMagiHandle(1));
+    expect(other).toMatchObject({ name: sequentialMagiHandle(1), handle: sequentialMagiHandle(1), role: "magi" });
+    expect(magi.bus.contacts.forHandle(sequentialMagiHandle(1)).id).toBe(other.id);
 
     const person = magi.bus.contacts.forTg("12345");
     expect(person).toMatchObject({ name: "tg:12345", tg_id: "12345", role: "stranger" });
     expect(magi.bus.contacts.forTg("12345").id).toBe(person.id);
 
     // One person, two channels: linking the second identity must not make a new contact.
-    magi.bus.contacts.update(person.id, { asp_handle: "@adam" });
-    expect(magi.bus.contacts.forAspHandle("@adam").id).toBe(person.id);
+    magi.bus.contacts.update(person.id, { handle: "@adam" });
+    expect(magi.bus.contacts.forHandle("@adam").id).toBe(person.id);
     expect(magi.bus.contacts.forTg("12345").id).toBe(person.id);
 
     // A workspace from before identities were stored has the contact named after the
     // handle: it is remembered there instead of being duplicated.
     const named = magi.bus.contacts.create({ name: sequentialMagiHandle(2), role: "magi" });
-    expect(magi.bus.contacts.forAspHandle(sequentialMagiHandle(2)).id).toBe(named.id);
-    expect(magi.bus.contacts.get(named.id)?.asp_handle).toBe(sequentialMagiHandle(2));
+    expect(magi.bus.contacts.forHandle(sequentialMagiHandle(2)).id).toBe(named.id);
+    expect(magi.bus.contacts.get(named.id)?.handle).toBe(sequentialMagiHandle(2));
   } finally {
     await magi.stop();
     await rm(workspace, { recursive: true, force: true });
@@ -82,7 +82,7 @@ test("chat membership is a set, not a log", async () => {
   const magi = new Magi("@members.magi", { workspace, client: { async complete() { return { role: "assistant", content: "unused" }; } } });
   try {
     const chat = magi.bus.chats.forChannel("cli", "terminal");
-    const guest = magi.bus.contacts.forAspHandle(sequentialMagiHandle(1));
+    const guest = magi.bus.contacts.forHandle(sequentialMagiHandle(1));
     magi.bus.chatMembers.add(chat.id, guest.id);
     magi.bus.chatMembers.add(chat.id, guest.id);
     expect(magi.bus.chatMembers.list(chat.id).map((contact) => contact.id)).toEqual([guest.id]);

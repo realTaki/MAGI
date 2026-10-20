@@ -21,7 +21,7 @@ test('packaging runs runtime preparation, root compilation, and UI build before 
   assert.equal(calls[1][2].cwd, path.resolve(directory, '../..'));
   assert.deepEqual(calls[2][1].slice(1), ['run', 'build:ui']);
   assert.equal(calls[2][2].cwd, directory);
-  assert.deepEqual(calls[3][1], ['/project/node_modules/electron-builder/out/cli/cli.js', '--linux', 'AppImage']);
+  assert.deepEqual(calls[3][1], [path.join('/project/node_modules', 'electron-builder/out/cli/cli.js'), '--linux', 'AppImage']);
   for (const call of calls.slice(1)) {
     assert.equal(call[2].env.PATH.split(path.delimiter)[0], path.join(directory, 'runtime/bin'));
     assert.equal(call[2].env.EXAMPLE, 'kept');

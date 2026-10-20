@@ -144,19 +144,14 @@ export class Bus {
     this.mcpServers = new McpServerBook(this.db);
     this.prompts = new PromptBook(this.workspace);
     this.agentTurns = new AgentTurnCache(this.jobs);
-    // The system contact stands for the operator: USER_HANDLE is the handle ASP
-    // gives them, so their messages arrive already known. The MAGI is the other
-    // fixed contact. asp_handle is UNIQUE. Bus(USER_HANDLE) would collide with
-    // SYSTEM if both used that handle; SQLite UNIQUE allows multiple NULLs, so a
-    // workspace whose own handle is USER_HANDLE leaves SYSTEM unnamed on ASP.
-    // The desktop operator process owns SHELL_MAGI_HANDLE instead, so SYSTEM
-    // keeps USER_HANDLE there.
+    // The fixed system contact represents the local operator. Keep handles
+    // unique when opening a historical workspace named after that operator.
     const systemHandle = handle === USER_HANDLE ? null : USER_HANDLE;
-    this.db.insert(contacts).values({ id: SYSTEM_CONTACT_ID, name: "system", role: "system", asp_handle: systemHandle })
-      .onConflictDoUpdate({ target: contacts.id, set: { asp_handle: systemHandle } })
+    this.db.insert(contacts).values({ id: SYSTEM_CONTACT_ID, name: "system", role: "system", handle: systemHandle })
+      .onConflictDoUpdate({ target: contacts.id, set: { handle: systemHandle } })
       .run();
-    this.db.insert(contacts).values({ id: MAGI_CONTACT_ID, name: defaultDisplayName(handle), role: "magi", asp_handle: handle })
-      .onConflictDoUpdate({ target: contacts.id, set: { name: defaultDisplayName(handle), asp_handle: handle } })
+    this.db.insert(contacts).values({ id: MAGI_CONTACT_ID, name: defaultDisplayName(handle), role: "magi", handle: handle })
+      .onConflictDoUpdate({ target: contacts.id, set: { name: defaultDisplayName(handle), handle: handle } })
       .run();
     this.deliveries.reconcile(this);
   }

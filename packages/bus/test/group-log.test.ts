@@ -12,7 +12,7 @@ function cluster() {
   const peers = buses.map((bus, index) => ({ principal: groupPrincipal(bus.identity.publicKey), endpoint: `http://127.0.0.1:${40000 + index}` }));
   for (const [index, bus] of buses.entries()) {
     bus.settings.set("peer.reachableURL", peers[index].endpoint);
-    for (const peer of peers) if (peer.principal !== peers[index].principal) bus.contacts.acceptPeer(bus.contacts.forPeer(peer).id);
+    for (const peer of peers) if (peer.principal !== peers[index].principal) bus.contacts.savePeer(bus.contacts.forPeer(peer).id);
   }
   return { roots, buses, peers, clean: () => { buses.forEach(bus => bus.close()); roots.forEach(root => rmSync(root, { recursive: true, force: true })); } };
 }
@@ -87,7 +87,7 @@ test("historical event does not revert an explicitly changed peer endpoint", () 
     b.groups.offerMembership(a.groups.membership(uuid)); b.groups.accept(uuid);
     const beforeMove = a.groups.append(uuid, "before move").event;
     const contact = b.contacts.list().find(contact => contact.peer_id === f.peers[0].principal)!;
-    b.contacts.acceptPeer(contact.id, "https://new.example");
+    b.contacts.savePeer(contact.id, "https://new.example");
     b.groups.ingest(beforeMove);
     assert.equal(b.contacts.get(contact.id)?.peer_url, "https://new.example");
   } finally { f.clean(); }

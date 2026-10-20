@@ -99,7 +99,7 @@ async function startShell(): Promise<() => Promise<void>> {
     const handlers: Record<string, (params: unknown) => unknown> = {};
     for (const [name, value] of Object.entries(api)) {
       if (typeof value !== "function") continue;
-      handlers[name] = (params) => value(params);
+      handlers[name] = (params) => (value as (params: unknown) => unknown)(params);
     }
     handlers.prepare = () => api.prepare((message: string, percent: number) => { void host.progress({ message, percent }); });
     handlers.start = () => api.start((message: string, percent: number) => { void host.progress({ message, percent }); });

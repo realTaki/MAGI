@@ -22,30 +22,13 @@ test("trusted-LAN hello records a stable identity label and directly usable HTTP
   try {
     const peer = f.bus.contacts.forPeer({ principal, endpoint: "https://peer.example", name: "@user.magi" });
     assert.notEqual(peer.id, SYSTEM_CONTACT_ID);
-    assert.equal(peer.role, "stranger"); assert.equal(peer.peer_trust, "accepted");
-    assert.equal(f.bus.contacts.acceptPeer(peer.id).peer_trust, "accepted");
+    assert.equal(peer.role, "stranger");
     const moved = f.bus.contacts.forPeer({ principal, endpoint: "http://192.168.1.8:8080" });
     assert.equal(moved.id, peer.id);
     assert.equal(moved.peer_url, "https://peer.example");
-    assert.equal(f.bus.contacts.acceptPeer(peer.id, "http://192.168.1.8:8080").peer_url, "http://192.168.1.8:8080");
+    assert.equal(f.bus.contacts.savePeer(peer.id, "http://192.168.1.8:8080").peer_url, "http://192.168.1.8:8080");
     assert.throws(() => validatePeerEndpoint("https://user:secret@example.com"), /credentials/);
     assert.equal(validatePeerEndpoint("http://eva.internal:8080"), "http://eva.internal:8080");
-  } finally { f.clean(); }
-});
-
-test("incoming hello preserves an explicitly blocked contact and its saved route", () => {
-  const f = fixture();
-  try {
-    const peer = f.bus.contacts.forPeer({ principal, endpoint: "http://eva.internal:8080" });
-    f.bus.contacts.blockPeer(peer.id);
-    const announced = f.bus.contacts.forPeer({ principal, endpoint: "http://192.168.1.8:9090" });
-    assert.equal(announced.id, peer.id);
-    assert.equal(announced.peer_trust, "blocked");
-    assert.equal(announced.peer_url, "http://eva.internal:8080");
-    assert.equal(f.bus.contacts.get(peer.id)?.peer_trust, "blocked");
-    const saved = f.bus.contacts.acceptPeer(peer.id, "http://192.168.1.8:9090");
-    assert.equal(saved.peer_trust, "accepted");
-    assert.equal(saved.peer_url, "http://192.168.1.8:9090");
   } finally { f.clean(); }
 });
 

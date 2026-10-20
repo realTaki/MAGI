@@ -33,7 +33,6 @@ test("direct peers durably accept, deduplicate after restart, and never grant bo
     const contacts = f.b.contacts.list().filter(contact => contact.peer_id);
     assert.equal(contacts.length, 1);
     assert.equal(contacts[0].role, "stranger");
-    assert.equal(contacts[0].peer_trust, "accepted");
     assert.notEqual(contacts[0].id, 1);
     const origin = b.origin;
     await b.stop();
@@ -55,8 +54,8 @@ test("ordinary chat and reply cross two independent servers without a relay or r
   try {
     await a.start(); await b.start();
     const pa = principalFor(f.a.identity.publicKey), pb = principalFor(f.b.identity.publicKey);
-    f.a.contacts.acceptPeer(f.a.contacts.forPeer({ principal: pb, endpoint: b.origin! }).id);
-    f.b.contacts.acceptPeer(f.b.contacts.forPeer({ principal: pa, endpoint: a.origin! }).id);
+    f.a.contacts.savePeer(f.a.contacts.forPeer({ principal: pb, endpoint: b.origin! }).id);
+    f.b.contacts.savePeer(f.b.contacts.forPeer({ principal: pa, endpoint: a.origin! }).id);
     const chat = f.a.chats.forPeer(pb);
     const out = messageDelivery.send(f.a, chat.id, "hello peer", MAGI_CONTACT_ID);
     assert.equal(await a.poll(), true);
@@ -111,7 +110,7 @@ test("outbound failures retain persisted retry schedule and binding failures are
     const dead = new PeerServer(f.b.identity, f.b.handle, () => ({ duplicate: false }));
     await dead.start(); const endpoint = dead.origin!; await dead.stop();
     const principal = principalFor(f.b.identity.publicKey);
-    f.a.contacts.acceptPeer(f.a.contacts.forPeer({ principal, endpoint }).id);
+    f.a.contacts.savePeer(f.a.contacts.forPeer({ principal, endpoint }).id);
     const chat = f.a.chats.forPeer(principal);
     messageDelivery.send(f.a, chat.id, "retry me", MAGI_CONTACT_ID);
     await worker.poll();

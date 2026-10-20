@@ -3,15 +3,12 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { createServer } from "node:net";
 import { mkdirSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { randomUUID } from "node:crypto";
 import { messageDelivery, MAGI_CONTACT_ID, type Bus, type ExecutableTool } from "@magi/bus";
 
 /** The composition root supplies trusted-network transport; webapp owns no channel. */
 export type PeerTransport = {
   discover(endpoint: string): Promise<{ principal: string; handle: string }>;
-  send(endpoint: string, principal: string, message: {
-    messageId: string; conversationUUID: string; content: string; reachableURL: string; handle?: string;
-  }): Promise<unknown>;
+
 };
 
 async function freePort(): Promise<number> {
@@ -54,7 +51,7 @@ export function localEvaManagement(bus: Bus, runtime, peerTransport?: PeerTransp
         if (discovered.handle !== handle || typeof discovered.principal !== "string") throw new Error("New EVA discovery does not match the created process");
         const principal = discovered.principal;
         const contact = bus.contacts.forPeer({ principal, endpoint: url, name: handle });
-        bus.contacts.acceptPeer(contact.id, url);
+        bus.contacts.savePeer(contact.id, url);
         bus.settings.set(`local.eva.${contact.id}`, JSON.stringify({ handle, port, url }));
         return JSON.stringify({ contact_id: contact.id, handle, url, ready: true });
       } catch (error) {
@@ -82,14 +79,9 @@ export function localEvaManagement(bus: Bus, runtime, peerTransport?: PeerTransp
     const contact = bus.contacts.forPeer({ principal: discovered.principal, endpoint: url, name: discovered.handle });
     const conversation = bus.chats.forPeer(discovered.principal);
     const hello = `Hello from ${bus.handle}. My EVA URL is ${ownURL}. Please add my URL to your contacts.`;
-    await peerTransport.send(url, discovered.principal, {
-      messageId: randomUUID(), conversationUUID: conversation.conversation_uuid!,
-      content: hello,
-      reachableURL: ownURL, handle: bus.handle,
-    });
-    messageDelivery.record(bus, conversation.id, hello, MAGI_CONTACT_ID);
-    bus.contacts.acceptPeer(contact.id, url);
-    return JSON.stringify({ contact_id: contact.id, handle: contact.name, url, hello_sent: true });
+    bus.contacts.savePeer(contact.id, url);
+    const job_id = messageDelivery.send(bus, conversation.id, hello, MAGI_CONTACT_ID, "connect_peer");
+    return JSON.stringify({ contact_id: contact.id, handle: contact.name, url, hello_queued: true, job_id });
   }
   return [
     { name: "connect_peer", description: "Connect to a remote EVA on the trusted network: discover it, send a hello containing this EVA URL, and add its contact.", input_schema: { type: "object", properties: { url: { type: "string" } }, required: ["url"], additionalProperties: false }, run: connect },

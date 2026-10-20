@@ -61,14 +61,14 @@ function notify(bus: Bus, text: string, chat_id?: number): number | null {
 }
 
 /**
- * The ASP chat a card is shown in: the operator's home chat, once this MAGI
+ * The local owner chat a card is shown in: the operator's home chat, once this MAGI
  * has one. A startup with no home chat opens one instead of borrowing an
  * unrelated invite.
  */
 function presentChat(bus: Bus): number | null {
   const home = homeChat(bus);
   const chat = home === null ? null : bus.chats.get(home);
-  if ((chat?.channel === "asp" || chat?.channel === "shell-owner" || chat?.channel === "local-owner") && chat.delivery_address) return chat.id;
+  if ((chat?.channel === "shell-owner" || chat?.channel === "local-owner") && chat.delivery_address) return chat.id;
   return null;
 }
 
