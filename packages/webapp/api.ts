@@ -33,6 +33,7 @@ import {
 } from "@magi/bus";
 
 import { ensureManagedClone } from "./clone.js";
+import { ensureManagedUi } from "./ui-build.js";
 import { localEvaManagement } from "./local-evas.js";
 import { agentBranch, agentName, agentSource, createMagiRuntime } from "./magi-runtime.js";
 import { downloadShellInstaller, installerPath, shellRelease } from "./shell-update.js";
@@ -654,8 +655,11 @@ export function createLocalApi(context) {
     const appDir = path.join(appCheckout, "apps", "shell");
     if (!existsSync(path.join(appCheckout, "package-lock.json"))) throw new Error("MAGI checkout is incomplete");
     if (managed && context.prepareDependencies) await context.prepareDependencies(appCheckout);
-    if (managed && !existsSync(path.join(appDir, "dist", "index.html"))) {
-      await command(tools.node, [tools.npm, "run", "build:ui"], { cwd: appDir, env: tools.env, description: "Could not build desktop UI" });
+    if (managed && path.resolve(appCheckout) === path.resolve(paths.checkout)) {
+      await ensureManagedUi(appCheckout, () => command(tools.node, [tools.npm, "run", "build:ui"], { cwd: appDir, env: tools.env, description: "Could not build desktop UI" }));
+    } else if (managed && !existsSync(path.join(appDir, "dist", "index.html"))) {
+      // Activated revisions are verified artifacts, not editable build targets.
+      throw new Error("Verified desktop revision is missing its UI entry");
     }
     progress?.("Prepared.", 0.85);
     return { ui: uiEntry() };
