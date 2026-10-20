@@ -15,6 +15,7 @@ const ALLOWED = new Set([
   "observe_conversations", "read_conversation", "handoff_to_foreground",
   "search_chat_messages", "search_contact_messages", "search_contacts",
   "list_action_items", "save_action_item", "archive_action_item", "delete_action_item",
+  "list_memory", "save_memory", "complete_memory",
   "schedule_task", "list_tasks", "update_task", "delete_task",
 ]);
 export function subconsciousTool(name: string): boolean { return ALLOWED.has(name); }
