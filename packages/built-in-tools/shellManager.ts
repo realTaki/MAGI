@@ -18,11 +18,18 @@ export class ShellManager {
 
   start(command: string, cwd: string, env: NodeJS.ProcessEnv = process.env): ShellState {
     const id = crypto.randomUUID().replaceAll("-", "").slice(0, 12);
+    const supervisor = process.env.MAGI_TOOL_PROCESS_SUPERVISOR_PID;
+    // A pre-marker launcher can still acknowledge ownership during an in-place
+    // replacement; retain that upgrade path without treating arbitrary IPC as it.
+    const knownLauncher = supervisor === String(process.ppid) || (!supervisor && Boolean(process.env.MAGI_LAUNCHER));
+    if (process.connected && !knownLauncher) {
+      throw new Error("Cannot start bash: IPC parent is not the MAGI launcher and cannot own tool processes. Start EVA through its launcher.");
+    }
     const supervised = process.connected && process.platform !== "win32";
     // Do not execute user code until the launcher owns this process group. If the
     // worker dies before registration, the idle gate expires without side effects.
     const [file, ...args] = supervised
-      ? ["bash", "-c", 'read -r -t 5 ready && exec bash -lc "$1"', "--", command]
+      ? ["bash", "-c", 'if ! read -r -t 5 ready; then echo "MAGI launcher did not acknowledge tool-process ownership; command was not started" >&2; exit 125; fi; exec bash -lc "$1"', "--", command]
       : shellInvocation(command);
     const child = spawn(file, args, { cwd, env, stdio: [supervised ? "pipe" : "ignore", "pipe", "pipe"], detached: process.platform !== "win32", windowsHide: true });
     const state: ShellState = { id, command, process: child, output: "", cursor: 0, exitCode: null, status: "running" };
@@ -47,6 +54,9 @@ export class ShellManager {
     child.once("close", (code) => {
       state.exitCode = code;
       if (state.status === "running") state.status = "completed";
+      // Retire ownership promptly on natural completion, preserving output for reads.
+      // Reap any remaining group members before removing the launcher's PID entry.
+      if (!state.closing) state.closing = this.reap(state, false);
     });
     return state;
   }
@@ -91,15 +101,15 @@ export class ShellManager {
   async kill(id: string): Promise<string> {
     const state = this.shells.get(id);
     if (!state) return `Shell already gone: ${id}.`;
-    if (state.closing) return state.closing;
+    if (state.closing) { const result = await state.closing; this.shells.delete(id); return result; }
     state.closing = this.reap(state);
     return state.closing;
   }
 
-  private async reap(state: ShellState): Promise<string> {
+  private async reap(state: ShellState, forget = true): Promise<string> {
     const tail = state.output.slice(state.cursor);
     const child = state.process;
-    state.status = "killed";
+    if (forget) state.status = "killed";
     const signalTree = async (signal: NodeJS.Signals) => {
       if (!child.pid) return;
       if (process.platform === "win32") {
@@ -120,7 +130,7 @@ export class ShellManager {
     await signalTree("SIGKILL");
     await Promise.race([closed, sleep(1000)]);
     if (child.pid && process.connected) process.send?.({ v: LAUNCHER_PROTOCOL, type: "tool-process", action: "remove", pid: child.pid }, () => {});
-    this.shells.delete(state.id);
+    if (forget) this.shells.delete(state.id);
     return `${tail ? `Last output before kill:\n${tail.trimEnd()}\n` : ""}Killed.`;
   }
 

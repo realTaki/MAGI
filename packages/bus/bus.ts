@@ -20,7 +20,7 @@ import { SettingsBook } from "./books/settingsBook.js";
 import { PromptBook } from "./books/promptBook.js";
 import { ToolBook } from "./books/toolBook.js";
 import { JobBoard, jobs, type JobInput, type JobType } from "./jobs/jobBoard.js";
-import { AgentTurnCache } from "./jobs/agentTurnCache.js";
+import { agentTurnsCache, AgentTurnCache } from "./jobs/agentTurnCache.js";
 import { USER_HANDLE, defaultDisplayName } from "./identity.js";
 import { loadOrCreateIdentity, type Identity } from "./identityKeys.js";
 import { SecretStore } from "./secrets.js";
@@ -107,7 +107,10 @@ export class Bus {
     const handoff = Boolean(process.env.MAGI_REPLACE_JOB || process.env.MAGI_REPLACE_ERROR);
     // One MAGI owns this workspace. Recover work interrupted by a process exit.
     // One process runs one replace, so a marker names the only claimed ReplaceSelfJob.
-    const interruptedTurns = this.jobs.select().from(jobs).where(and(eq(jobs.type, "MessageDeliveryJob"), eq(jobs.status, "claimed"), eq(jobs.worker, "agent"))).all();
+    // Claims without a turn journal never began execution (for example, queued
+    // same-chat deliveries from an older build); leave those eligible for requeue.
+    const interruptedTurns = this.jobs.select().from(jobs).where(and(eq(jobs.type, "MessageDeliveryJob"), eq(jobs.status, "claimed"), eq(jobs.worker, "agent"))).all()
+      .filter((turn) => this.jobs.select({ id: agentTurnsCache.id }).from(agentTurnsCache).where(eq(agentTurnsCache.turn_id, turn.id)).limit(1).get());
     for (const turn of interruptedTurns) this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted; this turn was interrupted and was not retried" }).where(eq(jobs.id, turn.id)).run();
     this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before this model call finished" })
       .where(and(eq(jobs.type, "CallLLMJob"), inArray(jobs.status, ["pending", "claimed"]))).run();

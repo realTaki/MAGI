@@ -31,14 +31,36 @@ export class Chat {
       // What went wrong is said in the chat itself: the Job result is for
       // whoever published the turn, not for whoever is waiting for an answer.
       const message = error instanceof Error ? error.message : String(error);
-      for (const id of this.pendingTools) this.bus.board("RunToolJob").fail(id, message);
-      this.bus.agentTurns.interrupt(jobId, message);
+      const interrupted = `${message}; execution was interrupted. Unconfirmed tool side effects may have completed; check before retrying.`;
+      await this.settleInterruptedTools(jobId, interrupted);
+      this.bus.agentTurns.interrupt(jobId, interrupted);
       messageDelivery.send(this.bus, this.chat_id, message, MAGI_CONTACT_ID, "agent", messageDelivery.replyMetadata(this.bus, messageId));
       chatBoard.submit("agent", jobId, { error: message });
     } finally {
       // Keep the cold append-only trace, but release this process's materialized context.
       this.bus.agentTurns.evict(jobId);
     }
+  }
+
+  private async settleInterruptedTools(turnId: number, reason: string): Promise<void> {
+    const board = this.bus.board("RunToolJob");
+    for (const id of this.pendingTools) {
+      const input = board.peekInput(id);
+      if (!input) continue;
+      board.failPending(id, reason);
+      const mutation = input.call.name === "write_file" || input.call.name === "edit_file";
+      // Atomic file mutations do not support cancellation. Await their owned result
+      // instead of reporting failure while the worker is still committing the write.
+      if (mutation) while (!board.result(id)) await sleep(10);
+      else board.fail(id, reason);
+      const result = board.result(id);
+      this.bus.agentTurns.appendToolResult(turnId, {
+        role: "tool", tool_call_id: input.call.tool_call_id, tool_name: input.call.name,
+        content: result?.status === "completed" ? result.output?.content ?? "" : result?.error ?? reason,
+        is_error: result?.status !== "completed",
+      });
+    }
+    this.pendingTools.clear();
   }
 
   private async initialize(jobId: number, messageId?: number): Promise<void> {
@@ -165,7 +187,7 @@ export class Chat {
   private async waitFor<K extends "CallLLMJob" | "RunToolJob">(type: K, id: number, timeoutMs: number) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      if (this.signal?.aborted) { this.bus.board(type).fail(id, "MAGI stopped"); this.signal.throwIfAborted(); }
+      if (this.signal?.aborted) { if (type === "CallLLMJob") this.bus.board(type).fail(id, "MAGI stopped"); this.signal.throwIfAborted(); }
       const result = this.bus.board(type).result(id);
       if (result) return result;
       await sleep(10);

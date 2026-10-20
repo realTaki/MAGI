@@ -136,6 +136,13 @@ export class JobBoard<K extends JobType> {
     return failed !== undefined;
   }
 
+  /** Cancel only work that has not begun; an active mutation still owns its result. */
+  failPending(id: number, error: string): boolean {
+    return this.db.update(jobs).set({ status: "failed", error, updated_at: sql`(CURRENT_TIMESTAMP)` })
+      .where(and(eq(jobs.id, id), eq(jobs.type, this.type), eq(jobs.status, "pending")))
+      .returning({ id: jobs.id }).get() !== undefined;
+  }
+
   /** Requeue a claimed delivery or editable form after a transient failure. */
   release(worker: string, id: number): boolean {
     return this.db.update(jobs).set({ status: "pending", worker: null, updated_at: sql`(CURRENT_TIMESTAMP)` })

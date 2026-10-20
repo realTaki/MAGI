@@ -29,7 +29,10 @@ export class AgentWorker extends BaseWorker {
     // for a channel to deliver, and nobody answers them here.
     // A missing message is also claimed here so the invalid job is failed rather than
     // left pending forever.
-    const job = board.claim(this.worker_name, (input) => this.bus.messages.get(input.message_id)?.contact_id !== MAGI_CONTACT_ID);
+    const job = board.claim(this.worker_name, (input) => {
+      const message = this.bus.messages.get(input.message_id);
+      return message?.contact_id !== MAGI_CONTACT_ID && (!message || !this.queues.has(message.chat_id));
+    });
     if (!job) return false;
     const message = this.bus.messages.get(job.input.message_id);
     if (!message) {
@@ -40,7 +43,7 @@ export class AgentWorker extends BaseWorker {
     const previous = this.queues.get(id) ?? Promise.resolve();
     const generation = this.generation;
     const next = previous.then(async () => {
-      if (generation !== this.generation) { board.submit(this.worker_name, job.id, { error: "MAGI stopped" }); return; }
+      if (generation !== this.generation) { board.release(this.worker_name, job.id); return; }
       const controller = new AbortController();
       this.active.add(controller);
       try { await new Chat(this.bus, id, controller.signal).run(job.id, message.id); }
