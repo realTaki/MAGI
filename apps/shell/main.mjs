@@ -41,17 +41,10 @@ const MAGI_REPOSITORY = resolveRepositoryOrigin({
   git: resolveGitBinary(),
 });
 
-// Keep every MAGI-owned Electron path beneath ~/.magi so removing that one
+// Keep every MAGI-owned Electron path beneath the selected MAGI_HOME so removing that one
 // directory also removes Chromium storage, caches, logs, and crash dumps.
 const osHome = process.env.MAGI_OS_HOME?.trim() || app.getPath("home");
-const PROFILE_PATHS = process.env.MAGI_HOME?.trim()
-  ? {
-      dataRoot: process.env.MAGI_HOME.trim(),
-      shellHome: path.join(process.env.MAGI_HOME.trim(), "shell"),
-      shell: path.join(process.env.MAGI_HOME.trim(), "shell", "MAGI"),
-      cache: path.join(process.env.MAGI_HOME.trim(), "shell", "cache"),
-    }
-  : profilePaths(osHome);
+const PROFILE_PATHS = profilePaths(osHome, path, process.env.MAGI_HOME?.trim());
 const MAGI_DATA_ROOT = PROFILE_PATHS.dataRoot;
 const MAGI_SHELL_HOME = PROFILE_PATHS.shellHome;
 const ELECTRON_USER_DATA = path.join(MAGI_SHELL_HOME, "electron");
@@ -236,7 +229,7 @@ async function resolveRuntimeRoot(progress) {
         override: process.env.MAGI_DEV_CHECKOUT ?? "",
         command, git: localTools.git, env: localTools.env,
         prepareManaged: () => prepareShellProfile({
-          home: app.getPath("home"), repository: MAGI_REPOSITORY, tools: localTools,
+          home: osHome, dataDirectory: MAGI_DATA_ROOT, repository: MAGI_REPOSITORY, tools: localTools,
           command, assertOpen: processOwner.assertOpen, progress,
         }),
       });

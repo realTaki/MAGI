@@ -2,8 +2,8 @@ import * as fs from 'node:fs/promises';
 import path from 'node:path';
 import { ensureManagedClone } from './clone.mjs';
 
-export function profilePaths(home, paths = path) {
-  const dataRoot = paths.join(home, '.magi');
+export function profilePaths(home, paths = path, dataDirectory) {
+  const dataRoot = dataDirectory ? paths.resolve(dataDirectory) : paths.join(home, '.magi');
   const shellHome = paths.join(dataRoot, 'shell');
   return { dataRoot, shellHome, shell: paths.join(shellHome, 'MAGI'), cache: paths.join(shellHome, 'cache') };
 }
@@ -30,8 +30,8 @@ async function shellStartupFilesOnly(directory) {
 }
 
 /** Prepare the profile before services run; all Git work uses Shell's owner. */
-export async function prepareShellProfile({ home, repository, tools, command, assertOpen = () => {}, progress = () => {}, rename = fs.rename }) {
-  const { dataRoot, shellHome, shell, cache } = profilePaths(home);
+export async function prepareShellProfile({ home, dataDirectory, repository, tools, command, assertOpen = () => {}, progress = () => {}, rename = fs.rename }) {
+  const { dataRoot, shellHome, shell, cache } = profilePaths(home, path, dataDirectory);
   await fs.mkdir(dataRoot, { recursive: true });
   const lock = path.join(dataRoot, '.shell-layout.lock'), journal = path.join(dataRoot, '.shell-layout.json');
   let handle;

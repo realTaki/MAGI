@@ -120,3 +120,24 @@ test('a dead preparation owner can be recovered without signalling unrelated pro
   assert.equal(await f.prepare(), f.shell);
   assert.equal(await has(path.join(f.dataRoot, '.shell-layout.lock')), false);
 });
+
+
+test('explicit MAGI data root owns clone, cache, and journals without touching the default profile', async (t) => {
+  const f = await fixture(t); await repository(f, path.join(f.home, 'origin'));
+  const selected = path.join(f.home, 'isolated-profile');
+  const paths = profilePaths(f.home, path, selected);
+  await fs.mkdir(f.dataRoot, { recursive: true });
+  await fs.writeFile(path.join(f.dataRoot, 'unrelated-profile.txt'), 'preserve existing data');
+  await fs.mkdir(path.join(paths.shellHome, 'electron'), { recursive: true });
+  assert.equal(await f.prepare({ dataDirectory: selected }), paths.shell);
+  assert.equal(await has(path.join(paths.shell, '.git')), true);
+  assert.equal(await has(paths.cache), true);
+  assert.equal(await has(f.shell), false);
+  assert.deepEqual(await fs.readdir(f.dataRoot), ['unrelated-profile.txt']);
+  assert.equal(await fs.readFile(path.join(f.dataRoot, 'unrelated-profile.txt'), 'utf8'), 'preserve existing data');
+  assert.equal(await has(path.join(selected, '.shell-layout.lock')), false);
+  assert.equal(await has(path.join(selected, '.shell-layout.json')), false);
+  const main = await fs.readFile(new URL('../main.mjs', import.meta.url), 'utf8');
+  assert.match(main, /profilePaths\(osHome, path, process\.env\.MAGI_HOME\?\.trim\(\)\)/);
+  assert.match(main, /home: osHome, dataDirectory: MAGI_DATA_ROOT/);
+});
