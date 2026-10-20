@@ -4,8 +4,15 @@ import { createServer } from "node:net";
 import { mkdirSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createHash, createPublicKey, randomUUID } from "node:crypto";
-import { discoverPeer, PeerClient } from "@magi/channel-peer/client.js";
 import { loadOrCreateIdentity, messageDelivery, MAGI_CONTACT_ID, type Bus, type ExecutableTool } from "@magi/bus";
+
+/** The composition root supplies authenticated transport; webapp owns no channel. */
+export type PeerTransport = {
+  discover(endpoint: string): Promise<{ principal: string; handle: string }>;
+  send(endpoint: string, principal: string, message: {
+    messageId: string; conversationUUID: string; content: string; reachableURL: string; handle?: string;
+  }): Promise<unknown>;
+};
 
 async function freePort(): Promise<number> {
   const server = createServer();
@@ -19,7 +26,7 @@ async function freePort(): Promise<number> {
   });
 }
 
-export function localEvaManagement(bus: Bus, runtime): ExecutableTool[] {
+export function localEvaManagement(bus: Bus, runtime, peerTransport?: PeerTransport): ExecutableTool[] {
   const inFlight = new Set<string>();
   async function create({ name }: Record<string, unknown>) {
     if (typeof name !== "string" || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(name) || ["shell", "asp", "user"].includes(name)) throw new Error("Choose a unique lowercase EVA name (letters, digits, hyphens)");
@@ -71,13 +78,14 @@ export function localEvaManagement(bus: Bus, runtime): ExecutableTool[] {
     if (typeof url !== "string") throw new Error("A peer URL is required");
     const ownURL = bus.settings.get("peer.reachableURL");
     if (!ownURL) throw new Error("Shell peer server is not ready");
-    const discovered = await discoverPeer(url);
+    if (!peerTransport) throw new Error("Peer transport is unavailable");
+    const discovered = await peerTransport.discover(url);
     if (discovered.principal === bus.settings.get("peer.principal")) throw new Error("This is the Shell EVA itself");
     const contact = bus.contacts.forPeer({ principal: discovered.principal, endpoint: url, name: discovered.handle });
     if (contact.peer_trust === "blocked") throw new Error("This peer is blocked");
     const conversation = bus.chats.forPeer(discovered.principal);
     const hello = `Hello from ${bus.handle}. My EVA URL is ${ownURL}. Please decide whether to accept my contact using your own contact tool.`;
-    await new PeerClient(bus.identity).send(url, discovered.principal, {
+    await peerTransport.send(url, discovered.principal, {
       messageId: randomUUID(), conversationUUID: conversation.conversation_uuid!,
       content: hello,
       reachableURL: ownURL, handle: bus.handle,

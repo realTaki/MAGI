@@ -21,9 +21,6 @@
     },
     {
       "path": "../bus"
-    },
-    {
-      "path": "../channel-peer"
     }
   ]
 }

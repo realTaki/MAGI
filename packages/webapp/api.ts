@@ -676,7 +676,7 @@ export function createLocalApi(context) {
     return { origin: bus?.settings.get("peer.reachableURL") ?? "" };
   }
 
-  const management = localEvaManagement(bus, magiRuntime);
+  const management = localEvaManagement(bus, magiRuntime, context.peerTransport);
 
   function ownerChat() {
     if (!bus) throw new Error("Shell EVA is unavailable");
@@ -689,10 +689,13 @@ export function createLocalApi(context) {
     if (!bus) return [];
     return [
       { id: "shell", handle: SHELL_MAGI_HANDLE, name: "Shell EVA", nickname: "Shell EVA", url: bus.settings.get("peer.reachableURL") ?? "", local: true, running: context.nodeControl?.running() ?? true },
-      ...bus.contacts.list().filter(c => c.peer_trust === "accepted" && c.peer_url).map(c => ({
-        id: String(c.id), handle: c.name, name: c.name, nickname: c.nickname, url: c.peer_url,
-        local: Boolean(bus.settings.get(`local.eva.${c.id}`)), running: magiRuntime.running().includes(c.name),
-      })),
+      ...bus.contacts.list().filter(c => c.peer_trust === "accepted" && c.peer_url).map(c => {
+        const local = localOwned(String(c.id));
+        return {
+          id: String(c.id), handle: local?.handle ?? c.name, name: c.name, nickname: c.nickname, url: c.peer_url,
+          local: Boolean(local), running: Boolean(local && magiRuntime.running().includes(local.handle)),
+        };
+      }),
     ];
   }
 

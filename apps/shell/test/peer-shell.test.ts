@@ -134,7 +134,9 @@ test("Remote URL connection sends hello and leaves recipient acceptance independ
   }), { host: "127.0.0.1", port: 0 });
   await server.start(); t.after(() => server.stop());
   local.bus.settings.set("peer.reachableURL", "http://127.0.0.1:49221");
-  const api = createLocalApi(local.context);
+  const { discoverPeer, PeerClient } = await import("@magi/channel-peer/client.js");
+  const client = new PeerClient(local.bus.identity);
+  const api = createLocalApi({ ...local.context, peerTransport: { discover: discoverPeer, send: client.send.bind(client) } });
   const tool = api.localManagement.find(tool => tool.name === "connect_peer")!;
   await tool.run({ url: server.origin });
   assert.equal(api["peer.contacts"]().length, 2);
@@ -158,4 +160,20 @@ test("Built-in Shell reports running without an absent ASP worker", async t => {
     await shell.worker.methods["peer.send"]({ id: "shell", content: "", metadata: { local_eva_action: { contact_id: "shell", action: "start" } } });
     assert.equal(shell.worker.methods["peer.contacts"]()[0].running, true);
   } finally { await shell.stop(true); }
+});
+
+
+test("Local contact status uses the owned runtime handle rather than fingerprint name", async t => {
+  const { bus, context } = fixture(t);
+  const contact = bus.contacts.forPeer({ principal: "b".repeat(64), endpoint: "http://127.0.0.1:49223", name: "@owned-eva.magi" });
+  bus.contacts.acceptPeer(contact.id);
+  bus.contacts.update(contact.id, { name: `peer:${"b".repeat(64)}`, nickname: "@owned-eva.magi" });
+  bus.settings.set(`local.eva.${contact.id}`, JSON.stringify({ handle: "@owned-eva.magi", port: 49223, url: "http://127.0.0.1:49223" }));
+  const api = createLocalApi(context);
+  api.localRuntime.running = () => ["@owned-eva.magi"];
+  const row = api["peer.contacts"]().find(row => row.id === String(contact.id));
+  assert.equal(row?.handle, "@owned-eva.magi");
+  assert.equal(row?.running, true);
+  assert.equal(row?.local, true);
+  await api.dispose();
 });
