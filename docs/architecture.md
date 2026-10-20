@@ -217,8 +217,9 @@ or make the remote EVA a locally supervised process.
 ## Subconscious: one continuing private conversation
 
 Each EVA, including Shell's built-in EVA, has one `subconscious/self` chat.
-It uses the existing AgentWorker, message history and compaction rather than a
-second runtime or a workflow engine. Preset tasks continue that same conversation;
+An independent `SubconsciousWorker` runs it, using BUS message history and its
+own compaction within the same EVA rather than AgentWorker, a second runtime or
+a workflow engine. Preset tasks continue that same conversation;
 ordinary background text, narration and errors stay in its private history.
 External chat ingress cannot target it. Its working history remains available for
 local inspection, but internal handoffs are not rendered as user messages in the
