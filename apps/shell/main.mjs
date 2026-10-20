@@ -30,11 +30,16 @@ import { createProcessOwner } from "./process-owner.mjs";
 import { ensureInstalledDependencies, assertInstalledDependencies } from "./installation.mjs";
 import { profilePaths, prepareShellProfile } from "./profile-layout.mjs";
 import { resolveShellCheckout } from "./source-checkout.mjs";
+import { resolveRepositoryOrigin } from "./repository-origin.mjs";
 
 const { resolveGitBinary, setupEnvironment } = dugite;
 const SHELL_DIR = path.dirname(fileURLToPath(import.meta.url));
-const MAGI_REPOSITORY =
-  process.env.MAGI_REPOSITORY_URL ?? "https://github.com/AgenticSocietyLab/MAGI.git";
+const MAGI_REPOSITORY = resolveRepositoryOrigin({
+  shellDirectory: SHELL_DIR,
+  packaged: app.isPackaged,
+  override: process.env.MAGI_REPOSITORY_URL,
+  git: resolveGitBinary(),
+});
 
 // Keep every MAGI-owned Electron path beneath ~/.magi so removing that one
 // directory also removes Chromium storage, caches, logs, and crash dumps.

@@ -280,7 +280,8 @@ export function createLocalApi(context) {
       };
     }
     return await shellRelease({
-      repository: await updateRepository(),
+      // Installed binaries follow their build origin, even if the editable clone changes remotes.
+      repository: shellUpdate.packaged ? repository : await updateRepository(),
       currentVersion: shellUpdate.currentVersion,
       packaged: shellUpdate.packaged,
       platform: process.platform,

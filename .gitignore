@@ -291,3 +291,6 @@ deploy/k8s/secrets/*.yaml
 
 # Shell profile caches and generated packaging outputs (never source).
 /cache/
+
+# Generated per build from the repository that owns the build.
+apps/shell/build-origin.json

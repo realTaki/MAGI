@@ -17,7 +17,10 @@ try {
   const resources = path.join(appDir, "resources");
   const archive = path.join(resources, "app.asar");
   const entries = listPackage(archive);
-  for (const file of ["/main.mjs", "/interface.mjs", "/process.mjs", "/process-owner.mjs", "/installation.mjs", "/profile-layout.mjs", "/app-spec.mjs", "/dependency-state.mjs", "/runtime-environment.mjs", "/shell-path.mjs", "/preload.cjs"]) assert.ok(entries.includes(file), `${file} missing from package`);
+  for (const file of ["/main.mjs", "/repository-origin.mjs", "/build-origin.json", "/interface.mjs", "/process.mjs", "/process-owner.mjs", "/installation.mjs", "/profile-layout.mjs", "/app-spec.mjs", "/dependency-state.mjs", "/runtime-environment.mjs", "/shell-path.mjs", "/preload.cjs"]) assert.ok(entries.includes(file), `${file} missing from package`);
+  const origin = JSON.parse(extractFile(archive, "build-origin.json").toString());
+  assert.equal(origin.schemaVersion, 1);
+  if (process.env.GITHUB_ACTIONS === "true") assert.equal(origin.repository, `https://github.com/${process.env.GITHUB_REPOSITORY}.git`);
   const helper = path.join(dir, "shell-path.mjs");
   writeFileSync(helper, extractFile(archive, "shell-path.mjs"));
   const probe = path.join(dir, "probe.mjs");

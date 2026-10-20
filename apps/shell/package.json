@@ -42,7 +42,9 @@
       "update-script.mjs",
       "boot/**",
       "package.json",
-      "desktop-update.mjs"
+      "desktop-update.mjs",
+      "repository-origin.mjs",
+      "build-origin.json"
     ],
     "asarUnpack": [
       "node_modules/dugite/git/**"
@@ -69,7 +71,8 @@
     "publish": null,
     "appImage": {
       "executableArgs": []
-    }
+    },
+    "beforePack": "scripts/before-pack.mjs"
   },
   "dependencies": {
     "@magi/bus": "*",

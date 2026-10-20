@@ -82,3 +82,27 @@ The source launch and fast-forward guards are covered by real local Git fixture
 tests. Native Electron window behavior and installer activation still require
 platform acceptance; tests of callbacks and launcher children do not establish
 that a desktop application was restarted.
+
+## Desktop build repository origin
+
+Desktop packaging generates `build-origin.json` in the Electron app, using the
+GitHub Actions `GITHUB_REPOSITORY` value when `GITHUB_ACTIONS=true`. A build in
+`realTaki/MAGI` therefore embeds `https://github.com/realTaki/MAGI.git`; a build in
+`AgenticSocietyLab/MAGI` embeds that repository instead. Users need no environment
+variables. The electron-builder `beforePack` hook runs for both the build script
+and direct electron-builder packaging, and replaces any stale generated metadata.
+
+Local packaging reads `git config --get remote.origin.url`. GitHub HTTPS,
+`git@github.com:owner/repo.git`, and `ssh://git@github.com/owner/repo.git` remotes
+are normalized to a public HTTPS clone URL. Credentials, query strings, fragments,
+non-GitHub hosts, and malformed repository paths are rejected rather than copied
+into distributable metadata. A missing origin or missing CI identity fails the
+build. The generated manifest is ignored by Git but included in every package.
+
+The packaged app uses that same origin for initial source bootstrap and desktop
+release checks. Changing a managed source clone's remote does not redirect its
+installed desktop update channel. A missing or invalid packaged manifest is a
+clear startup error; there is no hardcoded repository fallback. For source
+launches, the entry checkout's current Git origin supplies the default, without
+requiring a package manifest. The existing explicit `MAGI_REPOSITORY_URL` override
+is retained for advanced/private development and deployment configurations.
