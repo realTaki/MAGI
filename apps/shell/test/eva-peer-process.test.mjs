@@ -32,7 +32,17 @@ function launch(home, handle) {
     child,
     ready: new Promise((resolve, reject) => { const timer = setTimeout(() => reject(new Error(`launcher did not become ready: ${stderr}`)), 15_000); child.on('message', message => { if (message?.type === 'ready') { clearTimeout(timer); resolve(); } if (message?.type === 'failed') { clearTimeout(timer); reject(new Error(message.error)); } }); child.once('exit', code => { clearTimeout(timer); reject(new Error(`launcher exited ${code}: ${stderr}`)); }); }),
     invoke(method, params) { const id = String(++seq); return new Promise((resolve, reject) => { const timer = setTimeout(() => { pending.delete(id); reject(new Error(`owner RPC timed out: ${stderr}`)); }, 10_000); pending.set(id, { resolve, reject, timer }); child.stdin.write(`${JSON.stringify({ type: 'req', id, method, params })}\n`); }); },
-    async stop() { if (child.exitCode === null && child.signalCode === null) { const exited = once(child, 'exit'); child.kill('SIGTERM'); await exited; } lines.close(); for (const item of pending.values()) { clearTimeout(item.timer); item.reject(new Error('stopped')); } },
+    async stop() { if (child.exitCode === null && child.signalCode === null) {
+      const closed = once(child, 'close');
+      // Windows SIGTERM kills only the launcher without running its JS shutdown
+      // handler. Reap its owned descendants before removing their SQLite files.
+      if (process.platform === 'win32') {
+        const killer = spawn('taskkill.exe', ['/pid', String(child.pid), '/t', '/f'], { stdio: 'ignore', windowsHide: true });
+        const [code] = await once(killer, 'exit');
+        assert.equal(code, 0, 'owned Windows launcher tree must stop');
+      } else child.kill('SIGTERM');
+      await closed;
+    } lines.close(); for (const item of pending.values()) { clearTimeout(item.timer); item.reject(new Error('stopped')); } },
   };
 }
 
@@ -59,5 +69,5 @@ test('real independent EVA launchers exchange direct chat and expose owner API o
     const events = await children[1].invoke('owner.events'); assert.ok(events.some(event => event.content === 'local owner smoke' && event.role === 'user'));
     const response = await fetch(`http://127.0.0.1:${ports[1]}/owner.profile`); assert.equal(response.status, 404);
     assert.notEqual(ports[0], ports[1]);
-  } finally { reader?.close(); jobs?.close(); await Promise.all(children.map(child => child.stop())); rmSync(home, { recursive: true, force: true }); }
+  } finally { reader?.close(); jobs?.close(); await Promise.all(children.map(child => child.stop())); rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
 });
