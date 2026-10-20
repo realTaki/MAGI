@@ -1,6 +1,30 @@
-# Research goals and unfinished work
+# Where MAGI is heading
 
 The mechanisms currently implemented are described in [Architecture](architecture.md).
+The project is not aiming for one final configuration that every user keeps.
+It is aiming for a better starting point for many independently evolving MAGIs.
+These directions should be read as questions to investigate, not a release
+schedule or a promise of backward compatibility.
+
+## The direction
+
+- **Personal software, not only personal answers.** Can a user's agent turn a
+  recurring need into a useful change to the tools or interface, then maintain
+  it as the surrounding system changes?
+- **More of the system participating in its own maintenance.** “Everything is
+  an agent” includes the ambition for interfaces and custom applications to be
+  agent-maintained. Today the repository has editable UI/runtime source and
+  activation mechanisms, not a separate autonomous agent for every component.
+- **Less manual configuration.** Eventually, a dedicated settings page may no
+  longer be the primary way to manage the system. Settings and per-node provider
+  forms still exist today. Removing them before their responsibilities have a
+  working replacement would not achieve the goal.
+- **Independent forks that can learn from elsewhere.** Agents should help
+  inspect and adapt useful ideas, implementations and updates. Current
+  fast-forward source sync is not that general maintenance capability.
+
+## What still needs evidence or implementation
+
 The following items are goals or limitations, not shipped guarantees:
 
 - **Measured recursive improvement:** evaluate whether repeated self-edit,

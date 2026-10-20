@@ -5,12 +5,24 @@ dependencies; see [Contributing](../CONTRIBUTING.md). Commands below run from th
 repository root on Linux/macOS. Windows uses `runtime/bin/node.exe` and the same
 npm CLI. Do not substitute a global runtime when the bundled runtime is missing.
 
+## Choose the starting point
+
+For a personal version, fork the repository and use that fork as your checkout's
+Git `origin`. Keep your changes there rather than assuming every upstream update
+should overwrite them. Source preparation includes dependencies, the runtime
+build **and the Shell UI build**; follow [Contributing](../CONTRIBUTING.md) first.
+
+A desktop package and a source launch are different paths. A package prepares a
+managed Shell checkout; a source launch uses your verified editable checkout.
+Neither opening the app nor selecting a repository automatically publishes your
+changes or merges a diverged fork.
+
 ## Desktop and the built-in Shell EVA
 
 Open Electron from the prepared source checkout:
 
 ```sh
-MAGI_REPOSITORY_URL=https://github.com/realTaki/MAGI.git apps/shell/runtime/bin/node node_modules/electron/cli.js apps/shell
+apps/shell/runtime/bin/node node_modules/electron/cli.js apps/shell
 ```
 
 Electron starts the Shell launcher and its built-in EVA, `@shell.magi`. No ASP
@@ -27,9 +39,12 @@ Groups share conversation UUIDs and independently stored event histories.
 The packaged app prepares its managed Shell checkout; source launches use the
 verified checkout containing Electron's entry. `MAGI_DEV_CHECKOUT` is optional
 for source launches and is not required for normal development. Installed builds
-ignore it. The packaged default repository URL is the release fork
-`AgenticSocietyLab/MAGI`; development work uses `realTaki/MAGI`. Selecting a URL
-is not pinning a revision or publishing a release.
+ignore it. By default, source launches derive the repository from the checkout's
+Git `origin`; packages use `build-origin.json`, generated from the building
+GitHub Actions repository or the local build's Git `origin`. A package built in
+your fork therefore selects your fork, not a hardcoded upstream. The explicit
+`MAGI_REPOSITORY_URL` override takes precedence. Selecting a URL is not pinning a
+revision, merging upstream changes or publishing a release.
 
 ## Independent agents
 
@@ -72,8 +87,9 @@ subdirectory; built revisions and `launcher.json` are separate. Existing legacy
 ASP workspaces may contain `asp.sqlite`; they are not deleted or reused as a
 central peer registry. The desktop reads the corresponding EVA owner history or
 Shell's independently persisted peer/group history.
-Electron's user data (including renderer storage) is separate from node state;
-`MAGI_HOME` alone is not a guarantee of a completely separate Electron profile.
+Electron's user/session data is stored separately from node databases at
+`$MAGI_HOME/shell/electron`; its cache, logs and crash dumps also have paths
+under the selected Shell profile. Select the intended data root before launch.
 
 ## Provider and runtime controls
 
@@ -85,7 +101,9 @@ There is no separate Provider slider button in the chat header.
 A locally managed EVA's profile avatar has one Start/Stop control. It sends a
 typed owner-chat action to Shell, waits for backend-confirmed state, and disables
 repeated clicks during transitions. Remote contacts have no local lifecycle or
-provider controls. There is no Runtime action-icon row or source-path block. Ask the
+provider controls. There is no Runtime action-icon row or source-path block in
+that individual contact profile. Global Settings still exists: it has General, Runtime and
+About sections, including source/update information. Ask the
 relevant agent to perform authorized source synchronization, tests, builds and
 self-replacement in its own source; those mechanisms are not extra profile icons.
 
@@ -93,6 +111,15 @@ A submitted key is cleared from the password input deliberately. That does not
 mean it was absent from the encrypted request. Wait for the node's saved/failed
 acknowledgement; for a retry, correct the fields and re-enter the key in the
 same profile. See [Provider recovery](provider-validation.md).
+
+### Source updates are not activation
+
+The source-update actions require a clean checkout and refuse an in-progress Git
+operation. The current-branch update fetches from `origin`; app source sync
+fetches `origin/main`. Both use fast-forward-only updates. They do not merge a
+diverged fork, automatically pull from `upstream`, or build and activate the
+result. See [source edits and activation](architecture.md#source-edits-and-activation)
+before treating changed files as a changed running application.
 
 ## Configuration
 

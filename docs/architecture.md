@@ -3,6 +3,29 @@
 This describes the current TypeScript runtime. [Running MAGI](running.md) contains
 commands; [future work](future.md) separates research goals from implementation.
 
+## Read the design from the outside in
+
+MAGI's unit of personalization is editable software, not just a settings record.
+A user can keep a fork; a node can work on its authorized source; validation and
+activation determine which saved changes become a running revision. Those are
+separate responsibilities, deliberately not one opaque “update” action.
+
+There are three useful boundaries to keep in mind:
+
+- **Between EVAs:** independent processes and workspaces exchange peer messages.
+- **Inside an EVA:** workers exchange data and durable jobs through the BUS.
+- **Between source and execution:** an editable checkout produces tested
+  revisions, while the launcher manages the running child.
+
+The BUS is the relatively stable seam for changing capabilities. Its shared
+Books and Jobs give workers a common vocabulary without direct dependencies on
+one another's implementation. Changes to that vocabulary still require
+coordination; “decoupled” does not mean every schema change is safe at runtime.
+
+This supports a direction in which interfaces and tools can be maintained by
+agents too. It does not imply that every component currently has its own agent,
+that settings have disappeared, or that autonomous improvement is proven.
+
 ## Process and role boundaries
 
 `apps/eva/eva.mjs` is a launcher process without a BUS. It starts one
@@ -39,7 +62,9 @@ recovered work, so the agent sees its provider, prompts and tool catalog.
 agent uses its handle's local name, such as `alice/`. Books, jobs, prompts,
 skills, identity keys and the node's `secrets.json` belong to that workspace.
 Existing legacy ASP data may also include `asp.sqlite`; this change does not
-delete or migrate those profiles. Electron renderer storage is separate.
+delete or migrate those profiles. Electron storage has its own paths within the
+selected Shell profile: user/session data lives at `<MAGI_HOME>/shell/electron`,
+with separate cache, log and crash-dump locations under the same Shell profile.
 
 Managed nodes have an independent Git clone at `<workspace>/MAGI` with branch
 `magi/<name>` (for example, `magi/shell` or `magi/alice`). A source-launched Shell

@@ -2,17 +2,17 @@
 
 This local path updates the outer AppImage and the Shell backend/UI revision as
 one activation. It does not publish a GitHub Release, commit, or push source.
-Ordinary `request_replace({ target: "self" })` keeps its node-only behavior.
+Ordinary `request_replace({})` keeps its node-only behavior.
 
 ## Requirements and use
 
 - Run a baseline Linux AppImage that already contains `installDesktopUpdate`.
   Installing new backend source cannot add an RPC handler to an old Electron.
-- Use Balthasar's own editable checkout and the bundled Node/npm toolchain.
+- Use the Shell EVA's own editable checkout and the bundled Node/npm toolchain.
 - The outer `APPIMAGE` path and its parent directory must be writable, real
   paths, not a symlink. Launching only the extracted Electron is unsupported.
 - After the normal test/build/UI checks pass, request
-  `request_replace({ target: "self", desktop: true })` in Balthasar's turn.
+  `request_replace({ desktop: true })` in the Shell EVA's turn.
   Other roles and unpackaged/non-Linux shells reject this request.
 
 The launcher snapshots saved source into a private Git revision, installs its

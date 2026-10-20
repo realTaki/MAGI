@@ -2,8 +2,25 @@
 
 Development source is [realTaki/MAGI](https://github.com/realTaki/MAGI).
 `AgenticSocietyLab/MAGI` is the release fork; do not assume both repositories
-contain the same revision. Discuss substantial changes in an Issue, then work
-on a focused branch and open a reviewable PR.
+contain the same revision. For a substantial upstream change, discuss the scope
+in an Issue, then work on a focused branch and open a reviewable PR.
+
+## Your fork is not a temporary copy
+
+MAGI is designed for users and their agents to change its source. Keep personal
+adaptations in your own fork; you do not need upstream approval for every useful
+change. Contribute back when a change serves the shared starting point.
+
+There is no backward-compatibility promise. Before bringing an upstream change
+into your version, inspect its effects on your code, stored state and running
+agents. A fast-forward source update is not an automatic migration or an
+intelligent merge of a diverged fork. Keep recoverable source history and back up
+state you cannot recreate before making a risky change.
+
+Agents are first-class readers and contributors. Documentation should explain
+intent, constraints and how to verify behavior, not wrap the repository in
+product ceremony. Useful comments and operational instructions still matter:
+agent-readable does not mean context-free.
 
 ## Prepare the toolchain
 
@@ -30,6 +47,7 @@ From a prepared checkout on Linux/macOS:
 ```sh
 PATH="$PWD/apps/shell/runtime/bin:$PATH" apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js ci
 PATH="$PWD/apps/shell/runtime/bin:$PATH" apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run build
+PATH="$PWD/apps/shell/runtime/bin:$PATH" apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run build:ui --workspace @magi/shell
 ```
 
 Dependencies stay inside the workspace. Cache overrides, when needed, belong to
@@ -54,9 +72,11 @@ Verify the affected flow and required build/checks. Test output from generated
 Do not duplicate whole suites merely to accumulate green counts. Report what
 was run, its revision, failures and platform limitations.
 
-Use Conventional Commits (`fix:`, `feat:`, `docs:`, `refactor:`). PRs should state
-the problem, resulting behavior and relevant validation. Keep unrelated changes,
-credentials, node workspaces and generated artifacts out of commits. Publishing
+Use clear commit messages in whichever language communicates the change best.
+Conventional prefixes (`fix:`, `feat:`, `docs:`, `refactor:`) are useful, not the
+purpose of the contribution. PRs should state the problem, resulting behavior
+and relevant validation. Keep unrelated changes, credentials, node workspaces
+and generated artifacts out of commits. Publishing
 a release, changing a release fork and activating a desktop build are distinct
 from saving a source change.
 

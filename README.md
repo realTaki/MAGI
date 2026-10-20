@@ -2,41 +2,126 @@
 
 [![License](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/runtime-TypeScript%20%2B%20Node%2024-blue)](https://nodejs.org/)
-[![Status](https://img.shields.io/badge/status-experimental-orange)](docs/architecture.md)
+[![Status](https://img.shields.io/badge/status-experimental-orange)](docs/verification.md)
 
-[中文 README](README_zh.md)
+[中文](README_zh.md) · [Get started](docs/running.md) · [Architecture](docs/architecture.md) · [Documentation](docs/README.md)
 
-MAGI is a local multi-agent runtime. Each node is the `eva` launcher plus one child process, with its own workspace and provider credentials. Each EVA exposes its own peer server and keeps its own contactBook. Electron starts only the built-in Shell EVA; the owner can ask Shell in chat to create a local EVA or connect to a remote URL. EVAs exchange messages directly on a trusted private network, with shared conversation UUIDs and independently stored histories.
+**Fork it. Grow your own MAGI.**
 
-MAGI studies persistent agents that can inspect and improve their own software.
-Self-edit, validation and revision switching are implementation mechanisms;
-measured recursive improvement remains a research goal. The project is experimental.
+MAGI is an experiment in software that agents can reshape for the people using it.
+It starts as a persistent multi-agent system. Its source is part of its working
+environment, not an artifact sealed away after installation. Agents can work on
+that source, test changes and request a switch to a new runtime revision.
 
-## Start here
+The point is not to ship one finished assistant that everyone uses in the same
+way. It is to give you a starting point for software that becomes yours.
+Your MAGI should eventually look different from mine.
 
-- [Run the desktop and independent EVAs](docs/running.md)
-- [Prepare a development checkout](CONTRIBUTING.md)
-- [Architecture and self-replacement](docs/architecture.md)
-- [Verification and acceptance boundaries](docs/verification.md)
-- [All documentation](docs/README.md), [future work](docs/future.md)
+The name is a tribute to *Neon Genesis Evangelion*.
 
-Use MAGI's bundled Node 24 and the root lockfile. Shell starts with its own EVA,
-`@shell.magi`; no relay or default extra agent is required. State belongs to each
-node's workspace. Hello exchanges create usable contacts directly on the trusted private network;
-no signature or contact approval is required.
+## Software to grow, not just configure
 
-The [MAGI peer subset](packages/channel-peer/README.md) is inspired by A2A 1.0,
-but is not a standards-compliant A2A implementation. See
-[shared conversation history and group synchronization](docs/architecture/peer-group-sync.md).
-The runtime has no central ASP registry or relay.
+Most settings let you choose among behaviors someone else has already built.
+MAGI explores a different relationship: describe what you need, then let your
+agent work on the software itself.
 
-## Contributing
+That might mean changing a tool, building a personal interface, adapting a
+workflow or learning from another agent project's implementation. Start from
+a concrete need, make the change and judge it by what it actually does.
 
-1. Read [CONTRIBUTING.md](CONTRIBUTING.md).
-2. Open an Issue before a substantial change.
+This is a personal, noncommercial project in intent, not a roadmap toward a
+uniform hosted product. It does not promise backward compatibility. You are
+expected to keep your own fork and work with an agent to maintain it, adapt
+changes and handle migrations. Upstream is a source of ideas and code, not an
+authority that your version must keep matching.
 
-Security reports: [SECURITY.md](SECURITY.md).
+## What makes that possible?
+
+### A team that stays
+
+An **EVA** is an individual agent node. Each has its own process, workspace,
+model-provider configuration, memory and contacts. The desktop starts the
+built-in **Shell EVA**, your entry point to that system. From chat, you can ask
+Shell to create another local EVA or connect to a remote EVA.
+
+Nodes exchange messages directly and keep their own histories. There is no
+central ASP registry or relay. A team is not just a list of temporary model
+calls; its nodes and workspaces can persist beyond a single task.
+
+### A BUS that separates the parts
+
+Inside each EVA, workers coordinate through **BUS Books and durable Jobs**
+instead of calling one another's implementations. The BUS carries shared data
+and contracts; workers provide capabilities. The manager handles worker lifecycle
+and configuration.
+
+This separation is meant to make individual capabilities easier to replace and
+evolve without rewriting the whole system. Keep the collaboration boundary
+stable so the modules can keep changing. See [how the pieces fit](docs/architecture.md).
+
+### The interface is software, too
+
+“Everything is an agent” is the direction: not only the assistants in a chat,
+but the interfaces, tools and personal systems around them should be able to
+participate in their own maintenance.
+
+Today, MAGI provides editable source and a verified revision-switching mechanism;
+Shell revisions can include the built UI. The next direction is more
+self-management and less manual configuration. Eventually, I would like even
+the settings page to disappear.
+
+## Start with your own version
+
+1. **Fork this repository.** Give your MAGI a home for changes that serve you.
+   You do not need to turn every local adaptation into an upstream contribution.
+2. **Run a prepared source checkout or a suitable desktop build.** Follow
+   [Running MAGI](docs/running.md); source preparation and the bundled Node 24
+   toolchain are in [Contributing](CONTRIBUTING.md).
+3. **Configure the intended EVA's model provider.** Use that local EVA's profile,
+   not a key pasted into chat. Wait for its verification result.
+4. **Start small.** Ask for one useful, bounded change, check the result and keep
+   the evidence. Saving code, testing it, activating it and publishing it are
+   different actions.
+
+For a first self-edit, choose something you can see and test, such as a small
+interface behavior. Keep the scope and expected result explicit. A successful
+build is not a substitute for trying the resulting behavior.
+
+## Current boundaries
+
+MAGI is experimental. The direction is ambitious; the current boundaries are concrete:
+
+- **Private, trusted networks only.** Direct peer messaging is not an
+  authenticated public-internet service. Do not expose peer endpoints to
+  untrusted networks. Native tools are not an OS sandbox.
+- **Self-editing exists; sustained self-improvement remains to be demonstrated.**
+  Not every component has its own agent. Settings and provider forms still exist.
+- **Changes still need validation.** Shared-contract changes require coordination,
+  outer Electron updates differ from node replacement, and process rollback
+  does not undo database changes or external actions.
+- **Protocol compatibility is explicit.** The MAGI peer subset is inspired by
+  A2A 1.0; it is not a standards-compliant A2A implementation.
+
+See [Security](SECURITY.md), [Verification](docs/verification.md) and
+[unfinished work](docs/future.md) for details.
+
+## Explore or contribute
+
+- [Documentation map](docs/README.md): choose a route for using, modifying or checking MAGI.
+- [Architecture](docs/architecture.md): processes, BUS, source ownership and activation.
+- [Contributing](CONTRIBUTING.md): build, test and send a focused upstream change.
+- [Research goals](docs/future.md): what remains to be demonstrated.
+
+Human and agent collaborators are welcome. For a substantial upstream change,
+start with an Issue to align on scope. For your own fork, the direction is yours.
+Report vulnerabilities through [Security](SECURITY.md), not a public issue.
+
+**A thousand people. A thousand MAGIs.**
 
 ## License
 
-Source-available under the [Business Source License 1.1](LICENSE).
+MAGI is source-available under [Business Source License 1.1](LICENSE).
+See the license for the permitted personal noncommercial, research, educational
+and evaluation uses, and commercial-use conditions. Each version changes to MIT
+six months after its first public distribution; before then, it is not under an
+OSI-approved open-source license.
