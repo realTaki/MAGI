@@ -4,288 +4,110 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
-import { ASP_MAGI_HANDLE, Bus, EVA_MAGI_HANDLE, SHELL_MAGI_HANDLE, USER_HANDLE, messageDelivery } from "@magi/bus";
-import { magiHome } from "@magi/runtime/home.js";
-import { Asp } from "../../asp/asp.ts";
+import { Bus, chat as receiveChat, encryptFor, messageDelivery, replaceFailedPath, type CardSpec, type ChatInput } from "@magi/bus";
+import { createOwnerApi } from "@magi/node/owner.js";
 import { Magi } from "../../eva/eva.ts";
 import { createSupervisor } from "../process.mjs";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
 async function until(label: string, ready: () => boolean | Promise<boolean>, timeoutMs = 20_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (await ready()) return;
-    await sleep(30);
-  }
+  while (Date.now() < deadline) { if (await ready()) return; await sleep(30); }
   throw new Error(label);
 }
-
 function cards(bus: Bus): string[] {
-  return bus.chats.list().flatMap((chat) => bus.messages.list(chat.id, 50).map((message) => message.content))
-    .filter((content) => content === "card: Provider");
+  return bus.chats.list().flatMap(chat => bus.messages.list(chat.id, 100).map(message => message.content)).filter(content => content === "card: Provider");
+}
+function ownerCards(magi: Magi): CardSpec[] {
+  return createOwnerApi(magi.bus)["owner.events"]().flatMap(event => event.metadata?.card ? [event.metadata.card as CardSpec] : []);
+}
+async function ownerChat(magi: Magi, input: ChatInput): Promise<void> {
+  const receipt = createOwnerApi(magi.bus)["owner.chat"](input);
+  await until("owner control did not settle", () => magi.bus.board(receipt.type).result(receipt.id) !== null);
+  assert.equal(magi.bus.board(receipt.type).result(receipt.id)?.status, "completed");
+}
+function localMagi(handle: string, workspace: string, client: NonNullable<ConstructorParameters<typeof Magi>[1]>["client"]): Magi {
+  const magi = new Magi(handle, { workspace, client, owner: true, peer: { port: 0 } });
+  createOwnerApi(magi.bus);
+  return magi;
+}
+function isolateHome(root: string): () => void {
+  const previous = process.env.MAGI_HOME;
+  process.env.MAGI_HOME = path.join(root, "home");
+  return () => { if (previous === undefined) delete process.env.MAGI_HOME; else process.env.MAGI_HOME = previous; };
 }
 
-function ownerAgentChats(asp: Asp, agent: string) {
-  const chats = [];
-  for (const chat of asp.store.chats.values()) {
-    const people = asp.store
-      .participantsIn(chat.id)
-      .filter((participant) => participant.status === "invited" || participant.status === "joined")
-      .map((participant) => participant.handle);
-    if (people.length === 2 && people.includes(USER_HANDLE) && people.includes(agent)) {
-      chats.push(chat);
-    }
-  }
-  return chats;
-}
-
-test("a fresh MAGI shows a card and the operator can reopen it after cancellation without a model", async () => {
+test("a fresh EVA owner channel shows a card and reopens it after cancellation without a model", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-card-"));
-  const asp = new Asp({
-    databasePath: path.join(root, "asp.sqlite"),
-    workspace: path.join(root, "casper"),
-    host: "127.0.0.1",
-    port: 0,
-    client: { async complete() { return { role: "assistant" as const, content: "NO_REPLY" }; }, async verify() { throw new Error("rejected"); } },
-  });
   let calls = 0;
-  let magi: Magi | null = null;
+  const client = { async complete() { calls++; return { role: "assistant" as const, content: "NO_REPLY" }; }, async verify() { throw new Error("rejected"); } };
+  let magi = localMagi("@card-test.magi", path.join(root, "receiver"), client);
   try {
-    await asp.start();
-    const created = await fetch(new URL("/chats", asp.origin), {
-      method: "POST",
-      headers: { authorization: `Bearer ${asp.operatorToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ kind: "bot" }),
-    });
-    const body = await created.json() as { magi?: { handle?: string; token?: string } };
-    const handle = body.magi?.handle ?? "";
-    const token = body.magi?.token ?? "";
-    magi = new Magi(handle, {
-      workspace: path.join(root, "receiver"),
-      asp: { base: asp.origin, token },
-      client: {
-        async complete() { calls += 1; return { role: "assistant" as const, content: "NO_REPLY" }; },
-        async verify() { throw new Error("rejected"); },
-      },
-    });
-    assert.equal(magi.bus.chats.list().length, 0);
     await magi.start();
-    await until("provider card was not shown", () => cards(magi!.bus).length >= 1);
+    await until("provider card was not delivered", () => ownerCards(magi).length === 1);
+    const card = ownerCards(magi)[0];
+    assert.ok(card.id && card.public_key);
     assert.equal(calls, 0);
-    assert.equal(magi.bus.secrets.get("provider.api_key"), null);
-    const chat = magi.bus.chats.list("asp").find((candidate) =>
-      magi!.bus.messages.list(candidate.id).some((message) => message.content === "card: Provider"));
-    assert.ok(chat?.delivery_address);
-    const address = chat.delivery_address;
-    let card = "";
-    await until("provider card was not delivered", async () => {
-      const events = await fetch(new URL(`/chats/${address}/events`, asp.origin), {
-        headers: { authorization: `Bearer ${asp.operatorToken}` },
-      });
-      if (!events.ok) return false;
-      const listed = await events.json() as { events?: Array<{ payload?: { metadata?: { card?: { id?: string } } } }> };
-      const id = listed.events?.map((event) => event.payload?.metadata?.card?.id).find((value) => typeof value === "string");
-      if (!id) return false;
-      card = id;
-      return true;
-    });
-    const joined = await fetch(new URL(`/chats/${address}/join`, asp.origin), {
-      method: "POST",
-      headers: { authorization: `Bearer ${asp.operatorToken}` },
-    });
-    assert.equal(joined.ok, true);
-    const submitted = await fetch(new URL(`/chats/${address}/messages`, asp.origin), {
-      method: "POST",
-      headers: { authorization: `Bearer ${asp.operatorToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ content: "card rejected", metadata: { card_reject: { id: card } } }),
-    });
-    assert.equal(submitted.ok, true);
-    await until("cancellation was not acknowledged", () => magi!.bus.settings.get(`card.receipt.${card}`) !== null);
-    const reopened = await fetch(new URL(`/chats/${address}/messages`, asp.origin), {
-      method: "POST",
-      headers: { authorization: `Bearer ${asp.operatorToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ content: "open provider", metadata: { card_result: { id: `open-${card}`, action: "open" } } }),
-    });
-    assert.equal(reopened.ok, true);
-    await until("provider card was not opened", () => cards(magi!.bus).length >= 2);
-    assert.equal(cards(magi.bus).length, 2);
-    let again = "";
-    await until("the card was not sent a second time", async () => {
-      const events = await fetch(new URL(`/chats/${address}/events`, asp.origin), {
-        headers: { authorization: `Bearer ${asp.operatorToken}` },
-      });
-      if (!events.ok) return false;
-      const listed = await events.json() as { events?: Array<{ payload?: { metadata?: { card?: { id?: string } } } }> };
-      const ids = listed.events?.map((event) => event.payload?.metadata?.card?.id).filter((value): value is string => typeof value === "string") ?? [];
-      const next = ids.find((value) => value !== card);
-      if (!next) return false;
-      again = next;
-      return true;
-    });
-    const againSubmitted = await fetch(new URL(`/chats/${address}/messages`, asp.origin), {
-      method: "POST",
-      headers: { authorization: `Bearer ${asp.operatorToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ content: "card rejected", metadata: { card_reject: { id: again } } }),
-    });
-    assert.equal(againSubmitted.ok, true);
-    await until("second cancellation was not acknowledged", () => magi!.bus.settings.get(`card.receipt.${again}`) !== null);
+    await ownerChat(magi, { content: "card rejected", metadata: { card_reject: { id: card.id } } });
+    await until("cancellation was not acknowledged", () => magi.bus.settings.get(`card.receipt.${card.id}`) !== null);
+    await ownerChat(magi, { content: "open provider", metadata: { card_result: { id: `open-${card.id}`, action: "open" } } });
+    await until("provider card was not reopened", () => ownerCards(magi).some(next => next.id !== card.id));
+    const again = ownerCards(magi).find(next => next.id !== card.id)!;
+    await ownerChat(magi, { content: "card rejected", metadata: { card_reject: { id: again.id } } });
+    await until("second cancellation did not stop offers", () => magi.bus.settings.get("provider.card.stopped") === "1");
+    const before = ownerCards(magi).length;
+    await magi.stop(); magi = localMagi("@card-test.magi", path.join(root, "receiver"), client);
+    await magi.start(); await sleep(400);
+    assert.equal(ownerCards(magi).length, before);
     assert.equal(magi.bus.settings.get("provider.card.stopped"), "1");
-    const workspace = path.join(root, "receiver");
-    await magi.stop();
-    magi = new Magi(handle, {
-      workspace,
-      asp: { base: asp.origin, token },
-      client: {
-        async complete() { calls += 1; return { role: "assistant" as const, content: "NO_REPLY" }; },
-        async verify() { throw new Error("rejected"); },
-      },
-    });
-    await magi.start();
-    await sleep(400);
-    assert.equal(cards(magi.bus).length, 2);
-    assert.equal(magi.bus.settings.get("provider.card.stopped"), "1");
-    assert.equal(calls, 0);
-    assert.equal(magi.bus.secrets.get("provider.api_key"), null);
-  } finally {
-    await magi?.stop();
-    await asp.stop();
-    rmSync(root, { recursive: true, force: true });
-  }
+    assert.equal(calls, 0); assert.equal(magi.bus.secrets.get("provider.api_key"), null);
+  } finally { await magi.stop(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("two restarts do not count as rejecting the provider card", async () => {
-  const root = mkdtempSync(path.join(tmpdir(), "magi-card-restart-"));
-  const asp = new Asp({
-    databasePath: path.join(root, "asp.sqlite"),
-    workspace: path.join(root, "casper"),
-    host: "127.0.0.1",
-    port: 0,
-    client: { async complete() { return { role: "assistant" as const, content: "NO_REPLY" }; } },
-  });
-  let calls = 0;
-  let magi: Magi | null = null;
-  const client = {
-    async complete() { calls += 1; return { role: "assistant" as const, content: "NO_REPLY" }; },
-  };
+test("two restarts do not count as rejecting the provider card or duplicate the owner room", async () => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-card-restart-")); let calls = 0;
+  const client = { async complete() { calls++; return { role: "assistant" as const, content: "NO_REPLY" }; } };
+  let magi = localMagi("@card-restart.magi", path.join(root, "receiver"), client);
   try {
-    await asp.start();
-    const created = await fetch(new URL("/chats", asp.origin), {
-      method: "POST",
-      headers: { authorization: `Bearer ${asp.operatorToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ kind: "bot" }),
-    });
-    const body = await created.json() as { magi?: { handle?: string; token?: string } };
-    const handle = body.magi?.handle ?? "";
-    const token = body.magi?.token ?? "";
-    const workspace = path.join(root, "receiver");
-    magi = new Magi(handle, { workspace, asp: { base: asp.origin, token }, client });
-    await magi.start();
-    await until("provider card was not shown", () => cards(magi!.bus).length >= 1);
-    assert.equal(calls, 0);
-    for (let restart = 0; restart < 2; restart += 1) {
+    await magi.start(); await until("initial card not shown", () => cards(magi.bus).length >= 1);
+    const chatId = magi.bus.chats.list("local-owner")[0].id;
+    for (let restart = 0; restart < 2; restart++) {
       const before = cards(magi.bus).length;
-      await magi.stop();
-      magi = new Magi(handle, { workspace, asp: { base: asp.origin, token }, client });
-      await magi.start();
-      await until("provider card was not shown after a restart", () => cards(magi!.bus).length > before);
+      await magi.stop(); magi = localMagi("@card-restart.magi", path.join(root, "receiver"), client);
+      await magi.start(); await until("card not shown after restart", () => cards(magi.bus).length > before);
     }
-    await sleep(400);
-    const texts = magi.bus.chats.list().flatMap((chat) => magi!.bus.messages.list(chat.id, 50).map((message) => message.content));
-    assert.equal(texts.some((text) => text.includes("rejected") || text.includes("will not be shown again")), false);
-    assert.equal(magi.bus.settings.get("provider.card.offers"), null);
+    const texts = magi.bus.messages.list(chatId, 100).map(message => message.content);
+    assert.equal(texts.some(text => text.includes("rejected") || text.includes("will not be shown again")), false);
     assert.equal(magi.bus.settings.get("provider.card.rejections") ?? "0", "0");
-    assert.equal(calls, 0);
-    assert.equal(ownerAgentChats(asp, handle).length, 1, "ConfigWorker restart must not open a second owner 1:1");
-  } finally {
-    await magi?.stop();
-    await asp.stop();
-    rmSync(root, { recursive: true, force: true });
-  }
+    assert.equal(calls, 0); assert.equal(magi.bus.chats.list("local-owner").length, 1);
+    assert.equal(magi.bus.chats.list("local-owner")[0].id, chatId);
+  } finally { await magi.stop(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("an explicitly reopened card survives a restart after cancellation", async () => {
-  const root = mkdtempSync(path.join(tmpdir(), "magi-card-reject-restart-"));
-  const asp = new Asp({
-    databasePath: path.join(root, "asp.sqlite"),
-    workspace: path.join(root, "casper"),
-    host: "127.0.0.1",
-    port: 0,
-    client: { async complete() { return { role: "assistant" as const, content: "NO_REPLY" }; } },
-  });
-  let magi: Magi | null = null;
+test("an explicitly reopened owner card survives restart after cancellation", async () => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-card-reopen-"));
   const client = { async complete() { return { role: "assistant" as const, content: "NO_REPLY" }; } };
+  let magi = localMagi("@card-reopen.magi", path.join(root, "receiver"), client);
   try {
-    await asp.start();
-    const created = await fetch(new URL("/chats", asp.origin), {
-      method: "POST",
-      headers: { authorization: `Bearer ${asp.operatorToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ kind: "bot" }),
-    });
-    const body = await created.json() as { magi?: { handle?: string; token?: string } };
-    const handle = body.magi?.handle ?? "";
-    const token = body.magi?.token ?? "";
-    const workspace = path.join(root, "receiver");
-    magi = new Magi(handle, { workspace, asp: { base: asp.origin, token }, client });
-    await magi.start();
-    await until("provider card was not shown", () => cards(magi!.bus).length >= 1);
-    const chat = magi.bus.chats.list("asp").find((candidate) =>
-      magi!.bus.messages.list(candidate.id).some((message) => message.content === "card: Provider"));
-    assert.ok(chat?.delivery_address);
-    const address = chat.delivery_address;
-    let card = "";
-    await until("provider card was not delivered", async () => {
-      const events = await fetch(new URL(`/chats/${address}/events`, asp.origin), {
-        headers: { authorization: `Bearer ${asp.operatorToken}` },
-      });
-      if (!events.ok) return false;
-      const listed = await events.json() as { events?: Array<{ payload?: { metadata?: { card?: { id?: string } } } }> };
-      const id = listed.events?.map((event) => event.payload?.metadata?.card?.id).find((value) => typeof value === "string");
-      if (!id) return false;
-      card = id;
-      return true;
-    });
-    const joined = await fetch(new URL(`/chats/${address}/join`, asp.origin), {
-      method: "POST",
-      headers: { authorization: `Bearer ${asp.operatorToken}` },
-    });
-    assert.equal(joined.ok, true);
-    const submitted = await fetch(new URL(`/chats/${address}/messages`, asp.origin), {
-      method: "POST",
-      headers: { authorization: `Bearer ${asp.operatorToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ content: "card rejected", metadata: { card_reject: { id: card } } }),
-    });
-    assert.equal(submitted.ok, true);
-    await until("cancellation was not acknowledged", () => magi!.bus.settings.get(`card.receipt.${card}`) !== null);
-    const reopened = await fetch(new URL(`/chats/${address}/messages`, asp.origin), {
-      method: "POST",
-      headers: { authorization: `Bearer ${asp.operatorToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ content: "open provider", metadata: { card_result: { id: `open-${card}`, action: "open" } } }),
-    });
-    assert.equal(reopened.ok, true);
-    await until("provider card was not opened", () => cards(magi!.bus).length >= 2);
+    await magi.start(); await until("initial card not delivered", () => ownerCards(magi).length > 0);
+    const card = ownerCards(magi)[0];
+    await ownerChat(magi, { content: "card rejected", metadata: { card_reject: { id: card.id } } });
+    await ownerChat(magi, { content: "open provider", metadata: { card_result: { id: `reopen-${card.id}`, action: "open" } } });
+    await until("reopened card not delivered", () => ownerCards(magi).some(next => next.id !== card.id));
     assert.equal(magi.bus.settings.get("provider.card.rejections"), null);
     const before = cards(magi.bus).length;
-    await magi.stop();
-    magi = new Magi(handle, { workspace, asp: { base: asp.origin, token }, client });
-    await magi.start();
-    await until("provider card was not shown after a restart", () => cards(magi!.bus).length > before);
-    await sleep(400);
-    const texts = magi.bus.chats.list().flatMap((candidate) => magi!.bus.messages.list(candidate.id, 50).map((message) => message.content));
-    assert.equal(texts.some((text) => text.includes("will not be shown again")), false);
+    await magi.stop(); magi = localMagi("@card-reopen.magi", path.join(root, "receiver"), client);
+    await magi.start(); await until("reopened card did not survive restart", () => cards(magi.bus).length > before);
     assert.equal(magi.bus.settings.get("provider.card.rejections"), null);
-  } finally {
-    await magi?.stop();
-    await asp.stop();
-    rmSync(root, { recursive: true, force: true });
-  }
+  } finally { await magi.stop(); rmSync(root, { recursive: true, force: true }); }
 });
 
 test("the next start records a replace the shell could not restore", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-replace-marker-"));
   const handle = "@eva-replace-marker-188d.magi";
-  const markerDir = path.join(magiHome(), "eva-replace-marker-188d");
-  const marker = path.join(markerDir, "replace-failed.json");
+  const restoreHome = isolateHome(root);
+  const marker = replaceFailedPath(handle);
+  const markerDir = path.dirname(marker);
   const workspace = path.join(root, "workspace");
   const client = { async complete() { return { role: "assistant" as const, content: "NO_REPLY" }; } };
   let magi: Magi | null = null;
@@ -312,14 +134,16 @@ test("the next start records a replace the shell could not restore", async () =>
     await magi?.stop();
     rmSync(markerDir, { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });
+    restoreHome();
   }
 });
 
 test("a replace marker without a job fails the open replace", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-replace-marker-null-"));
   const handle = "@eva-replace-marker-null-188d.magi";
-  const markerDir = path.join(magiHome(), "eva-replace-marker-null-188d");
-  const marker = path.join(markerDir, "replace-failed.json");
+  const restoreHome = isolateHome(root);
+  const marker = replaceFailedPath(handle);
+  const markerDir = path.dirname(marker);
   const workspace = path.join(root, "workspace");
   const client = { async complete() { return { role: "assistant" as const, content: "NO_REPLY" }; } };
   let magi: Magi | null = null;
@@ -346,14 +170,16 @@ test("a replace marker without a job fails the open replace", async () => {
     await magi?.stop();
     rmSync(markerDir, { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });
+    restoreHome();
   }
 });
 
 test("a corrupt replace marker is reported and removed", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-replace-marker-bad-"));
   const handle = "@eva-replace-marker-bad-188d.magi";
-  const markerDir = path.join(magiHome(), "eva-replace-marker-bad-188d");
-  const marker = path.join(markerDir, "replace-failed.json");
+  const restoreHome = isolateHome(root);
+  const marker = replaceFailedPath(handle);
+  const markerDir = path.dirname(marker);
   const workspace = path.join(root, "workspace");
   const client = { async complete() { return { role: "assistant" as const, content: "NO_REPLY" }; } };
   let magi: Magi | null = null;
@@ -374,14 +200,16 @@ test("a corrupt replace marker is reported and removed", async () => {
     await magi?.stop();
     rmSync(markerDir, { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });
+    restoreHome();
   }
 });
 
 test("a replace marker for a missing job is reported and removed", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-replace-marker-missing-"));
   const handle = "@eva-replace-marker-missing-188d.magi";
-  const markerDir = path.join(magiHome(), "eva-replace-marker-missing-188d");
-  const marker = path.join(markerDir, "replace-failed.json");
+  const restoreHome = isolateHome(root);
+  const marker = replaceFailedPath(handle);
+  const markerDir = path.dirname(marker);
   const workspace = path.join(root, "workspace");
   const client = { async complete() { return { role: "assistant" as const, content: "NO_REPLY" }; } };
   let magi: Magi | null = null;
@@ -403,14 +231,16 @@ test("a replace marker for a missing job is reported and removed", async () => {
     await magi?.stop();
     rmSync(markerDir, { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });
+    restoreHome();
   }
 });
 
 test("a replace whose old process also fails leaves a marker and tells the shell", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "magi-shell-marker-"));
   const handle = "@eva-shell-marker-188d.magi";
-  const markerDir = path.join(magiHome(), "eva-shell-marker-188d");
-  const marker = path.join(markerDir, "replace-failed.json");
+  const restoreHome = isolateHome(root);
+  const marker = replaceFailedPath(handle);
+  const markerDir = path.dirname(marker);
   const log = path.join(root, "shell-events.log");
   const shellCwd = path.join(root, "apps", "shell");
   const evaCwd = path.join(root, "apps", "eva");
@@ -449,85 +279,35 @@ setInterval(() => {}, 1000);
     await supervisor.close();
     rmSync(markerDir, { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });
+    restoreHome();
   }
 });
 
-test("provider sync stores the key and keeps it out of the message text", async () => {
-  const root = mkdtempSync(path.join(tmpdir(), "magi-sync-"));
-  const asp = new Asp({
-    databasePath: path.join(root, "asp.sqlite"),
-    workspace: path.join(root, "casper"),
-    host: "127.0.0.1",
-    port: 0,
-    client: {
-      async complete() { return { role: "assistant" as const, content: "NO_REPLY" }; },
-      async verify() {},
-      configure() {},
-    },
+
+test("encrypted local-owner provider submission stores the key without exposing it in history or peer controls", async () => {
+  const root = mkdtempSync(path.join(tmpdir(), "magi-owner-provider-")); let verified = 0;
+  const secret = "synthetic-owner-provider-secret";
+  const magi = localMagi("@provider-owner.magi", path.join(root, "receiver"), {
+    async complete() { throw new Error("provider setup must not invoke a model"); },
+    async verify(settings) { verified++; assert.equal(settings.api_key, secret); }, configure() {},
   });
-  let magi: Magi | null = null;
   try {
-    await asp.start();
-    const known = new Set([SHELL_MAGI_HANDLE, ASP_MAGI_HANDLE, EVA_MAGI_HANDLE]);
-    const bots: Array<{ handle: string; token: string }> = [];
-    while (bots.length < 2 || !bots.some((bot) => !known.has(bot.handle))) {
-      const created = await fetch(new URL("/chats", asp.origin), {
-        method: "POST",
-        headers: { authorization: `Bearer ${asp.operatorToken}`, "content-type": "application/json" },
-        body: JSON.stringify({ kind: "bot" }),
-      });
-      const body = await created.json() as { magi?: { handle?: string; token?: string } };
-      bots.push({ handle: body.magi?.handle ?? "", token: body.magi?.token ?? "" });
-      if (bots.length > 6) break;
-    }
-    const strangerBot = bots.find((bot) => !known.has(bot.handle));
-    const receiverBot = bots.find((bot) => bot !== strangerBot);
-    assert.ok(strangerBot && receiverBot);
-    const handle = receiverBot.handle;
-    const token = receiverBot.token;
-    const strangerHandle = strangerBot.handle;
-    const strangerToken = strangerBot.token;
-    magi = new Magi(handle, {
-      workspace: path.join(root, "receiver"),
-      asp: { base: asp.origin, token },
-      client: {
-        async complete() { return { role: "assistant" as const, content: "NO_REPLY" }; },
-        async verify() {},
-        configure() {},
-      },
-    });
-    await magi.start();
-    if (!known.has(handle)) asp.bus.contacts.create({ name: handle, role: "magi", asp_handle: handle });
-    const strangerContact = asp.bus.contacts.list().find((contact) => contact.asp_handle === strangerHandle);
-    if (strangerContact) asp.bus.contacts.update(strangerContact.id, { role: "stranger" });
-    const posted = await fetch(new URL("/profile", asp.origin), {
-      method: "POST",
-      headers: { authorization: `Bearer ${strangerToken}`, "content-type": "application/json" },
-      body: JSON.stringify({ public_key: "not-a-key" }),
-    });
-    assert.equal(posted.ok, true);
-    asp.bus.settings.set("provider.name", "openai");
-    asp.bus.settings.set("provider.model", "gpt-test");
-    asp.bus.secrets.set("provider.api_key", "sync-secret-value");
-    const tool = asp.bus.tools.get("sync_provider");
-    assert.ok(tool);
-    const queued = JSON.parse(await tool.run({})) as { id: number; status: string };
-    assert.equal(typeof queued.id, "number");
-    assert.equal(queued.status, "pending");
-    await until("receiver did not store the provider key", () => magi?.bus.secrets.get("provider.api_key") === "sync-secret-value");
-    await until("sync did not finish", () => {
-      const result = asp.bus.board("AspCommandJob").result(queued.id);
-      if (result?.status === "failed") throw new Error(result.error ?? "sync failed");
-      return result?.status === "completed";
-    });
-    const leaked = [asp.bus, magi.bus].flatMap((item) =>
-      item.chats.list().flatMap((chat) => item.messages.list(chat.id, 100).filter((message) => message.content.includes("sync-secret-value"))));
-    assert.equal(leaked.length, 0);
-    const notice = asp.bus.chats.list("asp").flatMap((chat) => asp.bus.messages.list(chat.id, 50).map((message) => message.content));
-    assert.ok(notice.some((text) => text.startsWith("provider sync:") && text.includes("key updated")));
-  } finally {
-    await magi?.stop();
-    await asp.stop();
-    rmSync(root, { recursive: true, force: true });
-  }
+    await magi.start(); await until("provider card not delivered", () => ownerCards(magi).length > 0);
+    const card = ownerCards(magi)[0]; assert.ok(card.public_key);
+    const ciphertext = encryptFor(card.public_key, secret);
+    const peer = magi.bus.contacts.forPeer({ principal: "a".repeat(64), endpoint: "https://peer.example", name: "system" });
+    const room = magi.bus.chats.forPeer(peer.peer_id!);
+    const payload = { content: secret, metadata: { card_result: { id: card.id, attempt: "owner-submit", fields: {
+      provider: "custom", model: "synthetic-model", base_url: "https://provider.example/v1", "provider.api_key": { ciphertext },
+    } } } };
+    assert.throws(() => receiveChat(magi.bus, room.id, peer.id, payload), /only the owner/);
+    assert.equal(verified, 0);
+    await ownerChat(magi, payload);
+    assert.equal(magi.bus.secrets.get("provider.api_key"), secret); assert.equal(verified, 1);
+    // A repeated owner submission must not verify or apply the same attempt twice.
+    await ownerChat(magi, payload); assert.equal(verified, 1);
+    const exposed = JSON.stringify({ events: createOwnerApi(magi.bus)["owner.events"](), history: magi.bus.chats.list().flatMap(chat => magi.bus.messages.list(chat.id, 100)) });
+    assert.equal(exposed.includes(secret), false); assert.equal(exposed.includes(ciphertext), false);
+    assert.equal(magi.bus.settings.get("provider.model"), "synthetic-model");
+  } finally { await magi.stop(); rmSync(root, { recursive: true, force: true }); }
 });
