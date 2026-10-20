@@ -188,3 +188,124 @@ test("replace attempts safe recovery after a partially failed suspension", { tim
     assert.match(board.result(id)?.error ?? "", /mutation still active; unsafe to resume/);
   } finally { bus.close(); await rm(workspace, { recursive: true, force: true }); }
 });
+
+for (const scenario of ["recover", "recover failed mutation", "deliberate stop", "new suspension", "stop during recovered start", "stop during hookless recovered start"] as const) test(`failed replacement resumes automatically after settlement: ${scenario}`, { timeout: 25_000 }, async (t) => {
+  const workspace = await mkdtemp(join(tmpdir(), "magi-deferred-resume-"));
+  const bus = new Bus("@deferred-resume.magi", join(workspace, "state"));
+  const app = join(workspace, "apps", "eva");
+  await mkdir(join(app, "dist"), { recursive: true });
+  await writeFile(join(app, "dist", "eva.js"), "// valid build; failed suspension must never activate it\n");
+  await writeFile(join(app, "package.json"), JSON.stringify({ scripts: { build: `"${process.execPath}" --version` } }));
+  let release!: () => void;
+  let releaseStart!: () => void;
+  const mutation = new Promise<void>((resolve) => { release = resolve; });
+  const heldStart = new Promise<void>((resolve) => { releaseStart = resolve; });
+  let mutationRuns = 0;
+  let settled = false;
+  let toolStarts = 0;
+  let helperStarts = 0;
+  let helperStops = 0;
+  let helperPolls = 0;
+  const tools = new ToolsWorker(bus, [{ name: "edit_file", description: "uncancellable", input_schema: {}, async run() {
+    mutationRuns++;
+    await mutation;
+    bus.settings.set("late.owner", "finished");
+    settled = true;
+    if (scenario === "recover failed mutation") throw new Error("mutation failed after shutdown grace");
+    return "mutation committed";
+  } }]);
+  const startTools = tools.start.bind(tools);
+  t.mock.method(tools, "start", () => {
+    if (++toolStarts > 1) assert.equal(settled, true, "old owner must settle before the next tool generation");
+    startTools();
+  });
+  const helper = { worker_name: "helper", async start() {
+    helperStarts++;
+    if (helperStarts > 1 && scenario.startsWith("stop during")) await heldStart;
+  }, async poll() { helperPolls++; return false; }, stop: scenario === "stop during hookless recovered start" ? undefined : () => {
+    // A cancelled cold generation must be retired before its BUS can close.
+    bus.settings.set("helper.stops", String(++helperStops));
+  } };
+  const manager = new ManagerWorker(bus, [new AgentWorker(bus), new ProvidersWorker(bus, { async complete() { return { role: "assistant", content: "", tool_calls: [{ name: "edit_file", tool_call_id: "mutation", arguments: {} }] }; } }), tools, helper], { drain: ["agent"], build: { app: "eva", script: "build" } });
+  try {
+    await manager.start();
+    const chat = bus.chats.forChannel("cli", "test");
+    bus.board("MessageDeliveryJob").publish({ message_id: bus.messages.add(chat.id, SYSTEM_CONTACT_ID, "edit") }, "test");
+    await eventually(() => mutationRuns === 1);
+    const board = bus.board("ReplaceSelfJob");
+    const id = board.publish({ checkout: workspace }, "test");
+    await eventually(() => board.result(id)?.status === "failed");
+    assert.match(board.result(id)?.error ?? "", /Cannot stop tools safely/);
+    assert.equal(manager.isRunning("agent"), false);
+    assert.equal(manager.isRunning("tools"), false);
+    assert.equal(manager.isRunning("helper"), false);
+    await sleep(50);
+    assert.equal(helperStarts, 1, "supervisor must not retry while the mutation is still active");
+    assert.equal(toolStarts, 1);
+
+    if (scenario === "new suspension") {
+      await assert.rejects(manager.suspendForReplace(), /Cannot stop tools safely/);
+      release();
+      await sleep(100);
+      assert.equal(helperStarts, 1, "a newer suspension cancels the failed replacement's recovery intent");
+      assert.equal(toolStarts, 1);
+      assert.equal(manager.isRunning("agent"), false);
+    } else if (scenario === "deliberate stop") {
+      const stopping = manager.stop();
+      release();
+      await stopping;
+      await sleep(80);
+      assert.equal(helperStarts, 1);
+      assert.equal(toolStarts, 1);
+      assert.equal(manager.isRunning("agent"), false);
+    } else {
+      release();
+      if (scenario.startsWith("stop during")) {
+        await eventually(() => helperStarts === 2);
+        let stopped = false;
+        const stopping = manager.stop().then(() => { stopped = true; });
+        await sleep(30);
+        assert.equal(stopped, false, "stop must wait for the recovering cold generation");
+        releaseStart();
+        await stopping;
+        assert.equal(helperStops, scenario === "stop during hookless recovered start" ? 0 : 2);
+        assert.doesNotMatch(manager.healthy() ?? "", /still stopping/, "hookless cold generations do not leave retained ownership");
+        assert.equal(manager.isRunning("helper"), false);
+        assert.equal(manager.isRunning("tools"), false);
+        const polls = helperPolls;
+        await sleep(80);
+        assert.equal(helperPolls, polls, "the cancelled generation never acquires a poll loop");
+      } else {
+        await eventually(() => manager.isRunning("agent") && manager.isRunning("tools") && manager.isRunning("helper"));
+        await sleep(100);
+        assert.equal(toolStarts, 2);
+        assert.equal(helperStarts, 2, "recovery occurs once, without a manual resume call");
+        assert.equal(manager.healthy(), null);
+      }
+    }
+    assert.equal(mutationRuns, 1, "recovery never replays the old mutation");
+  } finally { release(); releaseStart(); await manager.stop(); bus.close(); await rm(workspace, { recursive: true, force: true }); }
+});
+
+test("a replacement resume arriving after deliberate stop cannot arm new recovery", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "magi-late-resume-"));
+  const bus = new Bus("@late-resume.magi", workspace);
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  let starts = 0;
+  let polled = false;
+  const worker = { worker_name: "held", start() { starts++; }, async poll() { polled = true; await held; return false; } };
+  const manager = new ManagerWorker(bus, [worker], { drain: ["held"], build: { app: "eva", script: "build" } });
+  try {
+    await manager.start();
+    await eventually(() => polled);
+    const stopping = manager.stop();
+    await eventually(() => !manager.isRunning("held"));
+    assert.equal(manager.up, true, "deliberate stop is still draining its old generation");
+    await manager.resume(); // Simulates the failed replacement's late catch handler.
+    assert.equal(starts, 1);
+    release(); await stopping;
+    await sleep(50);
+    assert.equal(starts, 1);
+  } finally { release(); await manager.stop(); bus.close(); await rm(workspace, { recursive: true, force: true }); }
+});

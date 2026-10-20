@@ -94,6 +94,9 @@ export class ToolsWorker extends BaseWorker {
     }
   }
 
+  /** Only the actual owner can say that retrying a failed stop is now safe. */
+  canFinishStop(): boolean { return this.pending.size === 0; }
+
   async stop(): Promise<void> {
     await this.interrupt();
     // A timeout is NOT a graceful stop. Keep the raw promises and their claims;

@@ -54,6 +54,8 @@ export type StartableWorker = {
   stop?(): void | Promise<void>;
   /** Cancel active agent work before an intentional node pause. */
   interrupt?(): void | Promise<void>;
+  /** True after owned work settles, allowing a previously failed stop to retry. */
+  canFinishStop?(): boolean;
   /** False while this worker has nothing to work with, such as a channel token. */
   configured?(): boolean;
   /** What is wrong right now, or null when nothing is. Asked between polls. */
@@ -89,6 +91,11 @@ export class ManagerWorker extends BaseWorker {
   private initializing = false;
   private loop: Promise<void> | null = null;
   private lastHealthCheck = 0;
+  private lifecycleGeneration = 0;
+  /** A failed replacement resume, never an instruction to undo deliberate stop. */
+  private resumePending: number | null = null;
+  private resumeTask: Promise<void> | null = null;
+  private stopRequested = false;
 
   constructor(bus: Bus, workers: StartableWorker[], options: ManagerOptions) {
     super(bus);
@@ -140,6 +147,7 @@ export class ManagerWorker extends BaseWorker {
   async start(): Promise<void> {
     for (const name of this.stopping.keys()) await this.stopWorker(name);
     if (this.started) return;
+    this.stopRequested = false;
     this.started = true;
     this.initializing = true;
     await this.reconcile();
@@ -151,11 +159,15 @@ export class ManagerWorker extends BaseWorker {
   }
 
   async stop(): Promise<void> {
+    this.stopRequested = true;
+    this.lifecycleGeneration++;
+    this.resumePending = null;
     await this.interruptWorkers();
     for (const name of this.drain) await this.stopWorker(name);
     this.started = false;
     await this.loop;
     this.loop = null;
+    await this.resumeTask?.catch(() => undefined);
     await this.stopWorkers(new Set([...this.running.keys(), ...this.stopping.keys()]));
   }
 
@@ -164,8 +176,11 @@ export class ManagerWorker extends BaseWorker {
    * replace. A long-running tool must not force the launcher to kill the worker.
    */
   async suspendForReplace(): Promise<void> {
+    this.lifecycleGeneration++;
+    this.resumePending = null;
     await this.interruptWorkers();
     for (const name of this.drain) await this.stopWorker(name);
+    await this.resumeTask?.catch(() => undefined);
     await this.stopWorkers([...new Set([...this.running.keys(), ...this.stopping.keys()])].filter((name) => name !== "replace"));
   }
 
@@ -183,15 +198,39 @@ export class ManagerWorker extends BaseWorker {
 
   /** Bring back the workers a failed or finished replace stopped. */
   async resume(): Promise<void> {
-    if (!this.started) return;
-    await this.reconcile();
+    if (!this.started || this.stopRequested) return;
+    if (this.resumeTask) return this.resumeTask;
+    const generation = this.lifecycleGeneration;
+    this.resumePending = generation;
+    this.resumeTask = this.reconcile(generation);
+    try {
+      await this.resumeTask;
+      if (this.currentResume(generation)) this.resumePending = null;
+    } catch (error) {
+      if (this.currentResume(generation) && !this.stopping.size) this.resumePending = null;
+      throw error;
+    } finally { this.resumeTask = null; }
+  }
+
+  private currentResume(generation: number): boolean {
+    return this.started && !this.stopRequested && this.lifecycleGeneration === generation && this.resumePending === generation;
+  }
+
+  private async recoverResume(): Promise<boolean> {
+    const generation = this.resumePending;
+    if (generation === null || this.resumeTask || !this.currentResume(generation)) return false;
+    // No repeated grace-period waits: retry only once every retained owner has
+    // genuinely settled. Owners without this signal still require manual repair.
+    if ([...this.stopping.values()].some(({ worker }) => worker.canFinishStop?.() !== true)) return false;
+    await this.resume();
+    return true;
   }
 
   async poll(): Promise<boolean> {
     this.checkHealth();
     const board = this.bus.board("ManageWorkerNotify");
     const job = board.claim(this.worker_name);
-    if (!job) return false;
+    if (!job) return this.recoverResume();
     try {
       await this.apply(job.input);
       board.submit(this.worker_name, job.id, { output: { running: [...this.running.keys()] } });
@@ -230,15 +269,19 @@ export class ManagerWorker extends BaseWorker {
   }
 
   /** Converge: run what is configured, stop what is not. */
-  private async reconcile(): Promise<void> {
+  private async reconcile(resumeGeneration?: number): Promise<void> {
     // No new worker generation while any old generation still owns mutations.
-    for (const name of this.stopping.keys()) await this.stopWorker(name);
+    for (const name of this.stopping.keys()) {
+      if (resumeGeneration !== undefined && !this.currentResume(resumeGeneration)) return;
+      await this.stopWorker(name);
+    }
     for (const worker of this.workers) {
+      if (resumeGeneration !== undefined && !this.currentResume(resumeGeneration)) return;
       const name = worker.worker_name;
       const running = this.running.has(name);
       const wanted = this.wanted(worker);
       if (wanted === running) continue;
-      if (wanted) await this.startWorker(worker);
+      if (wanted) await this.startWorker(worker, resumeGeneration);
       else await this.stopWorker(name);
     }
   }
@@ -251,13 +294,21 @@ export class ManagerWorker extends BaseWorker {
     return worker.configured?.() ?? true;
   }
 
-  private async startWorker(worker: StartableWorker): Promise<void> {
+  private async startWorker(worker: StartableWorker, resumeGeneration?: number): Promise<void> {
     const name = worker.worker_name;
     try {
       await worker.start?.();
     } catch (error) {
       this.report(`worker "${name}" could not start: ${message(error)}`);
       try { await worker.stop?.(); } catch { /* a failed start has nothing left to stop */ }
+      return;
+    }
+    if (resumeGeneration !== undefined && !this.currentResume(resumeGeneration)) {
+      // stop() may arrive while start() is awaiting. Retire that cold instance
+      // without giving it a poll loop or accepting new work.
+      if (worker.stop) this.stopping.set(name, { worker, loop: Promise.resolve() });
+      await worker.interrupt?.();
+      if (worker.stop) await this.stopWorker(name);
       return;
     }
     const running: RunningWorker = { worker, loop: Promise.resolve() };
