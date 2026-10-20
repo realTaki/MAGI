@@ -9,12 +9,12 @@ import { magiLocalName } from "@magi/bus";
 
 export function sourceCheckout(handle: string, workspace: string, role = process.env.MAGI_ROLE): string {
   const name = magiLocalName(handle);
-  const branch = role === "shell" || role === "asp" ? `magi/${role}` : `magi/${name}`;
+  const branch = role === "shell" ? `magi/${role}` : `magi/${name}`;
   const managed = join(workspace, "MAGI");
   const envCheckout = process.env.MAGI_CHECKOUT?.trim() ?? "";
   const root = existsSync(join(managed, ".git"))
     ? managed
-    : (role === "shell" || role === "asp") && envCheckout !== "" && existsSync(join(envCheckout, ".git"))
+    : (role === "shell") && envCheckout !== "" && existsSync(join(envCheckout, ".git"))
       ? envCheckout
       : "";
   if (root === "") {

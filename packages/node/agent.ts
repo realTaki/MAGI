@@ -16,8 +16,6 @@ export type MagiOptions = {
   peer?: PeerOptions;
   /** Parent-owned stdio only. Never enabled by peer wire content. */
   owner?: boolean;
-  /** Legacy explicit relay adapter; standalone EVA no longer needs ASP. */
-  asp?: { base: string; token: string };
   telegram?: { token: string; apiBase?: string };
   mcpConnector?: McpConnector;
 };
@@ -29,10 +27,6 @@ export class Magi {
 
   constructor(handle: string, options: MagiOptions = {}) {
     this.bus = new Bus(handle, options.workspace);
-    if (options.asp) {
-      this.bus.settings.set("asp.base", options.asp.base);
-      this.bus.settings.set("asp.token", options.asp.token);
-    }
     this.manager = new ManagerWorker(this.bus, agentWorkers(this.bus, options), {
       drain: ["agent"],
       build: { app: "eva", script: "build" },

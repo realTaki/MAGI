@@ -43,9 +43,6 @@
       "path": "../skills"
     },
     {
-      "path": "../channel-asp"
-    },
-    {
       "path": "../channel-cli"
     },
     {
@@ -53,9 +50,6 @@
     },
     {
       "path": "../channel-telegram"
-    },
-    {
-      "path": "../asp-server"
     },
     {
       "path": "../webapp"

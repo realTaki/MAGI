@@ -5,13 +5,10 @@
 
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
-import { join } from "node:path";
 import { healthyOrExit, untilHealthy } from "@magi/manager";
 import { resolveToolchain } from "@magi/runtime/toolchain.js";
-import { aspBase } from "@magi/runtime/asp.js";
 import { createOwnerApi } from "./owner.js";
 import { Magi } from "./agent.js";
-import { Asp } from "./asp.js";
 import { sendLauncher, untilShutdown, watchLauncherProtocol } from "./control.js";
 import { createLocalApi, operatingSystemHome, Shell } from "./shell.js";
 import { connectHost } from "./host.js";
@@ -115,23 +112,8 @@ async function startShell(): Promise<() => Promise<void>> {
   }
 }
 
-async function startAsp(): Promise<() => Promise<void>> {
-  const base = new URL(aspBase());
-  const asp = new Asp({
-    aspBase: base.href,
-    requestShutdown: () => process.kill(process.pid, "SIGTERM"),
-    host: base.hostname,
-    port: Number(base.port || "80"),
-  });
-  await asp.start();
-  await healthyOrExit(() => asp.healthy());
-  console.error(`[asp] listening on ${asp.origin}`);
-  return async () => { await asp.stop(); };
-}
-
 async function startRole(selected: string): Promise<{ stop: () => Promise<void>; done: Promise<void> }> {
   if (selected === "shell") return { stop: await startShell(), done: new Promise(() => {}) };
-  if (selected === "asp") return { stop: await startAsp(), done: new Promise(() => {}) };
   if (selected !== "agent") throw new Error(`unknown role ${selected}`);
   return runAgent();
 }
@@ -170,16 +152,6 @@ async function runHealth(selected: string): Promise<void> {
     await shell.start();
     problem = await untilHealthy(() => shell.healthy());
     await shell.stop();
-  } else if (selected === "asp") {
-    const asp = new Asp({
-      workspace: home,
-      databasePath: home ? join(home, "asp.sqlite") : undefined,
-      host: "127.0.0.1",
-      port: 0,
-    });
-    await asp.start();
-    problem = await untilHealthy(() => asp.healthy());
-    await asp.stop();
   } else {
     const magi = new Magi(process.env.MAGI_HANDLE?.trim() || "@health.magi", { workspace: home });
     await magi.start();

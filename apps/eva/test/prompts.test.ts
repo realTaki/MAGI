@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { COMPACTION_INVARIANT, SYSTEM_PROMPT } from "@magi/agent/prompt_defaults.js";
 import { sourceCheckout } from "@magi/agent/checkout.js";
-import { ASP_MAGI_HANDLE, EVA_MAGI_HANDLE, magiLocalName, SHELL_MAGI_HANDLE } from "@magi/bus";
+import { EVA_MAGI_HANDLE, magiLocalName, SHELL_MAGI_HANDLE } from "@magi/bus";
 import { test } from "./test.js";
 
 test("the system prompt says how to change the system and does not map the repository", () => {
@@ -30,7 +30,7 @@ test("source checkout is this process's tree or an explicit refusal", () => {
     assert.match(sourceCheckout(EVA_MAGI_HANDLE, workspace, "shell"), /branch: magi\/shell/);
     assert.match(sourceCheckout(SHELL_MAGI_HANDLE, workspace, "shell"), new RegExp(`handle: ${SHELL_MAGI_HANDLE.replace(".", "\\.")}`));
     assert.match(sourceCheckout(SHELL_MAGI_HANDLE, workspace, "shell"), /branch: magi\/shell/);
-    assert.match(sourceCheckout(ASP_MAGI_HANDLE, workspace, "asp"), /branch: magi\/asp/);
+    assert.match(sourceCheckout(workspace, "asp"), /branch: magi\/asp/);
     rmSync(join(workspace, "MAGI", ".git"), { recursive: true, force: true });
     const previous = process.env.MAGI_CHECKOUT;
     const source = mkdtempSync(join(tmpdir(), "magi-source-"));

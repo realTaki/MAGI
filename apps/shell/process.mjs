@@ -13,7 +13,7 @@ import { ensureInstalledDependencies } from "./installation.mjs";
 import { spawn } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
-import { ASP_MAGI_HANDLE, SHELL_MAGI_HANDLE } from "@magi/bus";
+import { SHELL_MAGI_HANDLE } from "@magi/bus";
 import { replaceFailedPath } from "@magi/bus/replaceMarker.js";
 import { LAUNCHER_PROTOCOL } from "@magi/runtime/protocol.js";
 import { createInterface } from "node:readline";
@@ -60,11 +60,10 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
     stream.write(`${JSON.stringify(message)}\n`);
   }
 
-  /** The bus handle for a supervised app. describeApp aliases asp and shell. */
+  /** The bus handle for a supervised app. describeApp recognizes Shell and EVA. */
   function markerHandle(spec) {
     const app = describeApp(spec);
     if (!app) return null;
-    if (app.kind === "asp") return ASP_MAGI_HANDLE;
     if (app.kind === "shell") return SHELL_MAGI_HANDLE;
     return app.handle;
   }

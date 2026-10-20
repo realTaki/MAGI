@@ -11,9 +11,6 @@
       "path": "packages/node"
     },
     {
-      "path": "packages/asp-server"
-    },
-    {
       "path": "packages/manager"
     },
     {
@@ -41,9 +38,6 @@
       "path": "packages/skills"
     },
     {
-      "path": "packages/channel-asp"
-    },
-    {
       "path": "packages/channel-cli"
     },
     {
@@ -54,9 +48,6 @@
     },
     {
       "path": "apps/eva"
-    },
-    {
-      "path": "apps/asp"
     },
     {
       "path": "apps/shell"

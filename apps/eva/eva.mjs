@@ -25,12 +25,12 @@ function args() {
   const roleFlag = process.argv.indexOf("--role");
   const role = roleFlag >= 0 ? process.argv[roleFlag + 1] : (process.env.MAGI_ROLE || "agent");
   const rest = process.argv.slice(2).filter((arg, index, all) => arg !== "--role" && all[index - 1] !== "--role");
+  if (!["agent", "shell"].includes(role)) throw new Error(`unknown role ${role}`);
   return { role, rest };
 }
 
 function nodeName(role, rest) {
   if (role === "shell") return "shell";
-  if (role === "asp") return "asp";
   const handle = rest[0] || "agent";
   return handle.replace(/^@/, "").replace(/\.magi$/, "");
 }
@@ -109,8 +109,6 @@ function spawnChild(role, rest, name, { script, revision, previous, replaceJob, 
     MAGI_LAUNCHER: launcherFile,
     ...(role === "shell" ? { MAGI_APP_CHECKOUT: resolve(dirname(script), "..", "..", "..") } : {}),
     ...(rest[0] ? { MAGI_HANDLE: rest[0] } : {}),
-    ...(rest[1] ? { MAGI_ASP: rest[1] } : {}),
-    ...(rest[2] ? { MAGI_ASP_TOKEN: rest[2] } : {}),
     ...(revision ? { MAGI_REVISION: revision } : {}),
     ...(previous ? { MAGI_PREVIOUS_REVISION: previous } : {}),
   };

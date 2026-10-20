@@ -1,5 +1,5 @@
 /**
- * The workers for one role. Shell, ASP, and an agent differ only by this list.
+ * The workers for one role. Shell and an agent differ only by this list.
  */
 
 import { LocalOwnerWorker } from "./owner.js";
@@ -12,7 +12,6 @@ import { ProvidersWorker } from "@magi/providers/worker.js";
 import type { LLMClient } from "@magi/providers/client.js";
 import { SkillWorker } from "@magi/skills/worker.js";
 import { PeerWorker, type PeerOptions } from "@magi/channel-peer";
-import { AspWorker } from "@magi/channel-asp/worker.js";
 import { TelegramWorker } from "@magi/channel-telegram/worker.js";
 import { CliWorker } from "@magi/channel-cli/worker.js";
 import { TaskWorker } from "@magi/channel-tasks/worker.js";
@@ -36,7 +35,6 @@ export function agentWorkers(bus: Bus, options: {
   deliver?: (text: string, delivery: ChatDelivery) => void;
   peer?: PeerOptions;
   owner?: boolean;
-  asp?: { base: string; token: string };
   telegram?: { token: string; apiBase?: string };
   mcpConnector?: McpConnector;
 } = {}): BaseWorker[] {
@@ -47,17 +45,7 @@ export function agentWorkers(bus: Bus, options: {
     new McpWorker(bus, options.mcpConnector),
     new PeerWorker(bus, options.peer),
     ...(options.owner ? [new LocalOwnerWorker(bus)] : []),
-    ...(options.asp ? [new AspWorker(bus, options.asp)] : []),
     new TelegramWorker(bus, options.telegram),
-  ];
-}
-
-export function aspWorkers(bus: Bus, server: BaseWorker, client?: LLMClient): BaseWorker[] {
-  return [
-    ...shared(bus, client),
-    server,
-    new AspWorker(bus),
-    new TelegramWorker(bus),
   ];
 }
 
@@ -70,5 +58,5 @@ export function shellWorkers(bus: Bus, webapp: BaseWorker, peer: BaseWorker, cli
   ];
 }
 
-/** Pause a hosted MAGI without taking down its UI or relay service. */
-export const HOSTED_NODE_WORKERS = ["contacts", "skills", "agent", "tools", "memory", "providers", "asp", "tg"];
+/** Pause a hosted MAGI without taking down its UI or peer listener. */
+export const HOSTED_NODE_WORKERS = ["contacts", "skills", "agent", "tools", "memory", "providers", "tg"];

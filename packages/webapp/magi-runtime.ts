@@ -13,7 +13,7 @@ import path from "node:path";
 import { EVA_MAGI_HANDLE, isInProcessMagiHandle, magiLocalName } from "@magi/bus";
 import { ensureManagedClone } from "./clone.js";
 
-/** Branch per MAGI: `magi/<name>` (`magi/shell` for Balthasar, `magi/asp` for Casper). */
+/** Branch per MAGI: `magi/<name>` (`magi/shell` for the built-in EVA). */
 export const AGENT_BRANCH_PREFIX = "magi/";
 
 export function agentName(handle) {
@@ -367,7 +367,7 @@ export function createMagiRuntime({
   async function merge(agent) {
     const { handle } = require(agent);
     if (isInProcessMagiHandle(handle)) {
-      throw new Error(`${handle} runs in Shell or ASP, so there is no EVA clone to merge.`);
+      throw new Error(`${handle} runs inside Shell, so there is no EVA clone to merge.`);
     }
     if (!managed) {
       throw new Error("This checkout is not managed by the app, so its MAGI share it and there is nothing to merge.");

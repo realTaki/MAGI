@@ -25,11 +25,8 @@ export class ConfigWorker extends BaseWorker {
   readonly worker_name = "config";
   /** The startup provider card, while it is waiting for the user. */
   private cardJob: number | null = null;
-  /** The owner 1:1 this worker uses for the card. ASP reuses that room if it exists. */
+  /** The authenticated local owner conversation used for recovery cards. */
   private ownerChat: number | null = null;
-  /** The open-chat job, while ASP is being asked for a home chat. */
-  private opening: number | null = null;
-  private openAgainAt = 0;
   private cardStopped = false;
   /** Inbound card and sync work, off this worker's poll so config writes can finish. */
   private task: Promise<void> | null = null;
@@ -99,22 +96,7 @@ export class ConfigWorker extends BaseWorker {
   /** The startup card is shown only in a chat this worker opened. */
   private ensureOwnerChat(): number | null {
     if (this.ownerChat !== null) return this.ownerChat;
-    if (!this.bus.settings.get("asp.base")?.trim()) return null;
-    if (Date.now() < this.openAgainAt) return null;
-    if (this.opening === null) {
-      this.opening = this.bus.board("AspCommandJob").publish({ name: "open_owner_chat" }, this.worker_name);
-      return null;
-    }
-    const opened = this.bus.board("AspCommandJob").result(this.opening);
-    if (!opened) return null;
-    this.opening = null;
-    const output = opened.output;
-    if (opened.status === "failed" || output === undefined || !("chat_id" in output)) {
-      this.openAgainAt = Date.now() + 1_000;
-      this.tell(`[provider] ${opened.error ?? "could not open a chat for the provider card"}`);
-      return null;
-    }
-    this.ownerChat = output.chat_id;
+    this.ownerChat = messageDelivery.presentChat(this.bus);
     return this.ownerChat;
   }
 

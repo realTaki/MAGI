@@ -28,11 +28,9 @@
     "@magi/memory": "*",
     "@magi/mcp": "*",
     "@magi/skills": "*",
-    "@magi/channel-asp": "*",
     "@magi/channel-cli": "*",
     "@magi/channel-tasks": "*",
     "@magi/channel-telegram": "*",
-    "@magi/asp-server": "*",
     "@magi/webapp": "*",
     "@magi/channel-peer": "*"
   }

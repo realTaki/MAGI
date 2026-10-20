@@ -55,7 +55,7 @@ for (const key of Object.keys(env)) {
 env.MAGI_HOME = home;
 env.MAGI_OS_HOME = home;
 delete env.NODE_TEST_CONTEXT;
-// Shell verify must run build:ui; agent/asp skip it. Keep MAGI_ROLE only for that.
+// Shell verify must run build:ui; agents skip it. Keep MAGI_ROLE only for that.
 
 let code = 0;
 try {

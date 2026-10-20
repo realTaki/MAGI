@@ -74,22 +74,3 @@ test("initial role name and persistent nickname remain independent across restar
     assert.equal(bus.contacts.get(MAGI_CONTACT_ID)?.nickname, "Custom");
   } finally { bus.close(); await rm(workspace, {recursive:true, force:true}); }
 });
-
-test("ASP invitation structured input uses the same owner-only ingress and replay guard", async () => {
-  const { AspWorker } = await import("@magi/channel-asp/worker.js");
-  const workspace = await mkdtemp(join(tmpdir(), "chat-invite-"));
-  const bus = new Bus(EVA_MAGI_HANDLE, workspace);
-  const worker = new AspWorker(bus);
-  Object.assign(worker, { client: { async join() {} } });
-  const receive = (worker as unknown as {onEvent(event: unknown): Promise<unknown>}).onEvent.bind(worker);
-  try {
-    const event = {type:"chat.invited",chat_id:"owner",event_id:"invite",sequence:1,payload:{invitee:EVA_MAGI_HANDLE,initial_message:{sender:"@user.magi",sequence:2,content:"not public",metadata:{card_result:{id:"open",action:"open"}}}}};
-    assert.deepEqual(await receive(event), {type:"chat.ack",chat_id:"owner",event_id:"invite"});
-    const job = bus.board("InboundSecretJob").claim("test");
-    assert.equal(job?.input.kind, "card_result");
-    await receive(event);
-    assert.equal(bus.board("InboundSecretJob").claim("test"), null);
-    assert.equal(bus.messages.list(bus.chats.forChannel("asp","owner").id)[0].content,"card submitted");
-    await assert.rejects(receive({type:"chat.message",chat_id:"unknown",payload:{content:"owner claim",metadata:{card_result:{id:"open",action:"open"}}}}), /authenticated sender/);
-  } finally { bus.close(); await rm(workspace,{recursive:true,force:true}); }
-});

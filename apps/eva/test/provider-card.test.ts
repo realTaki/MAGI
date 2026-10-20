@@ -31,7 +31,7 @@ test("provider cards survive repeated failures, direct correction, cancel and re
     configure(settings) { configured.push(settings); },
   } });
   const bus = magi.bus;
-  const chat = bus.chats.forChannel("asp", "test-chat");
+  const chat = bus.chats.forChannel("local-owner", "test-chat");
   const db = new DatabaseSync(join(workspace, "logs", "jobs.db"), { readOnly: true });
   const rows = () => db.prepare("SELECT * FROM jobs").all() as unknown as Array<{ id: number; type: string; input: string }>;
   const cards = () => rows().filter((row) => row.type === "CardJob").map((row) => ({ ...row, spec: (JSON.parse(row.input) as { spec: CardSpec }).spec }));

@@ -27,7 +27,7 @@ const FAILURES_KEY = "replace.gate_failures";
 type ReplaceFailKind = "gate" | "crash" | "build";
 
 export type AppBuild = {
-  app: "eva" | "asp" | "shell";
+  app: "eva" | "shell";
   /** `package.json` script in `apps/<app>`, such as `build` or `build:process`. */
   script: string;
 };
@@ -298,7 +298,7 @@ function childScript(): string {
   return join(dirname(fileURLToPath(import.meta.url)), "..", "..", "node", "dist", "child.js");
 }
 
-function healthCheck(role: "agent" | "asp" | "shell"): Promise<void> {
+function healthCheck(role: "agent" | "shell"): Promise<void> {
   const workspace = mkdtempSync(join(tmpdir(), "magi-health-"));
   const env: NodeJS.ProcessEnv = {
     ...process.env,

@@ -7,7 +7,7 @@ export function describeApp(spec, paths = path) {
   const { basename, dirname, resolve } = paths;
   const cwd = resolve(spec.cwd);
   const kind = basename(cwd);
-  if (!["shell", "asp", "eva"].includes(kind) || basename(dirname(cwd)) !== "apps") return null;
+  if (!["shell", "eva"].includes(kind) || basename(dirname(cwd)) !== "apps") return null;
   if (resolve(cwd, spec.entry) !== resolve(cwd, "dist", `${kind}.js`)) return null;
   const handle = kind === "eva" ? spec.args?.[0] : `@${kind}.magi`;
   if (!HANDLE.test(handle ?? "") || (kind === "eva" && ["@shell.magi", "@asp.magi", "@user.magi"].includes(handle))) return null;

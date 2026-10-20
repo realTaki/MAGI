@@ -1,5 +1,5 @@
 /**
- * Balthasar's workers, including the UI backend. The eva launcher starts this
+ * Shell EVA workers, including the UI backend. The eva launcher starts this
  * inside the child process. Electron is the window; this process is the BUS.
  */
 
@@ -58,7 +58,7 @@ export class Shell {
       });
       this.manager = new ManagerWorker(this.bus, shellWorkers(this.bus, this.worker, this.peer, context.client), {
         drain: ["agent", "webapp"],
-        nodeWorkers: HOSTED_NODE_WORKERS.filter(name => name !== "asp"),
+        nodeWorkers: HOSTED_NODE_WORKERS,
         build: { app: "shell", script: "build:process" },
         installDesktopUpdate: context.installDesktopUpdate,
       });

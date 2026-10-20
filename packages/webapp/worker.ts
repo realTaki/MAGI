@@ -6,8 +6,6 @@ import { createLocalApi } from "./api.js";
 import { localEvaManagement } from "./local-evas.js";
 
 export { USER_HANDLE } from "@magi/bus";
-export { AspProcessWorker, ASP_ORIGIN } from "./asp-process.js";
-export type { AspHealth, AspProcessOptions, AspProgress } from "./asp-process.js";
 
 export class WebappWorker extends BaseWorker {
   readonly worker_name = "webapp";

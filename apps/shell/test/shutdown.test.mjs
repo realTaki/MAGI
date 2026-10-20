@@ -74,7 +74,7 @@ test("an exiting command root cannot leave real orphan descendants behind", { ti
 });
 
 test("supervisor close waits for a real application tree and refuses later starts and restarts", { timeout: 40_000 }, async (t) => {
-  const root = await directory(t), source = await treeFixture(root), cwd = path.join(root, "apps/asp"), entry = path.join(cwd, "dist/asp.js"), file = path.join(root, "app.jsonl");
+  const root = await directory(t), source = await treeFixture(root), cwd = path.join(root, "apps/shell"), entry = path.join(cwd, "dist/shell.js"), file = path.join(root, "app.jsonl");
   await mkdir(path.dirname(entry), { recursive: true }); await writeFile(entry, await readFile(source));
   const owner = createProcessOwner({ graceMs: 100, forceMs: 5000 });
   const supervisor = createSupervisor({ node: process.execPath, env: process.env, owner }); t.after(() => supervisor.close());
