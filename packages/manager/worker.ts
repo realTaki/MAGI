@@ -395,7 +395,8 @@ export class ManagerWorker extends BaseWorker {
    */
   private report(text: string): void {
     const notice = `[manager] ${text}`;
-    if (messageDelivery.notify(this.bus, notice) === null) console.error(notice);
+    if (text.endsWith("recovered")) { if (messageDelivery.notify(this.bus, notice) === null) console.error(notice); }
+    else messageDelivery.reportError(this.bus, notice, { module: this.worker_name });
   }
 }
 

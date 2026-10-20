@@ -28,7 +28,7 @@ import { spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
-  chat, messageDelivery, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, loadOrCreateIdentity,
+  chat, messageDelivery, MAGI_CONTACT_ID, loadOrCreateIdentity,
   SHELL_MAGI_HANDLE,
 } from "@magi/bus";
 
@@ -729,7 +729,7 @@ export function createLocalApi(context) {
     }
     const room = conversation(id);
     return bus.messages.list(room.id, 500).filter(message => !messageDelivery.isInternal(bus, message.id)).map(m => ({ id: m.id, content: m.content,
-      role: (id === "shell" ? m.contact_id === SYSTEM_CONTACT_ID : m.contact_id === MAGI_CONTACT_ID) ? "user" : "assistant",
+      role: (id === "shell" ? m.contact_id !== MAGI_CONTACT_ID : m.contact_id === MAGI_CONTACT_ID) ? "user" : "assistant",
       sender: bus.contacts.get(m.contact_id)?.nickname ?? bus.contacts.get(m.contact_id)?.name,
       metadata: JSON.parse(bus.settings.get(`webapp.message.${m.id}`) ?? "null") ?? undefined, created_at: m.created_at,
     }));
@@ -759,7 +759,7 @@ export function createLocalApi(context) {
       const action = metadata.local_eva_action;
       if (!action || !["start", "stop"].includes(action.action) || Object.keys(action).some(k => !["action", "contact_id"].includes(k))) throw new Error("Invalid local lifecycle command");
       const owner = ownerChat();
-      messageDelivery.record(bus, owner.id, `${action.action} local EVA ${action.contact_id}`, SYSTEM_CONTACT_ID);
+      messageDelivery.record(bus, owner.id, `${action.action} local EVA ${action.contact_id}`, bus.userContactId);
       let result;
       if (action.contact_id === "shell") {
         if (!context.nodeControl) throw new Error("Shell lifecycle is unavailable");
@@ -771,7 +771,7 @@ export function createLocalApi(context) {
     const local = localOwned(id);
     if (local) return await magiRuntime.invokeOwner(local.handle, "owner.chat", { content, metadata });
     const room = conversation(id);
-    if (id === "shell") return chat(bus, room.id, SYSTEM_CONTACT_ID, { content, metadata }, "webapp");
+    if (id === "shell") return chat(bus, room.id, bus.userContactId, { content, metadata }, "webapp");
     if (metadata) throw new Error("Owner-only structured actions are available in the Shell conversation");
     return { id: messageDelivery.send(bus, room.id, content, MAGI_CONTACT_ID, "webapp") };
   }

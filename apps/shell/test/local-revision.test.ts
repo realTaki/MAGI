@@ -286,9 +286,10 @@ test('swap:true safety-gate failure goes through reviseCheckout and wakes the re
   claimWake(bus);
   const fourth = await failOnce(agentA.id);
   assert.equal(fourth.status, 'failed');
-  assert.equal(bus.messages.list(agentA.id).filter((row) => row.contact_id === SYSTEM_CONTACT_ID).length, 3);
-  const operator = bus.messages.list(operatorChat.id).at(-1);
-  assert.equal(operator?.contact_id, MAGI_CONTACT_ID);
+  assert.equal(bus.messages.list(agentA.id).filter((row) => row.contact_id === SYSTEM_CONTACT_ID).length, 4);
+  const operator = bus.messages.list(agentA.id).at(-1);
+  assert.equal(operator?.contact_id, SYSTEM_CONTACT_ID);
+  assert.equal(bus.deliveries.get(operator!.id)?.enqueue, false);
   assert.match(operator!.content, /after 3 attempts/);
   const leftover = bus.board('MessageDeliveryJob').claim('agent', (input) => bus.messages.get(input.message_id)?.contact_id !== MAGI_CONTACT_ID);
   assert.equal(leftover, null);
@@ -357,9 +358,10 @@ test('launcher rollback copy is distinct from a safety-gate failure, uses the jo
   claimWake(bus);
   const fourth = await failOnce(agentChat.id);
   assert.equal(fourth.status, 'failed');
-  assert.equal(bus.messages.list(agentChat.id).filter((row) => row.contact_id === SYSTEM_CONTACT_ID).length, 3);
-  const operator = bus.messages.list(operatorChat.id).at(-1);
-  assert.equal(operator?.contact_id, MAGI_CONTACT_ID);
+  assert.equal(bus.messages.list(agentChat.id).filter((row) => row.contact_id === SYSTEM_CONTACT_ID).length, 4);
+  const operator = bus.messages.list(agentChat.id).at(-1);
+  assert.equal(operator?.contact_id, SYSTEM_CONTACT_ID);
+  assert.equal(bus.deliveries.get(operator!.id)?.enqueue, false);
   assert.match(operator!.content, /after 3 attempts/);
   assert.match(operator!.content, /launcher rollback or crash/);
   const leftover = bus.board('MessageDeliveryJob').claim('agent', (input) => bus.messages.get(input.message_id)?.contact_id !== MAGI_CONTACT_ID);

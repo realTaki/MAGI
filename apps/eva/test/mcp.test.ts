@@ -68,8 +68,11 @@ test("an MCP server that cannot connect at boot reaches the operator", async () 
     });
     await magi.start();
     for (let i = 0; i < 200 && delivered.length === 0; i++) await sleep(10);
-    expect(delivered[0]).toContain("[mcp] dead");
-    expect(delivered[0]).toContain("connect refused");
+    const room = magi.bus.chats.forChannel("cli", "terminal");
+    const diagnostic = magi.bus.messages.list(room.id).find(message => message.content.includes("connect refused"))!;
+    expect(diagnostic.contact_id).toBe(SYSTEM_CONTACT_ID);
+    expect(magi.bus.deliveries.get(diagnostic.id)?.publisher).toBe("error:mcp");
+    expect(delivered.includes(diagnostic.content)).toBeFalse();
   } finally {
     await magi.stop();
     await rm(workspace, { recursive: true, force: true });

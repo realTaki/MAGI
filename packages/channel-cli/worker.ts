@@ -1,4 +1,4 @@
-import { BaseWorker, MAGI_CONTACT_ID, type Bus, type ChatDelivery } from "@magi/bus";
+import { BaseWorker, MAGI_CONTACT_ID, messageDelivery, type Bus, type ChatDelivery } from "@magi/bus";
 
 export class CliWorker extends BaseWorker {
   readonly worker_name = "cli";
@@ -21,6 +21,7 @@ export class CliWorker extends BaseWorker {
       board.submit(this.worker_name, job.id, { output: {} });
     } catch (error) {
       board.submit(this.worker_name, job.id, { error: error instanceof Error ? error.message : String(error) });
+      messageDelivery.reportError(this.bus, error instanceof Error ? error.message : String(error), { module: this.worker_name, source: `delivery:${job.input.message_id}`, chat_id: this.bus.messages.get(job.input.message_id)?.chat_id, wake: !job.input.metadata?.system_error_source });
     }
     return true;
   }

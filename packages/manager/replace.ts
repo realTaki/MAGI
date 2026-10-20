@@ -15,7 +15,7 @@ import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { BaseWorker, SYSTEM_CONTACT_ID, messageDelivery, replaceFailedPath, type Bus } from "@magi/bus";
+import { BaseWorker, messageDelivery, replaceFailedPath, type Bus } from "@magi/bus";
 import { LAUNCHER_PROTOCOL } from "@magi/runtime/protocol.js";
 import { packageDesktopRevision, type DesktopManifest } from "@magi/runtime/desktop-package.js";
 import { reviseCheckout } from "@magi/runtime/revise.js";
@@ -213,7 +213,7 @@ export class ReplaceWorker extends BaseWorker {
       if (typeof body.error === "string" && body.error !== "") error = body.error;
       if (typeof body.job === "number" && Number.isInteger(body.job)) jobId = body.job;
     } catch {
-      tell(this.bus, "[replace] replace marker could not be read");
+      messageDelivery.reportError(this.bus, "[replace] replace marker could not be read", { module: "replace" });
       rmSync(marker, { force: true });
       return true;
     }
@@ -390,17 +390,17 @@ function failReplace(bus: Bus, error: string, chatId: number | undefined, kind: 
   const live = chat > 0 ? bus.chats.get(chat) : null;
   if (!live) {
     // No requesting chat: crash keeps the original operator marker text.
-    if (kind === "build") tell(bus, `[replace] the process was not replaced (build failure).\n\n${tail}`);
-    else tell(bus, `[replace] ${tail}`);
+    if (kind === "build") messageDelivery.reportError(bus, `[replace] the process was not replaced (build failure).\n\n${tail}`, { module: "replace" });
+    else messageDelivery.reportError(bus, `[replace] ${tail}`, { module: "replace" });
     return;
   }
   const attempt = (Number(bus.settings.get(failuresKey(chat))) || 0) + 1;
   bus.settings.set(failuresKey(chat), String(attempt));
   if (attempt <= GATE_TRIES) {
-    messageDelivery.send(bus, chat, `[replace] ${failCopy(kind, attempt)}\n\n${tail}`, SYSTEM_CONTACT_ID, "replace");
+    messageDelivery.reportError(bus, `[replace] ${failCopy(kind, attempt)}\n\n${tail}`, { module: "replace", chat_id: chat });
     return;
   }
-  tell(bus, `[replace] ${failCopy(kind)}\n\n${tail}`);
+  messageDelivery.reportError(bus, `[replace] ${failCopy(kind)}\n\n${tail}`, { module: "replace", chat_id: chat, wake: false });
 }
 
 function tell(bus: Bus, text: string): void {

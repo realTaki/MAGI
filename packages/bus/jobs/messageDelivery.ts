@@ -26,7 +26,27 @@ export type MessageDeliveryJob = {
 /** Internal analysis may inform a foreground turn without appearing in its UI. */
 function isInternal(bus: Bus, messageId: number): boolean {
   const delivery = bus.deliveries.get(messageId);
-  return delivery?.publisher === "subconscious";
+  return bus.messages.get(messageId)?.contact_id === SYSTEM_CONTACT_ID || delivery?.publisher === "subconscious";
+}
+
+/** Module diagnostics are local system inputs, not outgoing MAGI messages. */
+function isError(bus: Bus, messageId?: number): boolean {
+  if (messageId === undefined) return false;
+  const delivery = bus.deliveries.get(messageId);
+  return bus.messages.get(messageId)?.contact_id === SYSTEM_CONTACT_ID && delivery?.publisher.startsWith("error:") === true;
+}
+function reportError(bus: Bus, text: string, options: { module: string; source?: string; chat_id?: number; wake?: boolean }): number | null {
+  const chat_id = options.chat_id ?? homeChat(bus) ?? bus.chats.forChannel("internal", "system").id;
+  // Diagnostics can contain provider/server text. Never persist known secrets or
+  // URL credentials/authorization values as chat history.
+  let safe = text;
+  for (const name of bus.secrets.names()) { const secret = bus.secrets.get(name); if (secret) safe = safe.split(secret).join("[redacted]"); }
+  safe = safe.replace(/(authorization\s*[:=]\s*)(?:bearer\s+|basic\s+)?[^\s,;]+/gi, "$1[redacted]")
+    .replace(/https?:\/\/[^\s<>]+/gi, value => { try { const url = new URL(value); url.username = ""; url.password = ""; if (url.search) url.search = "?redacted"; return url.toString(); } catch { return "[redacted URL]"; } });
+  const stored = bus.deliveries.persist({ chat_id, contact_id: SYSTEM_CONTACT_ID, content: safe,
+    publisher: `error:${options.module}`, key: options.source ? `system-error:${options.module}:${options.source}` : undefined,
+    enqueue: options.wake !== false });
+  return bus.deliveries.enqueue(bus, stored.delivery);
 }
 
 /** Record the message, then hand it to whoever must act on it. Returns the job id. */
@@ -38,7 +58,7 @@ function send(bus: Bus, chat_id: number, text: string, contact_id = SYSTEM_CONTA
   }
   if (target.channel === "group" && contact_id === MAGI_CONTACT_ID) {
     const replyTo = (metadata?.peer as { replyTo?: string } | undefined)?.replyTo;
-    return bus.groups.append(target.delivery_address, text, replyTo).job_id!;
+    return bus.groups.append(target.delivery_address, text, replyTo, typeof metadata?.system_error_source === "number" ? metadata.system_error_source : undefined).job_id!;
   }
   const peer = target.channel === "peer" && contact_id === MAGI_CONTACT_ID
     ? { messageId: randomUUID(), conversationUUID: target.conversation_uuid, ...((metadata?.peer as Record<string, unknown> | undefined) ?? {}) } : undefined;
@@ -48,7 +68,7 @@ function send(bus: Bus, chat_id: number, text: string, contact_id = SYSTEM_CONTA
 
 /** An agent's output stays private in its internal conversation, including errors. */
 function respond(bus: Bus, chat_id: number, text: string, metadata?: Record<string, unknown>): number | null {
-  if (bus.chats.get(chat_id)?.channel === "subconscious") {
+  if (["subconscious", "internal"].includes(bus.chats.get(chat_id)?.channel ?? "")) {
     record(bus, chat_id, text, MAGI_CONTACT_ID);
     return null;
   }
@@ -69,7 +89,7 @@ function homeChat(bus: Bus): number | null {
 
 /** Persist the operator's chosen notice destination. Callers validate the chat first. */
 function setHomeChat(bus: Bus, chat_id: number): void {
-  if (bus.chats.get(chat_id)?.channel === "subconscious") throw new Error("an internal conversation cannot be home");
+  if (["subconscious", "internal"].includes(bus.chats.get(chat_id)?.channel ?? "")) throw new Error("an internal conversation cannot be home");
   bus.settings.set("home.chat_id", String(chat_id));
 }
 
@@ -110,7 +130,8 @@ function receivePeer(bus: Bus, input: PeerInbound): PeerReceipt {
 function replyMetadata(bus: Bus, messageId?: number): Record<string, unknown> | undefined {
   const delivery = messageId === undefined ? undefined : bus.deliveries.get(messageId);
   const metadata = delivery?.metadata ? JSON.parse(delivery.metadata) as { peer?: { messageId?: string } } : undefined;
-  return metadata?.peer?.messageId ? { peer: { replyTo: metadata.peer.messageId } } : undefined;
+  const peer = metadata?.peer?.messageId ? { peer: { replyTo: metadata.peer.messageId } } : {};
+  return isError(bus, messageId) ? { ...peer, system_error_source: messageId } : Object.keys(peer).length ? peer : undefined;
 }
 
-export const messageDelivery = { send, respond, record, isInternal, homeChat, setHomeChat, notify, presentChat, receivePeer, replyMetadata };
+export const messageDelivery = { send, respond, record, isInternal, isError, reportError, homeChat, setHomeChat, notify, presentChat, receivePeer, replyMetadata };

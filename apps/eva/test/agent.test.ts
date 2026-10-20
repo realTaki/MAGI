@@ -263,12 +263,12 @@ describe("local MAGI agent", () => {
     // `[contact id …]` prefix, so the model never learns to write one itself.
     expect(history.find((message) => message.role === "assistant")).toMatchObject({ content: "noted" });
     const asked = history.find((message) => message.role === "user");
-    expect(asked?.content).toStartWith(`[contact id ${SYSTEM_CONTACT_ID} | `);
+    expect(asked?.content).toStartWith(`[contact id ${magi.bus.userContactId} | `);
     expect(asked?.content).toContain("\nfirst");
     await magi.stop();
   });
 
-  test("provider errors settle both jobs and produce a reply", async () => {
+  test("provider errors settle the turn and stay as local system feedback", async () => {
     const path = await workspace();
     const delivered: string[] = [];
     const magi = new Magi("@alice.magi", {
@@ -279,8 +279,10 @@ describe("local MAGI agent", () => {
     await magi.start();
     const id = await magi.chat("hello");
     expect(magi.bus.board("MessageDeliveryJob").result(id)).toMatchObject({ status: "failed", error: "bad credentials" });
-    for (let i = 0; i < 200 && !delivered.length; i++) await sleep(10);
-    expect(delivered).toEqual(["bad credentials"]);
+    await sleep(100);
+    expect(delivered).toEqual([]);
+    const room = magi.bus.chats.forChannel("cli", "terminal");
+    expect(magi.bus.messages.list(room.id).some(message => message.contact_id === SYSTEM_CONTACT_ID && message.content === "bad credentials")).toBeTrue();
     await magi.stop();
   });
 

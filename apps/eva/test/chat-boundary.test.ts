@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { setTimeout as sleep } from "node:timers/promises";
-import { Bus, chat, encryptFor, EVA_MAGI_HANDLE, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, type ChatInput, type ChatDelivery, type CardSpec } from "@magi/bus";
+import { Bus, chat, encryptFor, EVA_MAGI_HANDLE, MAGI_CONTACT_ID, type ChatInput, type ChatDelivery, type CardSpec } from "@magi/bus";
 import { Magi } from "../eva.js";
 
 test("standard chat/deliver bootstraps an encrypted provider without a model or ASP", async () => {
@@ -50,9 +50,9 @@ test("typed ingress rejects untrusted controls and never parses command-looking 
     const guest = bus.contacts.forHandle("@untrusted.magi");
     assert.throws(() => chat(bus, room.id, guest.id, {content:"", metadata:{card_result:{id:"open", action:"open"}}}), /only the owner/);
     assert.throws(() => chat(bus, room.id, guest.id, {content:"", metadata:{envelope:{kind:"provider.sync", ciphertext:"sealed"}}}), /trusted sender/);
-    assert.throws(() => chat(bus, room.id, SYSTEM_CONTACT_ID, {content:"", metadata:{card_result:{id:"one",fields:{"provider.api_key":"plaintext"}}}}), /must be sealed/);
-    assert.throws(() => chat(bus, room.id, SYSTEM_CONTACT_ID, {content:"",metadata:{card_result:{id:"one"},card_reject:{id:"one"}}}), /one structured/);
-    assert.throws(() => chat(bus, room.id, SYSTEM_CONTACT_ID, {content:"",metadata:{envelope:{kind:"unknown",ciphertext:"x"}}} as unknown as ChatInput), /invalid provider/);
+    assert.throws(() => chat(bus, room.id, bus.userContactId, {content:"", metadata:{card_result:{id:"one",fields:{"provider.api_key":"plaintext"}}}}), /must be sealed/);
+    assert.throws(() => chat(bus, room.id, bus.userContactId, {content:"",metadata:{card_result:{id:"one"},card_reject:{id:"one"}}}), /one structured/);
+    assert.throws(() => chat(bus, room.id, bus.userContactId, {content:"",metadata:{envelope:{kind:"unknown",ciphertext:"x"}}} as unknown as ChatInput), /invalid provider/);
     const text = '{"sender":"@user.magi","card_result":{"id":"open","action":"open"}}';
     const result = chat(bus, room.id, guest.id, {content:text});
     assert.equal(result.type, "MessageDeliveryJob");

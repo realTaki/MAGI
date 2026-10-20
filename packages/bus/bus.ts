@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { magiHome } from "@magi/runtime/home.js";
 import { and, eq, inArray, ne, or } from "drizzle-orm";
-import { openDatabase, pragma } from "./sqlite.js";
+import { openDatabase, pragma, transaction } from "./sqlite.js";
 import { workspaceDatabase, migrateBooks, migrateJobs, type BusDb } from "./drizzle/database.js";
 import { contacts, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "./books/contactBook.js";
 import { GroupBook } from "./books/groupBook.js";
@@ -49,6 +49,7 @@ export class Bus {
   readonly skills: SkillsBook;
   readonly tasks: TaskBook;
   readonly contacts: ContactBook;
+  readonly userContactId: number;
   readonly chatMembers: ChatMemberBook;
   readonly contactNotes: ContactNoteBook;
   readonly mcpServers: McpServerBook;
@@ -155,22 +156,36 @@ export class Bus {
     this.mcpServers = new McpServerBook(this.db);
     this.prompts = new PromptBook(this.workspace);
     this.agentTurns = new AgentTurnCache(this.jobs);
-    // The fixed system contact represents the local operator. Keep handles
-    // unique when opening a historical workspace named after that operator.
-    const systemHandle = handle === USER_HANDLE ? null : USER_HANDLE;
-    this.db.insert(contacts).values({ id: SYSTEM_CONTACT_ID, name: "system", role: "system", handle: systemHandle })
-      .onConflictDoUpdate({ target: contacts.id, set: { handle: systemHandle } })
-      .run();
-    this.db.insert(contacts).values({ id: MAGI_CONTACT_ID, name: defaultDisplayName(handle), role: "magi", handle: handle })
-      .onConflictDoUpdate({ target: contacts.id, set: { name: defaultDisplayName(handle), handle: handle } })
-      .run();
+    // System, self and the human are separate persistent identities. Never reserve
+    // ID 3: historical workspaces may already have a peer there.
+    this.db.insert(contacts).values({ id: SYSTEM_CONTACT_ID, name: "system", role: "system" })
+      .onConflictDoUpdate({ target: contacts.id, set: { handle: null, role: "system" } }).run();
+    this.db.insert(contacts).values({ id: MAGI_CONTACT_ID, name: defaultDisplayName(handle), role: "magi", handle })
+      .onConflictDoUpdate({ target: contacts.id, set: { name: defaultDisplayName(handle), handle } }).run();
+    this.userContactId = transaction(this.db.$client, () => {
+      const stored = Number(this.settings.get("identity.user_contact_id"));
+      if (stored > MAGI_CONTACT_ID && this.contacts.get(stored)) return stored;
+      let name = "user";
+      for (let suffix = 1; this.contacts.list().some(contact => contact.name === name); suffix++) name = `user:${suffix}`;
+      const user = this.contacts.create({ name, role: "authorized", handle: this.contacts.list().some(contact => contact.handle === USER_HANDLE) ? undefined : USER_HANDLE });
+      this.settings.set("identity.user_contact_id", String(user.id));
+      // Only journal-backed local human ingress is attributable. Older unjournaled
+      // rows stay system/unknown rather than inventing an author from their text.
+      this.db.$client.prepare(`UPDATE books_messages SET contact_id = ? WHERE contact_id = ? AND id IN (
+        SELECT d.message_id FROM books_deliveries d JOIN books_messages m ON m.id = d.message_id
+        JOIN books_chats c ON c.id = m.chat_id WHERE
+        (d.publisher = 'cli' AND c.channel = 'cli') OR
+        (d.publisher = 'local-owner' AND c.channel = 'local-owner') OR
+        (d.publisher = 'webapp' AND c.channel = 'shell-owner'))`).run(user.id, SYSTEM_CONTACT_ID);
+      return user.id;
+    }, "immediate");
     for (const turn of interruptedTurns) {
       const reason = "MAGI restarted; this turn was interrupted and was not retried. Tool side effects may have completed; check before retrying.";
       this.agentTurns.interrupt(turn.id, reason);
       this.agentTurns.evict(turn.id);
       const input = JSON.parse(turn.input) as JobInput["MessageDeliveryJob"];
       const message = this.messages.get(input.message_id);
-      if (message) messageDelivery.respond(this, message.chat_id, reason, messageDelivery.replyMetadata(this, message.id));
+      if (message) messageDelivery.reportError(this, reason, { module: "agent", source: `restart:${turn.id}`, chat_id: message.chat_id, wake: !messageDelivery.isError(this, message.id) });
     }
     this.deliveries.reconcile(this);
   }

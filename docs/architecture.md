@@ -250,3 +250,30 @@ slot and one background slot, so a slow background call does not occupy the
 foreground slot. Provider reconfiguration drains both slots before changing the
 client. This bounds local concurrency; it does not override a provider's own
 rate limits or guarantee that its server processes requests in parallel.
+
+## System events and human identity
+
+Contact 1 is the internal system, contact 2 is this MAGI, and the local human has
+an independently allocated, persisted contact ID. Model history maps these to
+system, assistant, and user respectively; all other contacts are user messages
+with a contact header. System events also carry a header identifying their actual
+module publisher (including subconscious, tasks, MCP and diagnostics). Payloads
+are delimited status data, not new user authorization or replacement instructions.
+Provider adapters retain this system meaning, merging system blocks when a
+provider does not support mid-conversation system messages, never relabeling them
+as user input.
+
+Module failures are recorded locally as system messages and may wake the normal
+agent loop. The original system rows are excluded from normal UI projections and
+are not peer/group replication events. The agent may still use its ordinary tools
+and choose a normal reply; an internal trigger does not impose an output ban.
+Errors while handling an error do not recursively wake another loop. Local error
+causality travels with delivery records, never in the group wire payload. Before
+an owner conversation exists, startup diagnostics use a local internal room whose
+responses are history-only, since it has no external destination. Known stored
+secrets and authorization/URL credentials are redacted before diagnostic storage.
+
+On first open after this change, only old system-authored rows with matching local
+human channel and delivery-journal provenance are reassigned to the new human
+contact. Ambiguous historical rows retain their original ID and an unknown-source
+header; existing contact IDs, including a peer already at ID 3, are not overwritten.

@@ -110,7 +110,7 @@ export class ConfigWorker extends BaseWorker {
     } catch (error) {
       const text = message(error);
       board.submit(this.worker_name, job.id, { error: text });
-      this.tell(`[provider] ${text}`);
+      messageDelivery.reportError(this.bus, text, { module: this.worker_name, source: `ConfigureJob:${job.id}` });
     }
     return true;
   }
@@ -147,7 +147,7 @@ export class ConfigWorker extends BaseWorker {
     } catch (error) {
       const text = message(error);
       board.submit(this.worker_name, id, { error: text });
-      this.tell(`[provider] ${text}`, input.chat_id);
+      messageDelivery.reportError(this.bus, text, { module: this.worker_name, source: `InboundSecretJob:${id}`, chat_id: input.chat_id });
     }
   }
 

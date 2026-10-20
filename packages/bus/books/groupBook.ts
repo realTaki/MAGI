@@ -104,17 +104,17 @@ export class GroupBook {
     const members = this.membership(uuid).payload.members;
     return members.some(member => member.principal === principal) && members.some(member => member.principal === groupPrincipal(this.bus.identity.publicKey));
   }
-  append(uuid: string, content: string, replyTo?: string): GroupReceipt {
+  append(uuid: string, content: string, replyTo?: string, systemErrorSource?: number): GroupReceipt {
     const author = groupPrincipal(this.bus.identity.publicKey);
     if (!this.allows(uuid, author)) throw new Error("local process is not a current group member");
     {
       const sequence = Number(this.db.$client.prepare("SELECT COALESCE(MAX(sequence), 0) + 1 AS n FROM books_group_events WHERE conversation_uuid = ? AND author = ?").get(uuid, author)!.n);
       const lamport = Number(this.db.$client.prepare("SELECT COALESCE(MAX(lamport), 0) + 1 AS n FROM books_group_events WHERE conversation_uuid = ?").get(uuid)!.n);
       const event = this.envelope({ v: 1, kind: "message", conversationUUID: uuid, eventId: randomUUID(), author, sequence, lamport, epoch: this.get(uuid)!.epoch, content, ...(replyTo ? { replyTo } : {}) });
-      return this.ingest(event);
+      return this.ingest(event, systemErrorSource);
     }
   }
-  ingest(event: GroupEventEnvelope): GroupReceipt {
+  ingest(event: GroupEventEnvelope, systemErrorSource?: number): GroupReceipt {
     const signer = checkEnvelope(event); const value = event.payload;
     if (value.v !== 1 || value.kind !== "message" || value.author !== signer || !UUID.test(value.conversationUUID) || !UUID.test(value.eventId) || !Number.isSafeInteger(value.sequence) || value.sequence < 1 || !Number.isSafeInteger(value.lamport) || value.lamport < 1 || !Number.isSafeInteger(value.epoch) || value.epoch < 1 || typeof value.content !== "string" || value.content.length > 32000 || (value.replyTo !== undefined && (typeof value.replyTo !== "string" || !UUID.test(value.replyTo)))) throw new Error("invalid group event");
     const group = this.get(value.conversationUUID);
@@ -135,7 +135,7 @@ export class GroupBook {
       const contact = local ? this.bus.contacts.get(MAGI_CONTACT_ID)! : known ?? this.bus.contacts.forPeer({ principal: signer, endpoint: member.endpoint });
       if (!local && contact.peer_principal !== signer) throw new Error("event author identity mismatch");
       validateChatInput(this.bus, group.chat_id, contact.id, { content: value.content }, local);
-      const metadata = { group: { event }, peer: { messageId: value.eventId, conversationUUID: value.conversationUUID, ...(value.replyTo ? { replyTo: value.replyTo } : {}) } };
+      const metadata = { ...(local && systemErrorSource ? { system_error_source: systemErrorSource } : {}), group: { event }, peer: { messageId: value.eventId, conversationUUID: value.conversationUUID, ...(value.replyTo ? { replyTo: value.replyTo } : {}) } };
       const stored = this.bus.deliveries.persist({ chat_id: group.chat_id, contact_id: contact.id, content: value.content, publisher: local ? "agent" : "peer", key: `group:${value.conversationUUID}:${signer}:${value.eventId}`, metadata, enqueue: local || !value.replyTo });
       this.db.$client.prepare("INSERT INTO books_group_events(conversation_uuid, author, event_id, sequence, lamport, epoch, envelope, message_id) VALUES(?, ?, ?, ?, ?, ?, ?, ?)").run(value.conversationUUID, signer, value.eventId, value.sequence, value.lamport, value.epoch, JSON.stringify(event), stored.delivery.message_id);
       this.bus.chatMembers.add(group.chat_id, contact.id);

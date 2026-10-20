@@ -60,7 +60,7 @@ export class PeerWorker extends BaseWorker {
       const contact = this.bus.contacts.list().find(contact => contact.peer_id === chat.peer_id);
       if (!contact?.peer_url || !contact.peer_principal) throw new PeerError("peer contact has no delivery route");
       const metadata = job.input.metadata?.peer as { messageId?: string; replyTo?: string } | undefined;
-      if (job.input.metadata && Object.keys(job.input.metadata).some(key => key !== "peer")) throw new PeerError("peer transport accepts ordinary chat only");
+      if (job.input.metadata && Object.keys(job.input.metadata).some(key => key !== "peer" && key !== "system_error_source")) throw new PeerError("peer transport accepts ordinary chat only");
       const payload: PeerMessage = {
         messageId: metadata?.messageId ?? `${this.client.principal}:${message.id}`,
         conversationUUID: chat.conversation_uuid, content: message.content,
@@ -74,9 +74,14 @@ export class PeerWorker extends BaseWorker {
       // Permanent protocol failures are visible, never retried blindly.
       if (error instanceof PeerError && error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 409 && error.status !== 429) {
         board.submit(this.worker_name, job.id, { error: error.message });
+        messageDelivery.reportError(this.bus, error.message, { module: this.worker_name, source: `delivery:${messageId}`, chat_id: this.bus.messages.get(messageId)?.chat_id, wake: !job.input.metadata?.system_error_source });
       } else {
         const retry = this.bus.deliveries.retry(messageId, error instanceof Error ? error.message : String(error));
-        if (retry.exhausted) board.submit(this.worker_name, job.id, { error: "peer delivery exhausted retries; inspect the contact endpoint and retry explicitly" });
+        if (retry.exhausted) {
+          const text = "peer delivery exhausted retries; inspect the contact endpoint and retry explicitly";
+          board.submit(this.worker_name, job.id, { error: text });
+          messageDelivery.reportError(this.bus, text, { module: this.worker_name, source: `delivery:${messageId}`, chat_id: this.bus.messages.get(messageId)?.chat_id, wake: !job.input.metadata?.system_error_source });
+        }
         else board.release(this.worker_name, job.id);
       }
     }

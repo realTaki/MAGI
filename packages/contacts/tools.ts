@@ -1,6 +1,6 @@
 /** Contacts and the notes attached to them. */
 
-import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, messageDelivery, type Bus, type ContactRole, type ExecutableTool, type NoteKind } from "@magi/bus";
+import { MAGI_CONTACT_ID, messageDelivery, type Bus, type ContactRole, type ExecutableTool, type NoteKind } from "@magi/bus";
 
 /** Local on purpose: this package must not depend on the tools package. */
 function stringArg(args: Record<string, unknown>, key: string): string {
@@ -65,7 +65,7 @@ export function contactTools(bus: Bus, context?: ContactToolContext): Executable
       input_schema: { type: "object", properties: { nickname: { type: ["string", "null"] } }, required: ["nickname"], additionalProperties: false },
       async run(args) {
         const message = context?.message_id === undefined ? undefined : bus.messages.get(context.message_id);
-        if (!message || message.chat_id !== context?.chat_id || message.contact_id !== SYSTEM_CONTACT_ID) {
+        if (!message || message.chat_id !== context?.chat_id || message.contact_id !== bus.userContactId) {
           throw new Error("set_self_profile requires an owner-authored triggering message in this chat");
         }
         if (args.nickname !== null && typeof args.nickname !== "string") throw new Error("nickname must be a string or null");

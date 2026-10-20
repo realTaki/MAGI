@@ -119,7 +119,7 @@ test("private failures and restart notices remain private", async () => {
     for (const message of magi.bus.messages.list(innerId).filter(message => message.contact_id === MAGI_CONTACT_ID)) {
       assert.equal(magi.bus.deliveries.get(message.id), undefined, "private output must not enqueue outward delivery");
     }
-    assert.ok(magi.bus.messages.list(innerId).some(message => message.contact_id === MAGI_CONTACT_ID && message.content === "private failure"));
+    assert.ok(magi.bus.messages.list(innerId).some(message => message.contact_id === SYSTEM_CONTACT_ID && message.content === "private failure"));
   } finally { await magi.stop(); }
   const reopened = new Magi("@private-errors.magi", { workspace: path });
   const queued = messageDelivery.send(reopened.bus, innerId, "interrupted", undefined, "task");

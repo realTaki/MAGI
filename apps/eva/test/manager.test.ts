@@ -103,11 +103,11 @@ test("a channel that fails while it runs reaches the chat the operator used", as
     magi.bus.settings.set("telegram.api_base", telegram.base);
     await manage(magi, "tg", "start");
 
-    for (let i = 0; i < 500 && delivered.length === 0; i++) await sleep(10);
-    expect(delivered).toHaveLength(1);
-    expect(delivered[0]).toContain('"tg"');
-    expect(delivered[0]).toContain("Telegram polling request failed");
-    expect(magi.bus.messages.list(chat.id).at(-1)?.content).toBe(delivered[0]);
+    for (let i = 0; i < 500 && !magi.bus.messages.list(chat.id).some(message => message.content.includes("Telegram polling request failed")); i++) await sleep(10);
+    const diagnostic = magi.bus.messages.list(chat.id).find(message => message.content.includes("Telegram polling request failed"))!;
+    expect(diagnostic.contact_id).toBe(1);
+    expect(diagnostic.content).toContain('"tg"');
+    expect(delivered.includes(diagnostic.content)).toBeFalse();
   } finally {
     await magi.stop();
     await telegram.server.close();
@@ -135,11 +135,9 @@ test("a channel that cannot log in is reported instead of starting", async () =>
     const started = await manage(magi, "tg", "start");
     expect(started.status).toBe("completed");
     expect(started.output?.running).not.toContain("tg");
-    // The notice travels as a delivery job, so it lands a moment later.
-    for (let i = 0; i < 200 && delivered.length === 0; i++) await sleep(10);
-    expect(delivered).toHaveLength(1);
-    expect(delivered[0]).toContain('worker "tg" could not start');
-    expect(magi.bus.messages.list(chat.id).at(-1)?.content).toBe(delivered[0]);
+    const diagnostic = magi.bus.messages.list(chat.id).find(message => message.content.includes('worker "tg" could not start'))!;
+    expect(diagnostic.contact_id).toBe(1);
+    expect(delivered.includes(diagnostic.content)).toBeFalse();
   } finally {
     await magi.stop();
     await telegram.server.close();

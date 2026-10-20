@@ -226,7 +226,7 @@ for (const scenario of ["recover", "recover failed mutation", "deliberate stop",
     // A cancelled cold generation must be retired before its BUS can close.
     bus.settings.set("helper.stops", String(++helperStops));
   } };
-  const manager = new ManagerWorker(bus, [new AgentWorker(bus), new ProvidersWorker(bus, { async complete() { return { role: "assistant", content: "", tool_calls: [{ name: "edit_file", tool_call_id: "mutation", arguments: {} }] }; } }), tools, helper], { drain: ["agent"], build: { app: "eva", script: "build" } });
+  const manager = new ManagerWorker(bus, [new AgentWorker(bus), new ProvidersWorker(bus, { async complete(request) { if (request.messages.at(-1)?.content.includes("source error:")) return { role: "assistant", content: "NO_REPLY" }; return { role: "assistant", content: "", tool_calls: [{ name: "edit_file", tool_call_id: "mutation", arguments: {} }] }; } }), tools, helper], { drain: ["agent"], build: { app: "eva", script: "build" } });
   try {
     await manager.start();
     const chat = bus.chats.forChannel("cli", "test");

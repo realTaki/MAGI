@@ -35,12 +35,12 @@ export class McpWorker extends BaseWorker {
     if (this.controller.signal.aborted) this.controller = new AbortController();
     await Promise.all(this.bus.mcpServers.list().filter((server) => server.enabled !== false).map(async (server) => {
       try { this.connections.set(server.name, await this.connector(server, this.bus.workspace)); }
-      catch (error) { messageDelivery.notify(this.bus, `[mcp] ${server.name}: ${message(error)}`); }
+      catch (error) { messageDelivery.reportError(this.bus, `${server.name}: ${message(error)}`, { module: this.worker_name }); }
     }));
     // A name clash here would make the whole catalog unreadable, and a boot is no
     // place to fail a MAGI over it: tell the operator, keep the connections, stay running.
     try { this.revalidate(); }
-    catch (error) { messageDelivery.notify(this.bus, `[mcp] catalog: ${message(error)}`); }
+    catch (error) { messageDelivery.reportError(this.bus, `catalog: ${message(error)}`, { module: this.worker_name }); }
   }
 
   async poll(): Promise<boolean> {

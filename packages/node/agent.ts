@@ -1,4 +1,4 @@
-import { Bus, chat as receiveChat, SYSTEM_CONTACT_ID, messageDelivery, type ChatInput, type ChatDelivery } from "@magi/bus";
+import { Bus, chat as receiveChat, messageDelivery, type ChatInput, type ChatDelivery } from "@magi/bus";
 import { ManagerWorker } from "@magi/manager";
 import type { LLMClient } from "@magi/providers/client.js";
 import type { Tool } from "@magi/built-in-tools/worker.js";
@@ -45,7 +45,7 @@ export class Magi {
     if (!this.manager.up) throw new Error("MAGI is not running");
     const chat = this.bus.chats.forChannel("cli", address);
     if (messageDelivery.homeChat(this.bus) === null) messageDelivery.setHomeChat(this.bus, chat.id);
-    const receipt = receiveChat(this.bus, chat.id, SYSTEM_CONTACT_ID, typeof input === "string" ? { content: input } : input, "cli");
+    const receipt = receiveChat(this.bus, chat.id, this.bus.userContactId, typeof input === "string" ? { content: input } : input, "cli");
     const { id } = receipt;
     while (this.manager.up) {
       if (this.bus.board(receipt.type).result(id)) return id;

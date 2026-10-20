@@ -54,7 +54,7 @@ export function chat(bus: Bus, chat_id: number, contact_id: number, input: ChatI
     const kind = kinds[0];
     const body = (metadata as Record<string, unknown>)[kind];
     if (!record(body)) throw new Error("invalid structured chat");
-    const owner = contact_id === SYSTEM_CONTACT_ID;
+    const owner = contact_id === bus.userContactId;
     if (kind !== "envelope" && !owner) throw new Error("only the owner may submit a card");
     if (kind === "envelope") {
       // Being seen in a chat or choosing a .magi handle does not confer trust.
@@ -89,9 +89,9 @@ export function chat(bus: Bus, chat_id: number, contact_id: number, input: ChatI
 export function validateChatInput(bus: Bus, chat_id: number, contact_id: number, input: ChatInput, allowSelf = false) {
   const target = bus.chats.get(chat_id);
   if (!target) throw new Error("chat does not exist");
-  if (target.channel === "subconscious") throw new Error("subconscious is an internal conversation");
+  if (["subconscious", "internal"].includes(target.channel)) throw new Error(`${target.channel} is an internal conversation`);
   const contact = bus.contacts.get(contact_id);
-  if (!contact || (!allowSelf && contact_id === MAGI_CONTACT_ID)) throw new Error("chat requires an authenticated sender");
+  if (!contact || (contact_id === SYSTEM_CONTACT_ID || (!allowSelf && contact_id === MAGI_CONTACT_ID))) throw new Error("chat requires an authenticated sender");
   if (typeof input.content !== "string") throw new Error("chat content must be text");
   return contact;
 }
