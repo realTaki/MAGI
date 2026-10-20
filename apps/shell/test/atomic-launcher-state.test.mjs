@@ -77,3 +77,28 @@ test('a concurrent reader sees only complete launcher snapshots during replaceme
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+test('replacement retries transient sharing locks but leaves old state after a bounded failure', () => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'magi-state-lock-'));
+  const file = join(home, 'launcher.json');
+  const read = () => JSON.parse(fs.readFileSync(file, 'utf8'));
+  try {
+    writeJsonAtomic(file, { revision: 'old' });
+    let attempts = 0;
+    writeJsonAtomic(file, { revision: 'new' }, { ...fs, renameSync(source, target) {
+      assert.deepEqual(read(), { revision: 'old' });
+      if (++attempts < 4) throw Object.assign(new Error('sharing lock'), { code: ['EPERM', 'EACCES', 'EBUSY'][attempts - 1] });
+      fs.renameSync(source, target);
+    } });
+    assert.equal(attempts, 4);
+    assert.deepEqual(read(), { revision: 'new' });
+    attempts = 0;
+    assert.throws(() => writeJsonAtomic(file, { revision: 'never' }, { ...fs, renameSync() {
+      attempts++;
+      throw Object.assign(new Error('persistent lock'), { code: 'EPERM' });
+    } }), /persistent lock/);
+    assert.equal(attempts, 50);
+    assert.deepEqual(read(), { revision: 'new' });
+    assert.deepEqual(fs.readdirSync(home), ['launcher.json']);
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
