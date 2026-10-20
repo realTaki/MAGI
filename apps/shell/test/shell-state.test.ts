@@ -16,11 +16,12 @@ function fixture(t) {
   } };
 }
 
-test("cache initialization failure is reported by ready and disposal still closes BUS", async (t) => {
+test("retired chat cache paths are ignored and preserved during startup and disposal", async (t) => {
   const f = fixture(t);
   mkdirSync(path.join(f.current, "chat.sqlite"), { recursive: true });
   const api = f.app();
-  await assert.rejects(api.ready(), /unable to open|Cannot open|directory/i);
+  await api.ready();
+  assert.equal((await api["runtime.status"]()).shell, "ready");
   await api.dispose();
   assert.equal(existsSync(path.join(f.current, "chat.sqlite")), true);
 });
