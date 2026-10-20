@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test , sleep} from "./test.js";
 import { existsSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -161,21 +162,25 @@ describe("local MAGI agent", () => {
             role: "assistant", content: "",
             tool_calls: [{ tool_call_id: "call_1", name: "write_file", arguments: { path: "notes/a.txt", content: "saved" } }],
           };
-          expect(job.messages.at(-1)).toMatchObject({ role: "tool", tool_call_id: "call_1", content: "wrote 5 bytes" });
+          expect(job.messages.at(-1)).toMatchObject({ role: "tool", tool_call_id: "call_1", content: `wrote 5 bytes; sha256=${createHash("sha256").update("saved").digest("hex")}` });
           return { role: "assistant", content: "Done." };
         },
       },
     });
-    await magi.start();
-    const id = await magi.chat("save a note");
-    // `chat()` completes when the turn has been persisted. Delivery is a
-    // separate BUS job, so wait for the channel worker before stopping the
-    // supervisor and inspecting its durable result.
-    for (let attempt = 0; attempt < 100 && delivered.length === 0; attempt++) await sleep(10);
-    // Chat.run has already evicted its hot context; this must hydrate the exact
-    // provider transcript from the jobs-db cache instead of rebuilding history.
-    expect(magi.bus.agentTurns.get(id).messages.at(-1)).toMatchObject({ role: "assistant", content: "Done." });
-    await magi.stop();
+    let id: number;
+    try {
+      await magi.start();
+      id = await magi.chat("save a note");
+      // `chat()` completes when the turn has been persisted. Delivery is a
+      // separate BUS job, so wait for the channel worker before stopping the
+      // supervisor and inspecting its durable result.
+      for (let attempt = 0; attempt < 100 && delivered.length === 0; attempt++) await sleep(10);
+      // Chat.run has already evicted its hot context; this must hydrate the exact
+      // provider transcript from the jobs-db cache instead of rebuilding history.
+      expect(magi.bus.agentTurns.get(id).messages.at(-1)).toMatchObject({ role: "assistant", content: "Done." });
+    } finally {
+      await magi.stop();
+    }
     expect(id).toBeGreaterThan(0);
     expect(await readFile(join(path, "notes/a.txt"), "utf8")).toBe("saved");
     expect(requests).toHaveLength(2);
@@ -224,17 +229,20 @@ describe("local MAGI agent", () => {
         },
       },
     });
-    await magi.start();
-    await magi.chat("完成两步工作");
-    for (let attempt = 0; attempt < 100 && delivered.length < 3; attempt++) await sleep(10);
-    await magi.stop();
+    try {
+      await magi.start();
+      await magi.chat("完成两步工作");
+      for (let attempt = 0; attempt < 100 && delivered.length < 3; attempt++) await sleep(10);
+    } finally {
+      await magi.stop();
+    }
 
     expect(requests).toHaveLength(3);
     expect(requests[2].messages.filter((message) => message.role === "tool").map((message) => ({
       tool_call_id: message.tool_call_id, content: message.content,
     }))).toEqual([
-      { tool_call_id: "call_1", content: "wrote 3 bytes" },
-      { tool_call_id: "call_2", content: "wrote 3 bytes" },
+      { tool_call_id: "call_1", content: `wrote 3 bytes; sha256=${createHash("sha256").update("one").digest("hex")}` },
+      { tool_call_id: "call_2", content: `wrote 3 bytes; sha256=${createHash("sha256").update("two").digest("hex")}` },
     ]);
     expect(delivered).toEqual(["正在处理第一步。", "第一步完成，继续第二步。", "全部完成。"]);
   });
