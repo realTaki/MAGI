@@ -71,3 +71,63 @@ test("Shell bootstrap stops when dependency installation fails", async (t) => {
   }), /install failed/);
   assert.equal(calls, 1, "a failed install must prevent building and launching Shell");
 });
+
+// Clone a genuinely unbuilt workspace. Its tracked launcher imports generated
+// modules; only the bootstrap-invoked build can create them. No fixture prebuild.
+test("tracked EVA launcher in a fresh clone builds dependencies before it can launch", async (t) => {
+  const { execFileSync } = await import("node:child_process");
+  const { existsSync, readFileSync } = await import("node:fs");
+  const parent = mkdtempSync(path.join(tmpdir(), "magi-fresh-clone-"));
+  t.after(() => rmSync(parent, { recursive: true, force: true }));
+  const origin = path.join(parent, "origin"), checkout = path.join(parent, "clone");
+  const output = ["packages/runtime/dist/home.js", "packages/runtime/dist/protocol.js", "packages/runtime/dist/toolchain.js", "packages/node/dist/child.js", "packages/node/dist/shell.js", "packages/bus/dist/index.js", "packages/manager/dist/worker.js"];
+  mkdirSync(path.join(origin, "apps/eva"), { recursive: true });
+  writeFileSync(path.join(origin, "package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: {} }));
+  writeFileSync(path.join(origin, ".gitignore"), "**/dist/\nnode_modules/\n");
+  writeFileSync(path.join(origin, "apps/eva/eva.mjs"), 'import { ready } from "../../packages/runtime/dist/home.js"; import "../../packages/node/dist/child.js"; console.log(ready);');
+  // Small deterministic build driver keeps this regression independent of npm
+  // downloads/global builds while executing a real build subprocess in the clone.
+  writeFileSync(path.join(origin, "build.mjs"), `import {mkdirSync,writeFileSync} from 'node:fs'; import path from 'node:path'; for(const file of ${JSON.stringify(output)}) { mkdirSync(path.dirname(file),{recursive:true}); writeFileSync(file, 'export const ready = "compiled-after-clone";'); }`);
+  execFileSync("git", ["init", "-q", origin]);
+  execFileSync("git", ["-C", origin, "add", "."]);
+  execFileSync("git", ["-C", origin, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "unbuilt source"]);
+  execFileSync("git", ["clone", "--quiet", origin, checkout]);
+  const entry = path.join(checkout, "apps/eva/eva.mjs"), cwd = path.dirname(entry);
+  assert.ok(existsSync(entry), "the tracked launcher already exists");
+  assert.ok(output.every((file) => !existsSync(path.join(checkout, file))), "clone contains no compiled prerequisites");
+  assert.throws(() => execFileSync(process.execPath, [entry], { stdio: "pipe" }), /Command failed/);
+  const calls: string[][] = [];
+  const tools = {
+    node: process.execPath, npm: "owned-npm-cli.js", managed: true, env: {},
+    command: async (binary: string, args: string[], options: { cwd: string }) => {
+      calls.push(args);
+      assert.equal(options.cwd, checkout);
+      if (args[1] === "ci") {
+        mkdirSync(path.join(checkout, "node_modules"));
+        writeFileSync(path.join(checkout, "node_modules/.package-lock.json"), readFileSync(path.join(checkout, "package-lock.json")));
+      } else {
+        assert.deepEqual(args, ["owned-npm-cli.js", "run", "build", "--", "--force"]);
+        execFileSync(binary, [path.join(checkout, "build.mjs")], { cwd: checkout });
+      }
+    },
+  };
+  await prepareShellProcess({ cwd, entry }, tools);
+  assert.equal(calls.length, 2, "install and compilation precede first launch");
+  assert.equal(execFileSync(process.execPath, [entry], { encoding: "utf8" }).trim(), "compiled-after-clone");
+  await prepareShellProcess({ cwd, entry }, tools);
+  assert.equal(calls.length, 2, "complete checkout skips unnecessary rebuild");
+  rmSync(path.join(checkout, "packages/runtime/dist/home.js"));
+  await prepareShellProcess({ cwd, entry }, tools);
+  assert.equal(calls.length, 3, "partially deleted output forces recompilation");
+});
+
+test("EVA bootstrap cannot proceed after a failed or incomplete workspace build", async (t) => {
+  const checkout = mkdtempSync(path.join(tmpdir(), "magi-eva-incomplete-"));
+  t.after(() => rmSync(checkout, { recursive: true, force: true }));
+  const cwd = path.join(checkout, "apps/eva"), entry = path.join(cwd, "eva.mjs");
+  mkdirSync(cwd, { recursive: true });
+  writeFileSync(entry, "");
+  const tools = { node: process.execPath, npm: "owned-npm-cli.js", env: {}, managed: false };
+  await assert.rejects(prepareShellProcess({ cwd, entry }, { ...tools, command: async () => { throw new Error("compiler failed"); } }), /compiler failed/);
+  await assert.rejects(prepareShellProcess({ cwd, entry }, { ...tools, command: async () => {} }), /build is incomplete.*runtime.*home.js/);
+});

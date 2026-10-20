@@ -24,16 +24,28 @@ export async function prepareShellProcess(spec, { node, npm, env, managed, comma
   const checkout = resolve(spec.cwd, "..", "..");
   if (managed) await ensureInstalledDependencies(checkout, { node, npm, env, command, assertOpen });
   assertOpen();
-  if (!existsSync(spec.entry)) {
-    await command(node, [npm, "run", "build:process"], {
-      cwd: spec.cwd,
+  // eva.mjs is tracked source, not evidence that its TypeScript dependencies
+  // exist. A freshly cloned managed checkout already contains this launcher.
+  const launcher = resolve(spec.entry) === resolve(checkout, "apps/eva/eva.mjs");
+  const required = launcher ? [
+    spec.entry,
+    ...["home", "protocol", "toolchain"].map((name) => resolve(checkout, `packages/runtime/dist/${name}.js`)),
+    resolve(checkout, "packages/node/dist/child.js"),
+    resolve(checkout, "packages/node/dist/shell.js"),
+    resolve(checkout, "packages/bus/dist/index.js"),
+    resolve(checkout, "packages/manager/dist/worker.js"),
+  ] : [spec.entry];
+  if (required.some((file) => !existsSync(file))) {
+    await command(node, launcher ? [npm, "run", "build", "--", "--force"] : [npm, "run", "build:process"], {
+      cwd: launcher ? checkout : spec.cwd,
       env,
-      description: "Could not build the Shell process",
+      description: "Could not build the Shell process and its workspace dependencies",
     });
   }
   assertOpen();
-  if (!existsSync(spec.entry)) {
-    throw new Error(`The Shell process is missing: ${spec.entry}`);
+  const missing = required.filter((file) => !existsSync(file));
+  if (missing.length) {
+    throw new Error(`The Shell process build is incomplete; missing: ${missing.join(", ")}`);
   }
 }
 
