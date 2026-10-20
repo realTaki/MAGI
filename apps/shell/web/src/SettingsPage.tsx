@@ -7,8 +7,8 @@ import { openChatsRoute } from "./hash-route";
 import { LOCALE_LABELS, SUPPORTED_LOCALES, useI18n, useT } from "./i18n";
 import type { LocalePreference } from "./i18n";
 import { notifyError } from "./notify";
-import { clearOperator, getSourceStatus } from "./asp";
-import type { SourceStatus } from "./asp";
+import { getSourceStatus } from "./peer";
+import type { SourceStatus } from "./peer";
 import { useTheme } from "./theme";
 import type { ThemePreference } from "./theme";
 
@@ -49,8 +49,8 @@ export function SettingsPage() {
     let cancelled = false;
     void window.magiDesktop?.invokeLocal?.("runtime.status").then((value) => {
       if (!cancelled) {
-        const state = value as { asp?: string; sourceCheckout?: string };
-        setRuntimeStatus(state?.asp ?? "");
+        const state = value as { shell?: string; sourceCheckout?: string };
+        setRuntimeStatus(state?.shell ?? "");
         setSourceCheckout(state?.sourceCheckout ?? "");
       }
     }).catch((error: unknown) => {
@@ -78,73 +78,15 @@ export function SettingsPage() {
 
   async function refreshRuntimeStatus() {
     const state = await window.magiDesktop?.invokeLocal?.("runtime.status") as
-      | { asp?: string; sourceCheckout?: string }
+      | { shell?: string; sourceCheckout?: string }
       | undefined;
-    setRuntimeStatus(state?.asp ?? "");
+    setRuntimeStatus(state?.shell ?? "");
     setSourceCheckout(state?.sourceCheckout ?? "");
-  }
-
-  /** Stop or start ASP. */
-  async function runRuntime(method: string): Promise<ActionOutcome> {
-    const invoke = window.magiDesktop?.invokeLocal;
-    if (!invoke || runtimeBusy) return { ok: false, message: "" };
-    setRuntimeBusy(true);
-    setRuntimeMessage(t("appSettings.runtimeWorking"));
-    try {
-      await invoke(method);
-      await refreshRuntimeStatus();
-      return report({
-        ok: true,
-        message: t("appSettings.runtimeDone"),
-      });
-    } catch (error) {
-      return report({ ok: false, message: error instanceof Error ? error.message : String(error) });
-    } finally {
-      setRuntimeBusy(false);
-    }
-  }
-
-  /**
-   * The bulk MAGI actions answer with what they managed and what they did not, so
-   * a partly failed sweep still reads as one line instead of looking like success.
-   */
-  async function runMagiAll(
-    method: "magi.startAll" | "magi.stopAll" | "magi.syncAll",
-  ): Promise<ActionOutcome> {
-    const invoke = window.magiDesktop?.invokeLocal;
-    if (!invoke || runtimeBusy) return { ok: false, message: "" };
-    setRuntimeBusy(true);
-    setRuntimeMessage(t("appSettings.runtimeWorking"));
-    try {
-      const result = await invoke(method) as {
-        started?: string[];
-        stopped?: number;
-        synced?: { module: string; merged: boolean }[];
-        failed?: { handle?: string; module?: string; detail: string }[];
-      } | undefined;
-      const failed = result?.failed ?? [];
-      const done =
-        (result?.started?.length ?? 0) +
-        (result?.stopped ?? 0) +
-        (result?.synced?.length ?? 0);
-      const lines = [
-        method === "magi.syncAll"
-          ? syncHeadline(result?.synced ?? [])
-          : t("appSettings.magiAllDone").replace("{count}", String(done)),
-        ...failed.map((row) => `${row.handle ?? row.module ?? "MAGI"}: ${row.detail}`),
-      ];
-      await refreshRuntimeStatus();
-      return report({ ok: failed.length === 0, message: lines.join(" · ") });
-    } catch (error) {
-      return report({ ok: false, message: error instanceof Error ? error.message : String(error) });
-    } finally {
-      setRuntimeBusy(false);
-    }
   }
 
   /** Sync one module's tree from the source checkout, or the source from its remote. */
   async function runSync(
-    method: "runtime.syncApp" | "runtime.syncAsp" | "source.update",
+    method: "runtime.syncApp" | "source.update",
   ): Promise<ActionOutcome> {
     const invoke = window.magiDesktop?.invokeLocal;
     if (!invoke || runtimeBusy) return { ok: false, message: "" };
@@ -246,7 +188,6 @@ export function SettingsPage() {
   }, []);
 
   function logOut() {
-    clearOperator();
     openChatsRoute();
   }
 
@@ -405,52 +346,12 @@ export function SettingsPage() {
                   </div>
                 </div>
                 <div className="settings-card">
-                  <div className="settings-card__label">shell</div>
+                  <div className="settings-card__label">Shell EVA · {runtimeStatus || "—"}</div>
                   <div className="settings-card__actions settings-card__actions--wrap">
                     <ActionButton
                       label={t("appSettings.syncButton")}
                       disabled={runtimeBusy}
                       onRun={() => runSync("runtime.syncApp")}
-                    />
-                  </div>
-                </div>
-                <div className="settings-card">
-                  <div className="settings-card__label">ASP · {runtimeStatus || "—"}</div>
-                  <div className="settings-card__actions settings-card__actions--wrap">
-                    <ActionButton
-                      label={t("appSettings.stopAsp")}
-                      disabled={runtimeBusy}
-                      onRun={() => runRuntime("runtime.stopAsp")}
-                    />
-                    <ActionButton
-                      label={t("appSettings.startAsp")}
-                      disabled={runtimeBusy}
-                      onRun={() => runRuntime("runtime.startAsp")}
-                    />
-                    <ActionButton
-                      label={t("appSettings.syncButton")}
-                      disabled={runtimeBusy}
-                      onRun={() => runSync("runtime.syncAsp")}
-                    />
-                  </div>
-                </div>
-                <div className="settings-card">
-                  <div className="settings-card__label">{t("appSettings.magiGroup")}</div>
-                  <div className="settings-card__actions settings-card__actions--wrap">
-                    <ActionButton
-                      label={t("appSettings.magiStartAll")}
-                      disabled={runtimeBusy}
-                      onRun={() => runMagiAll("magi.startAll")}
-                    />
-                    <ActionButton
-                      label={t("appSettings.magiStopAll")}
-                      disabled={runtimeBusy}
-                      onRun={() => runMagiAll("magi.stopAll")}
-                    />
-                    <ActionButton
-                      label={t("appSettings.syncButton")}
-                      disabled={runtimeBusy}
-                      onRun={() => runMagiAll("magi.syncAll")}
                     />
                   </div>
                 </div>

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useT } from "./i18n";
-export type RuntimeInfo = { handle: string; running: boolean; online: boolean };
-export function RuntimeToggle({ handle, invoke }: { handle: string; invoke?: (method: string, payload?: unknown) => Promise<unknown> }) {
+export type RuntimeInfo = { id: string; handle: string; local: boolean; running?: boolean; online?: boolean };
+export function RuntimeToggle({ contactId, handle, invoke }: { contactId: string; handle: string; invoke?: (method: string, payload?: unknown) => Promise<unknown> }) {
   const t = useT();
   const [info, setInfo] = useState<RuntimeInfo | null>(null);
   const [transition, setTransition] = useState<"starting" | "stopping" | null>(null);
@@ -14,13 +14,14 @@ export function RuntimeToggle({ handle, invoke }: { handle: string; invoke?: (me
     async function refresh() {
       if (!invoke || lock.current) return;
       try {
-        const result = await invoke("magi.info", { handle }) as RuntimeInfo;
+        const contacts = await invoke("peer.contacts") as RuntimeInfo[];
+        const result = contacts.find((contact) => contact.id === contactId && contact.local);
         if (generation.current === current && result?.handle === handle && !lock.current) { setInfo(result); setError(false); }
       } catch { if (generation.current === current) { setInfo(null); setError(true); } }
     }
     void refresh(); const timer = setInterval(() => void refresh(), 2000);
     return () => { generation.current++; clearInterval(timer); };
-  }, [handle, invoke]);
+  }, [contactId, handle, invoke]);
   const up = !!(info?.running || info?.online);
   async function toggle() {
     if (!invoke || !info || lock.current) return;
@@ -29,9 +30,10 @@ export function RuntimeToggle({ handle, invoke }: { handle: string; invoke?: (me
     const desired = !up;
     setTransition(desired ? "starting" : "stopping"); setError(false);
     try {
-      await invoke(desired ? "magi.start" : "magi.stop", { handle });
+      await invoke("peer.send", { id: "shell", content: "", metadata: { local_eva_action: { contact_id: contactId, action: desired ? "start" : "stop" } } });
       for (let i = 0; i < 24 && generation.current === current; i++) {
-        const next = await invoke("magi.info", { handle }) as RuntimeInfo;
+        const contacts = await invoke("peer.contacts") as RuntimeInfo[];
+        const next = contacts.find((contact) => contact.id === contactId && contact.local);
         if (generation.current !== current) return;
         if (next?.handle === handle) {
           setInfo(next);

@@ -7,7 +7,7 @@ export type ChatMessage =
   | { type: "meta"; text: string }
   | { type: "user"; text: string }
   | { type: "pending"; text: string }
-  | { type: "bot"; text: string }
+  | { type: "bot"; text: string; sender?: string }
   | { type: "typing" }
   | { type: "card"; lines: { k: string; v: string }[] }
   | { type: "form"; text: string; chatId: string; card: CardSpec; receipt?: import("@magi/bus/jobs/card.js").CardReceipt };

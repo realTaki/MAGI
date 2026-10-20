@@ -4,7 +4,7 @@
  * The startup controls are the shell's own; ``invokeLocal`` / ``onLocalEvent``
  * forward to the app backend the shell loaded from the checkout. Every member
  * is optional: the same interface also runs in a plain browser (dev server,
- * remote ASP), where no bridge exists at all.
+ * UI preview), where no bridge exists at all.
  */
 
 import type { LocalEvent } from "./github-connect";
@@ -14,7 +14,6 @@ export {};
 declare global {
   interface Window {
     magiDesktop?: {
-      aspBase?: string;
       reloadInterface?: () => Promise<unknown>;
       retryStartup?: () => Promise<void>;
       copyText?: (text: string) => Promise<void>;

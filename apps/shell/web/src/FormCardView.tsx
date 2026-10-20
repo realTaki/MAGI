@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PROVIDER_CATALOG, providerPreset } from "@magi/bus/jobs/providerCatalog.js";
 import type { ChatMessage } from "./chat-model";
-import { encryptSecret, listProfiles, sendAspMessage } from "./asp";
+import { encryptSecret, getPeerProfile, sendPeerMessage } from "./peer";
 import { useT } from "./i18n";
 import { changeProvider, initialProviderValues, isProviderCard } from "./provider-form";
 
@@ -23,7 +23,7 @@ export function FormCardView({ message }: { message: Extract<ChatMessage, { type
   }, [receipt?.state, receipt?.attempt, submitted]);
   useEffect(() => {
     if (state !== "pending" || !provider) return;
-    const timer = setInterval(() => { void sendAspMessage(message.chatId, t("providerForm.checkStatus"), { card_result: { id: card.id, action: "status", attempt: submitted ?? receipt?.attempt } }).catch(() => {}); }, 5000);
+    const timer = setInterval(() => { void sendPeerMessage(message.chatId, t("providerForm.checkStatus"), { card_result: { id: card.id, action: "status", attempt: submitted ?? receipt?.attempt } }).catch(() => {}); }, 5000);
     return () => clearInterval(timer);
   }, [state, provider, message.chatId, card.id, t, submitted, receipt?.attempt]);
   const preset = providerPreset(values.provider);
@@ -39,18 +39,19 @@ export function FormCardView({ message }: { message: Extract<ChatMessage, { type
     let attemptedSend = false;
     try {
       if (action === "reopen") {
-        await sendAspMessage(message.chatId, t("providerForm.reopen"), { card_result: { id: crypto.randomUUID(), action: "open" } });
+        await sendPeerMessage(message.chatId, t("providerForm.reopen"), { card_result: { id: crypto.randomUUID(), action: "open" } });
         setReopened(true);
       } else if (action === "cancel") {
-        await sendAspMessage(message.chatId, t("providerForm.cancelled"), { card_reject: { id: card.id } });
+        await sendPeerMessage(message.chatId, t("providerForm.cancelled"), { card_reject: { id: card.id } });
         setSubmitted("cancel");
         setValues((current) => ({ ...current, "provider.api_key": "" }));
       } else {
         if (provider && (!validProvider || !validModel)) { setError(t("providerForm.selectModel")); return; }
         const fields: Record<string, unknown> = {};
         const secret = card.fields.some((field) => field.kind === "secret");
-        const profiles = secret ? await listProfiles() : [];
-        const publicKey = profiles.find((profile) => profile.handle === card.handle)?.public_key;
+        const profile = secret || provider ? await getPeerProfile(message.chatId) : null;
+        if (provider && (!profile?.owner || profile.handle !== card.handle)) { setError(t("providerForm.ownerOnly")); return; }
+        const publicKey = profile?.handle === card.handle ? profile.public_key : null;
         if (secret && !publicKey) { setError(t("providerForm.noPublicKey")); return; }
         for (const field of card.fields) {
           const value = field.name === "base_url" && provider && values.provider !== "custom" ? "" : values[field.name] ?? "";
@@ -60,7 +61,7 @@ export function FormCardView({ message }: { message: Extract<ChatMessage, { type
         const attempt = crypto.randomUUID();
         setSubmitted(attempt);
         attemptedSend = true;
-        await sendAspMessage(message.chatId, t("providerForm.submitted"), { card_result: { id: card.id, attempt, fields } });
+        await sendPeerMessage(message.chatId, t("providerForm.submitted"), { card_result: { id: card.id, attempt, fields } });
         // Do not retain plaintext once the encrypted submission has been accepted by transport.
         setValues((current) => Object.fromEntries(Object.entries(current).filter(([name]) => !card.fields.some((field) => field.name === name && field.kind === "secret"))));
       }

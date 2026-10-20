@@ -2384,3 +2384,6 @@ body {
 .chat-page__settings-avatar { display: flex; align-items: center; gap: 12px; }
 .chat-page__avatar-control { display: flex; align-items: flex-start; flex-direction: column; gap: 6px; }
 .chat-page__avatar-control .chat-page__runtime-action { width: auto; padding: 6px 12px; }
+
+/* Peer authors remain visible in shared UUID conversations. */
+.chat-page__sender { display: block; margin-bottom: 0.35rem; opacity: 0.65; overflow-wrap: anywhere; }

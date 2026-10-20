@@ -12,7 +12,7 @@ export type CurrentChats = {
   chatIds: ReadonlySet<string>;
 };
 
-/** Only current ASP rooms and registered handles establish a shared sidebar entry. */
+/** Only current owner rooms and known handles establish a shared sidebar entry. */
 export function groupChatRooms<T extends Room>(rooms: T[], ownerHandle: string, current: CurrentChats): { key: string; rooms: T[] }[] {
   const groups = new Map<string, { key: string; rooms: T[] }>();
   for (const room of rooms) {
