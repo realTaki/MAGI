@@ -61,7 +61,7 @@ export class Bus {
 
   constructor(readonly handle: string, workspace?: string) {
     const localName = handle.replace(/^@/, "").replace(/\.magi$/, "");
-    // A MAGI workspace is a sibling of user/, asp/, and the MAGI checkout.
+    // Each EVA workspace is independent of other node workspaces.
     // Do not put it under ".magi/magi": macOS normally has a case-insensitive
     // filesystem, so that path aliases a ".magi/MAGI" source checkout.
     this.workspace = resolve(workspace ?? join(magiHome(), localName));
@@ -126,8 +126,6 @@ export class Bus {
       this.jobs.update(jobs).set({ status: "failed", error: markerError ?? "MAGI restarted before this replace finished" })
         .where(and(eq(jobs.type, "ReplaceSelfJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
     }
-    this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before this ASP command finished" })
-      .where(and(eq(jobs.type, "AspCommandJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
     this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before this secret was applied" })
       .where(and(eq(jobs.type, "InboundSecretJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
     this.settings = new SettingsBook(this.db);

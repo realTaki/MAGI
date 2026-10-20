@@ -3,8 +3,6 @@ export {
   USER_HANDLE,
   SHELL_MAGI_HANDLE,
   SHELL_MAGI_NICKNAME,
-  ASP_MAGI_HANDLE,
-  ASP_MAGI_NICKNAME,
   EVA_MAGI_HANDLE,
   EVA_MAGI_NICKNAME,
   magiLocalName,
@@ -40,7 +38,6 @@ export { providerCard, PROVIDER_CHOICES, CARD_RESTART_ERROR } from "./jobs/card.
 export { replaceFailedPath } from "./replaceMarker.js";
 export type { CardField, CardJob, CardResult, CardSpec } from "./jobs/card.js";
 export type { ReplaceSelfJob, ReplaceSelfResult } from "./jobs/replaceSelf.js";
-export type { AspCommandJob, AspCommandResult } from "./jobs/aspCommand.js";
 export type { InboundSecretJob, InboundSecretResult } from "./jobs/inboundSecret.js";
 export type { Job, JobResult } from "./jobs/jobBoard.js";
 export { waitForJob } from "./jobs/wait.js";

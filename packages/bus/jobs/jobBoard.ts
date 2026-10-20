@@ -2,7 +2,6 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import type { BusDb } from "../drizzle/database.js";
 import { transaction } from "../sqlite.js";
-import type { AspCommandJob, AspCommandResult } from "./aspCommand.js";
 import type { CallLLMJob, CallLLMResult } from "./callLlm.js";
 import type { CardJob, CardResult } from "./card.js";
 import type { ChangeMcpServerNotify } from "./changeMcpServer.js";
@@ -34,7 +33,6 @@ export type JobInput = {
   ConfigureJob: ConfigureJob;
   CardJob: CardJob;
   ReplaceSelfJob: ReplaceSelfJob;
-  AspCommandJob: AspCommandJob;
   InboundSecretJob: InboundSecretJob;
 };
 
@@ -49,7 +47,6 @@ export type JobOutput = {
   ConfigureJob: ConfigureResult;
   CardJob: CardResult;
   ReplaceSelfJob: ReplaceSelfResult;
-  AspCommandJob: AspCommandResult;
   InboundSecretJob: InboundSecretResult;
 };
 

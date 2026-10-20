@@ -1,10 +1,4 @@
-/**
- * Society handles. One process may speak with two of these.
- *
- * The desktop operator process owns `@shell.magi` (Balthasar) on its BUS and
- * speaks as `@user.magi` from the webapp. The ASP process owns `@asp.magi`
- * (Casper). Standalone MAGIs number from `eva-000`: Melchior is `@eva-000.magi`.
- */
+/** Node handles. Shell is the only in-process EVA; other EVAs use independent launchers. */
 
 /** Operator speech from the webapp (the human). */
 export const USER_HANDLE = "@user.magi";
@@ -12,10 +6,6 @@ export const USER_HANDLE = "@user.magi";
 /** Host MAGI of the desktop operator process. Display name Balthasar. */
 export const SHELL_MAGI_HANDLE = "@shell.magi";
 export const SHELL_MAGI_NICKNAME = "BALTHASAR";
-
-/** Host MAGI of the ASP process. Display name Casper. */
-export const ASP_MAGI_HANDLE = "@asp.magi";
-export const ASP_MAGI_NICKNAME = "CASPER";
 
 /** Local name from a handle (`@eva-000.magi` → `eva-000`). */
 export function magiLocalName(handle: string): string {
@@ -50,9 +40,9 @@ export function nextMagiName(takenHandles: Iterable<string>): string {
 export const EVA_MAGI_HANDLE = sequentialMagiHandle(0);
 export const EVA_MAGI_NICKNAME = "MELCHIOR";
 
-const IN_PROCESS_MAGI_HANDLES = new Set([SHELL_MAGI_HANDLE, ASP_MAGI_HANDLE]);
+const IN_PROCESS_MAGI_HANDLES = new Set([SHELL_MAGI_HANDLE]);
 
-/** True when this MAGI lives in Shell or ASP, not in a spawned `eva.js`. */
+/** True when this MAGI lives inside Shell, not in a spawned `eva.js`. */
 export function isInProcessMagiHandle(handle: string): boolean {
   return IN_PROCESS_MAGI_HANDLES.has(handle);
 }
@@ -60,7 +50,6 @@ export function isInProcessMagiHandle(handle: string): boolean {
 /** Built-in role names are defaults, independent of a user-selected nickname. */
 export function defaultDisplayName(handle: string): string {
   if (handle === SHELL_MAGI_HANDLE) return SHELL_MAGI_NICKNAME;
-  if (handle === ASP_MAGI_HANDLE) return ASP_MAGI_NICKNAME;
   if (handle === EVA_MAGI_HANDLE) return EVA_MAGI_NICKNAME;
   return handle;
 }

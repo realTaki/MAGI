@@ -27,7 +27,6 @@ import { fileTools } from "./files.js";
 import { messageTools } from "./messages.js";
 import { replaceTools } from "./replace.js";
 import { shellTools } from "./shell.js";
-import { syncTools } from "./sync.js";
 import { ShellManager } from "./shellManager.js";
 
 export type Tool = ExecutableTool;
@@ -39,7 +38,6 @@ export function builtinTools(bus: Bus, shells = new ShellManager()): Tool[] {
     ...fileTools(bus.workspace),
     ...messageTools(bus),
     ...cardTools(bus),
-    ...syncTools(bus),
     ...replaceTools(bus),
   ];
 }

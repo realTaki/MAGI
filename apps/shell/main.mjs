@@ -1,6 +1,6 @@
 /**
  * Electron shell. It opens the window and starts the eva launcher for the
- * shell role. ASP and other nodes are their own launchers. Electron does not
+ * shell role. Other EVAs have their own launchers. Electron does not
  * start them.
  */
 import { spawn } from "node:child_process";
@@ -99,7 +99,7 @@ function toolsForRuntime(runtime) {
 
   const git = resolveGitBinary();
   const gitEnvironment = setupEnvironment({}).env;
-  // Activation belongs to Shell alone. Never leak its handoff into ASP/agents.
+  // Activation belongs to Shell alone. Never leak its handoff into other EVAs.
   for (const key of Object.keys(gitEnvironment)) {
     if (key.startsWith("MAGI_DESKTOP_UPDATE_") || ["MAGI_REVISION", "MAGI_REVISION_DIR", "MAGI_REPLACE_JOB", "MAGI_REPLACE_ERROR"].includes(key)) delete gitEnvironment[key];
   }
@@ -629,7 +629,7 @@ function armShellSwap(installer) {
 
 app.on("window-all-closed", () => {
   // MAGI is a foreground desktop runtime: closing its last window is an
-  // application exit on every platform. `before-quit` then stops the ASP and
+  // application exit on every platform. `before-quit` then stops locally owned EVAs and
   // every MAGI process owned by the desktop backend. Keeping the usual macOS
   // background-app behaviour here would leave those children running after
   // the user has closed MAGI's only window.

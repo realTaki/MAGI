@@ -3,7 +3,7 @@
  */
 import type { Bus } from "./bus.js";
 import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "./books/contactBook.js";
-import { ASP_MAGI_HANDLE, EVA_MAGI_HANDLE, SHELL_MAGI_HANDLE } from "./identity.js";
+import { EVA_MAGI_HANDLE, SHELL_MAGI_HANDLE } from "./identity.js";
 import { messageDelivery, type MessageDeliveryJob, type PeerInbound, type PeerReceipt } from "./jobs/messageDelivery.js";
 
 export type SealedField = { ciphertext: string };
@@ -58,7 +58,7 @@ export function chat(bus: Bus, chat_id: number, contact_id: number, input: ChatI
     if (kind !== "envelope" && !owner) throw new Error("only the owner may submit a card");
     if (kind === "envelope") {
       // Being seen in a chat or choosing a .magi handle does not confer trust.
-      const trusted = [SHELL_MAGI_HANDLE, ASP_MAGI_HANDLE, EVA_MAGI_HANDLE].includes(contact.asp_handle ?? "");
+      const trusted = [SHELL_MAGI_HANDLE, EVA_MAGI_HANDLE].includes(contact.asp_handle ?? "");
       if (!owner && !trusted) throw new Error("provider sync requires a trusted sender");
       if (body.kind !== "provider.sync" || typeof body.ciphertext !== "string" || !body.ciphertext) throw new Error("invalid provider envelope");
       for (const key of ["provider", "model", "base_url"]) if (body[key] !== undefined && typeof body[key] !== "string") throw new Error("invalid provider field");

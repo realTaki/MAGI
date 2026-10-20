@@ -9,7 +9,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-import { ASP_MAGI_HANDLE, EVA_MAGI_HANDLE, magiLocalName, SHELL_MAGI_HANDLE } from "@magi/bus";
+import { EVA_MAGI_HANDLE, magiLocalName, SHELL_MAGI_HANDLE } from "@magi/bus";
 import { agentBranch, agentSource, createMagiRuntime } from "@magi/webapp/magi-runtime.js";
 
 const exec = promisify(execFile);
@@ -124,7 +124,6 @@ test("in-process hosts are not spawned as eva.js children", async (t) => {
 
   const started = await runtime.startAll([
     { handle: SHELL_MAGI_HANDLE, token: "tok-0" },
-    { handle: ASP_MAGI_HANDLE, token: "tok-1" },
     { handle: EVA_MAGI_HANDLE, token: "tok-2" },
   ]);
   assert.deepEqual(started.started, []);
@@ -137,7 +136,7 @@ test("in-process hosts are not spawned as eva.js children", async (t) => {
     handle: SHELL_MAGI_HANDLE,
     started: false,
   });
-  assert.equal(runtime.stop(ASP_MAGI_HANDLE), false);
+  assert.equal(runtime.stop(SHELL_MAGI_HANDLE), false);
   assert.equal(recorded.spawns.length, 0);
 });
 

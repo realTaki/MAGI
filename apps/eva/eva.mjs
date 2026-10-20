@@ -1,6 +1,6 @@
 /**
  * eva is the launcher. It is not a BUS. One child process is the node.
- * Shell, ASP, and a cloud agent differ only by --role.
+ * Shell and an independent EVA differ only by --role.
  *
  * A revision is a directory under MAGI_HOME. The child is that directory's
  * packages/node/dist/child.js, so a switch runs that revision's code.

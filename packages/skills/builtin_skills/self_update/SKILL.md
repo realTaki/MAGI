@@ -6,9 +6,9 @@ version: "1.0"
 
 # Self-update
 
-Your state (memory, skills, prompts, logs) is the workspace. Managed clones keep source at `MAGI/` inside that workspace (`magi/shell` for Shell, `magi/asp` for ASP, `magi/<name>` for an agent). Inspect the actual branch before editing.
+Your state (memory, skills, prompts, logs) is the workspace. Managed clones keep source at `MAGI/` inside that workspace (`magi/shell` for Shell, `magi/<name>` for an agent). Inspect the actual branch before editing.
 
-If `MAGI/.git` is missing, this is a source launch, not a missing-source process. On Shell or ASP, `MAGI_CHECKOUT` is the editable git root (the Source checkout block names it). Edit that tree. Call `request_replace` after verify; it snapshots `MAGI_CHECKOUT`. Agent-role nodes without `MAGI/` still stop and do not request a replace.
+If `MAGI/.git` is missing, this is a source launch, not a missing-source process. On Shell, `MAGI_CHECKOUT` is the editable git root (the Source checkout block names it). Edit that tree. Call `request_replace` after verify; it snapshots `MAGI_CHECKOUT`. Agent-role nodes without `MAGI/` still stop and do not request a replace.
 
 Work like a coding agent in this turn: read, edit, compile, and run the full test suite with `bash`. Failures belong in this turn so you can keep fixing. Call `request_replace` only after the shared verify command exits 0.
 
@@ -16,15 +16,14 @@ Work like a coding agent in this turn: read, edit, compile, and run the full tes
 
 Paths for `list_files`, `read_file`, `search_files`, `edit_file`, and `write_file` are relative to the workspace. Prefix source paths with `MAGI/`, or with the Source checkout path when that block names `MAGI_CHECKOUT`.
 
-`search_files` finds a literal string and returns `path:line: text`. Narrow it with `path` and `glob` before reading. `read_file` returns numbered lines (`N|text`); the number is not part of the file. Pass `offset` and `limit` to read past the first window. Load `codebase_search` before hunting for a symbol. Read `MAGI/docs/architecture.md` before changing a boundary between the shell, the app, ASP, and a MAGI.
+`search_files` finds a literal string and returns `path:line: text`. Narrow it with `path` and `glob` before reading. `read_file` returns numbered lines (`N|text`); the number is not part of the file. Pass `offset` and `limit` to read past the first window. Load `codebase_search` before hunting for a symbol. Read `MAGI/docs/architecture.md` before changing a boundary between Shell, the peer channel, and an EVA.
 
 | Tree | What runs from it |
 | --- | --- |
 | `MAGI/` on `magi/<you>` | This process, after a successful replace |
-| `magi/shell` (`~/.magi/shell/MAGI`) | Balthasar’s own checkout: Shell backend and UI. Other nodes do not edit it |
-| `magi/asp` (`~/.magi/asp/MAGI`) | Casper’s own checkout: ASP. Other nodes do not edit it |
+| `magi/shell` (`~/.magi/shell/MAGI`) | Shell EVA’s own checkout: Shell backend and UI. Other nodes do not edit it |
 
-Each node edits only its own `MAGI/`. On Balthasar (`@shell.magi`, role `shell`), `MAGI/apps/shell/web/src` is its own UI source: a self replace builds that UI and the open window loads `MAGI_APP_CHECKOUT/apps/shell/dist/index.html` from the new revision. On an agent-role node, changing `apps/shell` does not update Balthasar. Ask the operator to use the Balthasar chat for a Shell UI change; do not edit another node’s checkout.
+Each node edits only its own `MAGI/`. On Shell EVA (`@shell.magi`, role `shell`), `MAGI/apps/shell/web/src` is its own UI source: a self replace builds that UI and the open window loads `MAGI_APP_CHECKOUT/apps/shell/dist/index.html` from the new revision. On an agent-role node, changing `apps/shell` does not update Shell EVA. Ask the operator to use the Shell EVA chat for a Shell UI change; do not edit another node’s checkout.
 
 ## Edit
 
@@ -67,11 +66,11 @@ Read the log in this turn. If the entry fails, fix the source and run it again. 
 
 `request_replace` asks this node's launcher to replace the running process. Call it only after compile and tests are already green. This process cannot safely stop and restart itself; the parent snapshots saved local source (staged/unstaged changes and non-ignored new files/deletions), runs that same verify entry as a last safety gate, then drains, switches revision, health-checks, and rolls back on failure. It does not fetch upstream for a local replace and does not commit or push. Ignored files such as dependencies, generated output and secrets are not added to the snapshot.
 
-Call it only after the edit is saved, and say what changed first. Queuing a job is not proof the new process is running. Another node replaces itself the same way. This node does not restart Shell or ASP. `bash` does not replace a running process. Do not kill your own process.
+Call it only after the edit is saved, and say what changed first. Queuing a job is not proof the new process is running. Another node replaces itself the same way. This node does not restart other nodes. `bash` does not replace a running process. Do not kill your own process.
 
 
 ## Replace the Linux desktop package
 
-Only packaged Balthasar can replace the complete Linux AppImage. When the operator explicitly asks to rebuild and upgrade the desktop itself, call `request_replace` with `target: "self", desktop: true` after the same compile/test/UI gates pass. The launcher builds a unique AppImage from that verified source revision, then Electron stages it and restarts through a transactional helper. Normal `target: "self"` without `desktop` still replaces only this node and its UI.
+Only packaged Shell EVA can replace the complete Linux AppImage. When the operator explicitly asks to rebuild and upgrade the desktop itself, call `request_replace` with `target: "self", desktop: true` after the same compile/test/UI gates pass. The launcher builds a unique AppImage from that verified source revision, then Electron stages it and restarts through a transactional helper. Normal `target: "self"` without `desktop` still replaces only this node and its UI.
 
 The first baseline AppImage must already include this desktop-update capability; a new backend cannot add an RPC handler to an old running Electron shell. A queued job or produced AppImage does not prove activation. Success requires the new package identity, the expected backend/UI revision and ready acknowledgment. Failed activation restores the prior package and launcher revision. This local path does not publish a Release, push source, or update another node.
