@@ -24,7 +24,7 @@ paths needed for that command and must not be persisted.
 Examples:
 
 ```bash
-apps/shell/runtime/bin/node --test apps/asp/dist/test/*.test.js
+apps/shell/runtime/bin/node --test packages/channel-peer/dist/test/*.test.js
 /Applications/MAGI.app/Contents/Resources/runtime/bin/node --test apps/shell/test/*.test.ts
 apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js test
 ```

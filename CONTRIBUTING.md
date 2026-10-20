@@ -33,7 +33,7 @@ PATH="$PWD/apps/shell/runtime/bin:$PATH" apps/shell/runtime/bin/node apps/shell/
 ```
 
 Dependencies stay inside the workspace. Cache overrides, when needed, belong to
-individual commands. See [Running MAGI](docs/running.md) for the ASP/Electron
+individual commands. See [Running MAGI](docs/running.md) for the EVA/Electron
 startup order and [Testing MAGI](docs/testing.md) for commands and
 [Verification](docs/verification.md) for acceptance boundaries.
 
@@ -65,17 +65,17 @@ from saving a source change.
 | Path | Responsibility |
 | --- | --- |
 | `apps/shell/` | Electron window, process ownership, startup/profile helpers and React UI |
-| `apps/eva/eva.mjs` | Launcher for Shell, ASP or an independent agent |
+| `apps/eva/eva.mjs` | Launcher for Shell or an independent EVA |
 | `packages/node/` | Role composition and launcher child entry |
 | `packages/bus/` | Books, durable jobs and shared contracts |
 | `packages/manager/` | Worker lifecycle, configuration and self-replacement |
-| `packages/asp-server/`, `packages/channel-asp/` | Relay service and node-side transport |
+| `packages/channel-peer/` | Authenticated direct EVA messaging and group synchronization |
 | `packages/webapp/` | Shell's desktop backend and source/runtime actions |
 | `packages/agent/`, `packages/providers/`, other worker packages | Agent turns, model execution and tools/channels |
 | `docs/` | Current guides and clearly marked historical rationale |
 
 Package names come from the manifests: the launcher workspace is `eva`, the
-desktop is `@magi/shell`, ASP is `@magi/asp`, and libraries use `@magi/*`.
+desktop is `@magi/shell`, and libraries use `@magi/*`.
 `@user.magi` is operator speech, not an npm workspace or separate process.
 
 Security reports belong in [SECURITY.md](SECURITY.md), not public issue bodies.
@@ -83,7 +83,7 @@ Security reports belong in [SECURITY.md](SECURITY.md), not public issue bodies.
 ## Dependency security maintenance
 
 The root workspace lock is the only install lock. Do not regenerate separate
-`apps/asp` or `apps/shell` locks: npm workspace installation and Electron's
+per-app locks: npm workspace installation and Electron's
 production dependency collection resolve from the workspace root. Release
 runtime and packaging caches must also use the root lock hash.
 

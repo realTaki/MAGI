@@ -34,8 +34,7 @@ is not pinning a revision or publishing a release.
 
 ## Independent agents
 
-The executable is the launcher `apps/eva/eva.mjs`. `apps/eva/dist/eva.js` and
-`apps/asp/dist/asp.js` export role classes; they are not standalone service CLIs.
+The executable is the launcher `apps/eva/eva.mjs`. `apps/eva/dist/eva.js` exports the agent class; it is not a standalone service CLI.
 Start a standalone peer listener on a loopback development port:
 
 ```sh
@@ -57,8 +56,7 @@ interactive terminal-chat command.
 See the [peer channel contract](../packages/channel-peer/README.md) and
 [group synchronization boundaries](architecture/peer-group-sync.md). This MAGI
 peer subset is inspired by A2A 1.0, not a standards-compliant A2A implementation.
-Legacy ASP source and its launcher role remain available for legacy development,
-but are not prerequisites for the desktop or direct EVA communication.
+Only Shell and independent agent launcher roles are supported; the central ASP runtime has been removed.
 
 ## Roles and state
 

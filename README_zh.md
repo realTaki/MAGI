@@ -91,7 +91,7 @@ EVA 直接交换签名聊天消息；群聊使用共同的会话 UUID，各参�
 Provider 验证与保存由接收节点通过所有者连接执行，远程聊天不具有配置或进程管理权限。
 [MAGI peer 协议子集](packages/channel-peer/README.md) 参考了 A2A 1.0，但不是符合该标准的实现。
 群聊的一致性边界见[群聊同步设计](docs/architecture/peer-group-sync.md)。
-旧 ASP 源码仍保留，但不属于当前启动必需路径。
+运行时不再包含中心化 ASP 注册表或中继服务。
 
 `MAGI_HOME` 是节点数据根目录，默认 `~/.magi`。Shell 使用 `shell/`，其他节点使用其本地名称目录；
 已有的节点数据不会因此改名或删除。托管源码放在节点自己的 `MAGI/` 中，构建修订放在 `revisions/` 中。

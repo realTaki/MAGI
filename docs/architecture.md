@@ -16,8 +16,8 @@ contact, skill and memory workers; roles add their interfaces:
 | `agent` | Individually selected handle | Independent EVA with its own peer listener, contacts and workspace |
 
 The human speaks as `@user.magi`; there is no separate User node. Package entry
-files under `apps/eva` and `apps/asp` export classes; the launcher is the executable entry. Legacy ASP source/role remains in the repository
-but is not part of the required startup or direct peer path.
+files under `apps/eva` export classes; the launcher is the executable entry.
+There is no central ASP role, registry or relay in the runtime.
 
 Electron owns the window and starts only the built-in Shell EVA through its
 launcher/host bridge. The owner asks Shell in chat to create additional local

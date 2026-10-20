@@ -1,8 +1,8 @@
 # Shell
 
-The Electron window. Balthasar (`@shell.magi`) is the shell child of the eva launcher. The human speaks as `@user.magi`.
+The Electron window. The built-in Shell EVA (`@shell.magi`) is the shell child of the EVA launcher. The human speaks as `@user.magi`.
 
-Start ASP separately, then open the app. Electron starts `eva --role shell`; the Shell backend attaches Balthasar and starts the explicit default local Melchior through a separate launcher. It does not start arbitrary remote nodes. Operator files are under `$MAGI_HOME/shell` (default `~/.magi/shell`).
+Open the app to start only `eva --role shell`. Ask Shell in owner chat to create another local EVA or contact a remote EVA URL. Each explicitly created local EVA has a separate launcher and workspace; remote contacts never grant local process ownership. Operator files are under `$MAGI_HOME/shell` (default `~/.magi/shell`).
 
 GitHub sign-in is optional and happens in Settings after startup. The device-flow token is stored at `~/.magi/shell/github-token`.
 

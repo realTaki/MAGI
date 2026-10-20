@@ -28,7 +28,7 @@ acceptance remains under that recipient's local control.
 The [MAGI peer subset](packages/channel-peer/README.md) is inspired by A2A 1.0,
 but is not a standards-compliant A2A implementation. See
 [shared conversation history and group synchronization](docs/architecture/peer-group-sync.md).
-Legacy ASP source remains in the repository, outside the active startup path.
+The runtime has no central ASP registry or relay.
 
 ## Contributing
 
