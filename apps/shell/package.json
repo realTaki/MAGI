@@ -81,14 +81,14 @@
     "@magi/memory": "*",
     "@magi/skills": "*",
     "@magi/webapp": "*",
-    "@magi/channel-asp": "*",
     "@magi/channel-telegram": "*",
     "@tanstack/react-query": "^5.103.2",
     "dugite": "^3.2.3",
     "react": "^19.3.0",
     "react-markdown": "^10.1.0",
     "react-dom": "^19.3.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "@magi/channel-peer": "*"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

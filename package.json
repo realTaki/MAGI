@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "The MAGI workspace: the runtime packages, the desktop app, the ASP relay and the Electron shell.",
+  "description": "The MAGI workspace: independent EVA runtimes, direct peer channels, and the Electron shell.",
   "workspaces": [
     "packages/*",
     "apps/*"

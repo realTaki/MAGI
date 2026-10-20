@@ -49,10 +49,10 @@
       "path": "../../packages/memory"
     },
     {
-      "path": "../../packages/channel-asp"
+      "path": "../../packages/channel-telegram"
     },
     {
-      "path": "../../packages/channel-telegram"
+      "path": "../../packages/channel-peer"
     }
   ]
 }
