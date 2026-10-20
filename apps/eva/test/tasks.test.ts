@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Magi } from "../eva.js";
+import { SYSTEM_CONTACT_ID } from "@magi/bus";
 import { cronMatches } from "@magi/channel-tasks/worker.js";
 
 const workspaces: string[] = [];
@@ -44,8 +45,10 @@ test("the task worker carries schedule_task and a due task enters the agent", as
 
 /** What the agent does with a call: publish it and wait for whichever worker owns the tool. */
 async function runTool(magi: Magi, name: string, args: Record<string, unknown>): Promise<unknown> {
+  const chatId = Number(args.chat_id);
+  const messageId = magi.bus.messages.add(chatId, SYSTEM_CONTACT_ID, "Schedule the requested daily project review");
   const board = magi.bus.board("RunToolJob");
-  const id = board.publish({ call: { tool_call_id: "call-1", name, arguments: args } }, "test");
+  const id = board.publish({ chat_id: chatId, message_id: messageId, call: { tool_call_id: "call-1", name, arguments: args } }, "test");
   for (let i = 0; i < 200 && !board.result(id); i++) await sleep(10);
   const result = board.result(id);
   if (result?.status !== "completed") throw new Error(result?.error ?? `${name} did not complete`);

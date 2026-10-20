@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Magi } from "../eva.js";
+import { SYSTEM_CONTACT_ID } from "@magi/bus";
 
 test("provider_settings verifies a change before it becomes active", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-providers-"));
@@ -15,9 +16,11 @@ test("provider_settings verifies a change before it becomes active", async () =>
       configure(settings) { configured.push(settings); },
     },
   });
+  const ownerChat = magi.bus.chats.forChannel("cli", "provider-settings");
+  const ownerMessage = magi.bus.messages.add(ownerChat.id, SYSTEM_CONTACT_ID, "Configure and inspect my provider settings");
   const board = () => magi.bus.board("RunToolJob");
   const call = (args: Record<string, unknown>): number =>
-    board().publish({ call: { tool_call_id: "call-1", name: "provider_settings", arguments: args } }, "test");
+    board().publish({ chat_id: ownerChat.id, message_id: ownerMessage, call: { tool_call_id: "call-1", name: "provider_settings", arguments: args } }, "test");
   const settled = async (id: number) => {
     for (let i = 0; i < 200; i++) {
       const result = board().result(id);

@@ -39,10 +39,11 @@ test("request_replace uses the job chat, not arguments.chat_id", async () => {
   const worker = new ToolsWorker(bus);
   const from = bus.chats.forChannel("cli", "from");
   const spoof = bus.chats.forChannel("cli", "spoof");
+  const ownerMessage = bus.messages.add(from.id, SYSTEM_CONTACT_ID, "Replace this EVA from this conversation");
   try {
     const id = bus.board("RunToolJob").publish({
       call: { tool_call_id: "call-replace", name: "request_replace", arguments: { chat_id: spoof.id } },
-      chat_id: from.id,
+      chat_id: from.id, message_id: ownerMessage,
     }, "test");
     expect(await worker.poll()).toBeTrue();
     let result = bus.board("RunToolJob").result(id);
@@ -66,10 +67,11 @@ test("send_message to another chat is not rewritten to the requester chat", asyn
   const worker = new ToolsWorker(bus);
   const from = bus.chats.forChannel("cli", "from");
   const to = bus.chats.forChannel("cli", "to");
+  const ownerMessage = bus.messages.add(from.id, SYSTEM_CONTACT_ID, "Send hello other chat to the selected conversation");
   try {
     const id = bus.board("RunToolJob").publish({
       call: { tool_call_id: "call-other", name: "send_message", arguments: { chat_id: to.id, text: "hello other chat" } },
-      chat_id: from.id,
+      chat_id: from.id, message_id: ownerMessage,
     }, "test");
     expect(await worker.poll()).toBeTrue();
     let result = bus.board("RunToolJob").result(id);
@@ -79,7 +81,7 @@ test("send_message to another chat is not rewritten to the requester chat", asyn
     }
     expect(result).toMatchObject({ status: "completed" });
     expect(bus.messages.list(to.id).map((row) => row.content)).toEqual(["hello other chat"]);
-    expect(bus.messages.list(from.id)).toHaveLength(0);
+    expect(bus.messages.list(from.id).map((row) => row.id)).toEqual([ownerMessage]);
   } finally {
     await worker.stop();
     bus.close();
@@ -143,7 +145,9 @@ test("a tool call left over from a restart is failed instead of re-run", async (
   const workspace = await mkdtemp(join(tmpdir(), "magi-tools-restart-"));
   const before = new Bus("@restart.magi", workspace);
   const chat = before.chats.forChannel("cli", "terminal");
+  const ownerMessage = before.messages.add(chat.id, SYSTEM_CONTACT_ID, "Send again in this conversation");
   const id = before.board("RunToolJob").publish({
+    chat_id: chat.id, message_id: ownerMessage,
     call: { tool_call_id: "call-1", name: "send_message", arguments: { chat_id: chat.id, text: "again" } },
   }, "test");
   before.close();

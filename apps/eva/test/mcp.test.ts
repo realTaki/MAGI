@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Magi } from "../eva.js";
-import { messageDelivery } from "@magi/bus";
+import { messageDelivery, SYSTEM_CONTACT_ID } from "@magi/bus";
 import type { McpConnector } from "@magi/mcp/worker.js";
 
 test("MCP worker owns configuration, connections, and dynamic tools", async () => {
@@ -33,8 +33,10 @@ test("MCP worker owns configuration, connections, and dynamic tools", async () =
     await magi.chat("use the available tools");
     expect(modelCatalogs.at(-1)).toContain("demo__echo");
 
+    const ownerChat = magi.bus.chats.forChannel("cli", "mcp-tools");
+    const ownerMessage = magi.bus.messages.add(ownerChat.id, SYSTEM_CONTACT_ID, "Run the demo echo tool with value 42");
     const runs = magi.bus.board("RunToolJob");
-    const runId = runs.publish({ call: { tool_call_id: "call-1", name: "demo__echo", arguments: { value: 42 } } }, "test");
+    const runId = runs.publish({ chat_id: ownerChat.id, message_id: ownerMessage, call: { tool_call_id: "call-1", name: "demo__echo", arguments: { value: 42 } } }, "test");
     let result = null;
     for (let i = 0; i < 100 && !result; i++) { result = runs.result(runId); await sleep(10); }
     expect(result).toMatchObject({ status: "completed", output: { content: "{\"value\":42}" } });
