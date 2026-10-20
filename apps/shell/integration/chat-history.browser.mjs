@@ -1,4 +1,4 @@
-// Isolated Chromium test of the real ChatPage with synthetic ASP and desktop storage.
+// Isolated Chromium test of the real ChatPage with a synthetic trusted-network peer bridge.
 import { build } from 'esbuild';
 import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -43,5 +43,5 @@ try {
   }
   socket.close();
   assert.equal(outcome?.state, 'PASS', outcome?.text?.slice(-1000));
-  console.log('PASS Chromium chat history: one handle entry, separate transcripts, card access, exact send destination, same-name identities, reload persistence');
+  console.log('PASS Chromium chat history: independent contacts, separate histories, exact destinations, group authors, local-only cards, reload persistence');
 } finally { server?.close(); if(browser?.pid) { try { process.kill(-browser.pid, 'SIGKILL'); } catch {} await sleep(100); } await rm(dir, { recursive: true, force: true }); }

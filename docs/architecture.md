@@ -100,8 +100,7 @@ key for transport; local secrets are not encrypted at rest by this mechanism.
 The model sees configuration status rather than a secret field's value.
 
 Provider bootstrap/configuration requires an authenticated local owner channel.
-Remote peer messages cannot request it or acquire owner authority through contact
-acceptance. There is no global operator-settings broadcast. See the
+Remote chat does not expose provider secret forms or local process controls. There is no global operator-settings broadcast. See the
 [provider catalog](provider-catalog.md), [configuration worker](../packages/manager/config.ts)
 and [security limits](../SECURITY.md).
 
@@ -171,11 +170,10 @@ model context. Ordinary text is never parsed as a privileged configuration comma
 Nickname requests are ordinary owner chat, interpreted by the agent through the
 internal `set_self_profile` tool. The tool checks the stored triggering message's
 author and conversation rather than trusting model arguments. EVA's base role
-name and user nickname remain separate. Peer identity is pinned to a signing-key
-fingerprint; a changed display handle cannot grant a new authority.
+name and user nickname remain separate. Contact identity and endpoint routing remain separate from display nicknames.
 
 These are runtime conversation boundaries, not network process-launch interfaces.
 Shell launches an owned local EVA with `eva.mjs --role agent @handle.magi` and
 owns its host process start/stop/readiness. A handle is a local/display name; role
-selects workers; nickname is a display preference. Remote contact acceptance and
-group membership never grant provider credentials or local owner privileges.
+selects workers; nickname is a display preference. Remote contact registration and group routing do not expose provider credentials
+or make the remote EVA a locally supervised process.

@@ -102,7 +102,7 @@ same profile. See [Provider recovery](provider-validation.md).
 | `MAGI_OS_HOME` | OS-home context for headless Shell/tests. Electron supplies its application home context. |
 | `MAGI_SERVER` | Set to `1` to keep a standalone EVA running as a server. |
 | `MAGI_PEER_HOST`, `MAGI_PEER_PORT` | Explicit listener bind settings; defaults to loopback and an available, then persisted, port. |
-| `MAGI_PEER_URL` | Advertised reachable origin, such as an explicitly configured HTTPS reverse proxy. It is separate from the local listen port. |
+| `MAGI_PEER_URL` | Advertised reachable origin, such as a private-network endpoint or reverse proxy. It is separate from the local listen port. |
 | `MAGI_REPOSITORY_URL` | Repository selected by the desktop for managed source clones. |
 | `MAGI_DEV_CHECKOUT` | Optional verified source override for unpackaged Electron only. |
 | `MAGI_NODE`, `MAGI_NPM`, `MAGI_GIT` | Explicit MAGI-owned toolchain paths for child processes; npm is the `npm-cli.js` file. |
@@ -115,12 +115,10 @@ and [security boundaries](../SECURITY.md).
 
 ## Troubleshooting
 
-- **Remote contact is pending:** acceptance is controlled by the receiving EVA;
-  a successful hello is not an owner grant or proof of accepted membership.
 - **Remote endpoint is unavailable:** check its configured reachable origin and
   independently running EVA. The desktop cannot start a remote contact.
-- **Group history has not caught up:** verify local invitation acceptance,
-  accepted contact routes and current signed membership. Synchronization is
+- **Group history has not caught up:** check reachable contact routes and the
+  current conversation membership. Synchronization is
   eventual convergence, not an instantaneous consensus guarantee.
 - **Source is detached / runtime revision is not editable:** launch Electron
   from the intended attached source branch, not a `revisions/` directory.

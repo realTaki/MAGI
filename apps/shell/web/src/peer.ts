@@ -11,13 +11,11 @@ export type PeerContact = {
   online?: boolean;
   running?: boolean;
   group?: boolean;
-  trust?: "pending" | "accepted";
   members?: Array<{ principal: string; endpoint: string }>;
 };
 export type PeerConversation = {
   id: string;
   title: string;
-  trust: "pending" | "accepted";
   members: Array<{ principal: string; endpoint: string }>;
   local: false;
   group: true;

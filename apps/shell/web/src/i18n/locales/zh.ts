@@ -1,8 +1,6 @@
 export default {
   peer: {
     group: "群聊",
-    groupPending: "此群聊正在等待你批准。接受后，可以与以下成员交换消息。",
-    acceptGroup: "接受此群聊",
 
     contacts: "联系人",
     hideContacts: "隐藏联系人",

@@ -71,9 +71,8 @@ test("provider secrets are encrypted to the target EVA key", async () => {
 
 test("shared conversation UUID and author identity survive group presentation without granting owner rights", () => {
   const id = "conversation:dfd096ec-b269-4869-8193-295e5298adaf";
-  const group = conversationContact({ id, title: "Research", trust: "pending", local: false, group: true, members: [{ principal: "magi:peer", endpoint: "https://peer.example" }] });
+  const group = conversationContact({ id, title: "Research", local: false, group: true, members: [{ principal: "magi:peer", endpoint: "https://peer.example" }] });
   assert.equal(group.id, id);
-  assert.equal(group.trust, "pending");
   const rows = peerMessages(group, [{ ...event(1, { card }), id: "66affcf7-e7e9-43ce-a773-bf137aab3109", sender: "magi:peer" }], { ...owner, handle: "" });
   assert.deepEqual(rows, [{ type: "bot", text: "hello", sender: "magi:peer" }]);
 });

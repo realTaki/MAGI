@@ -1,137 +1,103 @@
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
-import { EVA_MAGI_HANDLE, SHELL_MAGI_HANDLE, USER_HANDLE } from "@magi/bus/identity.js";
 import { ChatPage } from "../web/src/ChatPage";
 import { I18nProvider } from "../web/src/i18n";
+import type { PeerContact, PeerEvent } from "../web/src/peer";
 
-const rows = [
-  { chat_id: "greeting", kind: "bot", name: "BALTHASAR", agents: [SHELL_MAGI_HANDLE], created_at: 1 },
-  { chat_id: "form", kind: "bot", name: "BALTHASAR", agents: [SHELL_MAGI_HANDLE], created_at: 2 },
-  { chat_id: "different-identity", kind: "bot", name: "BALTHASAR", agents: [EVA_MAGI_HANDLE], created_at: 3 },
-].map((row) => ({ ...row, state: "active", participants: [
-  { handle: USER_HANDLE, status: "joined" }, { handle: row.agents[0], status: "joined" },
-] }));
-let remoteRows = structuredClone(rows);
-let rosterHandles = new Set(rows.map((row) => row.agents[0]));
-const sequences: Record<string, number> = {};
-const events = (id: string) => [{ type: "chat.message", sequence: sequences[id] ?? 1, event_id: `${id}-event`, payload: {
-  sender: SHELL_MAGI_HANDLE, content: id === "greeting" ? "hello from Balthasar" : "[manager] worker asp recovered",
-  ...(id === "form" ? { metadata: { card: {
-    id: "synthetic-card", handle: SHELL_MAGI_HANDLE, purpose: "task", title: "Synthetic history form",
-    submit: "Save", fields: [],
-  } } } : {}),
-} }];
-const sends: { id: string; body: unknown }[] = [];
-let saved = structuredClone(rows);
-let outgoing: any[] = [];
-const before = JSON.stringify(rows);
+const groupId = "conversation:dfd096ec-b269-4869-8193-295e5298adaf";
+const contacts: PeerContact[] = [
+  { id: "shell", handle: "@shell.magi", name: "Shell", nickname: "", local: true, url: "http://localhost:7000", running: true },
+  { id: "local", handle: "@local.magi", name: "Same name", nickname: "", local: true, url: "http://localhost:7001", running: true },
+  { id: "remote", handle: "@remote.magi", name: "Same name", nickname: "", local: false, url: "http://private-eva:7002" },
+];
+const form = { id: "synthetic-card", handle: "@local.magi", purpose: "task" as const, title: "Local history form", submit: "Save", fields: [] };
+const histories: Record<string, PeerEvent[]> = {
+  shell: [{ id: 1, role: "assistant", content: "hello from Shell", created_at: "" }],
+  local: [{ id: 1, role: "assistant", content: "local history", metadata: { card: form }, created_at: "" }],
+  remote: [{ id: 1, role: "assistant", content: "remote history", metadata: { card: { ...form, handle: "@remote.magi" } }, created_at: "" }],
+  [groupId]: [{ id: "event-a", role: "assistant", sender: "Alice EVA", content: "shared group history", created_at: "" }],
+};
+const sends: Array<{ id: string; content: string; metadata?: Record<string, any> }> = [];
 (window as any).magiDesktop = {
-  aspBase: "http://synthetic.invalid",
   onLocalEvent() {},
   async invokeLocal(method: string, payload: any) {
-    if (method === "chat.listChats") return structuredClone(saved);
-    if (method === "chat.saveChats") { saved = structuredClone(payload); return; }
-    if (method === "chat.listEvents") return events(payload);
-    if (method === "chat.lastSequence") return 1;
-    if (method === "chat.saveEvents") return 1;
-    if (method === "chat.pendingAcks") return [];
-    if (method === "chat.listOutgoingMessages") return [...outgoing];
-    if (method === "chat.queueOutgoingMessage") { outgoing.push(payload); return; }
-    if (method === "chat.removeOutgoingMessage") { outgoing = outgoing.filter((row) => row.id !== payload); return; }
-    if (method === "chat.markAcknowledged") return;
+    if (method === "peer.contacts") return structuredClone(contacts);
+    if (method === "peer.conversations") return [{ id: groupId, title: "Shared group", group: true, local: false, members: [{ principal: "alice", endpoint: "http://alice:7003" }] }];
+    if (method === "peer.events") return structuredClone(histories[payload.id] ?? []);
+    if (method === "peer.profile") return { handle: contacts.find((contact) => contact.id === payload.id)?.handle, public_key: null, owner: payload.id !== "remote" };
+    if (method === "peer.send") { sends.push(structuredClone(payload)); return { accepted: true }; }
     if (method === "github.state") return { login: "", name: "", avatar: "" };
     throw Error(`unexpected local call ${method}`);
   },
 };
-window.fetch = async (input, options) => {
-  const url = new URL(String(input));
-  if (url.pathname === "/operator") return Response.json({ handle: "@user.magi", token: "synthetic" });
-  if (url.pathname === "/chats") return Response.json({ chats: remoteRows });
-  if (url.pathname === "/bots") return Response.json({ bots: [...rosterHandles].map((handle) => ({ handle, online: true })) });
-  if (url.pathname.endsWith("/events")) return Response.json({ events: [] });
-  if (url.pathname.endsWith("/events/ack")) return Response.json({});
-  if (url.pathname.endsWith("/messages")) {
-    sends.push({ id: url.pathname.split("/")[2], body: JSON.parse(String(options?.body)) });
-    return Response.json({});
-  }
-  throw Error(`unexpected fetch ${url.pathname}`);
-};
+window.fetch = async () => { throw Error("Peer UI must not call a central relay"); };
 localStorage.setItem("magi.locale", "en");
-localStorage.setItem("magi.chats.read-through.v1", JSON.stringify({ greeting: 0, form: 0, "different-identity": 0 }));
-const interval = window.setInterval.bind(window);
-window.setInterval = ((handler: TimerHandler, timeout?: number, ...args: unknown[]) => interval(handler, timeout === 3000 ? 100 : timeout, ...args)) as typeof window.setInterval;
+localStorage.setItem("magi.peer.active", JSON.stringify("shell"));
+localStorage.removeItem("magi.peer.read-events");
+const timeout = window.setTimeout.bind(window);
+window.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) => timeout(handler, delay === 3000 ? 50 : delay, ...args)) as typeof window.setTimeout;
 const root = createRoot(document.getElementById("root")!);
-const tick = () => new Promise((resolve) => setTimeout(resolve, 50));
+const tick = () => new Promise((resolve) => timeout(resolve, 25));
 async function until(predicate: () => boolean) {
-  for (let attempt = 0; attempt < 100; attempt++) {
-    if (predicate()) return;
-    await tick();
-  }
+  for (let attempt = 0; attempt < 160; attempt++) { if (predicate()) return; await tick(); }
   throw Error("UI did not settle");
 }
 function check(value: unknown, note: string) { if (!value) throw Error(note); }
-const select = () => document.querySelector(".chat-page__history select") as HTMLSelectElement;
 const thread = () => document.querySelector(".chat-page__thread")?.textContent ?? "";
-function choose(id: string) {
-  flushSync(() => { select().value = id; select().dispatchEvent(new Event("change", { bubbles: true })); });
+function choose(handle: string) {
+  const row = [...document.querySelectorAll<HTMLButtonElement>(".chat-page__bot-row")].find((item) => item.title === handle);
+  check(row, `contact ${handle} exists`);
+  flushSync(() => row!.click());
+}
+function compose(text: string) {
+  const input = document.querySelector<HTMLInputElement>(".chat-page__composer input")!;
+  flushSync(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, text);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  flushSync(() => document.querySelector<HTMLButtonElement>(".chat-page__send")!.click());
 }
 async function run() {
   flushSync(() => root.render(<I18nProvider><ChatPage /></I18nProvider>));
-  await until(() => Boolean(select()));
-  check(document.querySelectorAll(".chat-page__bot-row").length === 2, "one entry per exact handle, not per display name or room");
-  check(document.querySelector(".chat-page__bot-list")?.textContent?.includes(EVA_MAGI_HANDLE), "same names show distinct handles");
-  await until(() => Boolean(select()) && thread().includes("hello from Balthasar"));
-  check(select()?.options.length === 2, "both original rooms remain accessible");
-  const bounds = select().getBoundingClientRect();
-  check(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2) === select(), "history selector is visible and clickable below the topbar");
-  check(thread().includes("hello from Balthasar"), "greeting transcript is intact");
-  await until(() => document.querySelector(`[title="${SHELL_MAGI_HANDLE}"]`)?.getAttribute("data-unread") === "true");
-  choose("form");
+  await until(() => thread().includes("hello from Shell"));
+  check(document.querySelectorAll(".chat-page__bot-row").length === 4, "contacts and shared UUID group remain separate, even with identical names");
+  choose("@local.magi");
   await until(() => Boolean(document.querySelector(".chat-page__thread .chat-page__form")));
-  check(Boolean(document.querySelector(".chat-page__thread .chat-page__form")), "task form remains accessible in its own room");
-  check(!thread().includes("hello from Balthasar"), "transcripts do not blend");
-  await until(() => document.querySelector(`[title="${SHELL_MAGI_HANDLE}"]`)?.getAttribute("data-unread") === "false");
+  check(!thread().includes("hello from Shell"), "local transcript does not blend with Shell");
   const cancel = [...document.querySelectorAll<HTMLButtonElement>(".chat-page__form button")].find((button) => button.textContent === "Cancel")!;
   flushSync(() => cancel.click());
   await until(() => sends.length === 1);
-  check(sends[0].id === "form" && (sends[0].body as any).metadata.card_reject.id === "synthetic-card", "card receipt targets its original chat ID");
-  const composer = document.querySelector(".chat-page__composer input") as HTMLInputElement;
-  flushSync(() => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(composer, "synthetic normal message");
-    composer.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  flushSync(() => (document.querySelector(".chat-page__send") as HTMLButtonElement).click());
+  check(sends[0].id === "local" && sends[0].metadata?.card_reject.id === form.id, "owner card submission retains contact destination");
+  compose("local normal message");
   await until(() => sends.length === 2);
-  check(sends[1].id === "form" && (sends[1].body as any).content === "synthetic normal message", "ordinary messages retain the selected original chat ID");
-  choose("greeting");
-  await until(() => thread().includes("hello from Balthasar"));
-  check(thread().includes("hello from Balthasar") && !document.querySelector(".chat-page__thread .chat-page__form"), "switching back preserves separate history");
-  sequences.form = 2;
-  await until(() => document.querySelector(`[title="${SHELL_MAGI_HANDLE}"]`)?.getAttribute("data-unread") === "true");
-  check(select().value === "greeting", "new unread events do not switch the selected room");
-  check([...select().options].find((option) => option.value === "form")?.textContent?.includes("Unread"), "unread history is identifiable in the selector");
-  choose("form");
-  await until(() => document.querySelector(`[title="${SHELL_MAGI_HANDLE}"]`)?.getAttribute("data-unread") === "false");
+  check(sends[1].id === "local" && sends[1].content === "local normal message", "ordinary message targets selected local contact");
+  choose("@remote.magi");
+  await until(() => thread().includes("remote history"));
+  check(!document.querySelector(".chat-page__thread .chat-page__form"), "remote metadata cannot render an owner form");
+  flushSync(() => document.querySelector<HTMLButtonElement>(".chat-page__name-btn")!.click());
+  check(!document.querySelector(".chat-page__runtime-action"), "remote contact has no local process control");
+  check(!document.querySelector("#provider"), "remote contact has no owner provider panel");
+  compose("remote normal message");
+  await until(() => sends.length === 3);
+  check(sends[2].id === "remote", "remote message retains its contact destination");
+  const group = [...document.querySelectorAll<HTMLButtonElement>(".chat-page__bot-row")].find((row) => row.textContent?.includes("Shared group"))!;
+  flushSync(() => group.click());
+  await until(() => thread().includes("shared group history"));
+  check(thread().includes("Alice EVA"), "shared history preserves author label");
+  check(Boolean(document.querySelector(".chat-page__composer input")), "group is immediately writable without approval handshake");
+  compose("group normal message");
+  await until(() => sends.length === 4);
+  check(sends[3].id === groupId && sends[3].content === "group normal message", "group send preserves shared conversation UUID");
+  choose("@shell.magi");
+  histories.remote.push({ id: 2, role: "assistant", content: "new remote event", created_at: "" });
+  await until(() => document.querySelector('[title="@remote.magi"]')?.textContent?.includes("new remote event") ?? false);
+  check(thread().includes("hello from Shell"), "remote updates do not change active contact");
+  check(Boolean(document.querySelector('[title="@remote.magi"] .chat-page__unread-dot')), "unread remote event is visible");
+  choose("@remote.magi");
+  await until(() => thread().includes("new remote event"));
   flushSync(() => root.render(<I18nProvider key="reload"><ChatPage /></I18nProvider>));
-  await until(() => Boolean(select()));
-  check(document.querySelectorAll(".chat-page__bot-row").length === 2 && select().options.length === 2, "remount retains both histories in one identity entry");
-  check(select().value === "form", "remount restores the selected historical room");
-  check(JSON.stringify(saved) === before, "storage retains all original room records");
-  remoteRows = remoteRows.map((row) => row.chat_id === "form" ? { ...row, state: "ended" } : row);
-  await until(() => document.querySelectorAll(".chat-page__bot-row").length === 3);
-  check(!select(), "ended room is not hidden inside the active identity entry");
-  remoteRows = structuredClone(rows);
-  await until(() => Boolean(select()));
-  remoteRows = remoteRows.filter((row) => row.chat_id !== "form");
-  await until(() => document.querySelectorAll(".chat-page__bot-row").length === 3);
-  check(thread().includes("Synthetic history form"), "remote-absent room keeps its own cached history");
-  remoteRows = structuredClone(rows);
-  await until(() => Boolean(select()));
-  rosterHandles.delete(SHELL_MAGI_HANDLE);
-  await until(() => document.querySelectorAll(".chat-page__bot-row").length === 3);
-  check(!select(), "unregistered handle is not treated as a current shared identity");
-  rosterHandles.add(SHELL_MAGI_HANDLE);
-  await until(() => Boolean(select()));
+  await until(() => thread().includes("new remote event"));
+  check(document.querySelectorAll(".chat-page__bot-row").length === 4, "remount restores contact list and selected contact history");
   root.unmount();
 }
 run().then(() => { document.body.dataset.result = "PASS"; }).catch((error) => {

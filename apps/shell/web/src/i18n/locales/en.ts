@@ -1,8 +1,6 @@
 export default {
   peer: {
     group: "Group conversation",
-    groupPending: "This group is waiting for your approval. Accepting allows messages to be exchanged with these participants.",
-    acceptGroup: "Accept this group",
 
     contacts: "Contacts",
     hideContacts: "Hide contacts",

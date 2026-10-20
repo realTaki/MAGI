@@ -144,7 +144,7 @@ export function ChatPage() {
     if (profileHandle) window.location.hash = "";
   }
   async function send() {
-    if (!active || active.trust === "pending" || sendLock.current) return;
+    if (!active || sendLock.current) return;
     const id = active.id;
     const content = drafts[id]?.trim();
     if (!content) return;
@@ -152,16 +152,6 @@ export function ChatPage() {
     try {
       await sendPeerMessage(id, content);
       setDrafts((current) => current[id]?.trim() === content ? { ...current, [id]: "" } : current);
-      setReload((value) => value + 1);
-    } catch { setError(t("peer.sendFailed")); }
-    finally { sendLock.current = false; setSending(false); }
-  }
-
-  async function acceptGroup() {
-    if (!active?.group || active.trust !== "pending" || sendLock.current) return;
-    sendLock.current = true; setSending(true); setError("");
-    try {
-      await sendPeerMessage("shell", "", { group_action: { action: "accept", id: active.id.slice("conversation:".length) } });
       setReload((value) => value + 1);
     } catch { setError(t("peer.sendFailed")); }
     finally { sendLock.current = false; setSending(false); }
@@ -196,8 +186,7 @@ export function ChatPage() {
         {active && messages.length === 0 && <p className="chat-page__empty-thread">{t(active.id === "shell" ? "peer.shellIntro" : "peer.chatIntro")}</p>}
         <Thread messages={messages} ownerHandle={owner ? active?.handle : undefined} />
       </div>
-      {active?.trust === "pending" && <div className="chat-page__empty-thread"><p>{t("peer.groupPending")}</p>{active.members?.map((member) => <p key={member.principal}>{member.principal} · {member.endpoint}</p>)}<button type="button" disabled={sending} onClick={() => void acceptGroup()}>{t("peer.acceptGroup")}</button></div>}
-      {active && active.trust !== "pending" && <form className="chat-page__composer" onSubmit={(event) => { event.preventDefault(); void send(); }}><div className="chat-page__input-shell"><input type="text" value={drafts[active.id] ?? ""} onChange={(event) => setDrafts((current) => ({ ...current, [active.id]: event.target.value }))} placeholder={t("peer.message")} aria-label={`${t("peer.message")} ${contactLabel(active)}`} /><button type="submit" className="chat-page__send" disabled={sending || !drafts[active.id]?.trim()} aria-label={t("peer.send")}>↑</button></div></form>}
+      {active && <form className="chat-page__composer" onSubmit={(event) => { event.preventDefault(); void send(); }}><div className="chat-page__input-shell"><input type="text" value={drafts[active.id] ?? ""} onChange={(event) => setDrafts((current) => ({ ...current, [active.id]: event.target.value }))} placeholder={t("peer.message")} aria-label={`${t("peer.message")} ${contactLabel(active)}`} /><button type="submit" className="chat-page__send" disabled={sending || !drafts[active.id]?.trim()} aria-label={t("peer.send")}>↑</button></div></form>}
     </main>
     {panelOpen && active && <aside id="chat-page-profile" className="chat-page__panel"><div className="chat-page__panel-head"><span /><span>{t("chatSettings.title")}</span><button type="button" className="chat-page__panel-collapse" aria-label={t("chatSettings.collapse")} onClick={() => { setPanelOpen(false); if (profileHandle) window.location.hash = ""; }}>✕</button></div><div className="chat-page__settings">
       <div className="chat-page__settings-avatar"><Avatar color={color(active)} size={64} />{active.local && <RuntimeToggle key={active.id} contactId={active.id} handle={active.handle} invoke={window.magiDesktop?.invokeLocal} />}</div>

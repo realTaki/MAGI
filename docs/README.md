@@ -6,7 +6,7 @@ Start with the [project overview](../README.md) ([中文](../README_zh.md)).
 | --- | --- |
 | Run the desktop and independent EVAs; understand configuration | [Running MAGI](running.md) |
 | Understand processes, BUS, messages and self-replacement | [Architecture](architecture.md) |
-| Inspect direct endpoints, signed hello and recipient-controlled contacts | [MAGI peer channel](../packages/channel-peer/README.md) |
+| Inspect direct endpoints, hello and contact routing | [MAGI peer channel](../packages/channel-peer/README.md) |
 | Understand shared conversation UUIDs and replicated group history | [Peer group synchronization](architecture/peer-group-sync.md) |
 | Prepare source and contribute changes | [Contributing](../CONTRIBUTING.md) |
 | Run the canonical checks | [Testing MAGI](testing.md) |
