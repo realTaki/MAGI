@@ -4,7 +4,7 @@ import { useT } from "./i18n";
 import "./feed.css";
 
 type FeedItem = { id: number; version: number; title: string; body: string; why_relevant: string; feedback: string; created_at: string; sources: { url: string; evidence_id: number; kind: string }[] };
-type FeedState = { enabled: boolean; prompt: string; daily_budget: number; selected: string[]; sources: { name: string; description: string }[]; status: string; last_attempt: string | null; last_error: string | null; items: FeedItem[] };
+type FeedState = { enabled: boolean; prompt: string; daily_budget: number; selected: string[]; unavailable_selected: string[]; sources: { name: string; description: string; fingerprint: string }[]; status: string; last_attempt: string | null; last_error: string | null; items: FeedItem[] };
 async function invoke<T>(method: string, payload?: unknown): Promise<T> {
   if (!window.magiDesktop?.invokeLocal) throw new Error("The local Shell connection is unavailable");
   return await window.magiDesktop.invokeLocal(method, payload) as T;
@@ -50,10 +50,10 @@ export function FeedPage() {
       <details><summary>{t("feed.sources")}</summary><p>{t("feed.sourceWarning")}</p>
         {!state?.sources.length && <p>{t("feed.noSources")}</p>}
         {state?.sources.map(source => <label className="feed-check" key={source.name} title={source.description}><input type="checkbox" checked={selected.includes(source.name)} onChange={e => setSelected(e.target.checked ? [...selected, source.name] : selected.filter(name => name !== source.name))} />{source.name}</label>)}
-        {selected.filter(name => !state?.sources.some(source => source.name === name)).map(name => <label className="feed-check" key={name}><input type="checkbox" checked onChange={() => setSelected(selected.filter(value => value !== name))} />{name} ({t("feed.disconnected")})</label>)}
+        {state?.unavailable_selected.map(name => <p key={name}>{name}: {t("feed.disconnected")}</p>)}
         <label className="feed-budget">{t("feed.budget")}<input type="number" min={1} max={100} value={budget} onChange={e => setBudget(Number(e.target.value))} /></label><p>{t("feed.budgetHelp")}</p>
       </details>
-      <button type="button" disabled={busy || !state || state.status === "paused" || !prompt.trim()} onClick={() => void action(async () => { await invoke("feed.configure", { prompt, enabled, sources: selected, daily_budget: budget }); setSaved(true); })}>{t("feed.save")}</button>
+      <button type="button" disabled={busy || !state || state.status === "paused" || !prompt.trim()} onClick={() => void action(async () => { await invoke("feed.configure", { prompt, enabled, sources: selected, source_fingerprints: Object.fromEntries(selected.map(name => [name, state?.sources.find(source => source.name === name)?.fingerprint])), daily_budget: budget }); setSaved(true); })}>{t("feed.save")}</button>
       {saved && <span role="status">{t("feed.saved")}</span>}
     </section>
     <div className="feed-state"><p role="status">{state ? t(`feed.status.${state.status}`) : t("feed.loading")}</p><button type="button" disabled={busy} onClick={() => void action(() => load())}>{t("feed.reload")}</button></div>

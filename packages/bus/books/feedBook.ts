@@ -6,6 +6,7 @@ import type { BusDb } from "../drizzle/database.js";
 export const feedEvidence = sqliteTable("books_feed_evidence", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   tool: text("tool").notNull(), job_id: integer("job_id").notNull().unique(),
+  source_fingerprint: text("source_fingerprint").notNull(), config_revision: integer("config_revision").notNull(),
   kind: text("kind").notNull().default("search-snippet"), content: text("content").notNull(),
   urls: text("urls", { mode: "json" }).$type<string[]>().notNull(),
   created_at: text("created_at").notNull().default(sql`(CURRENT_TIMESTAMP)`),
@@ -37,13 +38,13 @@ function bounded(value: unknown, name: string, max: number): string {
 export class FeedBook {
   constructor(private readonly db: BusDb) {}
   evidence(id: number): FeedEvidence | null { return this.db.select().from(feedEvidence).where(eq(feedEvidence.id, id)).get() ?? null; }
-  recordEvidence(tool: string, job_id: number, content: string): FeedEvidence {
+  recordEvidence(tool: string, job_id: number, content: string, provenance: { source_fingerprint: string; config_revision: number }): FeedEvidence {
     // Keep bounded text actually returned by the tool, not model-supplied citations.
     const excerpt = content.slice(0, 30_000);
     const urls = [...new Set((excerpt.match(/https?:\/\/[^\s<>"'`\\]+/g) ?? []).flatMap(raw => {
       try { return [feedUrl(raw.replace(/[),.;\]}]+$/, ""))]; } catch { return []; }
     }))].slice(0, 100);
-    return this.db.insert(feedEvidence).values({ tool, job_id, content: excerpt, urls }).returning().get();
+    return this.db.insert(feedEvidence).values({ tool, job_id, content: excerpt, urls, ...provenance }).returning().get();
   }
   list(includeDismissed = false): FeedItem[] {
     return this.db.select().from(feedItems).where(includeDismissed ? undefined : sql`${feedItems.feedback} != 'dismiss'`).orderBy(desc(feedItems.id)).limit(100).all();

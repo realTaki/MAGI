@@ -20,13 +20,16 @@ export function feedApi(bus: Bus) {
     "feed.state": () => {
       if (bus.handle !== SHELL_MAGI_HANDLE) throw new Error("Feed belongs only to Shell EVA");
       const running = Boolean(bus.tools.get("configure_feed"));
-      const sources = bus.tools.catalog().filter(tool => bus.tools.get(tool.name)?.researchSource?.readOnlyHint === true);
-      const selected: string[] = JSON.parse(bus.settings.get("feed.sources") ?? "[]");
+      const sources = bus.tools.catalog().filter(tool => bus.tools.get(tool.name)?.researchSource?.readOnlyHint === true).map(tool => ({ ...tool, fingerprint: bus.tools.get(tool.name)!.researchSource!.fingerprint }));
+      const configured: string[] = JSON.parse(bus.settings.get("feed.sources") ?? "[]");
+      const bindings: Record<string, string> = JSON.parse(bus.settings.get("feed.source_fingerprints") ?? "{}");
+      const selected = configured.filter(name => sources.some(source => source.name === name && source.fingerprint === bindings[name]));
+      const unavailable_selected = configured.filter(name => !selected.includes(name));
       const enabled = bus.settings.get("feed.enabled") === "true";
       const provider = Boolean(bus.settings.get("provider.name") && bus.secrets.get("provider.api_key"));
       const used = bus.settings.get("feed.research_day") === new Date().toISOString().slice(0, 10) ? Number(bus.settings.get("feed.research_count") ?? "0") : 0;
       const budget = Number(bus.settings.get("feed.daily_budget") ?? "3");
-      return { enabled, used_today: used, daily_budget: Number(bus.settings.get("feed.daily_budget") ?? "3"), prompt: bus.prompts.get("feed/AGENT") ?? "", selected, sources,
+      return { enabled, used_today: used, daily_budget: Number(bus.settings.get("feed.daily_budget") ?? "3"), prompt: bus.prompts.get("feed/AGENT") ?? "", selected, unavailable_selected, sources,
         status: !running ? "paused" : !enabled ? "disabled" : !selected.some(name => sources.some(source => source.name === name)) ? "sourceNeeded" : !provider ? "providerNeeded" : used >= budget ? "budgetExhausted" : "ready",
         last_attempt: bus.settings.get("feed.last_attempt"), last_error: bus.settings.get("feed.last_error"),
         items: bus.feed.list(true).map(item => ({ ...item, sources: item.sources.map(source => ({ ...source, kind: bus.feed.evidence(source.evidence_id)?.kind ?? "search-snippet" })) })),

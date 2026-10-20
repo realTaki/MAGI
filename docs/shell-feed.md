@@ -22,8 +22,9 @@ other Books; it does not turn the feature on.
 3. The existing provider produces a `research_feed` call. The raw MCP tools are
    **not** added to the subconscious tool allowlist.
 4. Feed validates enabled state, the owner's exact source selection, current
-   catalog declaration, and budget. It publishes a `RunToolJob` to the MCP worker,
-   which rechecks the read-only declaration at execution.
+   catalog declaration, source-contract fingerprint, and budget. It publishes a
+   `RunToolJob` to the MCP worker, which rechecks the read-only declaration,
+   selected configuration/tool contract, and exact connection at execution.
 5. Feed records the bounded returned text, tool/job identity, observation time,
    and URLs observed in that text. All evidence currently has kind
    `search-snippet`. This is not a claim that a URL was fetched or its article
@@ -57,6 +58,14 @@ It does not restrict active goals or other tasks. Exhaustion is visible, with
 adjustment available. Budget attempts count even when the source fails, avoiding
 unbounded retry costs. No automatic retry loop is added.
 
+Owner selection binds a digest of the MCP configuration and advertised tool
+contract, not merely its tool name. A changed source becomes unselected until
+the owner explicitly selects its current fingerprint; a stale owner page cannot
+silently authorize a replacement. Unchanged reconnects preserve future selection,
+but each in-flight call also binds its connection instance and owner configuration
+revision. Disable/re-enable cannot resurrect an earlier withdrawn call or evidence.
+Only digests, never raw credentials, enter source metadata.
+
 Pending source requests are cancelled when withdrawn or stopped. Already-running
 read-only requests may finish remotely, but withdrawn results cannot create new
 Feed evidence. Tool results are untrusted data, not instructions. The prompt
@@ -82,7 +91,7 @@ semantic duplicate detector or a mechanism for updating living articles.
 ## Verification boundary
 
 `apps/eva/test/feed.test.ts` covers authority, headless omission, worker lifecycle,
-source withdrawal, configurable budgets, source-backed cards, invalid citations,
+source withdrawal/re-enable, same-name source replacement, reconnect identity, configurable budgets, source-backed cards, invalid citations,
 dedupe, optimistic feedback, restart persistence, and the mock
 Task → subconscious → provider → Feed → MCP → card path. The UI has source/API
 and type/build checks. Actual external research with an owner-authorized live

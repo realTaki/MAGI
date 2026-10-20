@@ -58,11 +58,13 @@ export class FeedWorker extends BaseWorker {
     try { const names: unknown = JSON.parse(this.bus.settings.get("feed.sources") ?? "[]"); return Array.isArray(names) ? names.filter((name): name is string => typeof name === "string") : []; }
     catch { return []; }
   }
+  private revision(): number { return Number(this.bus.settings.get("feed.config_revision") ?? "0"); }
+  private bindings(): Record<string, string> { return JSON.parse(this.bus.settings.get("feed.source_fingerprints") ?? "{}"); }
   private budget(): number { const value = Number(this.bus.settings.get("feed.daily_budget") ?? DEFAULT_RESEARCH_PER_DAY); return Number.isSafeInteger(value) && value >= 1 && value <= 100 ? value : DEFAULT_RESEARCH_PER_DAY; }
   private count(): number { return this.bus.settings.get("feed.research_day") === new Date().toISOString().slice(0, 10) ? Number(this.bus.settings.get("feed.research_count") ?? "0") : 0; }
   private sources() {
     return this.bus.tools.catalog({ chat_id: this.bus.chats.forChannel("subconscious", "self").id })
-      .filter(tool => this.bus.tools.get(tool.name)?.researchSource?.readOnlyHint === true && this.selected().includes(tool.name));
+      .filter(tool => this.bus.tools.get(tool.name)?.researchSource?.readOnlyHint === true && this.selected().includes(tool.name) && this.bus.tools.get(tool.name)?.researchSource?.fingerprint === this.bindings()[tool.name]);
   }
   private context(): string {
     if (this.bus.settings.get("feed.enabled") !== "true") return "";
@@ -92,15 +94,17 @@ export class FeedWorker extends BaseWorker {
           if (this.count() >= this.budget()) throw new Error("Feed research budget reached for today; the owner may change it in Feed preferences. This does not restrict other tasks");
           this.bus.settings.setMany({ "feed.research_count": String(this.count() + 1), "feed.research_day": new Date().toISOString().slice(0, 10), "feed.last_attempt": new Date().toISOString(), "feed.last_error": "" });
           const board = this.bus.board("RunToolJob");
-          const job = board.publish({ call: { name: source.name, arguments: args.arguments as Record<string, unknown>, tool_call_id: `feed-${Date.now()}` }, ...context, require_read_only_hint: true }, this.worker_name);
+          const revision = this.revision();
+          const identity = { ...this.bus.tools.get(source.name)!.researchSource! };
+          const job = board.publish({ call: { name: source.name, arguments: args.arguments as Record<string, unknown>, tool_call_id: `feed-${Date.now()}` }, ...context, require_read_only_hint: true, research_source_fingerprint: identity.fingerprint, research_source_instance: identity.instance }, this.worker_name);
           this.researchJobs.add(job);
           try {
             const result = await waitForJob(() => board.result(job), 90_000, "Feed source", signal);
             if (result.status !== "completed") throw new Error(result.error ?? "Feed source failed");
             // A disconnected/reconfigured source cannot publish a late result after
             // the user withdrew it. Configuration changes do not resurrect calls.
-            if (this.bus.settings.get("feed.enabled") !== "true" || !this.sources().some(tool => tool.name === source.name)) throw new Error("Feed source was withdrawn before its result arrived");
-            const evidence = this.bus.feed.recordEvidence(source.name, job, result.output?.content ?? "");
+            if (this.revision() !== revision || this.bus.tools.get(source.name)?.researchSource?.instance !== identity.instance || this.bus.settings.get("feed.enabled") !== "true" || !this.sources().some(tool => tool.name === source.name)) throw new Error("Feed source was withdrawn before its result arrived");
+            const evidence = this.bus.feed.recordEvidence(source.name, job, result.output?.content ?? "", { source_fingerprint: identity.fingerprint, config_revision: revision });
             return JSON.stringify({ evidence, warning: "URLs were observed in tool output. This does not establish that their pages were fetched or fully read." });
           } catch (error) {
             board.failPending(job, "Feed research stopped before execution");
@@ -114,7 +118,7 @@ export class FeedWorker extends BaseWorker {
           if (!Array.isArray(args.sources)) throw new Error("sources are required");
           for (const source of args.sources as FeedSource[]) {
             const evidence = this.bus.feed.evidence(source?.evidence_id);
-            if (!evidence || !this.selected().includes(evidence.tool) || Date.now() - Date.parse(evidence.created_at + "Z") > 86_400_000) throw new Error("a selected source's recent research evidence is required");
+            if (!evidence || evidence.config_revision !== this.revision() || evidence.source_fingerprint !== this.bindings()[evidence.tool] || !this.selected().includes(evidence.tool) || Date.now() - Date.parse(evidence.created_at + "Z") > 86_400_000) throw new Error("a selected source's recent research evidence is required");
           }
           return JSON.stringify({ item: this.bus.feed.save(args as { title: string; body: string; why_relevant: string; sources: FeedSource[] }) });
         } },
@@ -122,13 +126,16 @@ export class FeedWorker extends BaseWorker {
         run: async args => {
           if (typeof args.prompt !== "string" || args.prompt.length > 8000 || !args.prompt.trim()) throw new Error("Feed prompt must contain 1..8000 characters");
           if (typeof args.enabled !== "boolean" || !Array.isArray(args.sources) || args.sources.length > 8 || !args.sources.every(name => typeof name === "string" && (this.bus.tools.get(name)?.researchSource?.readOnlyHint === true || (args.enabled === false && this.selected().includes(name))))) throw new Error("select only connected tools declaring read-only access");
+          const fingerprints = args.source_fingerprints as Record<string, unknown> | undefined;
+          if (!fingerprints || typeof fingerprints !== "object" || Array.isArray(fingerprints) || !args.sources.every(name => typeof fingerprints[String(name)] === "string" && (args.enabled === false || fingerprints[String(name)] === this.bus.tools.get(String(name))?.researchSource?.fingerprint))) throw new Error("source changed or was not explicitly selected; reload sources and select the current source again");
+          const bindings = Object.fromEntries(args.sources.map(name => [String(name), String(fingerprints[String(name)])]));
           const budget = args.daily_budget ?? DEFAULT_RESEARCH_PER_DAY;
           if (typeof budget !== "number" || !Number.isSafeInteger(budget) || budget < 1 || budget > 100) throw new Error("daily_budget must be an integer from 1 to 100");
           this.bus.prompts.set("feed/AGENT", args.prompt.trim());
-          this.bus.settings.setMany({ "feed.daily_budget": String(budget), "feed.enabled": String(args.enabled), "feed.sources": JSON.stringify([...new Set(args.sources)]) });
+          this.bus.settings.setMany({ "feed.config_revision": String(this.revision() + 1), "feed.source_fingerprints": JSON.stringify(bindings), "feed.daily_budget": String(budget), "feed.enabled": String(args.enabled), "feed.sources": JSON.stringify([...new Set(args.sources)]) });
           for (const id of this.researchJobs) {
             const queued = this.bus.board("RunToolJob").peekInput(id);
-            if (!args.enabled || (queued && !this.selected().includes(queued.call.name))) this.bus.board("RunToolJob").failPending(id, "Owner withdrew this Feed source before execution");
+            if (queued) this.bus.board("RunToolJob").failPending(id, "Owner withdrew this Feed source before execution");
           }
           return JSON.stringify({ saved: true });
         } },

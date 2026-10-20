@@ -2,6 +2,8 @@ CREATE TABLE books_feed_evidence (
  id INTEGER PRIMARY KEY AUTOINCREMENT,
  tool TEXT NOT NULL,
  job_id INTEGER NOT NULL UNIQUE,
+ source_fingerprint TEXT NOT NULL,
+ config_revision INTEGER NOT NULL,
  kind TEXT NOT NULL DEFAULT 'search-snippet',
  content TEXT NOT NULL,
  urls TEXT NOT NULL,

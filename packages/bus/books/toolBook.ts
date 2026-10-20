@@ -5,7 +5,7 @@ export type ToolRunContext = { chat_id?: number; message_id?: number };
 
 export type ExecutableTool = LLMTool & {
   /** Provider declaration only, NOT proof of safety or permission. */
-  researchSource?: { origin: "mcp"; readOnlyHint: boolean };
+  researchSource?: { origin: "mcp"; readOnlyHint: boolean; fingerprint: string; instance: string };
   available?: (context: ToolRunContext) => boolean;
   run(args: Record<string, unknown>, signal?: AbortSignal, context?: ToolRunContext): Promise<string>;
 };

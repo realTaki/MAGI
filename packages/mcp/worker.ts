@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from "node:crypto";
 import { abortable } from "@magi/bus/abort.js";
 import { Client, SSEClientTransport, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
@@ -95,6 +96,8 @@ export class McpWorker extends BaseWorker {
       const tool = this.tools().find((candidate) => candidate.name === name);
       if (!tool) throw new Error(`unknown tool ${name}`);
       if (input.require_read_only_hint && tool.researchSource?.readOnlyHint !== true) throw new Error("research source no longer declares read-only access");
+      if (input.research_source_fingerprint && tool.researchSource?.fingerprint !== input.research_source_fingerprint) throw new Error("research source configuration changed before execution");
+      if (input.research_source_instance && tool.researchSource?.instance !== input.research_source_instance) throw new Error("research source connection changed before execution");
       board.submit(this.worker_name, id, { output: { content: await abortable(tool.run(args, this.controller.signal, { chat_id: input.chat_id, message_id: input.message_id }), this.controller.signal) } });
     } catch (error) {
       board.submit(this.worker_name, id, { error: error instanceof Error ? error.message : String(error) });
@@ -155,7 +158,8 @@ export async function connectMcpServer(config: McpServerConfig, workspace: strin
     const listed = await deadline(client.listTools(), (config.connect_timeout ?? 10) * 1_000, "MCP tools/list timed out");
     const tools: ExecutableTool[] = listed.tools.map((tool) => ({
       name: `${config.name}__${tool.name}`,
-      researchSource: { origin: "mcp" as const, readOnlyHint: tool.annotations?.readOnlyHint === true && tool.annotations?.destructiveHint !== true },
+      researchSource: { origin: "mcp" as const, readOnlyHint: tool.annotations?.readOnlyHint === true && tool.annotations?.destructiveHint !== true,
+        fingerprint: createHash("sha256").update(JSON.stringify(canonical({ config, tool }))).digest("hex"), instance: randomUUID() },
       description: tool.description || "(no description provided by MCP server)",
       input_schema: (tool.inputSchema ?? { type: "object", properties: {} }) as Record<string, unknown>,
       async run(args, signal) {
@@ -187,4 +191,11 @@ function message(error: unknown): string {
 
 async function deadline<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
   return Promise.race([promise, sleep(timeoutMs).then(() => { throw new Error(message); })]);
+}
+
+/** Stable contract binding. Only its digest enters metadata; never raw credentials. */
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, canonical(item)]));
+  return value;
 }

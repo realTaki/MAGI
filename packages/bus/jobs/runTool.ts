@@ -6,6 +6,9 @@ export type RunToolJob = {
   call: LLMToolCall;
   /** Recheck a declared capability at execution, not merely when queued. Not an authorization grant. */
   require_read_only_hint?: boolean;
+  /** Owner-selected source contract and this exact live connection, never model arguments. */
+  research_source_fingerprint?: string;
+  research_source_instance?: string;
   chat_id?: number;
   /** Actual message that triggered this turn; never supplied by the model. */
   message_id?: number;

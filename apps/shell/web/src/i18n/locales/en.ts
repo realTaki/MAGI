@@ -27,7 +27,7 @@ export default {
     sources: "Research sources and budget",
     sourceWarning: "Select only trusted, already-authorized public search tools. Their read-only label is a provider declaration, not a safety guarantee. This grants public-interest research only, not access changes or private-data sharing.",
     noSources: "No connected tool declares read-only access. Connect an appropriate research source first; nothing will be invented.",
-    disconnected: "disconnected; remove to save",
+    disconnected: "disconnected or changed; explicitly select the current source again",
     budget: "Research calls per UTC day",
     budgetHelp: "Default: 3 calls to limit background cost. You can adjust this; it does not limit active goals or other tasks.",
     save: "Save preferences",
