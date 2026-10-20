@@ -61,31 +61,28 @@ silently accepting an unrelated system executable. SQLite uses `node:sqlite`.
 
 ## Direct peer identities, contacts and history
 
-Every EVA, including Shell, owns a peer endpoint, signing key, contactBook and
-conversation history. Public discovery exposes identity and a reachable origin;
-a signed challenge verifies possession of the pinned key before conversation
-content is sent. Signed hello/chat exchanges identify the sender by public-key
-fingerprint, not a body handle or display nickname. A stranger becomes a pending
-contact. The recipient controls acceptance; an advertised callback URL is never
-fetched merely because it arrived.
+Every EVA, including Shell, owns a peer endpoint, contactBook and conversation
+history. Discovery provides a stable node label and reachable URL. These labels
+are not authenticated identities. The current deployment model is a trusted
+private network: ordinary hello/chat exchanges need no signatures, nonce
+challenge, contact approval or per-tool permission check. Received peers become
+usable contacts directly. Do not expose these endpoints to untrusted networks.
 
-The peer HTTP boundary carries ordinary signed chat and bounded synchronization.
-It accepts no owner-role parameter, provider form, lifecycle command or privileged
-configuration envelope. Explicit owner interactions use the local host bridge;
-managed child RPC is restricted to owner chat, events and profile methods.
+Shell and managed children retain a local host bridge for UI histories and
+provider forms. Process ownership records distinguish locally created EVAs from
+remote contacts; adding a remote URL does not create or control its OS process.
 
-Conversation UUIDs identify shared histories. Group events preserve the original
-author's signature, event UUID, author sequence, Lamport clock and membership
-epoch. Each participant stores its own history and reconciles signed event sets;
-display order is deterministic after convergence. Invitations require explicit
-local acceptance and accepted routes. The creator signs membership changes.
-This provides eventual history convergence, not consensus or exactly-once external
-side effects. Removal cannot revoke data already disclosed to a participant.
+Conversation UUIDs identify shared histories. Group events retain event UUIDs,
+author labels, sequence numbers, Lamport clocks and membership epochs. Each
+participant stores its own history and reconciles event sets; display order is
+deterministic after convergence. This provides eventual history convergence,
+not consensus, authenticated authorship or exactly-once external side effects.
+Removal cannot revoke data already shared with a participant.
 
 The [MAGI peer subset](../packages/channel-peer/README.md) is inspired by A2A 1.0,
 but is not a standards-compliant A2A implementation. See the
-[group synchronization design](architecture/peer-group-sync.md) for membership,
-replay, offline recovery, authorization and disclosure limits.
+[group synchronization design](architecture/peer-group-sync.md) for history
+reconciliation and offline recovery.
 
 ## Provider configuration
 

@@ -6,7 +6,7 @@
 
 [中文 README](README_zh.md)
 
-MAGI is a local multi-agent runtime. Each node is the `eva` launcher plus one child process, with its own workspace and provider credentials. Each EVA exposes its own peer server and keeps its own contactBook. Electron starts only the built-in Shell EVA; the owner can ask Shell in chat to create a local EVA or connect to a remote URL. EVAs exchange signed messages directly, with shared conversation UUIDs and independently stored histories.
+MAGI is a local multi-agent runtime. Each node is the `eva` launcher plus one child process, with its own workspace and provider credentials. Each EVA exposes its own peer server and keeps its own contactBook. Electron starts only the built-in Shell EVA; the owner can ask Shell in chat to create a local EVA or connect to a remote URL. EVAs exchange messages directly on a trusted private network, with shared conversation UUIDs and independently stored histories.
 
 MAGI studies persistent agents that can inspect and improve their own software.
 Self-edit, validation and revision switching are implementation mechanisms;
@@ -22,8 +22,8 @@ measured recursive improvement remains a research goal. The project is experimen
 
 Use MAGI's bundled Node 24 and the root lockfile. Shell starts with its own EVA,
 `@shell.magi`; no relay or default extra agent is required. State belongs to each
-node's workspace. A signed hello creates a pending contact at the recipient;
-acceptance remains under that recipient's local control.
+node's workspace. Hello exchanges create usable contacts directly on the trusted private network;
+no signature or contact approval is required.
 
 The [MAGI peer subset](packages/channel-peer/README.md) is inspired by A2A 1.0,
 but is not a standards-compliant A2A implementation. See

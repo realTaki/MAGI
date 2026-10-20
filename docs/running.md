@@ -19,11 +19,10 @@ EVA or provide a remote EVA's URL. Created local EVAs have their own launchers,
 workspaces and peer endpoints; a remote contact never becomes a locally managed
 process. The sidebar follows Shell's contacts and conversation history.
 
-Connecting to a remote URL verifies its signing identity and sends a signed hello.
-The recipient records a pending contact and controls acceptance in its own
-contactBook. A received callback URL alone does not trigger a connection or grant
-authority. Groups use shared conversation UUIDs, separately stored signed histories,
-and explicit local invitation acceptance.
+Connecting to a remote URL discovers the EVA and sends a hello with the Shell
+EVA's own URL. Peers save usable contacts directly. This is a trusted-private-
+network design without signature, nonce, approval or per-tool ACL machinery.
+Groups share conversation UUIDs and independently stored event histories.
 
 The packaged app prepares its managed Shell checkout; source launches use the
 verified checkout containing Electron's entry. `MAGI_DEV_CHECKOUT` is optional
@@ -41,15 +40,16 @@ Start a standalone peer listener on a loopback development port:
 MAGI_SERVER=1 MAGI_PEER_PORT=42101 apps/shell/runtime/bin/node apps/eva/eva.mjs --role agent @alice.magi
 ```
 
-Each EVA owns its listener, signing identity and contactBook. The default bind is
-loopback on an available port; the actual port is persisted for stable restarts.
-For remote access, explicitly configure an HTTPS reverse-proxy origin with
-`MAGI_PEER_URL`; MAGI does not provision TLS or open firewall ports. Remote
-contact URLs require HTTPS except for loopback HTTP development. Do not put
-credentials into URLs, chat, logs or source control.
+Each EVA owns its listener and contactBook. The default bind is loopback on an
+available port; the actual port is persisted for stable restarts. For access
+from other trusted machines, explicitly choose the listener host and reachable
+origin with `MAGI_PEER_HOST` and `MAGI_PEER_URL`. HTTP URLs on private IPs or
+private DNS names are supported. MAGI does not open firewall ports or provision
+TLS. Do not expose this unauthenticated protocol to untrusted networks, or put
+credentials in URLs, chat, logs or source control.
 
 Ctrl-C stops the launcher and its child. Model replies require a verified provider
-configuration in that EVA. Peer endpoints accept ordinary signed conversation
+configuration in that EVA. Peer endpoints accept ordinary conversation
 traffic, never owner/provider configuration. The server command above is not an
 interactive terminal-chat command.
 

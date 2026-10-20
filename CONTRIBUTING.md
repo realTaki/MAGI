@@ -69,7 +69,7 @@ from saving a source change.
 | `packages/node/` | Role composition and launcher child entry |
 | `packages/bus/` | Books, durable jobs and shared contracts |
 | `packages/manager/` | Worker lifecycle, configuration and self-replacement |
-| `packages/channel-peer/` | Authenticated direct EVA messaging and group synchronization |
+| `packages/channel-peer/` | Trusted-network direct EVA messaging and group synchronization |
 | `packages/webapp/` | Shell's desktop backend and source/runtime actions |
 | `packages/agent/`, `packages/providers/`, other worker packages | Agent turns, model execution and tools/channels |
 | `docs/` | Current guides and clearly marked historical rationale |

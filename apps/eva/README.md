@@ -12,7 +12,7 @@ The desktop starts only its built-in Shell EVA. Additional local EVAs are
 explicitly created through owner chat and run independent launchers.
 
 Each node has its own provider configuration, prompts, skills, memory and jobs.
-Direct peer messages use each node's pinned public-key identity;
+Direct peer messages use node labels on a trusted private network;
 the child includes a CLI handler, but the non-host launcher currently ignores its
 stdin (see the running guide). Telegram and MCP workers run when their
 workspace configuration enables them. Provider fields are described in the
