@@ -12,7 +12,7 @@ for (const app of ['eva', 'shell']) {
     else if (app !== 'shell' && name.endsWith('.test.ts')) files.push(`apps/${app}/dist/test/${name.replace(/\.ts$/, '.js')}`);
   }
 }
-for (const pkg of ['bus', 'contacts', 'action-items', 'channel-a2a']) {
+for (const pkg of ['bus', 'contacts', 'action-items', 'channel-a2a', 'providers']) {
   for (const name of readdirSync(new URL(`../packages/${pkg}/test/`, import.meta.url)).sort()) {
     if (name.endsWith('.test.ts')) files.push(`packages/${pkg}/dist/test/${name.replace(/\.ts$/, '.js')}`);
   }

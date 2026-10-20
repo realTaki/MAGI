@@ -13,7 +13,7 @@ export interface LLMClient {
   contextWindow?(): number | undefined;
 }
 
-export type ProviderSettings = { provider?: string; api_key?: string; model?: string; base_url?: string };
+export type ProviderSettings = { provider?: string; api_key?: string; model?: string; base_url?: string; oauth_ref?: string };
 
 /** Classify only known structured transport codes. Never copy error text, URLs or headers. */
 export function transportFailureCode(error: unknown): ProviderFailureCode {
@@ -148,9 +148,9 @@ function toContext(job: LLMRequest, model: Model<Api>, workspace?: string): Cont
 
 export class PiAiClient implements LLMClient {
   private readonly models: MutableModels = builtinModels();
-  constructor(private settings: ProviderSettings, private readonly fetcher: typeof fetch = fetch, private readonly workspace?: string) {}
+  constructor(private settings: ProviderSettings, private readonly fetcher: typeof fetch = fetch, private readonly workspace?: string, private readonly oauthAccess?: (ref: string, signal?: AbortSignal) => Promise<string>) {}
 
-  configure(settings: ProviderSettings): void { this.settings = { ...this.settings, ...settings }; }
+  configure(settings: ProviderSettings): void { this.settings = { ...this.settings, ...settings, oauth_ref: settings.oauth_ref }; }
 
   async verify(settings: ProviderSettings, signal?: AbortSignal): Promise<void> {
     await this.request({ messages: [{ role: "user", content: "Reply OK." }], tools: [] }, { ...this.settings, ...settings }, 256, signal);
@@ -166,7 +166,12 @@ export class PiAiClient implements LLMClient {
   }
 
   private async request(job: LLMRequest, settings: ProviderSettings, maxTokens?: number, signal?: AbortSignal): Promise<LLMMessage> {
-    if (!settings.api_key?.trim()) throw providerFailure("unconfigured");
+    if (settings.oauth_ref && (settings.provider !== "openai-codex" || settings.base_url)) throw providerFailure("configuration");
+    let apiKey = settings.api_key?.trim();
+    if (settings.oauth_ref) {
+      try { apiKey = await this.oauthAccess?.(settings.oauth_ref, signal); } catch { throw providerFailure("authentication"); }
+    }
+    if (!apiKey) throw providerFailure("unconfigured");
     let model: Model<Api>;
     try { model = resolveModel(this.models, settings); }
     catch (error) { if (error instanceof Error && error.message.startsWith("ProviderError")) throw error; throw providerFailure("configuration"); }
@@ -198,7 +203,7 @@ export class PiAiClient implements LLMClient {
       // ignores it for models which do not advertise reasoning support.  Thinking
       // remains internal: only ordinary text is delivered to the user.
       reasoning: maxTokens ? undefined : "medium",
-      apiKey: settings.api_key.trim(), fetch: fetcher, maxTokens, signal, maxRetries: 0, timeoutMs: maxTokens ? 20_000 : 120_000,
+      apiKey, fetch: fetcher, maxTokens, signal, maxRetries: 0, timeoutMs: maxTokens ? 20_000 : 120_000,
     }); } catch { throw providerFailure(failure ?? "unknown"); }
     if (failure) throw providerFailure(failure);
     if (["error", "aborted", "deferred"].includes(response.stopReason) || (!maxTokens && response.stopReason === "length")) {

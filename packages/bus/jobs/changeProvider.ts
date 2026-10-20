@@ -5,6 +5,8 @@
  */
 
 export type ChangeProviderNotify = {
+  /** Opaque local secret reference, never an OAuth token. */
+  oauth_ref?: string;
   provider?: string;
   api_key?: string;
   model?: string;

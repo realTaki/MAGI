@@ -20,6 +20,7 @@ export type CardSpec = {
   public_key?: string;
   fields: CardField[];
   purpose?: "provider";
+  oauth?: { provider: "openai-codex"; label: string };
   /** Public defaults only. Never include a secret. */
   values?: { provider?: string; model?: string; base_url?: string };
 };
@@ -40,6 +41,7 @@ export function providerCard(handle: string, values: CardSpec["values"] = {}): C
     id: randomUUID(),
     title: "Provider",
     purpose: "provider",
+    oauth: { provider: "openai-codex", label: "Connect ChatGPT (Codex device code)" },
     values: { provider: values.provider, model: values.model, base_url: values.base_url },
     handle,
     submit: "Save",

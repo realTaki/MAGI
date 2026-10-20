@@ -1,4 +1,22 @@
 export default {
+  codexConnect: {
+    "title": "ChatGPT Codex connection",
+    "hint": "ChatGPT subscription via Codex device login (not SIWC). Model and account access vary. No token or password is entered here.",
+    "choose": "Choose a Codex-compatible model first.",
+    "uncertain": "Connection request could not be confirmed. Check its status before trying again.",
+    "connect": "Connect ChatGPT",
+    "requested": "Continue only if you requested this connection for this MAGI instance.",
+    "authorize": "Authorize on OpenAI",
+    "code": "Device code",
+    "expires": "Expires in (minutes)",
+    "cancel": "Cancel connection",
+    "pending": "Waiting for authorization",
+    "verifying": "Verifying model access",
+    "saved": "Connected",
+    "cancelled": "Cancelled",
+    "failed": "Connection failed",
+    "model": "Codex model"
+},
   peer: {
     group: "Group conversation",
 

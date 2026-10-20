@@ -1,3 +1,4 @@
+import { CodexDeviceSessions, CodexOAuthVault, validOAuthRef, type OAuthAuth, type OAuthUpdate } from "@magi/providers/oauth.js";
 import { providerFailureCode } from "@magi/bus/jobs/providerFailure.js";
 import type { CardReceipt } from "@magi/bus/jobs/card.js";
 /**
@@ -31,9 +32,19 @@ export class ConfigWorker extends BaseWorker {
   /** Inbound card and sync work, off this worker's poll so config writes can finish. */
   private task: Promise<void> | null = null;
   private unspoken: string | null = null;
+  private readonly oauth: CodexDeviceSessions;
 
-  constructor(bus: Bus) {
+  constructor(bus: Bus, oauthDriver?: OAuthAuth) {
     super(bus);
+    // Process restart invalidates unfinished grants; retain only the committed session.
+    const committedRef = bus.settings.get("provider.oauth_ref");
+    for (const name of bus.secrets.names()) if (validOAuthRef(name) && name !== committedRef) bus.secrets.set(name, "");
+    this.oauth = new CodexDeviceSessions(new CodexOAuthVault(bus.secrets, oauthDriver), async (ref, model, signal) => {
+      await this.useProvider({ provider: "openai-codex", model, base_url: "", oauth_ref: ref }, signal);
+    }, (binding, update) => {
+      bus.settings.set(`provider.oauth.attempt.${binding.attempt}`, JSON.stringify({ binding, update: { ...update, device: undefined } }));
+      messageDelivery.send(bus, binding.chat, "Provider connection: " + update.state, MAGI_CONTACT_ID, this.worker_name, { provider_oauth: update });
+    });
     this.cardStopped = bus.settings.get("provider.card.stopped") === "1";
     const stored = Number(bus.settings.get("provider.card.job") ?? "");
     this.cardJob = Number.isInteger(stored) && stored > 0 ? stored : null;
@@ -60,7 +71,7 @@ export class ConfigWorker extends BaseWorker {
 
   /** No provider key means this node cannot think. Show the card from here. */
   private async providerSetup(): Promise<void> {
-    if (this.bus.secrets.get("provider.api_key")) {
+    if (this.bus.secrets.get("provider.api_key") || this.bus.secrets.get(this.bus.settings.get("provider.oauth_ref") ?? "")) {
       return;
     }
     if (this.cardStopped) return;
@@ -140,7 +151,8 @@ export class ConfigWorker extends BaseWorker {
   private async finishInbound(id: number, input: InboundSecretJob): Promise<void> {
     const board = this.bus.board("InboundSecretJob");
     try {
-      if (input.kind === "card_result") await this.applyCard(input);
+      if (input.kind === "provider.oauth") this.applyOAuth(input);
+      else if (input.kind === "card_result") await this.applyCard(input);
       else if (input.kind === "card_reject") await this.rejectCard(input);
       else await this.applySync(input);
       board.submit(this.worker_name, id, { output: { applied: true } });
@@ -150,6 +162,43 @@ export class ConfigWorker extends BaseWorker {
       messageDelivery.reportError(this.bus, text, { module: this.worker_name, source: `InboundSecretJob:${id}`, chat_id: input.chat_id });
     }
   }
+
+  private applyOAuth(input: InboundSecretJob): void {
+    // Only chat() can admit this structured command from an authenticated owner.
+    const target = this.bus.chats.get(input.chat_id);
+    if (!target || !["shell-owner", "local-owner"].includes(target.channel)) throw new Error("OAuthError:owner");
+    const binding = { instance: this.bus.identity.publicKey, owner: this.bus.userContactId, chat: input.chat_id, attempt: String(input.body.attempt ?? "") };
+    if (input.body.action === "start") {
+      const model = typeof input.body.model === "string" ? input.body.model : this.bus.settings.get("provider.model");
+      if (!model) throw new Error("OAuthError:model_required");
+      const old = this.bus.settings.get(`provider.oauth.attempt.${binding.attempt}`);
+      if (old) { this.oauthStatusAfterRestart(binding, old); return; }
+      this.oauth.start(binding, model);
+    } else if (input.body.action === "cancel") this.oauth.cancel(binding);
+    else if (input.body.action === "status") {
+      try { this.oauth.status(binding); }
+      catch {
+        const old = this.bus.settings.get(`provider.oauth.attempt.${binding.attempt}`);
+        if (!old) throw new Error("OAuthError:attempt");
+        this.oauthStatusAfterRestart(binding, old);
+      }
+    }
+    else throw new Error("OAuthError:request");
+  }
+
+  private oauthStatusAfterRestart(binding: { instance: string; owner: number; chat: number; attempt: string }, raw: string): void {
+    const old = JSON.parse(raw) as { binding: typeof binding; update: OAuthUpdate };
+    if (JSON.stringify(old.binding) !== JSON.stringify(binding)) throw new Error("OAuthError:attempt");
+    // Never repeat an authorization request due to replay or process restart.
+    let update = old.update;
+    if (update.state === "pending" || update.state === "verifying") {
+      try { this.oauth.status(binding); return; } catch { update = { ...update, state: "cancelled" }; }
+    }
+    messageDelivery.send(this.bus, binding.chat, "Provider connection: " + update.state, MAGI_CONTACT_ID, this.worker_name, { provider_oauth: update });
+  }
+
+  interrupt(): void { this.oauth.stop(); }
+  async stop(): Promise<void> { this.oauth.stop(); await this.oauth.settled(); }
 
   private async applyCard(input: InboundSecretJob): Promise<void> {
     const result = input.body;
@@ -309,12 +358,13 @@ export class ConfigWorker extends BaseWorker {
   }
 
   /** Verify, then store. The providers worker rejects a bad key before ConfigureJob runs. */
-  private async useProvider(change: ChangeProviderNotify): Promise<void> {
+  private async useProvider(change: ChangeProviderNotify, signal?: AbortSignal): Promise<void> {
     const id = this.bus.board("ChangeProviderNotify").publish(change, this.worker_name);
     // The providers worker owns its bounded verification/write timeouts. A second,
     // shorter timeout here could declare failure while that worker later saves.
     let result = this.bus.board("ChangeProviderNotify").result(id);
     while (!result) {
+      if (signal?.aborted) { this.bus.board("ChangeProviderNotify").fail(id, "Provider connection interrupted"); throw new Error("OAuthError:interrupted"); }
       await new Promise((resolve) => setTimeout(resolve, 20));
       result = this.bus.board("ChangeProviderNotify").result(id);
     }

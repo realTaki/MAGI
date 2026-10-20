@@ -25,6 +25,7 @@ export type ProviderEnvelope = {
 export type ChatInput = RichInput & {
   content: string;
   metadata?: {
+    provider_oauth?: { action: "start" | "cancel" | "status"; attempt: string; model?: string };
     card_result?: CardSubmission;
     card_reject?: { id: string };
     envelope?: ProviderEnvelope;
@@ -68,6 +69,18 @@ export function chat(bus: Bus, chat_id: number, contact_id: number, input: ChatI
     return { message_id: stored.delivery.message_id, job_id: bus.deliveries.enqueue(bus, stored.delivery), duplicate: stored.duplicate, chat_id };
   }
   const metadata = input.metadata;
+  if (metadata && "provider_oauth" in metadata) {
+    if (input.reply_to !== undefined || input.attachments?.length) throw new Error("structured actions cannot carry rich chat fields");
+    const body = metadata.provider_oauth;
+    const target = bus.chats.get(chat_id)!;
+    if (contact_id !== bus.userContactId || !["shell-owner", "local-owner"].includes(target.channel)) throw new Error("OAuth requires a private authenticated owner chat");
+    if (Object.keys(metadata).length !== 1 || !record(body) || Object.keys(body).some(k => !["action", "attempt", "model"].includes(k))
+      || !["start", "cancel", "status"].includes(String(body.action)) || typeof body.attempt !== "string" || !/^[a-zA-Z0-9_-]{8,128}$/.test(body.attempt)
+      || (body.model !== undefined && (typeof body.model !== "string" || !body.model.trim() || body.model.length > 200))) throw new Error("invalid OAuth command");
+    const id = bus.board("InboundSecretJob").publish({ sender: contact.handle ?? contact.name, chat_id, kind: "provider.oauth", body }, publisher);
+    messageDelivery.record(bus, chat_id, "provider connection requested", contact_id);
+    return { type: "InboundSecretJob", id };
+  }
   if (metadata !== undefined && !record(metadata)) throw new Error("chat metadata must be an object");
   const kinds = ["card_result", "card_reject", "envelope"].filter(key => metadata && key in metadata);
   if (kinds.length > 1) throw new Error("chat must contain only one structured action");

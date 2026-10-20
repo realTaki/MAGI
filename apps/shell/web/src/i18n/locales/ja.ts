@@ -1,4 +1,22 @@
 export default {
+  codexConnect: {
+    "title": "ChatGPT Codex 接続",
+    "hint": "Codex のデバイスコードで ChatGPT プランに接続します（SIWC ではありません）。モデルはアカウント権限によって異なります。トークンやパスワードの入力は不要です。",
+    "choose": "Codex 対応モデルを選択してください。",
+    "uncertain": "接続リクエストを確認できません。再試行する前に状態を確認してください。",
+    "connect": "ChatGPT に接続",
+    "requested": "この MAGI インスタンスの接続を自分で開始した場合のみ続行してください。",
+    "authorize": "OpenAI で承認",
+    "code": "デバイスコード",
+    "expires": "残り有効時間（分）",
+    "cancel": "接続をキャンセル",
+    "pending": "承認待ち",
+    "verifying": "モデル権限を確認中",
+    "saved": "接続済み",
+    "cancelled": "キャンセル済み",
+    "failed": "接続失敗",
+    "model": "Codex モデル"
+},
   peer: {
     group: "グループ会話",
 

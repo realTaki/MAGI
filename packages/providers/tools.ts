@@ -37,6 +37,7 @@ function publicSettings(settings: ProviderSettings): Record<string, unknown> {
     model: settings.model ?? null,
     base_url: settings.base_url ?? null,
     api_key_set: settings.api_key !== undefined,
+    auth_method: settings.oauth_ref ? "codex_device_oauth" : "api_key",
   };
 }
 

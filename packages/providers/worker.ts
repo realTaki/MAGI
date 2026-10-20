@@ -1,3 +1,4 @@
+import { CodexOAuthVault, validOAuthRef } from "./oauth.js";
 import { abortable } from "@magi/bus/abort.js";
 import { providerFailure } from "@magi/bus/jobs/providerFailure.js";
 import { BaseWorker, waitForJob, type CallLLMJob, type ExecutableTool } from "@magi/bus";
@@ -23,7 +24,8 @@ export class ProvidersWorker extends BaseWorker {
     // `provider_settings`, which the manager writes. Nothing reads the
     // environment and there is no default provider.
     this.settings = this.readSettings();
-    this.client = client ?? new PiAiClient(this.settings, fetch, bus.workspace);
+    const vault = new CodexOAuthVault(bus.secrets);
+    this.client = client ?? new PiAiClient(this.settings, fetch, bus.workspace, (ref, signal) => vault.access(ref, signal));
     this.own = providerTools(() => this.settings, (settings) => this.apply(settings));
     // Offered only while this worker runs: a stopped worker would leave the model
     // holding a tool whose changes nobody verifies.
@@ -34,7 +36,7 @@ export class ProvidersWorker extends BaseWorker {
     this.started = true;
     this.paused = false;
     this.settings = this.readSettings();
-    if (this.settings.provider && this.settings.api_key && this.client.configure) {
+    if (this.settings.provider && (this.settings.api_key || this.settings.oauth_ref) && this.client.configure) {
       this.client.configure(this.settings);
     }
     this.syncContextWindow();
@@ -56,7 +58,7 @@ export class ProvidersWorker extends BaseWorker {
     const change = changes.claim(this.worker_name);
     if (!change) return false;
     try {
-      await this.apply(change.input);
+      await this.apply(change.input, () => !changes.result(change.id));
       changes.submit(this.worker_name, change.id, { output: {} });
     } catch (error) {
       changes.submit(this.worker_name, change.id, { error: message(error) });
@@ -118,6 +120,7 @@ export class ProvidersWorker extends BaseWorker {
       api_key: this.bus.secrets.get("provider.api_key") ?? undefined,
       model: this.bus.settings.get("provider.model") ?? undefined,
       base_url: this.bus.settings.get("provider.base_url") ?? undefined,
+      ...(this.bus.settings.get("provider.oauth_ref") ? { oauth_ref: this.bus.settings.get("provider.oauth_ref")! } : {}),
     };
   }
 
@@ -126,13 +129,16 @@ export class ProvidersWorker extends BaseWorker {
    * replaces a working one. A field the caller left out keeps its current value.
    * The manager writes the result; this worker only verifies and then uses it.
    */
-  private async apply(change: ProviderSettings): Promise<void> {
+  private async apply(change: ProviderSettings, live: () => boolean = () => true): Promise<void> {
     const candidate: ProviderSettings = {
       provider: change.provider ?? this.settings.provider,
       api_key: change.api_key ?? this.bus.secrets.get("provider.api_key") ?? this.settings.api_key,
       model: change.model ?? this.settings.model,
       base_url: change.base_url ?? this.settings.base_url,
+      oauth_ref: change.oauth_ref !== undefined ? change.oauth_ref || undefined : (change.api_key !== undefined || (change.provider !== undefined && change.provider !== "openai-codex") ? undefined : this.settings.oauth_ref),
     };
+    if (!candidate.oauth_ref) delete candidate.oauth_ref;
+    if (candidate.oauth_ref && (!validOAuthRef(candidate.oauth_ref) || candidate.provider !== "openai-codex" || candidate.base_url)) throw providerFailure("configuration");
     try {
       if (!this.client.verify || !this.client.configure) throw new Error("provider client cannot be reconfigured");
       const controller = new AbortController();
@@ -148,8 +154,8 @@ export class ProvidersWorker extends BaseWorker {
     } catch (error) {
       throw new Error(redact(message(error), candidate.api_key));
     }
-    if (this.paused) throw new Error("MAGI stopped");
-    const settings: Record<string, string> = {};
+    if (this.paused || !live()) throw new Error("MAGI stopped");
+    const settings: Record<string, string> = { "provider.oauth_ref": candidate.oauth_ref ?? "" };
     if (change.provider !== undefined) settings["provider.name"] = change.provider;
     if (change.model !== undefined) settings["provider.model"] = change.model;
     if (change.base_url !== undefined) settings["provider.base_url"] = change.base_url;

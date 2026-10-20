@@ -1,3 +1,4 @@
+import { CodexConnect } from "./CodexConnect";
 import { useEffect, useRef, useState } from "react";
 import { PROVIDER_CATALOG, providerPreset } from "@magi/bus/jobs/providerCatalog.js";
 import type { ChatMessage } from "./chat-model";
@@ -82,6 +83,7 @@ export function FormCardView({ message }: { message: Extract<ChatMessage, { type
 
   return <form className="chat-page__form" onSubmit={(event) => { event.preventDefault(); void act("save"); }}>
     <div className="chat-page__form-title">{provider ? t("providerForm.title") : card.title}</div>
+    {provider && card.oauth && <CodexConnect chatId={message.chatId} handle={card.handle} model={values.model ?? ""} />}
     {provider ? <>
       <label className="chat-page__form-row"><span>{t("providerForm.provider")}</span>
         <select disabled={disabled} value={values.provider} onChange={(event) => setValues(changeProvider(event.target.value))}>

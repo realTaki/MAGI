@@ -29,7 +29,7 @@ function shared(bus: Bus, client?: LLMClient, tools?: Tool[]): BaseWorker[] {
     new MemoryWorker(bus),
     new ActionItemsWorker(bus),
     new ProvidersWorker(bus, client),
-    new TaskWorker(bus, { isReady: () => Boolean(client || (bus.settings.get("provider.name") && bus.secrets.get("provider.api_key"))) }),
+    new TaskWorker(bus, { isReady: () => Boolean(client || (bus.settings.get("provider.name") && (bus.secrets.get("provider.api_key") || bus.secrets.get(bus.settings.get("provider.oauth_ref") ?? "")))) }),
   ];
 }
 

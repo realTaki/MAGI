@@ -1,4 +1,22 @@
 export default {
+  codexConnect: {
+    "title": "ChatGPT Codex 连接",
+    "hint": "通过 Codex 设备码连接 ChatGPT 套餐（不是 SIWC）。可用模型取决于账号权限。无需在此输入令牌或密码。",
+    "choose": "请先选择兼容 Codex 的模型。",
+    "uncertain": "尚无法确认连接请求，请先查看状态再重试。",
+    "connect": "连接 ChatGPT",
+    "requested": "仅在你为这个 MAGI 实例发起连接时继续。",
+    "authorize": "前往 OpenAI 授权",
+    "code": "设备码",
+    "expires": "剩余有效分钟",
+    "cancel": "取消连接",
+    "pending": "等待授权",
+    "verifying": "验证模型权限",
+    "saved": "已连接",
+    "cancelled": "已取消",
+    "failed": "连接失败",
+    "model": "Codex 模型"
+},
   peer: {
     group: "群聊",
 
