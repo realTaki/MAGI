@@ -6,8 +6,8 @@
  * inspects `RunToolJob`, not by the tool's own worker.
  */
 
-import { chmod, link, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { chmod, link, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { Dirent } from "node:fs";
 import type { ExecutableTool } from "@magi/bus";
@@ -24,21 +24,36 @@ const MAX_SEARCH_FILES = 8_000;
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git", "release", "coverage"]);
 
 export function fileTools(workspace: string): ExecutableTool[] {
+  // Receipts prove this tool instance returned a complete snapshot, not intent.
+  // Bound storage and invalidate a path's previous receipt on each full read.
+  const fullReads = new Map<string, { hash: string; token: string }>();
   return [
     {
       name: "read_file",
-      description: "Read a UTF-8 file with full-file SHA-256 and window/truncation metadata, followed by numbered lines (N|text). The number is not part of the file. offset is the first line (default 1). limit is how many lines (default 200, max 400).",
+      description: "Read a UTF-8 file with full-file SHA-256 and window/truncation metadata, followed by numbered lines (N|text). The number is not part of the file. offset is the first line (default 1). limit is how many lines (default 200, max 400). To prepare a full rewrite, use full:true without offset/limit: returns the entire file (max 256 KiB) and a single-use overwrite_token. Paged reads never issue overwrite tokens.",
       input_schema: {
         type: "object",
         properties: {
           path: { type: "string" },
+          full: { type: "boolean", description: "Return the complete file, at most 256 KiB, and an overwrite receipt. Cannot combine with offset/limit." },
           offset: { type: "integer", minimum: 1 },
           limit: { type: "integer", minimum: 1, maximum: MAX_READ_LINES },
         },
         required: ["path"],
       },
       async run(args) {
-        const path = resolve(workspace, stringArg(args, "path"));
+        const path = await canonicalPath(resolve(workspace, stringArg(args, "path")));
+        if (args.full !== undefined && typeof args.full !== "boolean") throw new Error("full must be a boolean");
+        if (args.full === true) {
+          if (args.offset !== undefined || args.limit !== undefined) throw new Error("full:true cannot be combined with offset or limit");
+          return readNumberedLines(path, 1, Infinity, (hash) => {
+            const token = randomUUID();
+            fullReads.delete(path);
+            if (fullReads.size >= 128) fullReads.delete(fullReads.keys().next().value!);
+            fullReads.set(path, { hash, token });
+            return token;
+          });
+        }
         const offset = optionalBoundedInteger(args.offset, 1, "offset", 1, 1_000_000);
         const limit = optionalBoundedInteger(args.limit, DEFAULT_READ_LINES, "limit", 1, MAX_READ_LINES);
         return readNumberedLines(path, offset, limit);
@@ -71,8 +86,8 @@ export function fileTools(workspace: string): ExecutableTool[] {
       },
     },
     {
-      name: "write_file", description: "Write a complete UTF-8 file. Creating a new file needs no hash. Overwriting requires expected_sha from read_file; read all windows first and preserve omitted content. A hash detects stale content, not whether you read the whole file. Prefer edit_file for partial changes.",
-      input_schema: { type: "object", properties: { path: { type: "string" }, content: { type: "string" }, expected_sha: hashSchema }, required: ["path", "content"] },
+      name: "write_file", description: "Write a complete UTF-8 file. Creating a new file needs no hash. Overwriting requires expected_sha AND overwrite_token from an explicit read_file full:true in this runtime. Paged reads and hashes alone cannot authorize overwrites. Preserve all intended content; a receipt proves a complete snapshot was returned, not that a rewrite is correct. Prefer edit_file for partial changes.",
+      input_schema: { type: "object", properties: { path: { type: "string" }, content: { type: "string" }, expected_sha: hashSchema, overwrite_token: { type: "string", description: "Single-use receipt from read_file full:true for this exact file and snapshot." } }, required: ["path", "content"] },
       async run(args) {
         const path = resolve(workspace, stringArg(args, "path"));
         const content = args.content;
@@ -85,10 +100,17 @@ export function fileTools(workspace: string): ExecutableTool[] {
             if (error.code === "ENOENT") return undefined;
             throw error;
           });
-          if (previous !== undefined && expected === undefined) throw new Error("overwriting an existing file requires expected_sha from read_file; read all windows or use edit_file");
+          if (previous !== undefined && expected === undefined) throw new Error("overwriting an existing file requires expected_sha and overwrite_token from read_file full:true; use edit_file for partial changes");
           checkHash(previous, expected);
+          if (previous !== undefined) {
+            const receipt = fullReads.get(target);
+            if (!receipt || receipt.hash !== expected || typeof args.overwrite_token !== "string" || receipt.token !== args.overwrite_token) {
+              throw new Error("overwriting requires a valid overwrite_token from read_file full:true for this file and snapshot; paged reads are insufficient, or use edit_file");
+            }
+          }
           const mode = previous === undefined ? undefined : (await stat(target)).mode;
           await atomicWrite(target, content, mode);
+          fullReads.delete(target);
           return `wrote ${Buffer.byteLength(content)} bytes; sha256=${sha256(Buffer.from(content))}`;
         });
       },
@@ -140,6 +162,11 @@ async function canonicalPath(path: string): Promise<string> {
   try { return await realpath(path); }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    const entry = await lstat(path).catch((missing: NodeJS.ErrnoException) => {
+      if (missing.code === "ENOENT") return undefined;
+      throw missing;
+    });
+    if (entry?.isSymbolicLink()) throw new Error("path is a dangling symbolic link; it was preserved. Repair the link or choose an explicit target path");
     return join(await realpath(dirname(path)), basename(path));
   }
 }
@@ -180,17 +207,21 @@ function splitLines(text: string): string[] {
   return parts.map((line) => (line.endsWith("\r") ? line.slice(0, -1) : line));
 }
 
-async function readNumberedLines(path: string, offset: number, limit: number): Promise<string> {
+async function readNumberedLines(path: string, offset: number, limit: number, issueReceipt?: (hash: string) => string): Promise<string> {
   const info = await stat(path);
   if (!info.isFile()) throw new Error("path is not a file");
+  if (issueReceipt && info.size > 256 * 1024) throw new Error("full:true is limited to 256 KiB; use paged reads and edit_file");
   if (info.size > MAX_READ_BYTES) throw new Error("file is larger than 8 MiB");
   const bytes = await readFile(path);
+  if (issueReceipt && bytes.length > 256 * 1024) throw new Error("full:true is limited to 256 KiB; use paged reads and edit_file");
   if (bytes.length > MAX_READ_BYTES) throw new Error("file is larger than 8 MiB");
   const text = bytes.toString("utf8");
   if (text.includes("\0")) throw new Error("path is not a text file");
   const lines = splitLines(text);
   const end = Math.min(lines.length, offset - 1 + limit);
-  const metadata = `sha256=${sha256(bytes)}; bytes=${bytes.length}; total_lines=${lines.length}; lines=${lines.length === 0 ? "0-0" : `${offset}-${end}`}; truncated=${offset > 1 || end < lines.length}`;
+  const hash = sha256(bytes);
+  const receipt = issueReceipt ? `; overwrite_token=${issueReceipt(hash)}` : "";
+  const metadata = `sha256=${hash}; bytes=${bytes.length}; total_lines=${lines.length}; lines=${lines.length === 0 ? "0-0" : `${offset}-${end}`}; truncated=${offset > 1 || end < lines.length}${receipt}`;
   if (lines.length === 0) return `${metadata}\n(empty file)`;
   if (offset > lines.length) throw new Error(`offset ${offset} is past the end (${lines.length} lines)`);
   const selected = lines.slice(offset - 1, offset - 1 + limit);
