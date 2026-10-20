@@ -17,6 +17,37 @@ export default {
     "failed": "连接失败",
     "model": "Codex 模型"
 },
+  feed: {
+    title: "Feed",
+    back: "返回聊天",
+    intro: "围绕你的兴趣，精选少量有用的新发现，并附上来源。仅在 Shell EVA 中展示。",
+    preferences: "定制你的 Feed",
+    prompt: "你希望发现什么？",
+    enable: "开启兴趣信息研究",
+    sources: "研究来源与额度",
+    sourceWarning: "只选择你信任且已经授权的公开信息检索工具。只读标签是提供方的声明，并非安全保证。这里仅授权公开兴趣研究，不授权扩大访问或分享私人数据。",
+    noSources: "暂无声明只读的已连接工具。请先连接合适的研究来源；没有来源时不会编造内容。",
+    disconnected: "已断开，请取消选择后保存",
+    budget: "每天的研究调用次数（UTC）",
+    budgetHelp: "默认 3 次，用于控制后台成本，可自行调整；不限制活跃目标或其他任务。",
+    save: "保存偏好",
+    saved: "已保存，将在下次后台回顾时研究。",
+    loading: "正在加载 Feed…",
+    reload: "刷新卡片",
+    lastAttempt: "最近研究尝试：",
+    empty: "还没有新发现。配置兴趣与来源后，等待下次回顾。",
+    snippet: "检索摘要，非全文核验",
+    useful: "有用",
+    dismiss: "不再展示",
+    status: {
+      paused: "Shell EVA 已暂停，仍可阅读已有发现；恢复运行后才能研究或修改偏好。",
+      budgetExhausted: "今天的 Feed 研究额度已用完，将在下一个 UTC 日继续，也可调整额度；其他任务不受影响。",
+      disabled: "兴趣研究已关闭，已有卡片仍然保留。",
+      sourceNeeded: "请选择已授权的只读研究来源。",
+      providerNeeded: "请先为 Shell EVA 配置模型，再开始研究。",
+      ready: "已准备好，在下次后台回顾时研究，不另建定时器或目标。"
+    }
+  },
   peer: {
     group: "群聊",
 

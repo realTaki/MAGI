@@ -9,6 +9,7 @@ import { GroupBook } from "./books/groupBook.js";
 import { DeliveryBook } from "./books/deliveryBook.js";
 import { ChatBook } from "./books/chatBook.js";
 import { MessageBook } from "./books/messageBook.js";
+import { FeedBook } from "./books/feedBook.js";
 import { ActionItemBook } from "./books/actionItemBook.js";
 import { MemoryBook } from "./books/memoryBook.js";
 import { SkillsBook } from "./books/skillsBook.js";
@@ -46,6 +47,7 @@ export class Bus {
   readonly messages: MessageBook;
   readonly memoryBook: MemoryBook;
   readonly actionItems: ActionItemBook;
+  readonly feed: FeedBook;
   readonly skills: SkillsBook;
   readonly tasks: TaskBook;
   readonly contacts: ContactBook;
@@ -148,6 +150,7 @@ export class Bus {
     this.messages = new MessageBook(this.db);
     this.memoryBook = new MemoryBook(this.db);
     this.actionItems = new ActionItemBook(this.db);
+    this.feed = new FeedBook(this.db);
     this.skills = new SkillsBook();
     this.tasks = new TaskBook(this.db);
     this.contacts = new ContactBook(this.db);

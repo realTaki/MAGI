@@ -24,6 +24,7 @@
  * ``progress`` is ``(message, percent)`` with an absolute 0..1 percentage.
  */
 
+import { feedApi } from "./feed.js";
 import { spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -1150,6 +1151,7 @@ export function createLocalApi(context) {
     start,
     dispose,
     shutdown,
+    ...(bus ? feedApi(bus) : {}),
     "runtime.status": runtimeStatus,
     "runtime.syncApp": () => sourceAction(syncApp),
     localRuntime: magiRuntime,

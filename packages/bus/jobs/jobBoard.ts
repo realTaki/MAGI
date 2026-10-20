@@ -87,6 +87,11 @@ export class JobBoard<K extends JobType> {
     return row.id;
   }
 
+  /** Trusted local producer identity, never supplied inside tool arguments. */
+  publisher(id: number): string | null {
+    return this.db.select({ publisher: jobs.publisher }).from(jobs).where(and(eq(jobs.id, id), eq(jobs.type, this.type))).get()?.publisher ?? null;
+  }
+
   /** Inspect demand without claiming it, for bounded worker admission. */
   hasPending(predicate?: (input: JobInput[K]) => boolean): boolean {
     const rows = this.db.select({ input: jobs.input }).from(jobs)

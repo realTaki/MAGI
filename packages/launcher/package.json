@@ -44,6 +44,7 @@
     "@magi/webapp": "*",
     "@magi/channel-a2a": "*",
     "@magi/subconscious": "*",
-    "@magi/action-items": "*"
+    "@magi/action-items": "*",
+    "@magi/feed": "*"
   }
 }

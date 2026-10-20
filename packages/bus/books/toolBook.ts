@@ -4,6 +4,8 @@ export type LLMTool = { name: string; description: string; input_schema: Record<
 export type ToolRunContext = { chat_id?: number; message_id?: number };
 
 export type ExecutableTool = LLMTool & {
+  /** Provider declaration only, NOT proof of safety or permission. */
+  researchSource?: { origin: "mcp"; readOnlyHint: boolean };
   available?: (context: ToolRunContext) => boolean;
   run(args: Record<string, unknown>, signal?: AbortSignal, context?: ToolRunContext): Promise<string>;
 };

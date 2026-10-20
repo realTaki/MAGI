@@ -38,6 +38,10 @@ contact, skill and memory workers; roles add their interfaces:
 | `shell` | `@shell.magi` | Built-in EVA, desktop owner backend, local startup coordination and peer listener |
 | `agent` | Individually selected handle | Independent EVA with its own peer listener, contacts and workspace |
 
+Every EVA installs its own subconscious module. Only Shell installs the optional
+[interest Feed](shell-feed.md), whose prompt and sourced cards travel through
+the BUS and project into Shell UI. Headless EVAs do not generate unseen Feeds.
+
 The human speaks as `@user.magi`; there is no separate User node. Package entry
 files under `apps/eva` export classes; the launcher is the executable entry.
 

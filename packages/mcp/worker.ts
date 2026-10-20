@@ -94,6 +94,7 @@ export class McpWorker extends BaseWorker {
       const { name, arguments: args } = input.call;
       const tool = this.tools().find((candidate) => candidate.name === name);
       if (!tool) throw new Error(`unknown tool ${name}`);
+      if (input.require_read_only_hint && tool.researchSource?.readOnlyHint !== true) throw new Error("research source no longer declares read-only access");
       board.submit(this.worker_name, id, { output: { content: await abortable(tool.run(args, this.controller.signal, { chat_id: input.chat_id, message_id: input.message_id }), this.controller.signal) } });
     } catch (error) {
       board.submit(this.worker_name, id, { error: error instanceof Error ? error.message : String(error) });
@@ -154,6 +155,7 @@ export async function connectMcpServer(config: McpServerConfig, workspace: strin
     const listed = await deadline(client.listTools(), (config.connect_timeout ?? 10) * 1_000, "MCP tools/list timed out");
     const tools: ExecutableTool[] = listed.tools.map((tool) => ({
       name: `${config.name}__${tool.name}`,
+      researchSource: { origin: "mcp" as const, readOnlyHint: tool.annotations?.readOnlyHint === true && tool.annotations?.destructiveHint !== true },
       description: tool.description || "(no description provided by MCP server)",
       input_schema: (tool.inputSchema ?? { type: "object", properties: {} }) as Record<string, unknown>,
       async run(args, signal) {

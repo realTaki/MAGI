@@ -17,6 +17,37 @@ export default {
     "failed": "Connection failed",
     "model": "Codex model"
 },
+  feed: {
+    title: "Feed",
+    back: "Back to chat",
+    intro: "A few useful discoveries for your interests, with sources. Only on Shell EVA.",
+    preferences: "Shape your feed",
+    prompt: "What would you like to discover?",
+    enable: "Enable interest research",
+    sources: "Research sources and budget",
+    sourceWarning: "Select only trusted, already-authorized public search tools. Their read-only label is a provider declaration, not a safety guarantee. This grants public-interest research only, not access changes or private-data sharing.",
+    noSources: "No connected tool declares read-only access. Connect an appropriate research source first; nothing will be invented.",
+    disconnected: "disconnected; remove to save",
+    budget: "Research calls per UTC day",
+    budgetHelp: "Default: 3 calls to limit background cost. You can adjust this; it does not limit active goals or other tasks.",
+    save: "Save preferences",
+    saved: "Saved. Research runs during the next private review.",
+    loading: "Loading Feed…",
+    reload: "Reload cards",
+    lastAttempt: "Last research attempt:",
+    empty: "No discoveries yet. Configure your interests and a source, then let the next review run.",
+    snippet: "Search snippet, not full-page verification",
+    useful: "Useful",
+    dismiss: "Dismiss",
+    status: {
+      paused: "Shell EVA is paused. Saved discoveries remain readable; resume it to research or edit preferences.",
+      budgetExhausted: "Today’s Feed research budget is used. Research resumes next UTC day, or you can adjust its budget. Other tasks are unaffected.",
+      disabled: "Interest research is off. Existing cards remain available.",
+      sourceNeeded: "Choose an already-authorized read-only research source.",
+      providerNeeded: "Configure a model provider for Shell EVA before research can run.",
+      ready: "Ready for the next private review. No new timer or goal is created."
+    }
+  },
   peer: {
     group: "Group conversation",
 

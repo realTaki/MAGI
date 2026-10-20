@@ -50,10 +50,11 @@ export function agentWorkers(bus: Bus, options: {
   ];
 }
 
-export function shellWorkers(bus: Bus, webapp: BaseWorker, peer: BaseWorker, client?: LLMClient): BaseWorker[] {
+export function shellWorkers(bus: Bus, webapp: BaseWorker, peer: BaseWorker, client?: LLMClient, feed?: BaseWorker): BaseWorker[] {
   return [
     ...shared(bus, client),
     new McpWorker(bus),
+    ...(feed ? [feed] : []),
     webapp,
     peer,
     new TelegramWorker(bus),
@@ -61,4 +62,4 @@ export function shellWorkers(bus: Bus, webapp: BaseWorker, peer: BaseWorker, cli
 }
 
 /** Pause a hosted MAGI without taking down its UI or peer listener. */
-export const HOSTED_NODE_WORKERS = ["contacts", "skills", "agent", "subconscious", "tools", "memory", "action-items", "providers", "task", "mcp", "tg"];
+export const HOSTED_NODE_WORKERS = ["contacts", "skills", "agent", "subconscious", "tools", "memory", "action-items", "feed", "providers", "task", "mcp", "tg"];

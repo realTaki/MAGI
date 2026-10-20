@@ -29,6 +29,7 @@ function secureShellDatabases(workspace: string): void {
     }
   }
 }
+import { FeedWorker } from "@magi/feed";
 import { Bus, SHELL_MAGI_HANDLE } from "@magi/bus";
 import { LauncherWorker, healthyOrExit } from "@magi/launcher";
 import { WebappWorker } from "@magi/webapp";
@@ -57,7 +58,7 @@ export class Shell {
         peerTransport: { discover: discoverPeer },
         nodeControl: { running: () => this.manager.nodeRunning(), setRunning: (enabled: boolean) => this.manager.setNodeRunning(enabled) },
       });
-      this.manager = new LauncherWorker(this.bus, shellWorkers(this.bus, this.worker, this.peer, context.client), {
+      this.manager = new LauncherWorker(this.bus, shellWorkers(this.bus, this.worker, this.peer, context.client, new FeedWorker(this.bus)), {
         oauthSessions: codexOAuthSessions(),
         drain: ["agent", "webapp"],
         nodeWorkers: HOSTED_NODE_WORKERS,

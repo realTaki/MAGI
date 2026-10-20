@@ -250,6 +250,7 @@ export function ChatPage() {
           </button>;
         })}
       </div></div>
+      <button type="button" className="chat-page__settings-btn" onClick={() => { window.location.hash = "/feed"; }}>{t("feed.title")}</button>
       <div className="chat-page__user"><span className="chat-page__user-badge" title={account.name || account.login || OPERATOR.name}>{account.avatar ? <img src={account.avatar} alt="" /> : account.login ? initialsFromLogin(account.login) : OPERATOR.initials}</span><button type="button" className="chat-page__settings-btn" onClick={openSettingsRoute}>{t("account.settings")}</button></div>
     </aside>
     {menuOpen && <button type="button" className="chat-page__scrim" aria-label={t("peer.hideContacts")} onClick={() => { setMenuOpen(false); menuRef.current?.focus(); }} />}

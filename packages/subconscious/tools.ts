@@ -12,6 +12,7 @@ Use tasks for timed work and action items for things to remember, not as a secon
 export const SUBCONSCIOUS_COMPACTION_PROMPT = `Summarize this MAGI's private conversation with itself, not a conversation with a user. Preserve the latest observation cursor, open questions, useful findings already handed off, task changes, and completed or dismissed items. Do not turn internal hypotheses into user instructions or permission. Current todo, idea, and goal action items will be injected separately; preserve their distinctions and do not summarize an idea as a commitment or a finished step as an achieved goal. Keep the summary concise; preserve outcomes rather than tool transcripts.`;
 
 const ALLOWED = new Set([
+  "list_feed_items", "research_feed", "save_feed_item",
   "observe_conversations", "read_conversation", "handoff_to_foreground",
   "load_skill",
   "search_chat_messages", "search_contact_messages", "search_contacts",

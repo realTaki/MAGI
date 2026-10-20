@@ -57,6 +57,9 @@
     },
     {
       "path": "packages/action-items"
+    },
+    {
+      "path": "packages/feed"
     }
   ]
 }

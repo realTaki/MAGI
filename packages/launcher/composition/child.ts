@@ -8,7 +8,6 @@ import { resolveToolchain } from "@magi/launcher/runtime/toolchain.js";
 import { createOwnerApi } from "./owner.js";
 import { Magi } from "./agent.js";
 import { sendLauncher, untilShutdown, watchLauncherProtocol } from "./control.js";
-import { createLocalApi, operatingSystemHome, Shell } from "./shell.js";
 import { connectHost } from "./host.js";
 
 function role(): string {
@@ -41,6 +40,7 @@ function requireEnv(name: string): string {
 }
 
 async function startShell(): Promise<() => Promise<void>> {
+  const { createLocalApi, operatingSystemHome } = await import("./shell.js");
   const host = connectHost(process.stdin, process.stdout);
   let retire: (() => Promise<void>) | undefined;
   try {
@@ -121,6 +121,7 @@ async function runHealth(selected: string): Promise<void> {
   const node = resolveToolchain().node;
   let problem: string | null;
   if (selected === "shell") {
+    const { Shell } = await import("./shell.js");
     const shell = new Shell({
       paths: { checkout: home, appCheckout: home, home, userData: `${home}/electron` },
       repository: "https://github.com/realTaki/MAGI.git",

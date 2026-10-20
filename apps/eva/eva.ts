@@ -1,1 +1,1 @@
-export { Magi, type MagiOptions } from "@magi/launcher/composition";
+export { Magi, type MagiOptions } from "@magi/launcher/composition/agent.js";
