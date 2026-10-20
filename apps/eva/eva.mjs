@@ -7,7 +7,8 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { writeJsonAtomic } from "./atomic-json.mjs";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { magiHome } from "@magi/launcher/runtime/home.js";
@@ -56,21 +57,19 @@ function readState(name) {
 
 function writeState(name, state) {
   const file = statePath(name);
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, JSON.stringify({
+  writeJsonAtomic(file, {
     protocol: LAUNCHER_PROTOCOL,
     current: state.current ?? null,
     previous: state.previous ?? null,
     currentDir: state.currentDir ?? null,
     previousDir: state.previousDir ?? null,
-  }));
+  });
 }
 
 function writeMarker(name, error, job = null) {
   const file = markerPath(name);
-  mkdirSync(dirname(file), { recursive: true });
   const id = Number.isInteger(job) ? job : null;
-  writeFileSync(file, JSON.stringify({ job: id, error }));
+  writeJsonAtomic(file, { job: id, error });
 }
 
 function report(name, error, job = null) {
