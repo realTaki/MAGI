@@ -51,16 +51,14 @@ export class PeerWorker extends BaseWorker {
       const chat = message && this.bus.chats.get(message.chat_id);
       if (chat?.channel === "group") {
         const event = (job.input.metadata?.group as { event?: import("@magi/bus/books/groupBook.js").SignedGroupEvent } | undefined)?.event;
-        if (!event) throw new PeerError("group delivery has no signed event");
+        if (!event) throw new PeerError("group delivery has no event");
         await this.groups.deliver(event);
         board.submit(this.worker_name, job.id, { output: {} });
         return true;
       }
       if (!message || !chat?.peer_id || !chat.conversation_uuid) throw new PeerError("peer delivery has no conversation");
       const contact = this.bus.contacts.list().find(contact => contact.peer_id === chat.peer_id);
-      // A hello records a pending sender. Only the local agent's explicit addcontact
-      // decision can accept its route. Merely claiming @user/@shell never grants it.
-      if (!contact || contact.peer_trust !== "accepted" || !contact.peer_url || !contact.peer_principal) throw new PeerError("peer contact is not accepted", 403);
+      if (!contact?.peer_url || !contact.peer_principal) throw new PeerError("peer contact has no delivery route");
       const metadata = job.input.metadata?.peer as { messageId?: string; replyTo?: string } | undefined;
       if (job.input.metadata && Object.keys(job.input.metadata).some(key => key !== "peer")) throw new PeerError("peer transport accepts ordinary chat only");
       const payload: PeerMessage = {
@@ -73,7 +71,7 @@ export class PeerWorker extends BaseWorker {
       board.submit(this.worker_name, job.id, { output: {} });
     } catch (error) {
       const messageId = job.input.message_id;
-      // Permanent protocol/auth failures are visible, never retried blindly.
+      // Permanent protocol failures are visible, never retried blindly.
       if (error instanceof PeerError && error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 409 && error.status !== 429) {
         board.submit(this.worker_name, job.id, { error: error.message });
       } else {

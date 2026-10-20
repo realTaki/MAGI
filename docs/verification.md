@@ -5,7 +5,7 @@ build, locale lint, browser checks and launcher integration. It tracks the
 current [manifest](../package.json), [runner](../scripts/test.mjs) and platform
 workflows. Toolchain preparation is in [Contributing](../CONTRIBUTING.md).
 
-Root `npm test` compiles the workspace, then selects generated EVA/ASP tests from
+Root `npm test` compiles the workspace, then selects generated EVA and peer/package tests from
 current source names and runs Shell source tests. Deleted tests left in `dist`
 are not rediscovered by that runner. Running the whole Shell suite a second time
 in the same job adds no coverage. Use fresh command-scoped node/OS-home paths;
@@ -33,8 +33,9 @@ workflow dispatch, while tag-release workflows are separate. Ordinary source
 pushes do not produce those validation packages. Do not treat a queued
 workflow or an unsigned package as a passed desktop acceptance run.
 
-For a fresh manual desktop run, start ASP, open the intended source/installed
-app, confirm the default node handles are online, configure the intended node,
+For a fresh manual desktop run, open the intended source/installed app, confirm
+the built-in Shell EVA is online, create or connect a peer on the trusted private
+network, configure the intended node,
 and verify a representative conversation. Check source activation separately:
 a queued rebuild is not a loaded revision. Inspect the replacement result,
 launcher revision and displayed UI. Tests of child-process replacement do not

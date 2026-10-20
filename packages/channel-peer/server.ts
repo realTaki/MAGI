@@ -24,7 +24,6 @@ export class PeerServer {
     server.requestTimeout = 10_000;
     server.headersTimeout = 10_000;
     const host = this.options.host ?? "127.0.0.1";
-    if (!["127.0.0.1", "::1", "localhost"].includes(host) && !this.options.reachableURL?.startsWith("https://")) throw new Error("non-loopback peer listeners require an explicit HTTPS reverse-proxy URL");
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(this.options.port ?? 0, host, () => { server.off("error", reject); resolve(); });
@@ -46,7 +45,7 @@ export class PeerServer {
   private async handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
     try {
       if (request.method === "GET" && request.url === "/.well-known/magi-peer.json") { this.respond(response, 200, JSON.stringify(this.card())); return; }
-      if (request.method !== "POST" || (request.url !== "/chat" && request.url !== "/sync" && request.url !== "/verify")) throw new PeerError("not found", 404);
+      if (request.method !== "POST" || (request.url !== "/chat" && request.url !== "/sync")) throw new PeerError("not found", 404);
       if (request.headers["content-type"]?.split(";")[0].trim() !== "application/json") throw new PeerError("JSON required", 415);
       const chunks: Buffer[] = [];
       let size = 0;
@@ -55,11 +54,7 @@ export class PeerServer {
         if (size > (request.url === "/sync" ? MAX_SYNC_BYTES : MAX_BODY_BYTES)) throw new PeerError("chat is too large", 413);
         chunks.push(Buffer.from(chunk));
       }
-      const { principal, data } = decodeEnvelope(Buffer.concat(chunks).toString("utf8"), this.principal, request.url === "/verify" ? "verify" : request.url === "/sync" ? "sync" : "chat");
-      if (request.url === "/verify") {
-        if (!record(data) || typeof data.nonce !== "string" || data.nonce.length > 100 || Object.keys(data).length !== 1) throw new PeerError("invalid identity challenge");
-        this.respond(response, 200, encodeEnvelope(this.identity, principal, "verified", { nonce: data.nonce, reachableURL: this.address })); return;
-      }
+      const { principal, data } = decodeEnvelope(Buffer.concat(chunks).toString("utf8"), this.principal, request.url === "/sync" ? "sync" : "chat");
       if (request.url === "/sync") {
         if (!this.handlers.sync) throw new PeerError("group sync unavailable", 404);
         const result = this.handlers.sync(principal, data);

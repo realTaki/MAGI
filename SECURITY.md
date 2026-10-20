@@ -7,10 +7,13 @@ not include secrets in public Issues, screenshots or test fixtures. Only current
 
 ## Current trust boundaries
 
-- ASP authenticates registered handles with bearer tokens. The local
-  `/operator` endpoint supplies the operator credential; this is a trusted local
-  deployment model, not an internet-facing multi-user login system. The old
-  Cookie/session and `admin_gate` descriptions do not apply to this runtime.
+- EVA peer HTTP endpoints assume a trusted private network, such as a Kubernetes
+  bridge or a Tailscale-connected subnet. They do not authenticate requests or
+  enforce per-peer tool permissions. Peer identity labels and membership are
+  routing data. Do not expose the service to an untrusted network or the public
+  internet. The deployment operator controls network reachability and trust.
+- Shell process lifecycle operations use records of locally provisioned children;
+  a remote contact is not a locally owned child.
 - Provider keys are encrypted to the receiving node's public key in card/sync
   transport. Each node stores its own secrets in `secrets.json`; this is a
   plaintext file with restrictive POSIX permissions where supported, not an
@@ -28,7 +31,7 @@ not include secrets in public Issues, screenshots or test fixtures. Only current
   provenance. Tests and source in an editable candidate are not an immutable
   security policy. Tool/job authority and repository authorization still matter.
 - Handles, names and public keys have different purposes. Names are not identity;
-  the chat protocol currently has no immutable registration-generation ID.
+  a public-key fingerprint is a stable peer label, not caller authentication.
 
 [Architecture](docs/architecture.md) describes the implemented process and message
 boundaries. OS sandboxing, credential storage guarantees and secure remote

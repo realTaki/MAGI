@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { decodeEnvelope, encodeEnvelope, MAX_BODY_BYTES, MAX_SYNC_BYTES, PEER_PROTOCOL, PeerError, peerURL, principalFor, record, type PeerCard, type PeerIdentity, type PeerMessage, type PeerReceipt } from "./protocol.js";
 
 async function boundedBody(response: Response, maximum = MAX_BODY_BYTES): Promise<string> {
@@ -17,7 +16,7 @@ async function boundedBody(response: Response, maximum = MAX_BODY_BYTES): Promis
   } finally { await reader.cancel(); }
   return Buffer.concat(chunks).toString("utf8");
 }
-/** Discovery does not grant authority or save a contact. Only explicit tools do that. */
+/** Read the peer card for a user-supplied private-network endpoint. */
 export async function discoverPeer(endpoint: string): Promise<PeerCard> {
   const response = await fetch(new URL("/.well-known/magi-peer.json", peerURL(endpoint)), { redirect: "error", signal: AbortSignal.timeout(10_000) });
   if (!response.ok) throw new PeerError(`peer discovery HTTP ${response.status}`, response.status);
@@ -33,17 +32,7 @@ export type SyncResponse = { memberships: import("@magi/bus/books/groupBook.js")
 export class PeerClient {
   readonly principal: string;
   constructor(private readonly identity: PeerIdentity) { this.principal = principalFor(identity.publicKey); }
-  private async verifyEndpoint(endpoint: string, recipient: string): Promise<void> {
-    const nonce = randomUUID();
-    const origin = peerURL(endpoint).origin;
-    const response = await fetch(new URL("/verify", origin), { method: "POST", redirect: "error", headers: { "Content-Type": "application/json" }, body: encodeEnvelope(this.identity, recipient, "verify", { nonce }), signal: AbortSignal.timeout(10_000) });
-    const text = await boundedBody(response);
-    if (response.status !== 200) throw new PeerError(`peer verification HTTP ${response.status}`, response.status);
-    const { data } = decodeEnvelope(text, this.principal, "verified", recipient);
-    if (!record(data) || data.nonce !== nonce || data.reachableURL !== origin) throw new PeerError("peer endpoint identity mismatch", 401);
-  }
   async sync(endpoint: string, recipient: string, request: SyncRequest): Promise<SyncResponse> {
-    await this.verifyEndpoint(endpoint, recipient);
     const body = encodeEnvelope(this.identity, recipient, "sync", request);
     if (Buffer.byteLength(body) > MAX_SYNC_BYTES) throw new PeerError("sync page is too large", 413);
     const response = await fetch(new URL("/sync", peerURL(endpoint)), { method: "POST", redirect: "error", headers: { "Content-Type": "application/json" }, body, signal: AbortSignal.timeout(10_000) });
@@ -54,13 +43,12 @@ export class PeerClient {
     return data as SyncResponse;
   }
   async sendGroup(endpoint: string, recipient: string, group: GroupWire): Promise<PeerReceipt> {
-    return this.sendSigned(endpoint, recipient, group, group.group.event.payload.eventId, group.group.event.payload.conversationUUID);
+    return this.sendMessage(endpoint, recipient, group, group.group.event.payload.eventId, group.group.event.payload.conversationUUID);
   }
   async send(endpoint: string, recipient: string, message: PeerMessage): Promise<PeerReceipt> {
-    return this.sendSigned(endpoint, recipient, message, message.messageId, message.conversationUUID);
+    return this.sendMessage(endpoint, recipient, message, message.messageId, message.conversationUUID);
   }
-  private async sendSigned(endpoint: string, recipient: string, input: PeerMessage | GroupWire, messageId: string, conversationUUID: string): Promise<PeerReceipt> {
-    await this.verifyEndpoint(endpoint, recipient);
+  private async sendMessage(endpoint: string, recipient: string, input: PeerMessage | GroupWire, messageId: string, conversationUUID: string): Promise<PeerReceipt> {
     const body = encodeEnvelope(this.identity, recipient, "chat", input);
     if (Buffer.byteLength(body) > MAX_BODY_BYTES) throw new PeerError("chat is too large", 413);
     const response = await fetch(new URL("/chat", peerURL(endpoint)), { method: "POST", redirect: "error", headers: { "Content-Type": "application/json" }, body, signal: AbortSignal.timeout(10_000) });

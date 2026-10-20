@@ -1,85 +1,60 @@
-# Direct peer groups, version 1
+# Direct peer groups on a trusted private network
 
-A conversation UUID names an append-only replicated history. It is not a consensus
-identifier and does not imply exactly-once tool execution.
+Each EVA owns its HTTP listener, contact book, and replicated conversations.
+Deploy EVAs on a trusted private network such as a Kubernetes network or a
+Tailscale-connected subnet. The peer protocol has no authentication handshake,
+message signatures, contact-approval gate, or per-peer tool ACL. It is not suitable
+for exposure to an untrusted network or the public internet. Network access and
+trust are the deployment operator's responsibility.
+
+Peer identity labels are stable SHA-256 fingerprints of existing identity public
+keys. They distinguish routes and authors; they do not authenticate callers.
+Discovery and hello carry the EVA's reachable HTTP(S) URL. A receiving EVA records
+its own contact route. Local process ownership remains separate: Shell can start
+and stop only children it actually provisioned. Existing provider-secret encryption
+and secret-free chat/log handling remain in place.
 
 ## Durable messages
 
-Contacts pin a SHA-256 fingerprint of the signing public key, an origin URL, and
-local pending/accepted/blocked trust. Advertised handles never identify an owner.
-An authenticated hello creates only a pending stranger. Endpoint changes require
-local acceptance. Group invitations likewise remain pending until local acceptance.
-Neither operation grants provider, owner, or configuration privileges.
+A conversation UUID names an append-only replicated history. A message and its
+delivery journal are committed together in books.db before a job is published.
+jobs.db has a unique delivery key. Startup reconciles journal entries missing job
+references through idempotent publishOnce. Replays after a lost receipt return the
+original message/job. Transport retries use journal-persisted attempt counts and
+bounded exponential backoff, with eight automatic attempts.
 
-A message and its delivery journal are committed together in books.db before a
-job is published. jobs.db has a unique delivery key. Startup reconciles journal
-entries missing job references through idempotent publishOnce. Replays after a
-lost ACK return the original message/job. Transport retries use journal-persisted
-attempt counts and bounded exponential backoff, with eight automatic attempts.
+This is durable acceptance and deduplicated delivery, not exactly-once execution
+of external side effects. Those actions need their own idempotency controls.
 
-## Immutable group history
+## Group history and membership
 
-Every event retains its original author's public key and RSA-PSS signature, even
-when relayed. The signed payload includes conversation UUID, event UUID, author,
-per-author sequence, Lamport clock, membership epoch, content, and optional reply
-reference. Deduplication is scoped to conversation and author. Reuse of an event
-ID or author sequence with a different signed envelope is rejected as equivocation.
+Events retain conversation UUID, event UUID, original author label, per-author
+sequence, Lamport clock, membership epoch, content, and optional reply reference.
+Deduplication is scoped to conversation and author. Conflicting reuse of an event
+ID or author sequence is rejected to keep replicas consistent.
 
-Events are displayed in ascending (Lamport clock, author fingerprint, event UUID)
-order. This gives deterministic history after peers have received the same valid
-set; it does not claim a real-time total order. Replies are history-only at the
-receiver, preventing an autonomous reply-to-reply loop. A fresh message can start
-a new turn. A recovered agent turn can still repeat an external side effect;
-external actions need their own idempotency/approval controls.
+Events display in ascending (Lamport clock, author label, event UUID) order. After
+receiving the same event set, replicas show the same history; this does not claim
+a real-time total order. Replies are history-only at the receiver to prevent an
+autonomous reply-to-reply loop. A fresh message can start a new turn.
 
-## Membership and disclosure
-
-The creator is the membership authority. Each full membership snapshot is signed,
-numbered, and linked to the previous signed snapshot's digest. Gaps must be fetched
-before applying later epochs. Conflicting snapshots at one epoch are rejected,
-not silently resolved. Initial invitations must come from an already accepted
-peer, explicitly include this receiver, and require local acceptance. Creation and
-membership edits use explicitly accepted peer routes.
-
-Current accepted membership gates synchronization. An event's historical signed
-epoch proves that its author belonged when that event was composed. Removal blocks
-future synchronization to that peer; it cannot erase previously disclosed data or
-cryptographically prove an offline author's wall-clock creation time. Creator
-transfer, automatic membership-conflict resolution, group-key encryption, and
-selective per-member historical visibility are not implemented. Group history is
-shared with explicitly admitted members; do not put private DM context into it.
+Membership snapshots are numbered and linked to the previous snapshot's digest.
+The creator coordinates updates; gaps must be fetched before applying later
+epochs. Membership controls group routing and replica consistency, not security.
+Removing an EVA stops future replication to it but cannot erase its existing
+history. Invitations are recorded directly without a separate approval step.
 
 ## Anti-entropy
 
-The channel exchanges bounded membership and event pages. Event cursors use the
-serving replica's insertion order and are scoped to that scan. Start each new
-round from zero. Full repeated set-union scans preserve missing sender sequences
-and tolerate reordered delivery, duplicates, offline periods and process restart;
-a single maximum sender sequence must never be used as proof that lower sequences
-have arrived. Each page is capped at 100 events. This simple first version favors
-correctness over bandwidth; compact range summaries or Merkle reconciliation can
-replace full scans later without changing signed event identity.
+The channel exchanges bounded pages of up to eight membership snapshots and eight
+events, with a bounded HTTP body. Cursors use each serving replica's insertion
+order and are scoped to that scan. Every new round starts from zero. Repeated
+set-union scans preserve missing sender sequences and tolerate reordered delivery,
+duplicates, offline periods, and restart. A maximum sender sequence is never taken
+as proof that lower sequences arrived. An interrupted membership chain can progress
+through membership-only acknowledgements before history replication resumes.
 
-The design follows the separation of immutable history, local storage, and
-transport-independent synchronization described in the [Automerge concepts](https://automerge.org/docs/reference/concepts/).
-It does not depend on Automerge or claim to implement Automerge's CRDT protocol.
-
-## Tool authority
-
-RunToolJob claim and claim-by-ID validate the durable triggering message before any
-worker may execute it. Pending peers can only request acceptance when the owner
-has enabled agent-message-only acceptance. Accepted peers can search only their
-current conversation by default. The owner may grant exact tool names to one
-accepted signing principal; shell, filesystem and MCP tools need such explicit
-grants. Direct chat tools cannot cross conversation boundaries. Direct provider or MCP
-configuration, home-chat changes, task scheduling, process replacement and local
-administration tools require an actual owner-authored triggering message, regardless
-of an exact tool-name grant. This is an in-process authorization boundary, not an
-OS sandbox. Explicitly granting raw shell, filesystem writes, or a powerful MCP
-tool is broad trusted-code delegation: such code may read secrets or modify local
-databases and bypass these application checks. Do not grant these capabilities to
-a peer you trust only to exchange messages.
-Claims with absent or conflicting peer provenance fail closed. Worker-side checks
-remain authoritative for recovered turns even if an older cached catalog contains
-more tools. Peer model prompts exclude private workspace instructions and global
-memory; only peer-scoped history and public identity/member context are included.
+This first version favors correctness over bandwidth. Compact range summaries or
+Merkle reconciliation can replace full scans later. Conversation UUIDs serve the
+role of A2A context IDs, but this MAGI-specific protocol is an A2A-inspired subset,
+not an implementation claiming A2A 1.0 compliance.

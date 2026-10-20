@@ -7,37 +7,37 @@ import { PeerError, record } from "./protocol.js";
 export class GroupReplica {
   private readonly pages = new Map<string, { after: number; sentEpoch: number; due: number }>();
   constructor(private readonly bus: Bus, private readonly client: PeerClient) {}
-  private accepted(principal: string) {
+  private route(principal: string) {
     const contact = this.bus.contacts.list().find(contact => contact.peer_id === principal);
-    if (contact?.peer_trust !== "accepted" || !contact.peer_url || contact.peer_principal !== principal) throw new PeerError("peer route is not accepted", 403);
+    if (!contact?.peer_url) throw new PeerError("peer route is unknown", 403);
     return contact;
   }
   receive(principal: string, wire: GroupWire): { duplicate: boolean } {
-    this.accepted(principal);
+    this.route(principal);
     const event = wire.group.event;
     if (!record(event) || !record(event.payload) || typeof event.payload.conversationUUID !== "string") throw new PeerError("invalid group event");
-    if (!this.bus.groups.get(event.payload.conversationUUID)) throw new PeerError("group invitation required", 409);
-    if (!this.bus.groups.allows(event.payload.conversationUUID, principal)) throw new PeerError("group is pending or sender is not a current member", 403);
+    if (!this.bus.groups.get(event.payload.conversationUUID)) throw new PeerError("group membership required", 409);
+    if (!this.bus.groups.allows(event.payload.conversationUUID, principal)) throw new PeerError("sender is not a current group member", 403);
     return this.bus.groups.ingest(event);
   }
   respond(principal: string, input: unknown): SyncResponse {
-    this.accepted(principal);
+    this.route(principal);
     if (!record(input) || Object.keys(input).some(key => !["conversationUUID", "after", "afterEpoch", "memberships"].includes(key)) || typeof input.conversationUUID !== "string" || (input.after !== undefined && (!Number.isSafeInteger(input.after) || Number(input.after) < 0)) || (input.afterEpoch !== undefined && (!Number.isSafeInteger(input.afterEpoch) || Number(input.afterEpoch) < 0)) || (input.memberships !== undefined && (!Array.isArray(input.memberships) || input.memberships.length > 8))) throw new PeerError("invalid sync request");
     const request = input as SyncRequest;
-    // The original creator signature authorizes membership changes, not this relay.
+    // Membership epochs define replica routing and history consistency.
     for (const membership of request.memberships ?? []) {
       if (membership?.payload?.conversationUUID !== request.conversationUUID) throw new PeerError("membership conversation mismatch");
       this.bus.groups.offerMembership(membership);
     }
     const group = this.bus.groups.get(request.conversationUUID);
     if (!group || !this.bus.groups.allows(request.conversationUUID, principal)) {
-      // An accepted replica can be temporarily removed in the middle of a paged
+      // A replica can be temporarily removed in the middle of a paged
       // membership chain and re-added in a later epoch. Acknowledge only the
       // offered chain to its current member; disclose no history or membership.
-      if (group?.trust === "accepted" && request.memberships?.length && this.bus.groups.membership(request.conversationUUID).payload.members.some(member => member.principal === principal)) {
+      if (group && request.memberships?.length && this.bus.groups.membership(request.conversationUUID).payload.members.some(member => member.principal === principal)) {
         return { memberships: [], events: [], nextCursor: null, moreMemberships: false, receivedEpoch: group.epoch };
       }
-      throw new PeerError("group is pending or peer is not a current member", 403);
+      throw new PeerError("peer is not a current group member", 403);
     }
     const memberships = this.bus.groups.memberships(request.conversationUUID, request.afterEpoch ?? 0, 8);
     const lastEpoch = memberships.at(-1)?.payload.epoch ?? request.afterEpoch ?? 0;
@@ -47,18 +47,18 @@ export class GroupReplica {
   }
   async deliver(event: SignedGroupEvent): Promise<void> {
     const uuid = event.payload.conversationUUID;
-    if (!this.bus.groups.allows(uuid, this.client.principal)) throw new PeerError("local member is not authorized for group", 403);
+    if (!this.bus.groups.allows(uuid, this.client.principal)) throw new PeerError("local EVA is not a current group member", 403);
     const peers = this.bus.groups.membership(uuid).payload.members.filter(member => member.principal !== this.client.principal);
     for (const peer of peers) {
-      const contact = this.accepted(peer.principal);
-      // Use the independently accepted contact route, never a third-party callback.
+      const contact = this.route(peer.principal);
+      // Use this EVA's contact route.
       await this.client.sendGroup(contact.peer_url!, peer.principal, { group: { event } });
     }
   }
   /** Public for deterministic loopback integration tests and explicit resync tools. */
   async syncPeer(uuid: string, principal: string): Promise<boolean> {
-    const contact = this.accepted(principal);
-    if (!this.bus.groups.allows(uuid, this.client.principal) || !this.bus.groups.allows(uuid, principal)) throw new PeerError("local or remote group member is not authorized", 403);
+    const contact = this.route(principal);
+    if (!this.bus.groups.allows(uuid, this.client.principal) || !this.bus.groups.allows(uuid, principal)) throw new PeerError("local or remote EVA is not a current group member", 403);
     const key = `${uuid}:${principal}`;
     const state = this.pages.get(key) ?? { after: 0, sentEpoch: 0, due: 0 };
     const memberships = this.bus.groups.memberships(uuid, state.sentEpoch, 8);
@@ -87,7 +87,7 @@ export class GroupReplica {
         if ((this.pages.get(key)?.due ?? 0) > Date.now()) continue;
         try { await this.syncPeer(group.conversation_uuid, member.principal); }
         catch {
-          // Offline/pending peers retain durable history. The next round starts at
+          // Offline peers retain durable history. The next round starts at
           // zero; a process restart is equally safe and never deletes an event.
           this.pages.set(key, { after: 0, sentEpoch: 0, due: Date.now() + 10_000 });
         }

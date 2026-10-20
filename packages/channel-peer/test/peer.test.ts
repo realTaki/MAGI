@@ -33,7 +33,7 @@ test("direct peers durably accept, deduplicate after restart, and never grant bo
     const contacts = f.b.contacts.list().filter(contact => contact.peer_id);
     assert.equal(contacts.length, 1);
     assert.equal(contacts[0].role, "stranger");
-    assert.equal(contacts[0].peer_trust, "pending");
+    assert.equal(contacts[0].peer_trust, "accepted");
     assert.notEqual(contacts[0].id, 1);
     const origin = b.origin;
     await b.stop();
@@ -49,7 +49,7 @@ test("direct peers durably accept, deduplicate after restart, and never grant bo
   } finally { await b.stop(); f.dispose(); }
 });
 
-test("signed ordinary chat and reply cross two independent servers without a relay or reply loops", async () => {
+test("ordinary chat and reply cross two independent servers without a relay or reply loops", async () => {
   const f = fixture();
   const a = new PeerWorker(f.a); const b = new PeerWorker(f.b);
   try {
@@ -72,18 +72,18 @@ test("signed ordinary chat and reply cross two independent servers without a rel
   } finally { await a.stop(); await b.stop(); f.dispose(); }
 });
 
-test("signature, recipient, freshness and structured-action restrictions are enforced", () => {
+test("identity labels route plain messages and private HTTP origins are supported", () => {
   const f = fixture();
   try {
     const audience = principalFor(f.b.identity.publicKey);
     const body = encodeEnvelope(f.a.identity, audience, "chat", message("http://localhost:1234"));
     assert.equal(decodeEnvelope(body, audience, "chat").principal, principalFor(f.a.identity.publicKey));
-    assert.throws(() => decodeEnvelope(body.replace("hello", "evil!"), audience, "chat"), /authentication/);
-    assert.throws(() => decodeEnvelope(body, principalFor(f.a.identity.publicKey), "chat"), /scope/);
-    const expired = JSON.parse(body); expired.payload.issuedAt = 0;
-    assert.throws(() => decodeEnvelope(JSON.stringify(expired), audience, "chat"), /time/);
+    assert.equal((decodeEnvelope(body.replace("hello", "updated"), audience, "chat").data as PeerMessage).content, "updated", "trusted network messages have no signature gate");
+    assert.throws(() => decodeEnvelope(body, principalFor(f.a.identity.publicKey), "chat"), /routing/);
+    assert.equal(JSON.parse(body).signature, undefined);
+    for (const url of ["http://10.0.0.2:8000", "http://eva.default.svc.cluster.local:8000", "http://100.64.0.2:8000"]) assert.equal(peerURL(url).protocol, "http:");
     assert.throws(() => parseMessage({ ...message("http://localhost:1"), metadata: { card_result: {} } }), /ordinary/);
-    for (const url of ["http://example.com", "https://a.test/path", "https://user:pass@a.test", "https://a.test?token=secret", "file:///tmp/test"]) assert.throws(() => peerURL(url));
+    for (const url of ["https://a.test/path", "https://user:pass@a.test", "https://a.test?token=secret", "file:///tmp/test"]) assert.throws(() => peerURL(url));
   } finally { f.dispose(); }
 });
 
@@ -98,7 +98,7 @@ test("receipt is withheld when persistence fails; retry succeeds without claimin
     assert.equal((await client.send(server.origin!, server.principal, input)).accepted, true);
     assert.equal(calls, 2);
     assert.equal((await client.send(server.origin!, server.principal, { ...input, messageId: randomUUID(), content: "汉".repeat(32_000) })).accepted, true);
-    await assert.rejects(client.send(server.origin!, client.principal, input), /401/);
+    await assert.rejects(client.send(server.origin!, client.principal, input), /400/);
   } finally { await server.stop(); f.dispose(); }
 });
 
@@ -123,19 +123,19 @@ test("outbound failures retain persisted retry schedule and binding failures are
 });
 
 
-test("pinned endpoint proof precedes content and a relayed challenge cannot redirect private chat", async () => {
+test("trusted private-network proxy sends chat directly without a verification handshake", async () => {
   const f = fixture(); const real = new PeerServer(f.b.identity, f.b.handle, () => ({ duplicate: false }));
-  let leaked = 0;
+  const requests: string[] = [];
   const proxy = createServer(async (request, response) => {
     const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(Buffer.from(chunk));
-    if (request.url === "/chat") leaked++;
+    requests.push(request.url!);
     const forwarded = await fetch(new URL(request.url!, real.origin!), { method: request.method, headers: { "Content-Type": "application/json" }, body: Buffer.concat(chunks) });
     response.writeHead(forwarded.status, { "Content-Type": "application/json" }); response.end(await forwarded.text());
   });
   try {
     await real.start(); await new Promise<void>(resolve => proxy.listen(0, "127.0.0.1", resolve));
     const address = proxy.address(); assert.ok(address && typeof address !== "string");
-    await assert.rejects(new PeerClient(f.a.identity).send(`http://127.0.0.1:${address.port}`, real.principal, message("http://localhost:1234")), /identity mismatch/);
-    assert.equal(leaked, 0);
+    assert.equal((await new PeerClient(f.a.identity).send(`http://127.0.0.1:${address.port}`, real.principal, message("http://localhost:1234"))).accepted, true);
+    assert.deepEqual(requests, ["/chat"]);
   } finally { await new Promise<void>(resolve => { proxy.close(() => resolve()); proxy.closeAllConnections(); }); await real.stop(); f.dispose(); }
 });

@@ -27,9 +27,8 @@ test("three independent HTTP peers converge through offline restart and paginate
     const [a, b, c] = f.buses;
     const uuid = a.groups.create({ title: "Network group", members: f.peers.slice(1) }).conversation_uuid;
     for (const index of [1, 2]) {
-      await assert.rejects(f.workers[0].groups.syncPeer(uuid, f.peers[index].principal), /403/);
-      assert.equal(f.buses[index].groups.get(uuid)?.trust, "pending");
-      f.buses[index].groups.accept(uuid);
+      await sync(f.workers[0], uuid, f.peers[index].principal);
+      assert.equal(f.buses[index].groups.get(uuid)?.trust, "accepted");
     }
     const a1 = a.groups.append(uuid, "first").event;
     const a2 = a.groups.append(uuid, "second arrives first").event;
@@ -51,13 +50,12 @@ test("three independent HTTP peers converge through offline restart and paginate
   } finally { await f.close(); }
 });
 
-test("group sync chains membership pages, rejects removed peers and checks original forwarded signatures", async () => {
+test("group sync chains membership pages, keeps current-member routing and detects conflicting event IDs", async () => {
   const f = await cluster();
   try {
     const [a, b] = f.buses;
     const uuid = a.groups.create({ title: "Epoch chain", members: f.peers.slice(1) }).conversation_uuid;
-    await assert.rejects(f.workers[0].groups.syncPeer(uuid, f.peers[1].principal), /403/);
-    b.groups.accept(uuid);
+    await sync(f.workers[0], uuid, f.peers[1].principal);
     for (let i = 0; i < 18; i++) a.groups.updateMembers(uuid, f.peers);
     a.groups.append(uuid, "epoch 19");
     await sync(f.workers[0], uuid, f.peers[1].principal);
@@ -67,7 +65,7 @@ test("group sync chains membership pages, rejects removed peers and checks origi
     const tampered = structuredClone(a.groups.history(uuid)[0]); tampered.payload.content = "forged";
     await assert.rejects(new PeerClient(b.identity).sendGroup(f.workers[0].origin!, f.peers[0].principal, { group: { event: tampered } }));
     a.groups.updateMembers(uuid, f.peers.slice(0, 2));
-    await assert.rejects(f.workers[0].groups.syncPeer(uuid, f.peers[2].principal), /not authorized/);
+    await assert.rejects(f.workers[0].groups.syncPeer(uuid, f.peers[2].principal), /not a current group member/);
     await assert.rejects(new PeerClient(f.buses[2].identity).sync(f.workers[0].origin!, f.peers[0].principal, { conversationUUID: uuid }), /403/);
   } finally { await f.close(); }
 });
@@ -78,7 +76,7 @@ test("membership-only page acknowledgements recover a removed then re-added offl
   try {
     const [a, b] = f.buses;
     const uuid = a.groups.create({ title: "Rejoin", members: f.peers.slice(1) }).conversation_uuid;
-    await assert.rejects(f.workers[0].groups.syncPeer(uuid, f.peers[1].principal), /403/); b.groups.accept(uuid);
+    await sync(f.workers[0], uuid, f.peers[1].principal);
     for (let epoch = 2; epoch <= 10; epoch++) a.groups.updateMembers(uuid, [f.peers[0], f.peers[2]]);
     a.groups.updateMembers(uuid, f.peers);
     a.groups.append(uuid, "after rejoin");
