@@ -77,6 +77,20 @@ export class AgentTurnCache {
     this.append(turn_id, "tool_result", { message });
   }
 
+  /** Close every unanswered tool call without replaying an unknown side effect. */
+  interrupt(turn_id: number, reason: string): void {
+    if (!this.has(turn_id)) return;
+    const { messages } = this.get(turn_id);
+    const answered = new Set(messages.filter((m) => m.role === "tool").map((m) => m.tool_call_id));
+    for (const message of [...messages]) {
+      for (const call of message.tool_calls ?? []) {
+        if (answered.has(call.tool_call_id)) continue;
+        this.appendToolResult(turn_id, { role: "tool", tool_call_id: call.tool_call_id, tool_name: call.name, content: reason, is_error: true });
+        answered.add(call.tool_call_id);
+      }
+    }
+  }
+
   evict(turn_id: number): void { this.hot.delete(turn_id); }
 
   /** Replace a preparatory compaction transcript with the actual turn root. */

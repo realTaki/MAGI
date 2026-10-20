@@ -141,8 +141,16 @@ function sharesDesktopProcessGroup() {
 }
 
 function note(child) {
+  child.toolProcesses = new Set();
   child.seen = { hello: false, ready: false, bad: "" };
   child.on("message", (message) => {
+    if (message?.v === LAUNCHER_PROTOCOL && message.type === "tool-process" && Number.isSafeInteger(message.pid) && message.pid > 1) {
+      if (message.action === "add") {
+        child.toolProcesses.add(message.pid);
+        if (child.connected) child.send({ v: LAUNCHER_PROTOCOL, type: "tool-process-ready", pid: message.pid }, () => {});
+      }
+      if (message.action === "remove") child.toolProcesses.delete(message.pid);
+    }
     if (message?.type === "hello" || message?.type === "ready") {
       if (message.v !== LAUNCHER_PROTOCOL) child.seen.bad = `launcher protocol ${LAUNCHER_PROTOCOL} does not match child ${message.v ?? "none"}`;
       else child.seen[message.type] = true;
@@ -190,7 +198,16 @@ function stopTimeout(role) {
   return role === "shell" ? 30_000 : 10_000;
 }
 
+function reapToolProcesses(child) {
+  for (const pid of child?.toolProcesses ?? []) {
+    if (process.platform === "win32") spawn("taskkill.exe", ["/pid", String(pid), "/t", "/f"], { stdio: "ignore", windowsHide: true });
+    else { try { process.kill(-pid, "SIGKILL"); } catch { /* already gone */ } }
+  }
+  child?.toolProcesses?.clear();
+}
+
 function killTree(child) {
+  reapToolProcesses(child);
   const pid = child?.pid;
   if (!pid) return;
   if (process.platform === "win32") {
@@ -250,6 +267,7 @@ async function main() {
   };
 
   const onExit = async (child, started) => {
+    reapToolProcesses(child);
     if (!acceptingCrashes || replaced || child !== current) return;
     if (Date.now() - started > 30_000) crashes = 0;
     crashes += 1;

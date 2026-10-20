@@ -1,3 +1,4 @@
+import { LAUNCHER_PROTOCOL } from "@magi/runtime/protocol.js";
 import { spawn, type ChildProcess } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -8,6 +9,7 @@ type ShellState = {
   output: string;
   cursor: number;
   exitCode: number | null;
+  closing?: Promise<string>;
   status: "running" | "completed" | "killed";
 };
 
@@ -16,10 +18,30 @@ export class ShellManager {
 
   start(command: string, cwd: string, env: NodeJS.ProcessEnv = process.env): ShellState {
     const id = crypto.randomUUID().replaceAll("-", "").slice(0, 12);
-    const [file, ...args] = shellInvocation(command);
-    const child = spawn(file, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32", windowsHide: true });
+    const supervised = process.connected && process.platform !== "win32";
+    // Do not execute user code until the launcher owns this process group. If the
+    // worker dies before registration, the idle gate expires without side effects.
+    const [file, ...args] = supervised
+      ? ["bash", "-c", 'read -r -t 5 ready && exec bash -lc "$1"', "--", command]
+      : shellInvocation(command);
+    const child = spawn(file, args, { cwd, env, stdio: [supervised ? "pipe" : "ignore", "pipe", "pipe"], detached: process.platform !== "win32", windowsHide: true });
     const state: ShellState = { id, command, process: child, output: "", cursor: 0, exitCode: null, status: "running" };
     this.shells.set(id, state);
+    // The live launcher owns detached groups if this worker is killed abruptly.
+    if (child.pid && process.connected) {
+      const ready = (message: unknown) => {
+        const ack = message as { v?: number; type?: string; pid?: number };
+        if (ack?.v !== LAUNCHER_PROTOCOL || ack.type !== "tool-process-ready" || ack.pid !== child.pid) return;
+        process.off("message", ready);
+        child.stdin?.end("ready\n");
+      };
+      if (supervised) {
+        process.on("message", ready);
+        child.once("close", () => process.off("message", ready));
+        child.stdin?.on("error", () => {});
+      }
+      process.send?.({ v: LAUNCHER_PROTOCOL, type: "tool-process", action: "add", pid: child.pid }, () => {});
+    }
     void this.capture(state, child.stdout);
     void this.capture(state, child.stderr, "[stderr]\n");
     child.once("close", (code) => {
@@ -69,24 +91,36 @@ export class ShellManager {
   async kill(id: string): Promise<string> {
     const state = this.shells.get(id);
     if (!state) return `Shell already gone: ${id}.`;
+    if (state.closing) return state.closing;
+    state.closing = this.reap(state);
+    return state.closing;
+  }
+
+  private async reap(state: ShellState): Promise<string> {
     const tail = state.output.slice(state.cursor);
-    if (state.exitCode === null) {
-      state.status = "killed";
-      const child = state.process;
-      const signalTree = (signal: NodeJS.Signals) => {
-        if (process.platform === "win32" && child.pid) {
+    const child = state.process;
+    state.status = "killed";
+    const signalTree = async (signal: NodeJS.Signals) => {
+      if (!child.pid) return;
+      if (process.platform === "win32") {
+        await new Promise<void>((resolve) => {
           const killer = spawn("taskkill.exe", ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore", windowsHide: true });
-          killer.on("error", () => child.kill(signal));
-        } else {
-          try { if (child.pid) process.kill(-child.pid, signal); else child.kill(signal); }
-          catch { child.kill(signal); }
-        }
-      };
-      signalTree("SIGTERM");
-      await Promise.race([new Promise<void>((resolve) => child.once("close", () => resolve())), sleep(1000)]);
-      if (child.exitCode === null && child.signalCode === null) signalTree("SIGKILL");
-    }
-    this.shells.delete(id);
+          killer.once("error", () => { child.kill(signal); resolve(); });
+          killer.once("close", () => resolve());
+        });
+      } else {
+        try { process.kill(-child.pid, signal); } catch { /* group already gone */ }
+      }
+    };
+    const closed = child.exitCode !== null || child.signalCode !== null
+      ? Promise.resolve() : new Promise<void>((resolve) => child.once("close", () => resolve()));
+    await signalTree("SIGTERM");
+    // Always escalate the group: its leader can exit while a descendant ignores TERM.
+    await Promise.race([closed, sleep(250)]);
+    await signalTree("SIGKILL");
+    await Promise.race([closed, sleep(1000)]);
+    if (child.pid && process.connected) process.send?.({ v: LAUNCHER_PROTOCOL, type: "tool-process", action: "remove", pid: child.pid }, () => {});
+    this.shells.delete(state.id);
     return `${tail ? `Last output before kill:\n${tail.trimEnd()}\n` : ""}Killed.`;
   }
 

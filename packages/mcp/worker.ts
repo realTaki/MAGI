@@ -1,3 +1,4 @@
+import { abortable } from "@magi/bus/abort.js";
 import { Client, SSEClientTransport, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -18,6 +19,7 @@ export class McpWorker extends BaseWorker {
   private readonly control: ExecutableTool[];
   private readonly pending = new Set<Promise<void>>();
   private started = false;
+  private controller = new AbortController();
   /** The catalog asks this every time, so a connection that comes or goes shows up at once. */
   private readonly provider: ToolSource = () => this.tools();
 
@@ -30,6 +32,7 @@ export class McpWorker extends BaseWorker {
   async start(): Promise<void> {
     if (this.started) return;
     this.started = true;
+    if (this.controller.signal.aborted) this.controller = new AbortController();
     await Promise.all(this.bus.mcpServers.list().filter((server) => server.enabled !== false).map(async (server) => {
       try { this.connections.set(server.name, await this.connector(server, this.bus.workspace)); }
       catch (error) { messageDelivery.notify(this.bus, `[mcp] ${server.name}: ${message(error)}`); }
@@ -41,6 +44,7 @@ export class McpWorker extends BaseWorker {
   }
 
   async poll(): Promise<boolean> {
+    if (this.controller.signal.aborted) return false;
     if (await this.pollChanges()) return true;
     return this.pollToolCall();
   }
@@ -90,7 +94,7 @@ export class McpWorker extends BaseWorker {
       const { name, arguments: args } = input.call;
       const tool = this.tools().find((candidate) => candidate.name === name);
       if (!tool) throw new Error(`unknown tool ${name}`);
-      board.submit(this.worker_name, id, { output: { content: await tool.run(args) } });
+      board.submit(this.worker_name, id, { output: { content: await abortable(tool.run(args, this.controller.signal, { chat_id: input.chat_id, message_id: input.message_id }), this.controller.signal) } });
     } catch (error) {
       board.submit(this.worker_name, id, { error: error instanceof Error ? error.message : String(error) });
     }
@@ -110,7 +114,10 @@ export class McpWorker extends BaseWorker {
     }
   }
 
+  interrupt(): void { this.controller.abort(new Error("MAGI stopped")); }
+
   async stop(): Promise<void> {
+    this.interrupt();
     // A stopped MCP worker can be started again: the manager owns its lifecycle now.
     this.started = false;
     await Promise.all(this.pending);
@@ -149,8 +156,9 @@ export async function connectMcpServer(config: McpServerConfig, workspace: strin
       name: `${config.name}__${tool.name}`,
       description: tool.description || "(no description provided by MCP server)",
       input_schema: (tool.inputSchema ?? { type: "object", properties: {} }) as Record<string, unknown>,
-      async run(args) {
-        const result = await deadline(client.callTool({ name: tool.name, arguments: args }), (config.execute_timeout ?? 60) * 1_000, `MCP tool ${tool.name} timed out`);
+      async run(args, signal) {
+        signal?.throwIfAborted();
+        const result = await client.callTool({ name: tool.name, arguments: args }, { signal, timeout: (config.execute_timeout ?? 60) * 1_000 });
         const content = (result.content ?? []).map((item) => item.type === "text" ? item.text : JSON.stringify(item)).join("\n");
         if (result.isError) throw new Error(content || `MCP tool ${tool.name} failed`);
         return content;

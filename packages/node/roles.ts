@@ -59,4 +59,4 @@ export function shellWorkers(bus: Bus, webapp: BaseWorker, peer: BaseWorker, cli
 }
 
 /** Pause a hosted MAGI without taking down its UI or peer listener. */
-export const HOSTED_NODE_WORKERS = ["contacts", "skills", "agent", "tools", "memory", "providers", "tg"];
+export const HOSTED_NODE_WORKERS = ["contacts", "skills", "agent", "tools", "memory", "providers", "mcp", "tg"];

@@ -85,5 +85,5 @@ export class ToolsWorker extends BaseWorker {
     }
   }
 
-  async stop(): Promise<void> { await Promise.all(this.pending); await this.shells.shutdown(); }
+  async stop(): Promise<void> { await this.interrupt(); await Promise.all(this.pending); await this.shells.shutdown(); }
 }

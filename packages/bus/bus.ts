@@ -24,6 +24,7 @@ import { AgentTurnCache } from "./jobs/agentTurnCache.js";
 import { USER_HANDLE, defaultDisplayName } from "./identity.js";
 import { loadOrCreateIdentity, type Identity } from "./identityKeys.js";
 import { SecretStore } from "./secrets.js";
+import { messageDelivery } from "./jobs/messageDelivery.js";
 import { CARD_RESTART_ERROR } from "./jobs/card.js";
 import { replaceFailedPath } from "./replaceMarker.js";
 
@@ -106,6 +107,10 @@ export class Bus {
     const handoff = Boolean(process.env.MAGI_REPLACE_JOB || process.env.MAGI_REPLACE_ERROR);
     // One MAGI owns this workspace. Recover work interrupted by a process exit.
     // One process runs one replace, so a marker names the only claimed ReplaceSelfJob.
+    const interruptedTurns = this.jobs.select().from(jobs).where(and(eq(jobs.type, "MessageDeliveryJob"), eq(jobs.status, "claimed"), eq(jobs.worker, "agent"))).all();
+    for (const turn of interruptedTurns) this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted; this turn was interrupted and was not retried" }).where(eq(jobs.id, turn.id)).run();
+    this.jobs.update(jobs).set({ status: "failed", error: "MAGI restarted before this model call finished" })
+      .where(and(eq(jobs.type, "CallLLMJob"), inArray(jobs.status, ["pending", "claimed"]))).run();
     const open = and(eq(jobs.status, "claimed"), ne(jobs.type, "RunToolJob"));
     this.jobs.update(jobs).set({ status: "pending", worker: null })
       .where(markedJob !== null && !handoff
@@ -153,6 +158,14 @@ export class Bus {
     this.db.insert(contacts).values({ id: MAGI_CONTACT_ID, name: defaultDisplayName(handle), role: "magi", handle: handle })
       .onConflictDoUpdate({ target: contacts.id, set: { name: defaultDisplayName(handle), handle: handle } })
       .run();
+    for (const turn of interruptedTurns) {
+      const reason = "MAGI restarted; this turn was interrupted and was not retried. Tool side effects may have completed; check before retrying.";
+      this.agentTurns.interrupt(turn.id, reason);
+      this.agentTurns.evict(turn.id);
+      const input = JSON.parse(turn.input) as JobInput["MessageDeliveryJob"];
+      const message = this.messages.get(input.message_id);
+      if (message) messageDelivery.send(this, message.chat_id, reason, MAGI_CONTACT_ID, "agent", messageDelivery.replyMetadata(this, message.id));
+    }
     this.deliveries.reconcile(this);
   }
 

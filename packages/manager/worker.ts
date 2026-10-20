@@ -147,6 +147,7 @@ export class ManagerWorker extends BaseWorker {
   }
 
   async stop(): Promise<void> {
+    await this.interruptWorkers();
     for (const name of this.drain) await this.stopWorker(name);
     this.started = false;
     await this.loop;
@@ -155,15 +156,20 @@ export class ManagerWorker extends BaseWorker {
   }
 
   /**
-   * Let in-flight drain workers finish, then stop everyone except replace.
-   * The database and the ASP connection are released before a new build starts.
+   * Cancel in-flight turns and tools before draining, then stop everyone except
+   * replace. A long-running tool must not force the launcher to kill the worker.
    */
   async suspendForReplace(): Promise<void> {
+    await this.interruptWorkers();
     for (const name of this.drain) await this.stopWorker(name);
     for (const name of [...this.running.keys()]) {
       if (name === "replace") continue;
       await this.stopWorker(name);
     }
+  }
+
+  private async interruptWorkers(): Promise<void> {
+    await Promise.all([...this.running.values()].map(({ worker }) => worker.interrupt?.()));
   }
 
   /** Bring back the workers a failed or finished replace stopped. */

@@ -14,6 +14,7 @@ export function toLLMMessage(message: Message): LLMMessage {
 }
 
 export class Chat {
+  private readonly pendingTools = new Set<number>();
   constructor(
     private readonly bus: Bus,
     readonly chat_id: number,
@@ -30,6 +31,8 @@ export class Chat {
       // What went wrong is said in the chat itself: the Job result is for
       // whoever published the turn, not for whoever is waiting for an answer.
       const message = error instanceof Error ? error.message : String(error);
+      for (const id of this.pendingTools) this.bus.board("RunToolJob").fail(id, message);
+      this.bus.agentTurns.interrupt(jobId, message);
       messageDelivery.send(this.bus, this.chat_id, message, MAGI_CONTACT_ID, "agent", messageDelivery.replyMetadata(this.bus, messageId));
       chatBoard.submit("agent", jobId, { error: message });
     } finally {
@@ -94,6 +97,7 @@ export class Chat {
         const calls = response.tool_calls.map((call) => this.bus.tools.get(call.name)
           ? { call, jobId: this.bus.board("RunToolJob").publish({ call, chat_id: this.chat_id, message_id: messageId }, "agent") as number | null }
           : { call, jobId: null });
+        for (const pending of calls) if (pending.jobId !== null) this.pendingTools.add(pending.jobId);
         for (const pending of calls) {
           this.signal?.throwIfAborted();
           if (pending.jobId === null) {
@@ -101,6 +105,7 @@ export class Chat {
             continue;
           }
           const result = await this.waitFor("RunToolJob", pending.jobId, 120_000);
+          this.pendingTools.delete(pending.jobId);
           this.bus.agentTurns.appendToolResult(jobId, {
             role: "tool", tool_call_id: pending.call.tool_call_id, tool_name: pending.call.name,
             content: result.status === "failed" ? result.error ?? "tool failed" : result.output?.content ?? "",
