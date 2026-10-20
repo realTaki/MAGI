@@ -78,3 +78,17 @@ test("forwarded original author is retained and tampering is rejected; replies d
     assert.equal(a.groups.history(uuid).at(-1)?.payload.author, f.peers[1].principal);
   } finally { f.clean(); }
 });
+
+
+test("historical event does not revert an explicitly changed peer endpoint", () => {
+  const f = cluster(); const [a, b] = f.buses;
+  try {
+    const group = a.groups.create({ title: "Moved peer", members: f.peers.slice(1) }); const uuid = group.conversation_uuid;
+    b.groups.offerMembership(a.groups.membership(uuid)); b.groups.accept(uuid);
+    const beforeMove = a.groups.append(uuid, "before move").event;
+    const contact = b.contacts.list().find(contact => contact.peer_id === f.peers[0].principal)!;
+    b.contacts.acceptPeer(contact.id, "https://new.example");
+    b.groups.ingest(beforeMove);
+    assert.equal(b.contacts.get(contact.id)?.peer_url, "https://new.example");
+  } finally { f.clean(); }
+});

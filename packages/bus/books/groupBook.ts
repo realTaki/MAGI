@@ -139,7 +139,12 @@ export class GroupBook {
         return { event, duplicate: true, message_id: Number(prior.message_id) };
       }
       const local = signer === self;
-      const contact = local ? this.bus.contacts.get(MAGI_CONTACT_ID)! : this.bus.contacts.forPeer({ principal: signer, endpoint: member.endpoint });
+      // Historical membership endpoints are not routing updates. A peer can move
+      // after composing an event; use its pinned identity without reverting its URL.
+      const known = this.bus.contacts.list().find(contact => contact.peer_id === signer);
+      if (known?.peer_trust === "blocked") throw new Error("event author is locally blocked");
+      const contact = local ? this.bus.contacts.get(MAGI_CONTACT_ID)! : known ?? this.bus.contacts.forPeer({ principal: signer, endpoint: member.endpoint });
+      if (!local && contact.peer_principal !== signer) throw new Error("event author identity mismatch");
       validateChatInput(this.bus, group.chat_id, contact.id, { content: value.content }, local);
       const metadata = { group: { event }, peer: { messageId: value.eventId, conversationUUID: value.conversationUUID, ...(value.replyTo ? { replyTo: value.replyTo } : {}) } };
       const stored = this.bus.deliveries.persist({ chat_id: group.chat_id, contact_id: contact.id, content: value.content, publisher: local ? "agent" : "peer", key: `group:${value.conversationUUID}:${signer}:${value.eventId}`, metadata, enqueue: local || !value.replyTo });
