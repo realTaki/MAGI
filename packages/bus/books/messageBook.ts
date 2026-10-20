@@ -41,6 +41,10 @@ export class MessageBook {
     return this.db.select().from(messages).where(and(eq(messages.chat_id, chatId), sql`${messages.id} IN (SELECT message_id FROM books_deliveries WHERE json_extract(metadata, '$.peer.messageId') = ${peerId})`)).get();
   }
 
+  reactionEvents(chatId: number, target: string): Message[] {
+    return this.db.select().from(messages).where(and(eq(messages.chat_id, chatId), sql`${messages.id} IN (SELECT message_id FROM books_deliveries WHERE json_extract(metadata, '$.rich.reaction.messageId') = ${target})`)).all();
+  }
+
   list(chatId: number, lastN = 20, throughId?: number): Message[] {
     return this.db.select().from(messages)
       .where(and(ordinary, eq(messages.chat_id, chatId), eq(messages.archived, false), throughId === undefined ? undefined : lte(messages.id, throughId)))

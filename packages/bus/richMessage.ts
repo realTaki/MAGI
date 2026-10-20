@@ -1,5 +1,6 @@
 /** Ordinary conversation adornments, never structured owner commands. */
 import type { Bus } from './bus.js';
+import { groupPrincipal } from './books/groupBook.js';
 import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from './books/contactBook.js';
 import { messageDelivery } from './jobs/messageDelivery.js';
 import { storeAttachments, attachmentText, readStoredAttachment, type AttachmentInput, type StoredAttachment } from './attachments.js';
@@ -48,12 +49,22 @@ export function applyReaction(bus: Bus, chatId: number, actor: string, reaction:
 }
 export function reactionsFor(bus: Bus, chatId: number, messageId: string | number, self: string) {
   const prefix = `reaction:${chatId}:${encodeURIComponent(String(messageId))}:`;
-  return bus.settings.withPrefix(prefix).flatMap(({ key, value }) => {
-    const reaction = JSON.parse(value) as Reaction;
-    if (reaction.remove) return [];
-    const actor = decodeURIComponent(key.slice(prefix.length).split(':')[0]);
-    return [{ actor, emoji: reaction.emoji, mine: actor === self }];
-  });
+  const latest = new Map<string, { actor: string; reaction: Reaction }>();
+  const consider = (actor: string, reaction: Reaction) => {
+    const key = `${actor}\0${reaction.emoji}`;
+    if (!latest.has(key) || latest.get(key)!.reaction.sequence < reaction.sequence) latest.set(key, { actor, reaction });
+  };
+  for (const { key, value } of bus.settings.withPrefix(prefix)) {
+    consider(decodeURIComponent(key.slice(prefix.length).split(':')[0]), JSON.parse(value) as Reaction);
+  }
+  // The delivery journal is authoritative across the crash window between a
+  // durable message commit and its settings projection (including outgoing ops).
+  for (const message of bus.messages.reactionEvents(chatId, String(messageId))) {
+    const reaction = richMetadata(bus, message.id).reaction;
+    const actor = message.contact_id === MAGI_CONTACT_ID ? groupPrincipal(bus.identity.publicKey) : bus.contacts.get(message.contact_id)?.peer_principal;
+    if (reaction && actor) consider(actor, reaction);
+  }
+  return [...latest.values()].filter(({ reaction }) => !reaction.remove).map(({ actor, reaction }) => ({ actor, emoji: reaction.emoji, mine: actor === self }));
 }
 export function reactToMessage(bus: Bus, chatId: number, actor: string, messageId: string | number, emoji: string, remove = false) {
   const target = findMessage(bus, chatId, messageId);

@@ -11,7 +11,7 @@ card to preview supported images, download the file, or copy its workspace-relat
 path. The limit is eight attachments and 10 MiB total per message.
 
 Image-capable catalog models receive validated PNG/JPEG/GIF/WebP bytes within their
-advertised limits (at most eight images and 10 MiB per request, with a conservative
+advertised byte/count limits (at most eight images and 10 MiB per request, with a conservative
 5 MiB per-image bound). Other files, unsupported images, audio/video, missing files,
 and text-only models retain the path text. A path alone does not mean the provider
 has read or understood that file. Custom endpoints without capability metadata are

@@ -43,11 +43,16 @@ test('group attachments and reactions replicate and survive out-of-order duplica
   const pa=principalFor(a.identity.publicKey), pb=principalFor(b.identity.publicKey);
   const group=a.groups.create({ title:'rich', endpoint:'http://localhost:4001',members:[{principal:pb,endpoint:'http://localhost:4002'}] }); b.groups.offerMembership(a.groups.membership(group.conversation_uuid));
   const event=a.groups.append(group.conversation_uuid,'hello',undefined,undefined,{attachments:[attachment]}); const received=b.groups.ingest(event.event);
+  const colliding = structuredClone(event.event); colliding.publicKey = b.identity.publicKey; colliding.payload.author = pb; colliding.payload.content = 'spoofed same UUID';
+  assert.throws(() => b.groups.ingest(colliding), /reused/);
+  assert.equal(b.messages.list(b.groups.get(group.conversation_uuid)!.chat_id).length, 1);
   const stored=richMetadata(b,received.message_id).attachments![0]; assert.equal(readMessageAttachment(b,b.groups.get(group.conversation_uuid)!.chat_id,received.message_id,stored.id).data_base64,attachment.data_base64);
   const reaction={messageId:event.event.payload.eventId,emoji:'🎉',sequence:2,remove:true};
   const remove=a.groups.append(group.conversation_uuid,'',undefined,undefined,{reaction});
   const add=a.groups.append(group.conversation_uuid,'',undefined,undefined,{reaction:{...reaction,sequence:1,remove:false}});
   b.groups.ingest(remove.event); b.groups.ingest(add.event); b.groups.ingest(add.event);
+  assert.equal(b.groups.history(group.conversation_uuid, 1)[0].payload.eventId, event.event.payload.eventId);
+  assert.equal(b.groups.events(group.conversation_uuid).events.length, 3, 'reaction events remain in replication journal');
   assert.deepEqual(reactionsFor(b,b.groups.get(group.conversation_uuid)!.chat_id,event.event.payload.eventId,pa),[]);
   assert.equal(b.messages.list(b.groups.get(group.conversation_uuid)!.chat_id).length,1);
  } finally {a.close();b.close();rmSync(root,{recursive:true,force:true});}

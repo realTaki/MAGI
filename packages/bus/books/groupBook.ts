@@ -129,7 +129,7 @@ export class GroupBook {
     const member = this.membership(value.conversationUUID, value.epoch).payload.members.find(member => member.principal === signer);
     if (!member) throw new Error("event author was not a member in membership epoch");
     const receipt = transaction(this.db.$client, () => {
-      const prior = this.db.$client.prepare("SELECT envelope, message_id FROM books_group_events WHERE conversation_uuid = ? AND author = ? AND (event_id = ? OR sequence = ?)").get(value.conversationUUID, signer, value.eventId, value.sequence);
+      const prior = this.db.$client.prepare("SELECT envelope, message_id FROM books_group_events WHERE conversation_uuid = ? AND (event_id = ? OR (author = ? AND sequence = ?))").get(value.conversationUUID, value.eventId, signer, value.sequence);
       if (prior) {
         if (digest(JSON.parse(String(prior.envelope))) !== digest(event)) throw new Error("group author equivocation: event ID or sequence reused");
         return { event, duplicate: true, message_id: Number(prior.message_id) };
@@ -170,7 +170,7 @@ export class GroupBook {
   /** Display is deterministic regardless of arrival order. */
   history(uuid: string, limit = 100): GroupEventEnvelope[] {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) throw new Error("invalid group history limit");
-    return this.db.$client.prepare("SELECT envelope FROM (SELECT * FROM books_group_events WHERE conversation_uuid = ? ORDER BY lamport DESC, author DESC, event_id DESC LIMIT ?) ORDER BY lamport, author, event_id").all(uuid, limit).map(row => JSON.parse(String(row.envelope)) as GroupEventEnvelope);
+    return this.db.$client.prepare("SELECT envelope FROM (SELECT * FROM books_group_events WHERE conversation_uuid = ? AND json_extract(envelope, '$.payload.reaction') IS NULL ORDER BY lamport DESC, author DESC, event_id DESC LIMIT ?) ORDER BY lamport, author, event_id").all(uuid, limit).map(row => JSON.parse(String(row.envelope)) as GroupEventEnvelope);
   }
   private envelope<T extends GroupEvent | GroupMembership>(payload: T): { publicKey: string; payload: T } {
     return { publicKey: this.bus.identity.publicKey, payload };

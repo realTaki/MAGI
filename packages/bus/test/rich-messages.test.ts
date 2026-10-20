@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { Bus, chat, messageDelivery, richMetadata, stableMessageId, reactToMessage, reactionsFor, readMessageAttachment, toLLMMessage, MAGI_CONTACT_ID } from '../index.js';
+import { Bus, chat, messageDelivery, richMetadata, stableMessageId, reactToMessage, reactionsFor, readMessageAttachment, toLLMMessage, groupPrincipal, MAGI_CONTACT_ID } from '../index.js';
 const file = { name: '../note.txt', mime_type: 'text/plain', data_base64: Buffer.from('file content').toString('base64') };
 
 test('owner reply and attachments persist, remain scoped, and project native descriptors', () => {
@@ -64,5 +64,24 @@ test('upgraded peers accept an identical pre-rich journal replay but reject new 
     bus.deliveries.persist({ chat_id: room.id, contact_id: contact.id, content: input.content, publisher: 'peer', key: `peer:${input.principal}:${input.messageId}`, metadata: { peer: { messageId: input.messageId, conversationUUID: input.conversationUUID } } });
     assert.equal(messageDelivery.receivePeer(bus, input).duplicate, true);
     assert.throws(() => messageDelivery.receivePeer(bus, { ...input, attachments: [file] }), /reused/);
+  } finally { bus.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
+test('reaction projection recovers journal commits before settings projection across restart', () => {
+  const root = mkdtempSync(join(tmpdir(), 'magi-rich-reaction-crash-')); let bus = new Bus('@rich.magi', root);
+  try {
+    const input = { principal: 'c'.repeat(64), endpoint: 'https://peer.example', conversationUUID: randomUUID(), messageId: randomUUID(), content: 'target' };
+    const target = messageDelivery.receivePeer(bus, input);
+    const contact = bus.contacts.forPeer({ principal: input.principal, endpoint: input.endpoint });
+    const reaction = { messageId: input.messageId, emoji: '👍', remove: false, sequence: 1 };
+    bus.deliveries.persist({ chat_id: target.chat_id, contact_id: contact.id, content: '', publisher: 'peer', enqueue: false, metadata: { rich: { reaction }, peer: { messageId: randomUUID() } } });
+    bus.close(); bus = new Bus('@rich.magi', root);
+    assert.deepEqual(reactionsFor(bus, target.chat_id, input.messageId, input.principal), [{ actor: input.principal, emoji: '👍', mine: true }]);
+    bus.deliveries.persist({ chat_id: target.chat_id, contact_id: contact.id, content: '', publisher: 'peer', enqueue: false, metadata: { rich: { reaction: { ...reaction, remove: true, sequence: 2 } }, peer: { messageId: randomUUID() } } });
+    assert.deepEqual(reactionsFor(bus, target.chat_id, input.messageId, input.principal), []);
+    const self = groupPrincipal(bus.identity.publicKey);
+    messageDelivery.send(bus, target.chat_id, '', MAGI_CONTACT_ID, 'webapp', { rich: { reaction: { ...reaction, emoji: '🔥', sequence: 1 } } });
+    bus.close(); bus = new Bus('@rich.magi', root);
+    assert.deepEqual(reactionsFor(bus, target.chat_id, input.messageId, self), [{ actor: self, emoji: '🔥', mine: true }]);
   } finally { bus.close(); rmSync(root, { recursive: true, force: true }); }
 });
