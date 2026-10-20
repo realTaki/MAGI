@@ -116,6 +116,9 @@ test("private failures and restart notices remain private", async () => {
     const job = messageDelivery.send(magi.bus, innerId, "continue", undefined, "task");
     await until(() => Boolean(magi.bus.board("MessageDeliveryJob").result(job)));
     assert.deepEqual(delivered, []);
+    for (const message of magi.bus.messages.list(innerId).filter(message => message.contact_id === MAGI_CONTACT_ID)) {
+      assert.equal(magi.bus.deliveries.get(message.id), undefined, "private output must not enqueue outward delivery");
+    }
     assert.ok(magi.bus.messages.list(innerId).some(message => message.contact_id === MAGI_CONTACT_ID && message.content === "private failure"));
   } finally { await magi.stop(); }
   const reopened = new Magi("@private-errors.magi", { workspace: path });
@@ -174,5 +177,27 @@ test("private context rolls through compaction without inventing a user particip
     assert.ok(compacted && continued);
     assert.match(magi.bus.chats.get(inner.id)!.summary, /message 42/);
     assert.deepEqual(delivered, []);
+  } finally { await magi.stop(); }
+});
+
+test("ordinary message searches omit private history but preserve shared foreground and raw audit", async () => {
+  const { messageTools } = await import("@magi/built-in-tools/messages.js");
+  const { subconsciousTools } = await import("@magi/agent/subconscious.js");
+  const magi = new Magi("@history-boundary.magi", { workspace: await workspace() });
+  try {
+    const inner = magi.bus.chats.forChannel("subconscious", "self");
+    const foreground = magi.bus.chats.forChannel("cli", "terminal");
+    magi.bus.messages.add(foreground.id, MAGI_CONTACT_ID, "search-token foreground");
+    for (let i = 0; i < 25; i++) magi.bus.messages.add(inner.id, MAGI_CONTACT_ID, "search-token private");
+    const tools = messageTools(magi.bus);
+    const privateResult = JSON.parse(await tools.find(tool => tool.name === "search_chat_messages")!.run({ chat_id: inner.id, query: "search-token" }));
+    assert.deepEqual(privateResult.messages, []);
+    const contactResult = JSON.parse(await tools.find(tool => tool.name === "search_contact_messages")!.run({ contact_id: MAGI_CONTACT_ID, query: "search-token", limit: 1 }));
+    assert.equal(contactResult.messages[0].content, "search-token foreground", "filter before limit, not after");
+    assert.equal(magi.bus.messages.searchChat(inner.id, "search-token").length, 20, "raw audit remains available");
+    magi.bus.deliveries.persist({ chat_id: foreground.id, contact_id: SYSTEM_CONTACT_ID, content: "own internal finding", publisher: "subconscious", enqueue: false });
+    const read = JSON.parse(await subconsciousTools(magi.bus).find(tool => tool.name === "read_conversation")!.run({ chat_id: foreground.id }));
+    assert.equal(read.messages.some((message: { content: string }) => message.content === "own internal finding"), false);
+    assert.equal(read.messages[0].content, "search-token foreground");
   } finally { await magi.stop(); }
 });

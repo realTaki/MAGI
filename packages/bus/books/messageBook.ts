@@ -73,9 +73,9 @@ export class MessageBook {
       .all();
   }
 
-  searchContact(contactId: number, query: string, limit = 20): Message[] {
+  searchContact(contactId: number, query: string, limit = 20, foregroundOnly = false): Message[] {
     return this.db.select().from(messages)
-      .where(and(eq(messages.contact_id, contactId), matches(query)))
+      .where(and(eq(messages.contact_id, contactId), matches(query), foregroundOnly ? sql`${messages.chat_id} IN (SELECT ${chats.id} FROM ${chats} WHERE ${chats.channel} != 'subconscious')` : undefined))
       .orderBy(desc(messages.id))
       .limit(limit)
       .all();

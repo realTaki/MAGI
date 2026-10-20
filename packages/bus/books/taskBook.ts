@@ -26,8 +26,11 @@ export class TaskBook {
   }
   get(id: number): Task | null { return this.db.select().from(tasks).where(eq(tasks.id, id)).get() ?? null; }
   save(input: TaskInput): Task {
+    const old = this.list().find(task => task.name === input.name.trim());
+    if (old && old.chat_id !== input.chat_id) throw new Error("task name already belongs to another conversation; choose a distinct name");
     this.validate(input);
     const fields = { ...input, name: input.name.trim(), prompt: input.prompt.trim(), enabled: input.enabled !== false, run_at: input.run_at ?? null };
+    this.validateRearm(old, fields);
     return this.db.insert(tasks).values(fields).onConflictDoUpdate({ target: tasks.name, set: fields }).returning().get();
   }
   update(id: number, patch: Partial<TaskInput>): Task {
@@ -35,6 +38,7 @@ export class TaskBook {
     if (!old) throw new Error(`unknown task ${id}`);
     const fields = { ...old, ...patch };
     this.validate(fields);
+    this.validateRearm(old, fields);
     return this.db.update(tasks).set({ ...patch, ...(patch.name === undefined ? {} : { name: patch.name.trim() }), ...(patch.prompt === undefined ? {} : { prompt: patch.prompt.trim() }) }).where(eq(tasks.id, id)).returning().get();
   }
   delete(id: number): boolean { return this.db.delete(tasks).where(eq(tasks.id, id)).run().changes > 0; }
@@ -59,6 +63,11 @@ export class TaskBook {
     return transaction(this.db.$client, () => this.claimFire(id, minute) ? persist() : null, "immediate");
   }
   markFired(id: number, minute: string): void { this.db.update(tasks).set({ last_fired_minute: minute }).where(eq(tasks.id, id)).run(); }
+  private validateRearm(old: Task | undefined, next: TaskInput): void {
+    if (old?.run_at && old.last_fired_minute && !old.enabled && next.enabled !== false && next.run_at != null && Date.parse(next.run_at) <= Date.now()) {
+      throw new Error("reschedule a completed one-time task to a future run_at before enabling it");
+    }
+  }
   private validate(input: TaskInput): void {
     if (!input.name.trim() || input.name.length > 120) throw new Error("task name must contain 1..120 characters");
     if (!input.prompt.trim()) throw new Error("task prompt is required");

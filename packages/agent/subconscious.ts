@@ -42,7 +42,7 @@ export function subconsciousTools(bus: Bus): ExecutableTool[] {
         const id = integer(args.chat_id, 0);
         const chat = bus.chats.get(id);
         if (!chat || chat.channel === "subconscious") throw new Error("foreground conversation not found");
-        return JSON.stringify({ chat_id: id, topic: chat.topic, summary: chat.summary, messages: bus.messages.list(id, 40) });
+        return JSON.stringify({ chat_id: id, topic: chat.topic, summary: chat.summary, messages: bus.messages.list(id, 40).filter(message => !messageDelivery.isInternal(bus, message.id)) });
       },
     },
     {

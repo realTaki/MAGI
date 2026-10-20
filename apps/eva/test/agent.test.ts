@@ -279,8 +279,9 @@ describe("local MAGI agent", () => {
     await magi.start();
     const id = await magi.chat("hello");
     expect(magi.bus.board("MessageDeliveryJob").result(id)).toMatchObject({ status: "failed", error: "bad credentials" });
-    await magi.stop();
+    for (let i = 0; i < 200 && !delivered.length; i++) await sleep(10);
     expect(delivered).toEqual(["bad credentials"]);
+    await magi.stop();
   });
 
   test("provider changes are verified before settings become active", async () => {

@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { afterEach, expect, test , sleep} from "./test.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -176,5 +177,41 @@ test("stopped task workers neither fire nor claim tools", async () => {
     const task = magi.bus.tasks.save({ name: "stopped", prompt: "review", cron: "* * * * *", chat_id: chat.id });
     expect(await worker.poll()).toBeFalse();
     expect(magi.bus.tasks.get(task.id)?.last_fired_minute).toBeNull();
+  } finally { await magi.stop(); }
+});
+
+test("task name upserts cannot move another conversation's task", async () => {
+  const { taskTools } = await import("@magi/channel-tasks/tools.js");
+  const workspace = await mkdtemp(join(tmpdir(), "magi-task-name-")); workspaces.push(workspace);
+  const magi = new Magi("@task-name.magi", { workspace });
+  try {
+    const inner = magi.bus.chats.forChannel("subconscious", "self");
+    const peer = magi.bus.chats.forChannel("peer", "test");
+    const task = magi.bus.tasks.save({ name: "Private review", prompt: "original", cron: "17 * * * *", chat_id: inner.id });
+    const tool = taskTools(magi.bus).find(tool => tool.name === "schedule_task")!;
+    await assert.rejects(tool.run({ name: " Private review ", prompt: "replacement", frequency: "hourly", chat_id: peer.id }), /another conversation/);
+    assert.equal(magi.bus.tasks.get(task.id)?.chat_id, inner.id);
+    assert.equal(magi.bus.tasks.get(task.id)?.prompt, "original");
+    // Explicit foreground scheduling into the private conversation remains supported.
+    await tool.run({ name: "Private review", prompt: "intentional update", frequency: "hourly", target: "subconscious" });
+    assert.equal(magi.bus.tasks.get(task.id)?.prompt, "intentional update");
+  } finally { await magi.stop(); }
+});
+
+test("completed one-time tasks require a future reschedule, not a bare re-enable", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "magi-task-rearm-")); workspaces.push(workspace);
+  const magi = new Magi("@task-rearm.magi", { workspace });
+  try {
+    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    const input = { name: "once", prompt: "review", cron: "", run_at: "2020-01-01T00:00:00Z", chat_id: chat.id };
+    const task = magi.bus.tasks.save(input);
+    assert.equal(magi.bus.tasks.claimFire(task.id, "2020-01-01T00:01"), true, "never-fired overdue task can catch up");
+    assert.throws(() => magi.bus.tasks.update(task.id, { enabled: true }), /future run_at/);
+    assert.throws(() => magi.bus.tasks.save(input), /future run_at/);
+    const future = new Date(Date.now() + 3_600_000).toISOString();
+    magi.bus.tasks.update(task.id, { run_at: future });
+    assert.equal(magi.bus.tasks.update(task.id, { enabled: true }).run_at, future);
+    const overdue = magi.bus.tasks.save({ ...input, name: "never fired", enabled: false });
+    assert.equal(magi.bus.tasks.update(overdue.id, { enabled: true }).enabled, true);
   } finally { await magi.stop(); }
 });

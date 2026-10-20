@@ -17,7 +17,7 @@ export function messageTools(bus: Bus): ExecutableTool[] {
         const chatId = integerArg(args, "chat_id");
         const query = stringArg(args, "query");
         const limit = optionalBoundedInteger(args.limit, 20, "limit", 1, 20);
-        return JSON.stringify({ query, chat_id: chatId, messages: bus.messages.searchChat(chatId, query, limit) });
+        return JSON.stringify({ query, chat_id: chatId, messages: bus.chats.get(chatId)?.channel === "subconscious" ? [] : bus.messages.searchChat(chatId, query, limit) });
       },
     },
     {
@@ -29,7 +29,7 @@ export function messageTools(bus: Bus): ExecutableTool[] {
         const contactId = integerArg(args, "contact_id");
         const query = stringArg(args, "query");
         const limit = optionalBoundedInteger(args.limit, 20, "limit", 1, 20);
-        return JSON.stringify({ query, contact_id: contactId, messages: bus.messages.searchContact(contactId, query, limit) });
+        return JSON.stringify({ query, contact_id: contactId, messages: bus.messages.searchContact(contactId, query, limit, true) });
       },
     },
     {
