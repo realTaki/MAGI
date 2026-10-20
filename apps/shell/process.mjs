@@ -155,6 +155,14 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
     }
     const id = existingId ?? String(++seq);
     const isHost = host !== undefined;
+    const ownerHandle = spec.env?.MAGI_HANDLE;
+    const ownerBridge = !isHost
+      && basename(resolve(spec.cwd)) === "eva" && basename(dirname(resolve(spec.cwd))) === "apps"
+      && resolve(spec.cwd, spec.entry) === resolve(spec.cwd, "eva.mjs")
+      && spec.args?.length === 3 && spec.args[0] === "--role" && spec.args[1] === "agent" && spec.args[2] === ownerHandle
+      && /^@[A-Za-z0-9][A-Za-z0-9._-]{0,62}\.magi$/.test(ownerHandle ?? "")
+      && !["@shell.magi", "@asp.magi", "@user.magi"].includes(ownerHandle)
+      && spec.env?.MAGI_HOST === "1" && spec.env?.MAGI_SERVER === "1" && spec.env?.MAGI_ROLE === "agent";
     const dependencies = app ? dependencyState(app.root) : null;
     assertOpen();
     const replaceJob = replaceJobs.get(id);
@@ -169,11 +177,11 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
         ...(replaceJob ? { MAGI_REPLACE_JOB: replaceJob } : {}),
         ...(replaceError ? { MAGI_REPLACE_ERROR: replaceError } : {}),
       },
-      stdio: isHost ? ["pipe", "pipe", "pipe", "ipc"] : ["ignore", "pipe", "pipe", "ipc"],
+      stdio: isHost || ownerBridge ? ["pipe", "pipe", "pipe", "ipc"] : ["ignore", "pipe", "pipe", "ipc"],
       detached: !isHost,
       windowsHide: true,
     });
-    const entry = { child, host: isHost, key, identity, replacing, ready: false, upgrade: null };
+    const entry = { child, host: isHost, ownerBridge, key, identity, replacing, ready: false, upgrade: null };
     children.set(id, entry);
     records.set(id, { spec, host, identity, key, dependencies, exit: null });
     let stderrText = "";
@@ -296,7 +304,7 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
       child.once("spawn", resolve);
       child.once("error", reject);
     });
-    if (!isHost) return { id, whenReady: () => ready };
+    if (!isHost && !ownerBridge) return { id, whenReady: () => ready };
 
     const pending = new Map();
     let rpc = 0;
@@ -310,7 +318,7 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
       for (const waiter of pending.values()) waiter.reject(error);
       pending.clear();
     });
-    hostSend = send;
+    if (isHost) hostSend = send;
 
     const lines = createInterface({ input: child.stdout });
     lines.on("line", (line) => {
@@ -340,7 +348,13 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
       void (async () => {
         try {
           let result;
-          if (message.method === "spawn") result = await start(message.params);
+          if (!isHost) throw new Error("Managed EVA cannot invoke desktop host methods");
+          if (message.method === "process.invoke") {
+            const target = children.get(message.params?.id);
+            if (!target?.ownerBridge || target.stopping || !target.ready || typeof target.invokeOwner !== "function") throw new Error("Owned EVA process is unavailable");
+            if (!["owner.chat", "owner.events", "owner.profile"].includes(message.params?.method)) throw new Error("Owner method is not allowed");
+            result = await target.invokeOwner(message.params.method, message.params.params);
+          } else if (message.method === "spawn") result = await start(message.params);
           else if (message.method === "processes") result = snapshots();
           else if (message.method === "stop") {
             stop(message.params?.id);
@@ -369,15 +383,23 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
       pending.clear();
     });
 
-    return {
+    const handle = {
       id,
       whenReady: () => ready,
       invoke(method, params) {
         if (exited || child.stdin.destroyed) return Promise.reject(new Error("Shell process exited"));
         const reqId = String(++rpc);
         return new Promise((resolve, reject) => {
-          pending.set(reqId, { resolve, reject });
-          send({ type: "req", id: reqId, method, params });
+          const timer = ownerBridge ? setTimeout(() => {
+            pending.delete(reqId);
+            reject(new Error("Owned EVA request timed out"));
+          }, readyTimeoutMs) : undefined;
+          pending.set(reqId, {
+            resolve: (value) => { clearTimeout(timer); resolve(value); },
+            reject: (error) => { clearTimeout(timer); reject(error); },
+          });
+          try { send({ type: "req", id: reqId, method, params }); }
+          catch (error) { pending.get(reqId)?.reject(error); pending.delete(reqId); }
         });
       },
       on(event, cb) {
@@ -389,6 +411,8 @@ export function createSupervisor({ node, env, spawnProcess = spawn, owner = crea
         stop(id);
       },
     };
+    if (ownerBridge) entry.invokeOwner = (method, params) => handle.invoke(method, params);
+    return handle;
   }
 
   function snapshots() {
