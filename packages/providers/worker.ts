@@ -1,6 +1,6 @@
 import { abortable } from "@magi/bus/abort.js";
 import { providerFailure } from "@magi/bus/jobs/providerFailure.js";
-import { authorizeToolCall, BaseWorker, waitForJob, type CallLLMJob, type ExecutableTool } from "@magi/bus";
+import { BaseWorker, waitForJob, type CallLLMJob, type ExecutableTool } from "@magi/bus";
 import type { Bus } from "@magi/bus";
 import { PiAiClient, type LLMClient, type ProviderSettings } from "./client.js";
 import { providerTools } from "./tools.js";
@@ -67,7 +67,6 @@ export class ProvidersWorker extends BaseWorker {
     if (!job) return false;
     const tool = this.own.find((candidate) => candidate.name === job.input.call.name);
     try {
-      authorizeToolCall(this.bus, job.input);
       if (!tool) throw new Error(`unknown tool ${job.input.call.name}`);
       board.submit(this.worker_name, job.id, { output: { content: await tool.run(job.input.call.arguments) } });
     } catch (error) {

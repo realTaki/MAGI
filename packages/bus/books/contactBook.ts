@@ -38,19 +38,16 @@ export class ContactBook {
     return this.db.select().from(contacts).orderBy(contacts.id).all();
   }
 
-  /** Identity is the verified signing-key fingerprint, never an advertised name. */
+  /** Stable peer labels and routes on the trusted private network; no authentication. */
   forPeer(input: { principal: string; endpoint: string; name?: string }): Contact {
     const principal = validatePeerPrincipal(input.principal);
     const endpoint = validatePeerEndpoint(input.endpoint);
     const known = this.db.select().from(contacts).where(eq(contacts.peer_id, principal)).get();
     if (known) {
-      if (known.peer_principal !== principal) throw new Error("peer identity mismatch");
-      if (known.peer_trust === "blocked") throw new Error("peer is blocked");
-      if (known.peer_url !== endpoint) throw new Error("peer endpoint changed; local approval required");
-      return this.seen(known);
+      return this.db.update(contacts).set({ peer_principal: principal, peer_url: endpoint, peer_trust: "accepted", last_seen_at: sql`(CURRENT_TIMESTAMP)` }).where(eq(contacts.id, known.id)).returning().get();
     }
     return this.db.insert(contacts).values({ name: `peer:${principal}`, nickname: input.name?.trim() || null,
-      role: "stranger", peer_id: principal, peer_principal: principal, peer_url: endpoint, peer_trust: "pending" }).returning().get();
+      role: "stranger", peer_id: principal, peer_principal: principal, peer_url: endpoint, peer_trust: "accepted" }).returning().get();
   }
 
   acceptPeer(id: number, endpoint?: string): Contact {
@@ -132,8 +129,7 @@ export class ContactBook {
 /** No credentials or query tokens may become a persisted route. Redirects are forbidden by transport. */
 export function validatePeerEndpoint(value: string): string {
   const url = new URL(value);
-  const loopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]";
-  if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) throw new Error("peer URL requires HTTPS or loopback HTTP");
+  if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("peer URL requires HTTP or HTTPS");
   if ((url.pathname !== "/" && url.pathname !== "") || url.username || url.password || url.search || url.hash) throw new Error("peer URL cannot contain credentials, query, or fragment");
   return url.href.replace(/\/$/, "");
 }

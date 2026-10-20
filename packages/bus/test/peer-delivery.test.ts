@@ -17,18 +17,18 @@ function fixture() {
 }
 const incoming = () => ({ principal, endpoint: "http://127.0.0.1:43210", conversationUUID: randomUUID(), messageId: randomUUID(), content: "hello" });
 
-test("hello pins identity as pending stranger; endpoint and owner claims do not grant trust", () => {
+test("trusted-LAN hello records a stable identity label and directly usable HTTP route", () => {
   const f = fixture();
   try {
     const peer = f.bus.contacts.forPeer({ principal, endpoint: "https://peer.example", name: "@user.magi" });
     assert.notEqual(peer.id, SYSTEM_CONTACT_ID);
-    assert.equal(peer.role, "stranger"); assert.equal(peer.peer_trust, "pending");
+    assert.equal(peer.role, "stranger"); assert.equal(peer.peer_trust, "accepted");
     assert.equal(f.bus.contacts.acceptPeer(peer.id).peer_trust, "accepted");
-    assert.throws(() => f.bus.contacts.forPeer({ principal, endpoint: "https://evil.example" }), /endpoint changed/);
-    f.bus.contacts.blockPeer(peer.id);
-    assert.throws(() => f.bus.contacts.forPeer({ principal, endpoint: "https://peer.example" }), /blocked/);
+    const moved = f.bus.contacts.forPeer({ principal, endpoint: "http://192.168.1.8:8080" });
+    assert.equal(moved.id, peer.id);
+    assert.equal(moved.peer_url, "http://192.168.1.8:8080");
     assert.throws(() => validatePeerEndpoint("https://user:secret@example.com"), /credentials/);
-    assert.throws(() => validatePeerEndpoint("http://example.com"), /HTTPS/);
+    assert.equal(validatePeerEndpoint("http://eva.internal:8080"), "http://eva.internal:8080");
   } finally { f.clean(); }
 });
 

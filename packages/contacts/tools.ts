@@ -1,6 +1,6 @@
 /** Contacts and the notes attached to them. */
 
-import { ownerOnlyTool, peerToolPolicyKey, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, messageDelivery, type Bus, type ContactRole, type ExecutableTool, type NoteKind } from "@magi/bus";
+import { MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, messageDelivery, type Bus, type ContactRole, type ExecutableTool, type NoteKind } from "@magi/bus";
 
 /** Local on purpose: this package must not depend on the tools package. */
 function stringArg(args: Record<string, unknown>, key: string): string {
@@ -46,52 +46,28 @@ export type ContactToolContext = { chat_id?: number; message_id?: number };
 export function contactTools(bus: Bus, context?: ContactToolContext): ExecutableTool[] {
   return [
     {
-      name: "list_group_conversations", description: "List local groups and pending invitations without accepting or sharing anything.",
+      name: "list_group_conversations", description: "List local group conversations.",
       input_schema: { type: "object", properties: {}, additionalProperties: false },
       async run() { return JSON.stringify({ groups: bus.groups.list() }); },
     },
     {
-      name: "accept_group_invitation", description: "Accept a group invitation only when the local owner explicitly approves joining and sharing future group messages with its listed members.",
+      name: "accept_group_invitation", description: "Save a local group conversation. Membership controls replication routing, not access authorization.",
       input_schema: { type: "object", properties: { conversation_uuid: { type: "string" } }, required: ["conversation_uuid"], additionalProperties: false },
-      async run(args) { requireOwner(bus, context); return JSON.stringify({ accepted: bus.groups.accept(stringArg(args, "conversation_uuid")) }); },
+      async run(args) { return JSON.stringify({ accepted: bus.groups.accept(stringArg(args, "conversation_uuid")) }); },
     },
     {
-      name: "set_peer_tool_policy", description: "Set exact tool names the local owner delegates to an accepted peer. Grants apply to the tool's full capability; no wildcards. Raw shell, filesystem writes and powerful MCP tools grant broad trusted-code access to the workspace, including its databases and secrets: this is not sandbox isolation. Direct provider/configuration/admin and cross-chat messaging tools remain owner-only. Only the local owner may grant or revoke these capabilities.",
-      input_schema: { type: "object", properties: { contact_id: { type: "integer" }, tools: { type: "array", items: { type: "string" }, maxItems: 64 } }, required: ["contact_id", "tools"], additionalProperties: false },
-      async run(args) {
-        requireOwner(bus, context);
-        const contact = bus.contacts.get(integerArg(args, "contact_id"));
-        if (!contact?.peer_principal || contact.peer_trust !== "accepted") throw new Error("capabilities require an accepted peer");
-        if (!Array.isArray(args.tools) || args.tools.length > 64 || !args.tools.every(name => typeof name === "string" && /^[a-zA-Z0-9_-]{1,160}$/.test(name) && !ownerOnlyTool(name))) throw new Error("tools must be exact non-administrative tool names");
-        bus.settings.set(peerToolPolicyKey(contact.peer_principal), JSON.stringify([...new Set(args.tools)]));
-        return JSON.stringify({ contact_id: contact.id, tools: [...new Set(args.tools)] });
-      },
-    },
-    {
-      name: "set_peer_contact_policy", description: "Set the local owner's peer acceptance policy. owner-only requires owner approval for each contact; agent-message-only allows this EVA to decide whether to accept a verified hello for ordinary messages, without granting privileged access. Only an owner-authored turn may change this.",
-      input_schema: { type: "object", properties: { policy: { type: "string", enum: ["owner-only", "agent-message-only"] } }, required: ["policy"], additionalProperties: false },
-      async run(args) {
-        requireOwner(bus, context);
-        if (args.policy !== "owner-only" && args.policy !== "agent-message-only") throw new Error("invalid peer contact policy");
-        bus.settings.set("peer.contact_policy", args.policy);
-        return JSON.stringify({ policy: args.policy });
-      },
-    },
-    {
-      name: "accept_peer_contact", description: "Accept a pending EVA peer for messages only. Requires the local owner, or the owner-configured agent-message-only policy and this verified peer as the triggering sender. Never grants owner, provider, or management access.",
+      name: "accept_peer_contact", description: "Save or update an EVA contact and its address on the trusted private network.",
       input_schema: { type: "object", properties: { contact_id: { type: "integer" }, endpoint: { type: "string" } }, required: ["contact_id"], additionalProperties: false },
       async run(args) {
         const contactId = integerArg(args, "contact_id");
-        requirePeerAcceptance(bus, context, contactId, args.endpoint);
         if (args.endpoint !== undefined && typeof args.endpoint !== "string") throw new Error("endpoint must be a string");
         return JSON.stringify({ accepted: bus.contacts.acceptPeer(contactId, args.endpoint as string | undefined) });
       },
     },
     {
-      name: "block_peer_contact", description: "Block an EVA peer when the local owner asks.",
+      name: "block_peer_contact", description: "Mark an EVA contact as blocked in the local contact book. This is not a network access-control boundary.",
       input_schema: { type: "object", properties: { contact_id: { type: "integer" } }, required: ["contact_id"], additionalProperties: false },
       async run(args) {
-        requireOwner(bus, context);
         return JSON.stringify({ blocked: bus.contacts.blockPeer(integerArg(args, "contact_id")) });
       },
     },
@@ -195,20 +171,4 @@ export function contactTools(bus: Bus, context?: ContactToolContext): Executable
       },
     },
   ];
-}
-
-function requireOwner(bus: Bus, context?: ContactToolContext): void {
-  const message = context?.message_id === undefined ? undefined : bus.messages.get(context.message_id);
-  if (!message || message.chat_id !== context?.chat_id || message.contact_id !== SYSTEM_CONTACT_ID) throw new Error("peer contact changes require an owner-authored triggering message in this chat");
-}
-
-function requirePeerAcceptance(bus: Bus, context: ContactToolContext | undefined, contactId: number, endpoint: unknown): void {
-  const message = context?.message_id === undefined ? undefined : bus.messages.get(context.message_id);
-  if (message && message.chat_id === context?.chat_id && message.contact_id === SYSTEM_CONTACT_ID) return;
-  const contact = bus.contacts.get(contactId);
-  const chat = context?.chat_id === undefined ? null : bus.chats.get(context.chat_id);
-  const delivery = message ? bus.deliveries.get(message.id) : undefined;
-  if (bus.settings.get("peer.contact_policy") !== "agent-message-only" || !message || message.contact_id !== contactId || message.chat_id !== context?.chat_id || chat?.channel !== "peer" || chat.peer_id !== contact?.peer_principal || contact?.peer_trust !== "pending" || !delivery?.delivery_key.startsWith(`peer:${contact.peer_principal}:`) || endpoint !== undefined) {
-    throw new Error("peer acceptance requires an owner-authored message or owner-configured policy for this verified pending sender; endpoint changes always require owner approval");
-  }
 }

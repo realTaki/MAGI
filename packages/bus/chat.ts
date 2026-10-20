@@ -41,7 +41,7 @@ export function chat(bus: Bus, chat_id: number, contact_id: number, input: ChatI
   const contact = validateChatInput(bus, chat_id, contact_id, input);
   if (peer) {
     const target = bus.chats.get(chat_id)!;
-    if (input.metadata || contact.peer_principal !== peer.principal || target.peer_id !== peer.principal || target.conversation_uuid !== peer.conversationUUID || contact.peer_trust === "blocked") throw new Error("invalid authenticated peer context");
+    if (input.metadata || contact.peer_principal !== peer.principal || target.peer_id !== peer.principal || target.conversation_uuid !== peer.conversationUUID) throw new Error("invalid peer conversation context");
     const metadata = { peer: { messageId: peer.messageId, conversationUUID: peer.conversationUUID, ...(peer.replyTo ? { replyTo: peer.replyTo } : {}) } };
     const stored = bus.deliveries.persist({ chat_id, contact_id, content: input.content, publisher, key: `peer:${peer.principal}:${peer.messageId}`, metadata, enqueue: !peer.replyTo });
     return { message_id: stored.delivery.message_id, job_id: bus.deliveries.enqueue(bus, stored.delivery), duplicate: stored.duplicate, chat_id };

@@ -1,7 +1,7 @@
-/** Immutable signed group history. Replication unions events, never overwrites messages.
- * Membership is a signed, creator-owned linear chain, not a distributed consensus claim.
+/** Immutable group history on a trusted private network. Replication unions events, never overwrites messages.
+ * Membership is a creator-sequenced routing log, not authentication or consensus.
  */
-import { constants, createHash, createPublicKey, randomUUID, sign, verify } from "node:crypto";
+import { createHash, createPublicKey, randomUUID } from "node:crypto";
 import { validateChatInput } from "../chat.js";
 import type { Bus } from "../bus.js";
 import type { BusDb } from "../drizzle/database.js";
@@ -11,25 +11,23 @@ import { MAGI_CONTACT_ID, validatePeerEndpoint, validatePeerPrincipal } from "./
 export type GroupMember = { principal: string; endpoint: string };
 export type GroupMembership = { v: 1; kind: "membership"; conversationUUID: string; owner: string; epoch: number; previousDigest: string | null; title: string; members: GroupMember[] };
 export type GroupEvent = { v: 1; kind: "message"; conversationUUID: string; eventId: string; author: string; sequence: number; lamport: number; epoch: number; content: string; replyTo?: string };
-export type SignedGroupMembership = { publicKey: string; payload: GroupMembership; signature: string };
-export type SignedGroupEvent = { publicKey: string; payload: GroupEvent; signature: string };
+export type SignedGroupMembership = { publicKey: string; payload: GroupMembership; signature?: string };
+export type SignedGroupEvent = { publicKey: string; payload: GroupEvent; signature?: string };
 export type Group = { conversation_uuid: string; owner: string; title: string; epoch: number; trust: "pending" | "accepted"; chat_id: number };
 export type GroupReceipt = { event: SignedGroupEvent; message_id: number; job_id: number | null; duplicate: boolean };
-const DOMAIN = "MAGI group immutable event v1\n";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function groupPrincipal(publicKey: string): string {
   const key = createPublicKey(publicKey);
-  if (key.asymmetricKeyType !== "rsa" || (key.asymmetricKeyDetails?.modulusLength ?? 0) < 2048) throw new Error("invalid group signing key");
+  if (key.asymmetricKeyType !== "rsa" || (key.asymmetricKeyDetails?.modulusLength ?? 0) < 2048) throw new Error("invalid group identity key");
   return createHash("sha256").update(key.export({ type: "spki", format: "der" })).digest("hex");
 }
 function digest(value: unknown): string { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
 function object(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === "object" && !Array.isArray(value); }
 function checkEnvelope(value: unknown): string {
-  if (!object(value) || typeof value.publicKey !== "string" || value.publicKey.length > 8192 || typeof value.signature !== "string" || value.signature.length > 2048 || !object(value.payload) || JSON.stringify(value.payload).length > 48_000) throw new Error("invalid signed group envelope");
-  const principal = groupPrincipal(value.publicKey);
-  if (!verify("sha256", Buffer.from(DOMAIN + JSON.stringify(value.payload)), { key: value.publicKey, padding: constants.RSA_PKCS1_PSS_PADDING, saltLength: 32 }, Buffer.from(value.signature, "base64"))) throw new Error("invalid group signature");
-  return principal;
+  if (!object(value) || typeof value.publicKey !== "string" || value.publicKey.length > 8192 || !object(value.payload) || JSON.stringify(value.payload).length > 48_000) throw new Error("invalid group envelope");
+  // The public key supplies a stable label, not proof of the remote process.
+  return groupPrincipal(value.publicKey);
 }
 function checkMembers(value: unknown): asserts value is GroupMember[] {
   if (!Array.isArray(value) || value.length < 1 || value.length > 64) throw new Error("groups require 1 to 64 explicit members");
@@ -61,19 +59,19 @@ export class GroupBook {
     const owner = groupPrincipal(this.bus.identity.publicKey);
     const endpoint = validatePeerEndpoint(input.endpoint ?? this.bus.settings.get("peer.url") ?? this.bus.settings.get("peer.reachableURL") ?? "");
     const members = [{ principal: owner, endpoint }, ...input.members.filter(member => member.principal !== owner)];
-    checkMembers(members); this.requireAcceptedRoutes(members, owner);
-    const snapshot = this.signed({ v: 1, kind: "membership", conversationUUID: randomUUID(), owner, epoch: 1, previousDigest: null, title: input.title, members });
+    checkMembers(members);
+    const snapshot = this.envelope({ v: 1, kind: "membership", conversationUUID: randomUUID(), owner, epoch: 1, previousDigest: null, title: input.title, members });
     const group = this.offerMembership(snapshot); return this.accept(group.conversation_uuid);
   }
   updateMembers(uuid: string, members: GroupMember[]): SignedGroupMembership {
     const group = this.get(uuid); const owner = groupPrincipal(this.bus.identity.publicKey);
-    if (!group || group.owner !== owner || group.trust !== "accepted") throw new Error("only group creator may change membership");
-    checkMembers(members); this.requireAcceptedRoutes(members, owner);
+    if (!group || group.owner !== owner) throw new Error("only group creator may change membership");
+    checkMembers(members);
     if (!members.some(member => member.principal === owner)) throw new Error("group creator must remain a member");
-    const snapshot = this.signed({ ...this.membership(uuid).payload, epoch: group.epoch + 1, previousDigest: digest(this.membership(uuid)), members });
+    const snapshot = this.envelope({ ...this.membership(uuid).payload, epoch: group.epoch + 1, previousDigest: digest(this.membership(uuid)), members });
     this.offerMembership(snapshot); return snapshot;
   }
-  /** Receiving a valid invitation never auto-accepts a group or trusts its members. */
+  /** Import membership directly; all participating processes share the trusted LAN. */
   offerMembership(envelope: SignedGroupMembership): Group {
     const signer = checkEnvelope(envelope); const value = envelope.payload;
     if (value.v !== 1 || value.kind !== "membership" || !UUID.test(value.conversationUUID) || value.owner !== signer || !Number.isSafeInteger(value.epoch) || value.epoch < 1 || typeof value.title !== "string" || value.title.length > 200) throw new Error("invalid group membership");
@@ -92,10 +90,8 @@ export class GroupBook {
         if (value.epoch !== 1 || value.previousDigest !== null) throw new Error("initial membership must be epoch one");
         const self = groupPrincipal(this.bus.identity.publicKey);
         if (!value.members.some(member => member.principal === self)) throw new Error("not invited to group");
-        const contact = this.bus.contacts.list().find(contact => contact.peer_id === signer);
-        if (signer !== self && contact?.peer_trust !== "accepted") throw new Error("group creator must be an accepted peer");
         const chat = this.bus.chats.forChannel("group", value.conversationUUID);
-        this.db.$client.prepare("INSERT INTO books_groups(conversation_uuid, owner, title, epoch, trust, chat_id) VALUES(?, ?, ?, ?, 'pending', ?)").run(value.conversationUUID, signer, value.title, value.epoch, chat.id);
+        this.db.$client.prepare("INSERT INTO books_groups(conversation_uuid, owner, title, epoch, trust, chat_id) VALUES(?, ?, ?, ?, 'accepted', ?)").run(value.conversationUUID, signer, value.title, value.epoch, chat.id);
       }
       this.db.$client.prepare("INSERT INTO books_group_memberships(conversation_uuid, epoch, envelope) VALUES(?, ?, ?)").run(value.conversationUUID, value.epoch, JSON.stringify(envelope));
       this.db.$client.prepare("UPDATE books_groups SET title = ?, epoch = ? WHERE conversation_uuid = ?").run(value.title, value.epoch, value.conversationUUID);
@@ -108,19 +104,19 @@ export class GroupBook {
     this.db.$client.prepare("UPDATE books_groups SET trust = 'accepted' WHERE conversation_uuid = ?").run(uuid);
     return this.get(uuid)!;
   }
-  /** Current membership gates sync/read access; historical membership validates historical events. */
+  /** Membership selects replication recipients; it is not an authorization check. */
   allows(uuid: string, principal: string): boolean {
-    const group = this.get(uuid); if (!group || group.trust !== "accepted") return false;
+    const group = this.get(uuid); if (!group) return false;
     const members = this.membership(uuid).payload.members;
     return members.some(member => member.principal === principal) && members.some(member => member.principal === groupPrincipal(this.bus.identity.publicKey));
   }
   append(uuid: string, content: string, replyTo?: string): GroupReceipt {
     const author = groupPrincipal(this.bus.identity.publicKey);
-    if (!this.allows(uuid, author)) throw new Error("group is not accepted or local member was removed");
+    if (!this.allows(uuid, author)) throw new Error("local process is not a current group member");
     {
       const sequence = Number(this.db.$client.prepare("SELECT COALESCE(MAX(sequence), 0) + 1 AS n FROM books_group_events WHERE conversation_uuid = ? AND author = ?").get(uuid, author)!.n);
       const lamport = Number(this.db.$client.prepare("SELECT COALESCE(MAX(lamport), 0) + 1 AS n FROM books_group_events WHERE conversation_uuid = ?").get(uuid)!.n);
-      const event = this.signed({ v: 1, kind: "message", conversationUUID: uuid, eventId: randomUUID(), author, sequence, lamport, epoch: this.get(uuid)!.epoch, content, ...(replyTo ? { replyTo } : {}) });
+      const event = this.envelope({ v: 1, kind: "message", conversationUUID: uuid, eventId: randomUUID(), author, sequence, lamport, epoch: this.get(uuid)!.epoch, content, ...(replyTo ? { replyTo } : {}) });
       return this.ingest(event);
     }
   }
@@ -129,9 +125,9 @@ export class GroupBook {
     if (value.v !== 1 || value.kind !== "message" || value.author !== signer || !UUID.test(value.conversationUUID) || !UUID.test(value.eventId) || !Number.isSafeInteger(value.sequence) || value.sequence < 1 || !Number.isSafeInteger(value.lamport) || value.lamport < 1 || !Number.isSafeInteger(value.epoch) || value.epoch < 1 || typeof value.content !== "string" || value.content.length > 32000 || (value.replyTo !== undefined && (typeof value.replyTo !== "string" || !UUID.test(value.replyTo)))) throw new Error("invalid group event");
     const group = this.get(value.conversationUUID);
     const self = groupPrincipal(this.bus.identity.publicKey);
-    if (!group || group.trust !== "accepted" || !this.allows(value.conversationUUID, self)) throw new Error("group is not accepted");
+    if (!group || !this.allows(value.conversationUUID, self)) throw new Error("local process is not a current group member");
     const member = this.membership(value.conversationUUID, value.epoch).payload.members.find(member => member.principal === signer);
-    if (!member) throw new Error("event author was not a member in signed epoch");
+    if (!member) throw new Error("event author was not a member in membership epoch");
     const receipt = transaction(this.db.$client, () => {
       const prior = this.db.$client.prepare("SELECT envelope, message_id FROM books_group_events WHERE conversation_uuid = ? AND author = ? AND (event_id = ? OR sequence = ?)").get(value.conversationUUID, signer, value.eventId, value.sequence);
       if (prior) {
@@ -142,7 +138,6 @@ export class GroupBook {
       // Historical membership endpoints are not routing updates. A peer can move
       // after composing an event; use its pinned identity without reverting its URL.
       const known = this.bus.contacts.list().find(contact => contact.peer_id === signer);
-      if (known?.peer_trust === "blocked") throw new Error("event author is locally blocked");
       const contact = local ? this.bus.contacts.get(MAGI_CONTACT_ID)! : known ?? this.bus.contacts.forPeer({ principal: signer, endpoint: member.endpoint });
       if (!local && contact.peer_principal !== signer) throw new Error("event author identity mismatch");
       validateChatInput(this.bus, group.chat_id, contact.id, { content: value.content }, local);
@@ -170,14 +165,7 @@ export class GroupBook {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) throw new Error("invalid group history limit");
     return this.db.$client.prepare("SELECT envelope FROM (SELECT * FROM books_group_events WHERE conversation_uuid = ? ORDER BY lamport DESC, author DESC, event_id DESC LIMIT ?) ORDER BY lamport, author, event_id").all(uuid, limit).map(row => JSON.parse(String(row.envelope)) as SignedGroupEvent);
   }
-  private signed<T extends GroupEvent | GroupMembership>(payload: T): { publicKey: string; payload: T; signature: string } {
-    return { publicKey: this.bus.identity.publicKey, payload, signature: sign("sha256", Buffer.from(DOMAIN + JSON.stringify(payload)), { key: this.bus.identity.privateKey, padding: constants.RSA_PKCS1_PSS_PADDING, saltLength: 32 }).toString("base64") };
-  }
-  private requireAcceptedRoutes(members: GroupMember[], owner: string): void {
-    for (const member of members) {
-      if (member.principal === owner) continue;
-      const contact = this.bus.contacts.list().find(contact => contact.peer_id === member.principal);
-      if (contact?.peer_trust !== "accepted" || contact.peer_url !== validatePeerEndpoint(member.endpoint)) throw new Error("group members require explicitly accepted peer routes");
-    }
+  private envelope<T extends GroupEvent | GroupMembership>(payload: T): { publicKey: string; payload: T; signature?: string } {
+    return { publicKey: this.bus.identity.publicKey, payload };
   }
 }

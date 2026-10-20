@@ -30,7 +30,7 @@ test("three peers converge after offline, reorder, duplicate and gapped sequence
   const f = cluster(); const [a, b, c] = f.buses;
   try {
     const group = a.groups.create({ title: "Explicit group", members: f.peers.slice(1) }); const uuid = group.conversation_uuid;
-    for (const peer of [b, c]) { assert.equal(peer.groups.offerMembership(a.groups.membership(uuid)).trust, "pending"); peer.groups.accept(uuid); }
+    for (const peer of [b, c]) { assert.equal(peer.groups.offerMembership(a.groups.membership(uuid)).trust, "accepted"); peer.groups.accept(uuid); }
     const a1 = a.groups.append(uuid, "A one").event, a2 = a.groups.append(uuid, "A two").event;
     b.groups.ingest(a2); b.groups.ingest(a2); // seq 2 arrives before seq 1; a high-water cursor would lose it.
     b.groups.append(uuid, "B concurrent"); c.groups.append(uuid, "C offline");
@@ -46,26 +46,26 @@ test("three peers converge after offline, reorder, duplicate and gapped sequence
   } finally { f.clean(); }
 });
 
-test("membership is explicit, signed, versioned and creator-controlled; removed peer cannot sync", () => {
+test("membership epochs preserve routing order and removed participants leave the sync set", () => {
   const f = cluster(); const [a, b, c] = f.buses;
   try {
     const group = a.groups.create({ title: "Members", members: f.peers.slice(1) }); const uuid = group.conversation_uuid;
     const invitation = a.groups.membership(uuid); b.groups.offerMembership(invitation);
     const event = a.groups.append(uuid, "private group message").event;
-    assert.throws(() => b.groups.ingest(event), /not accepted/);
+    assert.equal(b.groups.ingest(event).duplicate, false);
     b.groups.accept(uuid); c.groups.offerMembership(invitation); c.groups.accept(uuid);
     assert.throws(() => b.groups.updateMembers(uuid, f.peers.slice(0, 2)), /creator/);
     const forged = structuredClone(invitation); forged.payload.members = f.peers.slice(0, 2); forged.payload.epoch = 2;
-    assert.throws(() => b.groups.offerMembership(forged), /signature/);
+    assert.throws(() => b.groups.offerMembership(forged), /gap or conflict/);
     const epoch2 = a.groups.updateMembers(uuid, f.peers.slice(0, 2)); b.groups.offerMembership(epoch2); c.groups.offerMembership(epoch2);
     assert.equal(a.groups.allows(uuid, f.peers[2].principal), false);
     assert.equal(c.groups.allows(uuid, f.peers[2].principal), false);
-    assert.throws(() => c.groups.append(uuid, "removed"), /removed/);
-    assert.equal(b.groups.ingest(event).duplicate, false); // Historical signed epochs remain readable.
+    assert.throws(() => c.groups.append(uuid, "removed"), /current group member/);
+    assert.equal(b.groups.ingest(event).duplicate, true); // Historical epochs remain readable.
   } finally { f.clean(); }
 });
 
-test("forwarded original author is retained and tampering is rejected; replies do not spawn turns", () => {
+test("forwarded original author is retained and conflicting duplicate content is rejected", () => {
   const f = cluster(); const [a, b] = f.buses;
   try {
     const group = a.groups.create({ title: "Signed", members: f.peers.slice(1) }); const uuid = group.conversation_uuid;
@@ -74,7 +74,7 @@ test("forwarded original author is retained and tampering is rejected; replies d
     const answer = b.groups.append(uuid, "reply", request.event.payload.eventId);
     const receipt = a.groups.ingest(answer.event); assert.equal(receipt.job_id, null);
     const forged = structuredClone(answer.event) as SignedGroupEvent; forged.payload.content = "forged";
-    assert.throws(() => a.groups.ingest(forged), /signature/);
+    assert.throws(() => a.groups.ingest(forged), /reused/);
     assert.equal(a.groups.history(uuid).at(-1)?.payload.author, f.peers[1].principal);
   } finally { f.clean(); }
 });

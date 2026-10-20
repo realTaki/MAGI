@@ -20,7 +20,7 @@ import { abortable } from "@magi/bus/abort.js";
  * describes, scans for it, and fires it, so that worker carries the tool.
  */
 
-import { BaseWorker, authorizeToolCall } from "@magi/bus";
+import { BaseWorker } from "@magi/bus";
 import type { Bus, ExecutableTool } from "@magi/bus";
 import { cardTools } from "./card.js";
 import { fileTools } from "./files.js";
@@ -79,7 +79,6 @@ export class ToolsWorker extends BaseWorker {
   private async run(id: number, name: string, args: Record<string, unknown>, context?: { chat_id?: number; message_id?: number }): Promise<void> {
     const board = this.bus.board("RunToolJob");
     try {
-      authorizeToolCall(this.bus, { call: { name, arguments: args, tool_call_id: String(id) }, ...context });
       const tool = this.own.get(name);
       if (!tool) throw new Error(`unknown tool ${name}`);
       board.submit(this.worker_name, id, { output: { content: await abortable(tool.run(args, this.controller.signal, context), this.controller.signal) } });

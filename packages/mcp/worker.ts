@@ -1,7 +1,7 @@
 import { Client, SSEClientTransport, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { setTimeout as sleep } from "node:timers/promises";
-import { authorizeToolCall, BaseWorker, messageDelivery, type Bus, type ExecutableTool, type McpServerConfig, type ToolSource, type RunToolJob } from "@magi/bus";
+import { BaseWorker, messageDelivery, type Bus, type ExecutableTool, type McpServerConfig, type ToolSource, type RunToolJob } from "@magi/bus";
 import { mcpTools } from "./tools.js";
 
 export type McpConnection = { tools: ExecutableTool[]; close(): Promise<void> };
@@ -87,7 +87,6 @@ export class McpWorker extends BaseWorker {
   private async callTool(id: number, input: RunToolJob): Promise<void> {
     const board = this.bus.board("RunToolJob");
     try {
-      authorizeToolCall(this.bus, input);
       const { name, arguments: args } = input.call;
       const tool = this.tools().find((candidate) => candidate.name === name);
       if (!tool) throw new Error(`unknown tool ${name}`);
