@@ -50,7 +50,7 @@ export class PeerWorker extends BaseWorker {
       const message = this.bus.messages.get(job.input.message_id);
       const chat = message && this.bus.chats.get(message.chat_id);
       if (chat?.channel === "group") {
-        const event = (job.input.metadata?.group as { event?: import("@magi/bus/books/groupBook.js").SignedGroupEvent } | undefined)?.event;
+        const event = (job.input.metadata?.group as { event?: import("@magi/bus/books/groupBook.js").GroupEventEnvelope } | undefined)?.event;
         if (!event) throw new PeerError("group delivery has no event");
         await this.groups.deliver(event);
         board.submit(this.worker_name, job.id, { output: {} });

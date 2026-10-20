@@ -109,7 +109,7 @@ test("Local owner adapter exposes sealed provider chat without granting peer own
   assert.equal("owner.stop" in api, false);
 });
 
-test("Group UI lists signed membership and uses deterministic event identities", async t => {
+test("Group UI lists membership and uses deterministic event identities", async t => {
   const { bus, context } = fixture(t); const api = createLocalApi(context);
   bus.settings.set("peer.reachableURL", "http://127.0.0.1:49222");
   const { groupPrincipal } = await import("@magi/bus/books/groupBook.js");

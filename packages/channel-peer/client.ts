@@ -26,9 +26,9 @@ export async function discoverPeer(endpoint: string): Promise<PeerCard> {
   if (peerURL(card.reachableURL).origin !== peerURL(endpoint).origin) throw new PeerError("peer discovery URL mismatch");
   return card as PeerCard;
 }
-export type GroupWire = { group: { event: import("@magi/bus/books/groupBook.js").SignedGroupEvent } };
-export type SyncRequest = { conversationUUID: string; after?: number; afterEpoch?: number; memberships?: import("@magi/bus/books/groupBook.js").SignedGroupMembership[] };
-export type SyncResponse = { memberships: import("@magi/bus/books/groupBook.js").SignedGroupMembership[]; events: import("@magi/bus/books/groupBook.js").SignedGroupEvent[]; nextCursor: number | null; moreMemberships: boolean; receivedEpoch: number };
+export type GroupWire = { group: { event: import("@magi/bus/books/groupBook.js").GroupEventEnvelope } };
+export type SyncRequest = { conversationUUID: string; after?: number; afterEpoch?: number; memberships?: import("@magi/bus/books/groupBook.js").GroupMembershipEnvelope[] };
+export type SyncResponse = { memberships: import("@magi/bus/books/groupBook.js").GroupMembershipEnvelope[]; events: import("@magi/bus/books/groupBook.js").GroupEventEnvelope[]; nextCursor: number | null; moreMemberships: boolean; receivedEpoch: number };
 export class PeerClient {
   readonly principal: string;
   constructor(private readonly identity: PeerIdentity) { this.principal = principalFor(identity.publicKey); }

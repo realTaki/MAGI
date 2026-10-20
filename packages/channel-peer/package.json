@@ -1,6 +1,6 @@
 {
   "name": "@magi/channel-peer", "version": "0.2.0", "private": true, "type": "module",
-  "description": "Direct authenticated EVA peer chat (MAGI protocol, not full A2A).",
+  "description": "Direct trusted-network EVA peer chat (MAGI protocol, not full A2A).",
   "exports": { ".": {"types":"./dist/worker.d.ts","default":"./dist/worker.js"}, "./*": {"types":"./dist/*","default":"./dist/*"} },
   "scripts": { "build": "tsc -b" }, "dependencies": { "@magi/bus": "*" }
 }

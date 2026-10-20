@@ -1,5 +1,5 @@
 import { MAGI_CONTACT_ID, type Bus } from "@magi/bus";
-import type { SignedGroupEvent, SignedGroupMembership } from "@magi/bus/books/groupBook.js";
+import type { GroupEventEnvelope, GroupMembershipEnvelope } from "@magi/bus/books/groupBook.js";
 import { PeerClient, type GroupWire, type SyncRequest, type SyncResponse } from "./client.js";
 import { PeerError, record } from "./protocol.js";
 
@@ -45,7 +45,7 @@ export class GroupReplica {
     const page = moreMemberships ? { events: [], nextCursor: request.after ?? 0 } : this.bus.groups.events(request.conversationUUID, { after: request.after, limit: 8 });
     return { ...page, memberships, moreMemberships, receivedEpoch: group.epoch };
   }
-  async deliver(event: SignedGroupEvent): Promise<void> {
+  async deliver(event: GroupEventEnvelope): Promise<void> {
     const uuid = event.payload.conversationUUID;
     if (!this.bus.groups.allows(uuid, this.client.principal)) throw new PeerError("local EVA is not a current group member", 403);
     const peers = this.bus.groups.membership(uuid).payload.members.filter(member => member.principal !== this.client.principal);
@@ -67,7 +67,7 @@ export class GroupReplica {
     });
     for (const membership of response.memberships) {
       if (membership?.payload?.conversationUUID !== uuid) throw new PeerError("membership conversation mismatch");
-      this.bus.groups.offerMembership(membership as SignedGroupMembership);
+      this.bus.groups.offerMembership(membership as GroupMembershipEnvelope);
     }
     if (!this.bus.groups.allows(uuid, principal)) throw new PeerError("remote member was removed", 403);
     for (const event of response.events) {
