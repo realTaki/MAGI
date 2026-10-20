@@ -41,12 +41,12 @@ export class PeerServer {
     this.server = null;
     this.address = null;
     this.port = null;
-    if (server) await new Promise<void>((resolve, reject) => { server.close(error => error ? reject(error) : resolve()); server.closeIdleConnections(); });
+    if (server) await new Promise<void>((resolve, reject) => { server.close(error => error ? reject(error) : resolve()); server.closeAllConnections(); });
   }
   private async handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
     try {
       if (request.method === "GET" && request.url === "/.well-known/magi-peer.json") { this.respond(response, 200, JSON.stringify(this.card())); return; }
-      if (request.method !== "POST" || (request.url !== "/chat" && request.url !== "/sync")) throw new PeerError("not found", 404);
+      if (request.method !== "POST" || (request.url !== "/chat" && request.url !== "/sync" && request.url !== "/verify")) throw new PeerError("not found", 404);
       if (request.headers["content-type"]?.split(";")[0].trim() !== "application/json") throw new PeerError("JSON required", 415);
       const chunks: Buffer[] = [];
       let size = 0;
@@ -55,7 +55,11 @@ export class PeerServer {
         if (size > (request.url === "/sync" ? MAX_SYNC_BYTES : MAX_BODY_BYTES)) throw new PeerError("chat is too large", 413);
         chunks.push(Buffer.from(chunk));
       }
-      const { principal, data } = decodeEnvelope(Buffer.concat(chunks).toString("utf8"), this.principal, request.url === "/sync" ? "sync" : "chat");
+      const { principal, data } = decodeEnvelope(Buffer.concat(chunks).toString("utf8"), this.principal, request.url === "/verify" ? "verify" : request.url === "/sync" ? "sync" : "chat");
+      if (request.url === "/verify") {
+        if (!record(data) || typeof data.nonce !== "string" || data.nonce.length > 100 || Object.keys(data).length !== 1) throw new PeerError("invalid identity challenge");
+        this.respond(response, 200, encodeEnvelope(this.identity, principal, "verified", { nonce: data.nonce, reachableURL: this.address })); return;
+      }
       if (request.url === "/sync") {
         if (!this.handlers.sync) throw new PeerError("group sync unavailable", 404);
         const result = this.handlers.sync(principal, data);

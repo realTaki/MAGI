@@ -11,6 +11,8 @@ receipts. `conversationUUID` has context-ID semantics. Future A2A bindings can
 adapt these typed messages without granting protocol peers local owner rights.
 
 - GET `/.well-known/magi-peer.json`: public identity and reachable origin.
+- POST `/verify`: signed nonce proof binds possession of the pinned private key
+  to the requested origin before the sender transmits conversation content.
 - POST `/chat`: signed ordinary chat only. No cards, tools, provider credentials,
   lifecycle control, or owner-role parameters are accepted over this channel.
 - The existing EVA RSA identity signs domain-separated RSA-PSS/SHA256 envelopes.

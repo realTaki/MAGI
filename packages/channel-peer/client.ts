@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { decodeEnvelope, encodeEnvelope, MAX_BODY_BYTES, MAX_SYNC_BYTES, PEER_PROTOCOL, PeerError, peerURL, principalFor, record, type PeerCard, type PeerIdentity, type PeerMessage, type PeerReceipt } from "./protocol.js";
 
 async function boundedBody(response: Response, maximum = MAX_BODY_BYTES): Promise<string> {
@@ -32,7 +33,17 @@ export type SyncResponse = { memberships: import("@magi/bus/books/groupBook.js")
 export class PeerClient {
   readonly principal: string;
   constructor(private readonly identity: PeerIdentity) { this.principal = principalFor(identity.publicKey); }
+  private async verifyEndpoint(endpoint: string, recipient: string): Promise<void> {
+    const nonce = randomUUID();
+    const origin = peerURL(endpoint).origin;
+    const response = await fetch(new URL("/verify", origin), { method: "POST", redirect: "error", headers: { "Content-Type": "application/json" }, body: encodeEnvelope(this.identity, recipient, "verify", { nonce }), signal: AbortSignal.timeout(10_000) });
+    const text = await boundedBody(response);
+    if (response.status !== 200) throw new PeerError(`peer verification HTTP ${response.status}`, response.status);
+    const { data } = decodeEnvelope(text, this.principal, "verified", recipient);
+    if (!record(data) || data.nonce !== nonce || data.reachableURL !== origin) throw new PeerError("peer endpoint identity mismatch", 401);
+  }
   async sync(endpoint: string, recipient: string, request: SyncRequest): Promise<SyncResponse> {
+    await this.verifyEndpoint(endpoint, recipient);
     const body = encodeEnvelope(this.identity, recipient, "sync", request);
     if (Buffer.byteLength(body) > MAX_SYNC_BYTES) throw new PeerError("sync page is too large", 413);
     const response = await fetch(new URL("/sync", peerURL(endpoint)), { method: "POST", redirect: "error", headers: { "Content-Type": "application/json" }, body, signal: AbortSignal.timeout(10_000) });
@@ -49,6 +60,7 @@ export class PeerClient {
     return this.sendSigned(endpoint, recipient, message, message.messageId, message.conversationUUID);
   }
   private async sendSigned(endpoint: string, recipient: string, input: PeerMessage | GroupWire, messageId: string, conversationUUID: string): Promise<PeerReceipt> {
+    await this.verifyEndpoint(endpoint, recipient);
     const body = encodeEnvelope(this.identity, recipient, "chat", input);
     if (Buffer.byteLength(body) > MAX_BODY_BYTES) throw new PeerError("chat is too large", 413);
     const response = await fetch(new URL("/chat", peerURL(endpoint)), { method: "POST", redirect: "error", headers: { "Content-Type": "application/json" }, body, signal: AbortSignal.timeout(10_000) });

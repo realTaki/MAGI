@@ -30,7 +30,15 @@ export class GroupReplica {
       this.bus.groups.offerMembership(membership);
     }
     const group = this.bus.groups.get(request.conversationUUID);
-    if (!group || !this.bus.groups.allows(request.conversationUUID, principal)) throw new PeerError("group is pending or peer is not a current member", 403);
+    if (!group || !this.bus.groups.allows(request.conversationUUID, principal)) {
+      // An accepted replica can be temporarily removed in the middle of a paged
+      // membership chain and re-added in a later epoch. Acknowledge only the
+      // offered chain to its current member; disclose no history or membership.
+      if (group?.trust === "accepted" && request.memberships?.length && this.bus.groups.membership(request.conversationUUID).payload.members.some(member => member.principal === principal)) {
+        return { memberships: [], events: [], nextCursor: null, moreMemberships: false, receivedEpoch: group.epoch };
+      }
+      throw new PeerError("group is pending or peer is not a current member", 403);
+    }
     const memberships = this.bus.groups.memberships(request.conversationUUID, request.afterEpoch ?? 0, 8);
     const lastEpoch = memberships.at(-1)?.payload.epoch ?? request.afterEpoch ?? 0;
     const moreMemberships = lastEpoch < group.epoch;
@@ -50,7 +58,7 @@ export class GroupReplica {
   /** Public for deterministic loopback integration tests and explicit resync tools. */
   async syncPeer(uuid: string, principal: string): Promise<boolean> {
     const contact = this.accepted(principal);
-    if (!this.bus.groups.allows(uuid, this.client.principal)) throw new PeerError("local group is not accepted", 403);
+    if (!this.bus.groups.allows(uuid, this.client.principal) || !this.bus.groups.allows(uuid, principal)) throw new PeerError("local or remote group member is not authorized", 403);
     const key = `${uuid}:${principal}`;
     const state = this.pages.get(key) ?? { after: 0, sentEpoch: 0, due: 0 };
     const memberships = this.bus.groups.memberships(uuid, state.sentEpoch, 8);

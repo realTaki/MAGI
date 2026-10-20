@@ -67,6 +67,24 @@ test("group sync chains membership pages, rejects removed peers and checks origi
     const tampered = structuredClone(a.groups.history(uuid)[0]); tampered.payload.content = "forged";
     await assert.rejects(new PeerClient(b.identity).sendGroup(f.workers[0].origin!, f.peers[0].principal, { group: { event: tampered } }));
     a.groups.updateMembers(uuid, f.peers.slice(0, 2));
+    await assert.rejects(f.workers[0].groups.syncPeer(uuid, f.peers[2].principal), /not authorized/);
     await assert.rejects(new PeerClient(f.buses[2].identity).sync(f.workers[0].origin!, f.peers[0].principal, { conversationUUID: uuid }), /403/);
+  } finally { await f.close(); }
+});
+
+
+test("membership-only page acknowledgements recover a removed then re-added offline replica", async () => {
+  const f = await cluster();
+  try {
+    const [a, b] = f.buses;
+    const uuid = a.groups.create({ title: "Rejoin", members: f.peers.slice(1) }).conversation_uuid;
+    await assert.rejects(f.workers[0].groups.syncPeer(uuid, f.peers[1].principal), /403/); b.groups.accept(uuid);
+    for (let epoch = 2; epoch <= 10; epoch++) a.groups.updateMembers(uuid, [f.peers[0], f.peers[2]]);
+    a.groups.updateMembers(uuid, f.peers);
+    a.groups.append(uuid, "after rejoin");
+    await sync(f.workers[0], uuid, f.peers[1].principal);
+    assert.equal(b.groups.get(uuid)?.epoch, 11);
+    await sync(f.workers[1], uuid, f.peers[0].principal);
+    assert.equal(b.groups.history(uuid)[0].payload.content, "after rejoin");
   } finally { await f.close(); }
 });

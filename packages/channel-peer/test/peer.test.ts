@@ -1,4 +1,5 @@
 import test from "node:test";
+import { createServer } from "node:http";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -96,6 +97,7 @@ test("receipt is withheld when persistence fails; retry succeeds without claimin
     fail = false;
     assert.equal((await client.send(server.origin!, server.principal, input)).accepted, true);
     assert.equal(calls, 2);
+    assert.equal((await client.send(server.origin!, server.principal, { ...input, messageId: randomUUID(), content: "汉".repeat(32_000) })).accepted, true);
     await assert.rejects(client.send(server.origin!, client.principal, input), /401/);
   } finally { await server.stop(); f.dispose(); }
 });
@@ -118,4 +120,22 @@ test("outbound failures retain persisted retry schedule and binding failures are
     assert.equal(retry.attempts, 1); assert.ok(retry.next_attempt_at > Date.now());
     assert.equal(await worker.poll(), false);
   } finally { await worker.stop(); f.dispose(); }
+});
+
+
+test("pinned endpoint proof precedes content and a relayed challenge cannot redirect private chat", async () => {
+  const f = fixture(); const real = new PeerServer(f.b.identity, f.b.handle, () => ({ duplicate: false }));
+  let leaked = 0;
+  const proxy = createServer(async (request, response) => {
+    const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(Buffer.from(chunk));
+    if (request.url === "/chat") leaked++;
+    const forwarded = await fetch(new URL(request.url!, real.origin!), { method: request.method, headers: { "Content-Type": "application/json" }, body: Buffer.concat(chunks) });
+    response.writeHead(forwarded.status, { "Content-Type": "application/json" }); response.end(await forwarded.text());
+  });
+  try {
+    await real.start(); await new Promise<void>(resolve => proxy.listen(0, "127.0.0.1", resolve));
+    const address = proxy.address(); assert.ok(address && typeof address !== "string");
+    await assert.rejects(new PeerClient(f.a.identity).send(`http://127.0.0.1:${address.port}`, real.principal, message("http://localhost:1234")), /identity mismatch/);
+    assert.equal(leaked, 0);
+  } finally { await new Promise<void>(resolve => { proxy.close(() => resolve()); proxy.closeAllConnections(); }); await real.stop(); f.dispose(); }
 });

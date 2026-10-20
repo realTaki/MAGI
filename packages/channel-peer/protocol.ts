@@ -3,7 +3,7 @@ import { constants, createHash, createPublicKey, sign, verify } from "node:crypt
 /** MAGI-only chat subset inspired by A2A. conversationUUID has contextId semantics. */
 export const PEER_PROTOCOL = "magi-peer/1";
 const DOMAIN = "MAGI direct peer chat v1\n";
-export const MAX_BODY_BYTES = 64 * 1024;
+export const MAX_BODY_BYTES = 256 * 1024;
 export const MAX_SYNC_BYTES = 2 * 1024 * 1024;
 export type PeerIdentity = { publicKey: string; privateKey: string };
 export type PeerMessage = {
@@ -16,7 +16,7 @@ export type PeerMessage = {
 };
 export type PeerReceipt = { messageId: string; conversationUUID: string; accepted: true; duplicate: boolean };
 export type PeerCard = { protocol: typeof PEER_PROTOCOL; principal: string; publicKey: string; handle: string; reachableURL: string };
-export type EnvelopeKind = "chat" | "receipt" | "sync" | "sync-result";
+export type EnvelopeKind = "chat" | "receipt" | "sync" | "sync-result" | "verify" | "verified";
 type Payload<T> = { protocol: typeof PEER_PROTOCOL; audience: string; issuedAt: number; kind: EnvelopeKind; data: T };
 type Envelope<T> = { publicKey: string; payload: Payload<T>; signature: string };
 export class PeerError extends Error { constructor(message: string, readonly status = 400) { super(message); } }
