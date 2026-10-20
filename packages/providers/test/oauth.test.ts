@@ -86,3 +86,12 @@ test("verification clears active OAuth for both API-key and non-Codex candidates
     assert.equal(candidate?.oauth_ref, "old-ref", "verification must not mutate active provider");
   }
 });
+test("OAuth credential resolution remains the fourth client argument beside rich attachment workspace", async () => {
+  const { PiAiClient } = await import("../client.js");
+  let called = 0;
+  const client = new PiAiClient({ provider: "openai-codex", oauth_ref: "fake-ref" },
+    async () => { throw new Error("unexpected network"); }, "/fake/attachment/workspace",
+    async ref => { called++; assert.equal(ref, "fake-ref"); throw new Error("fake denied credential"); });
+  await assert.rejects(client.complete({ messages: [], tools: [] }), /ProviderError \[authentication\]/);
+  assert.equal(called, 1);
+});

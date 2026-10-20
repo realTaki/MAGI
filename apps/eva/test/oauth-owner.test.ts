@@ -24,6 +24,10 @@ test("only authenticated private owner chat can initiate OAuth; peer and groups 
   assert.throws(()=>chat(f.bus,owner.id,peer.id,input),/owner/);
   const remote=f.bus.chats.forPeer("a".repeat(64)); assert.throws(()=>chat(f.bus,remote.id,f.bus.userContactId,input),/owner/);
   assert.throws(()=>chat(f.bus,owner.id,f.bus.userContactId,{...input,metadata:{...input.metadata,card_reject:{id:"other"}}}),/invalid/);
+  const before = f.bus.messages.list(owner.id,50).length;
+  assert.throws(()=>chat(f.bus,owner.id,f.bus.userContactId,{...input,reply_to:1}),/rich chat fields/);
+  assert.throws(()=>chat(f.bus,owner.id,f.bus.userContactId,{...input,attachments:[{name:"note.txt",mime_type:"text/plain",data_base64:"aGk="}]}),/rich chat fields/);
+  assert.equal(f.bus.messages.list(owner.id,50).length,before,"mixed commands must not be recorded or enqueued");
   assert.equal(f.bus.messages.list(owner.id,50).at(-1)?.content,"provider connection requested");
  }finally{f.close();}
 });
