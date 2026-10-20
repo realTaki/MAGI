@@ -127,6 +127,13 @@
       "when": 1792460000000,
       "tag": "0017_task_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1792461000000,
+      "tag": "0018_action_item_categories",
+      "breakpoints": true
     }
   ]
 }

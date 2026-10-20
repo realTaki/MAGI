@@ -148,6 +148,7 @@ test("both role compositions own exactly one task worker and one private convers
     assert.equal(agent.filter(worker => worker.worker_name === "subconscious").length, 1);
     assert.equal(shell.filter(worker => worker.worker_name === "subconscious").length, 1);
     assert.equal(shell.filter(worker => worker.worker_name === "action-items").length, 1);
+    assert.equal(agent.filter(worker => worker.worker_name === "action-items").length, 1);
     assert.ok(HOSTED_NODE_WORKERS.includes("subconscious"));
     const task = shell.find(worker => worker.worker_name === "subconscious")! as import("@magi/subconscious/worker.js").SubconsciousWorker;
     await task.start();
@@ -235,6 +236,7 @@ test("subconscious owns its conversation and presets without an AgentWorker", as
     assert.equal(bus.tools.catalog({ chat_id: home.id }).some(tool => tool.name === "observe_conversations"), false);
     assert.equal(bus.tools.catalog({ chat_id: inner.id }).some(tool => tool.name === "observe_conversations"), true);
     await subconscious.stop();
+    assert.ok(!bus.prompts.sections(inner.id).some(section => section.title === "Private action-item review"));
     const next = messageDelivery.send(bus, inner.id, "later", undefined, "task");
     assert.equal(await subconscious.poll(), false);
     assert.equal(bus.board("MessageDeliveryJob").result(next), null);
@@ -266,4 +268,78 @@ test("stopping subconscious during its internal tool wait aborts promptly and ca
     assert.equal(bus.chats.list("subconscious").length, 1);
     assert.equal(bus.tasks.list().length, 1);
   } finally { await worker.stop(); await provider.stop(); bus.close(); }
+});
+
+test("private review maintains todo, idea and goal through the shared worker without completing a goal with its step", async () => {
+  const delivered: string[] = [];
+  const seen: LLMRequest[] = [];
+  const path = await workspace();
+  const magi = new Magi("@category-review.magi", { workspace: path, deliver: text => delivered.push(text), client: {
+    async complete(request) {
+      seen.push(structuredClone(request));
+      assert.match(request.messages[0].content, /Maintain all three shared action-item categories/);
+      assert.match(request.messages[0].content, /Completing a related todo does not mean a goal is achieved/);
+      const save = request.tools.find(tool => tool.name === "save_action_item")!;
+      assert.match(JSON.stringify(save), /"enum":\["todo","idea","goal"\]/);
+      if (seen.length === 1) return { role: "assistant", content: "", tool_calls: [
+        { tool_call_id: "todo", name: "save_action_item", arguments: { content: "Complete first practice session", category: "todo" } },
+        { tool_call_id: "idea", name: "save_action_item", arguments: { content: "Maybe try paired practice", category: "idea" } },
+        { tool_call_id: "goal", name: "save_action_item", arguments: { content: "Background: learn a language. Success: hold a conversation. Evidence: none yet. Gap: sustained practice.", category: "goal" } },
+      ] };
+      if (seen.length === 2) {
+        const todo = magi.bus.actionItems.list(false, "todo").find(item => item.content === "Complete first practice session")!;
+        const idea = magi.bus.actionItems.list(false, "idea")[0];
+        const goal = magi.bus.actionItems.list(false, "goal")[0];
+        return { role: "assistant", content: "", tool_calls: [
+          { tool_call_id: "done-step", name: "archive_action_item", arguments: { action_item_id: todo.id, expected_version: todo.version } },
+          { tool_call_id: "withdraw-idea", name: "archive_action_item", arguments: { action_item_id: idea.id, expected_version: idea.version } },
+          { tool_call_id: "update-goal", name: "save_action_item", arguments: { action_item_id: goal.id, expected_version: goal.version, content: "Background: learn a language. Success: hold a conversation. Evidence: first practice complete. Gap: sustained practice and conversation assessment." } },
+        ] };
+      }
+      return { role: "assistant", content: "Private review complete; the long-term outcome remains open." };
+    },
+  } });
+  let goalId = 0;
+  try {
+    await magi.start();
+    // Existing EVAs retain operator-owned prompts and seeded task text. Live
+    // category guidance must still reach their real model requests.
+    magi.bus.prompts.set("subconscious/AGENT", "Existing customized private prompt. Keep reviews brief.");
+    const task = magi.bus.tasks.list()[0];
+    assert.match(task.prompt, /todo, idea, and goal/);
+    assert.match(task.prompt, /a completed todo does not by itself complete or archive its related goal/);
+    const inner = magi.bus.chats.forChannel("subconscious", "self");
+    const job = messageDelivery.send(magi.bus, inner.id, task.prompt, undefined, "task");
+    await until(() => Boolean(magi.bus.board("MessageDeliveryJob").result(job)));
+    assert.equal(magi.bus.board("MessageDeliveryJob").result(job)?.status, "completed");
+    assert.equal(seen.length, 3);
+    const goal = magi.bus.actionItems.list(false, "goal")[0];
+    goalId = goal.id;
+    assert.equal(goal.version, 2);
+    assert.equal(goal.archived, false);
+    assert.match(goal.content, /first practice complete/);
+    assert.deepEqual(magi.bus.actionItems.list(false, "idea"), []);
+    assert.equal(magi.bus.actionItems.list(true, "idea")[0].archived, true);
+    assert.equal(magi.bus.actionItems.list(true, "todo").find(item => item.content === "Complete first practice session")?.archived, true);
+    const foreground = magi.bus.chats.forChannel("test-owner", "terminal");
+    assert.deepEqual(magi.bus.prompts.sections(foreground.id).find(section => section.title === "Action items"),
+      magi.bus.prompts.sections(inner.id).find(section => section.title === "Action items"));
+    const context = magi.bus.prompts.sections(foreground.id).find(section => section.body.includes("Goals:"))!.body;
+    assert.match(context, /Goals:[\s\S]*conversation assessment/);
+    assert.doesNotMatch(context, /Ideas:|Maybe try paired practice|Complete first practice session/);
+    assert.deepEqual(delivered, []);
+  } finally { await magi.stop(); }
+  const reopened = new Magi("@category-review.magi", { workspace: path });
+  try {
+    await reopened.start();
+    assert.equal(reopened.bus.actionItems.get(goalId)?.category, "goal");
+    assert.equal(reopened.bus.actionItems.get(goalId)?.archived, false);
+    assert.equal(reopened.bus.actionItems.get(goalId)?.version, 2);
+    assert.equal(reopened.bus.tasks.list().length, 1, "category maintenance does not add a scheduler or duplicate the review");
+    assert.equal(reopened.bus.prompts.get("subconscious/AGENT"), "Existing customized private prompt. Keep reviews brief.");
+    const inner = reopened.bus.chats.forChannel("subconscious", "self");
+    assert.ok(reopened.bus.prompts.sections(inner.id).some(section => section.title === "Private action-item review"));
+    const foreground = reopened.bus.chats.forChannel("test-owner", "terminal");
+    assert.ok(!reopened.bus.prompts.sections(foreground.id).some(section => section.title === "Private action-item review"));
+  } finally { await reopened.stop(); }
 });

@@ -228,8 +228,23 @@ new user instruction or authorization. Tool availability is checked at execution
 not just hidden from the model's catalog. Shell/file mutation and external
 messaging tools are not in the subconscious tool set.
 
-`ActionItemBook` contains working notes and reminders, not timed work. MemoryWorker
+`ActionItemBook` contains shared working notes, not timed work. ActionItemsWorker
 owns its CRUD tools and contributes active notes to the next turn's context.
+One Book distinguishes `todo` (concrete work), `idea` (unprioritized possibilities,
+not commitments), and `goal` (long-term outcomes). Old records and creates without
+a category default to `todo`; updates without a category preserve the existing
+one. List tools can filter category and optionally include archived records.
+Context groups the categories separately. Todo urgency/importance is assessed
+from content and conversation; stable ID order is not automatic priority ranking.
+Goals keep background, success criteria, current evidence and remaining gaps in
+content. Completing a related todo does not itself complete the goal. Withdrawn
+ideas and achieved/abandoned goals are archived rather than silently deleted.
+Each EVA's subconscious reviews all three categories through the same shared
+worker tools available to the foreground, including repairing missing items.
+A live subconscious module context block applies the category review policy even
+to existing EVAs with saved prompts/review tasks; their customized text and
+schedules are not overwritten. This adds no UI, Feed integration, scheduler, or
+goal state machine.
 Updates, archive and deletion require the version observed by the caller, so a
 stale background snapshot cannot overwrite a newer foreground note.
 `TaskBook` contains recurring or one-time timed prompts. A task's identity is its
@@ -298,6 +313,6 @@ subconscious module header, not direct external messages.
 
 `@magi/action-items` owns shared note tools and active-note prompt contributions.
 Its worker lifecycle controls both; MemoryWorker no longer owns action items.
-The durable note Book, versions, and seed markers remain in BUS unchanged. Shell
+The durable note Book, categories, versions, and seed markers remain in BUS. Shell
 and hosted EVAs compose one worker of each kind. Stopping either module removes
 its tools/context without deleting its durable records.

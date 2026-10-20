@@ -1,7 +1,7 @@
 import { BaseWorker, MAGI_CONTACT_ID, type Bus } from "@magi/bus";
 import { Conversation } from "./conversation.js";
 import { seedSubconscious } from "./presets.js";
-import { subconsciousTools, SUBCONSCIOUS_PROMPT, SUBCONSCIOUS_COMPACTION_PROMPT } from "./tools.js";
+import { subconsciousTools, SUBCONSCIOUS_PROMPT, SUBCONSCIOUS_COMPACTION_PROMPT, SUBCONSCIOUS_ACTION_ITEM_REVIEW_PROMPT } from "./tools.js";
 
 /** Owns the private continuous conversation; never consumes an external inbox. */
 export class SubconsciousWorker extends BaseWorker {
@@ -13,6 +13,8 @@ export class SubconsciousWorker extends BaseWorker {
     super(bus);
     bus.prompts.register("subconscious/AGENT", SUBCONSCIOUS_PROMPT);
     bus.prompts.register("subconscious/compaction", SUBCONSCIOUS_COMPACTION_PROMPT);
+    bus.prompts.registerSource("subconscious/action-item-review", "Private action-item review", chat_id =>
+      this.started && bus.chats.get(chat_id)?.channel === "subconscious" ? SUBCONSCIOUS_ACTION_ITEM_REVIEW_PROMPT : "");
     bus.tools.registerSource("subconscious", () => this.started ? subconsciousTools(bus) : []);
   }
   async start(): Promise<void> { seedSubconscious(this.bus); this.started = true; }

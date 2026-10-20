@@ -67,3 +67,52 @@ test("foreground and subconscious share notes without an agent dependency or new
     assert.deepEqual(bus.actionItems.list(true), []);
   } finally { await close(); }
 });
+
+test("shared category tools validate input, preserve old calls and separate idea context", async () => {
+  const { bus, worker, close } = fixture();
+  const board = bus.board("RunToolJob");
+  try {
+    const foreground = bus.chats.forChannel("test", "foreground");
+    const subconscious = bus.chats.forChannel("subconscious", "private");
+    await worker.start();
+    const run = async (chat_id: number, name: string, args: Record<string, unknown>) => {
+      const id = board.publish({ chat_id, call: { tool_call_id: name, name, arguments: args } }, "test");
+      assert.equal(await worker.poll(), true);
+      await worker.stop();
+      await worker.start();
+      return board.result(id)!;
+    };
+    assert.equal((await run(foreground.id, "save_action_item", { content: "Finish review" })).status, "completed");
+    assert.equal((await run(subconscious.id, "save_action_item", { content: "Try a new layout", category: "idea" })).status, "completed");
+    const todo = bus.actionItems.list()[0];
+    const idea = bus.actionItems.list()[1];
+    assert.equal(todo.category, "todo");
+    assert.equal(idea.category, "idea");
+    const context = bus.prompts.sections(foreground.id)[0].body;
+    assert.deepEqual(bus.prompts.sections(foreground.id), bus.prompts.sections(subconscious.id));
+    assert.match(context, /Todos:[\s\S]*Finish review[\s\S]*Ideas:[\s\S]*Try a new layout/);
+    assert.match(context, /unprioritized possibilities, not commitments/);
+    assert.match(context, /not a priority ranking/);
+    assert.match(context, /archive completed\/cancelled todos and withdrawn/);
+    const ideasOnly = await run(subconscious.id, "list_action_items", { category: "idea" });
+    assert.equal(ideasOnly.status, "completed");
+    assert.match(JSON.stringify(ideasOnly), /Try a new layout/);
+    assert.doesNotMatch(JSON.stringify(ideasOnly), /Finish review/);
+    for (const category of ["invalid", "", null, 42, {}]) {
+      assert.equal((await run(subconscious.id, "save_action_item", { content: "Invalid", category })).status, "failed");
+      assert.equal((await run(subconscious.id, "list_action_items", { category })).status, "failed");
+    }
+    assert.equal((await run(foreground.id, "save_action_item", { action_item_id: idea.id, expected_version: 1, content: "Try a simpler layout" })).status, "completed");
+    assert.equal(bus.actionItems.get(idea.id)?.category, "idea");
+    assert.equal((await run(subconscious.id, "save_action_item", { action_item_id: idea.id, expected_version: 1, category: "todo" })).status, "failed");
+    assert.equal((await run(subconscious.id, "archive_action_item", { action_item_id: idea.id, expected_version: 2 })).status, "completed");
+    assert.equal(bus.actionItems.get(idea.id)?.category, "idea");
+    assert.doesNotMatch(bus.prompts.sections(foreground.id)[0].body, /Ideas:|Try a simpler layout/);
+    const archived = await run(foreground.id, "list_action_items", { category: "idea", include_archived: true });
+    assert.equal(archived.status, "completed");
+    assert.match(JSON.stringify(archived), /Try a simpler layout/);
+    assert.equal((await run(foreground.id, "save_action_item", { action_item_id: idea.id, expected_version: 3, archived: false })).status, "completed");
+    assert.match(bus.prompts.sections(subconscious.id)[0].body, /Ideas:[\s\S]*Try a simpler layout/);
+    assert.equal(bus.actionItems.list(true).length, 2);
+  } finally { await close(); }
+});
