@@ -287,3 +287,20 @@ test("an unchanged reconnect retains future selection but never revives an old c
     assert.equal((await f.run("research_feed", { tool_name: "public__search", arguments: {} })).status, "completed");
   } finally { release?.(""); await f.close(); }
 });
+
+
+test("Feed readiness accepts committed OAuth credentials without an API key", async () => {
+  const f = fixture();
+  try {
+    await f.start(); await f.configure();
+    f.bus.settings.set("provider.name", "openai-codex");
+    f.bus.settings.set("provider.oauth_ref", "fake-test-oauth-ref");
+    assert.equal(f.api["feed.state"]().status, "providerNeeded");
+    f.bus.secrets.set("fake-test-oauth-ref", "fake-test-credential");
+    assert.equal(f.api["feed.state"]().status, "ready");
+    f.bus.secrets.set("fake-test-oauth-ref", "");
+    assert.equal(f.api["feed.state"]().status, "providerNeeded");
+    f.bus.secrets.set("provider.api_key", "fake-test-api-key");
+    assert.equal(f.api["feed.state"]().status, "ready");
+  } finally { await f.close(); }
+});

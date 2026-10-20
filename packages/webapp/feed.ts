@@ -26,7 +26,7 @@ export function feedApi(bus: Bus) {
       const selected = configured.filter(name => sources.some(source => source.name === name && source.fingerprint === bindings[name]));
       const unavailable_selected = configured.filter(name => !selected.includes(name));
       const enabled = bus.settings.get("feed.enabled") === "true";
-      const provider = Boolean(bus.settings.get("provider.name") && bus.secrets.get("provider.api_key"));
+      const provider = Boolean(bus.settings.get("provider.name") && (bus.secrets.get("provider.api_key") || bus.secrets.get(bus.settings.get("provider.oauth_ref") ?? "")));
       const used = bus.settings.get("feed.research_day") === new Date().toISOString().slice(0, 10) ? Number(bus.settings.get("feed.research_count") ?? "0") : 0;
       const budget = Number(bus.settings.get("feed.daily_budget") ?? "3");
       return { enabled, used_today: used, daily_budget: Number(bus.settings.get("feed.daily_budget") ?? "3"), prompt: bus.prompts.get("feed/AGENT") ?? "", selected, unavailable_selected, sources,
