@@ -1,3 +1,4 @@
+import type { OAuthSessionFactory } from "./oauth-port.js";
 /**
  * The manager worker: start, stop, and restart the other workers on a BUS.
  *
@@ -65,6 +66,8 @@ export type StartableWorker = {
 type RunningWorker = { worker: StartableWorker; loop: Promise<void>; stopping?: Promise<void> };
 
 export type LauncherOptions = {
+  /** Optional auth capability, wired by composition rather than lifecycle. */
+  oauthSessions?: OAuthSessionFactory;
   /** Workers that must finish their current poll before anything else stops. */
   drain?: string[];
   /** Hosted node workers, excluding the UI backend and relay infrastructure. */
@@ -104,7 +107,7 @@ export class LauncherWorker extends BaseWorker {
     this.nodeWorkers = new Set(options.nodeWorkers ?? []);
     this.workers = [
       ...workers,
-      new ConfigWorker(bus),
+      new ConfigWorker(bus, options.oauthSessions),
       new ReplaceWorker(bus, options.build, this),
     ];
   }

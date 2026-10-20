@@ -1,4 +1,4 @@
-import { CodexDeviceSessions, CodexOAuthVault, validOAuthRef, type OAuthAuth, type OAuthUpdate } from "@magi/providers/oauth.js";
+import type { OAuthSession, OAuthSessionFactory, OAuthUpdate } from "./oauth-port.js";
 import { providerFailureCode } from "@magi/bus/jobs/providerFailure.js";
 import type { CardReceipt } from "@magi/bus/jobs/card.js";
 /**
@@ -32,14 +32,15 @@ export class ConfigWorker extends BaseWorker {
   /** Inbound card and sync work, off this worker's poll so config writes can finish. */
   private task: Promise<void> | null = null;
   private unspoken: string | null = null;
-  private readonly oauth: CodexDeviceSessions;
+  private readonly oauthSession?: OAuthSession;
+  private get oauth(): OAuthSession {
+    if (!this.oauthSession) throw new Error("OAuthError:unavailable");
+    return this.oauthSession;
+  }
 
-  constructor(bus: Bus, oauthDriver?: OAuthAuth) {
+  constructor(bus: Bus, oauthFactory?: OAuthSessionFactory) {
     super(bus);
-    // Process restart invalidates unfinished grants; retain only the committed session.
-    const committedRef = bus.settings.get("provider.oauth_ref");
-    for (const name of bus.secrets.names()) if (validOAuthRef(name) && name !== committedRef) bus.secrets.set(name, "");
-    this.oauth = new CodexDeviceSessions(new CodexOAuthVault(bus.secrets, oauthDriver), async (ref, model, signal) => {
+    this.oauthSession = oauthFactory?.(bus, async (ref, model, signal) => {
       if (bus.settings.get("node.enabled") === "false") throw new Error("OAuthError:paused");
       await this.useProvider({ provider: "openai-codex", model, base_url: "", oauth_ref: ref }, signal);
     }, (binding, update) => {
@@ -204,8 +205,8 @@ export class ConfigWorker extends BaseWorker {
     messageDelivery.send(this.bus, binding.chat, "Provider connection: " + update.state, MAGI_CONTACT_ID, this.worker_name, { provider_oauth: update });
   }
 
-  interrupt(): void { this.oauth.stop(); }
-  async stop(): Promise<void> { this.oauth.stop(); await this.oauth.settled(); }
+  interrupt(): void { this.oauthSession?.stop(); }
+  async stop(): Promise<void> { this.oauthSession?.stop(); await this.oauthSession?.settled(); }
 
   private async applyCard(input: InboundSecretJob): Promise<void> {
     const result = input.body;

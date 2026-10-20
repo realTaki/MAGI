@@ -1,3 +1,4 @@
+import { codexOAuthSessions } from "./oauth.js";
 /**
  * Shell EVA workers, including the UI backend. The eva launcher starts this
  * inside the child process. Electron is the window; this process is the BUS.
@@ -57,6 +58,7 @@ export class Shell {
         nodeControl: { running: () => this.manager.nodeRunning(), setRunning: (enabled: boolean) => this.manager.setNodeRunning(enabled) },
       });
       this.manager = new LauncherWorker(this.bus, shellWorkers(this.bus, this.worker, this.peer, context.client), {
+        oauthSessions: codexOAuthSessions(),
         drain: ["agent", "webapp"],
         nodeWorkers: HOSTED_NODE_WORKERS,
         build: { app: "shell", script: "build:process" },

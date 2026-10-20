@@ -1,3 +1,4 @@
+import { codexOAuthSessions } from "./oauth.js";
 import { Bus } from "@magi/bus";
 import { LauncherWorker } from "@magi/launcher";
 import type { LLMClient } from "@magi/providers/client.js";
@@ -25,6 +26,7 @@ export class Magi {
   constructor(handle: string, options: MagiOptions = {}) {
     this.bus = new Bus(handle, options.workspace);
     this.manager = new LauncherWorker(this.bus, agentWorkers(this.bus, options), {
+      oauthSessions: codexOAuthSessions(),
       drain: ["agent"],
       build: { app: "eva", script: "build" },
     });

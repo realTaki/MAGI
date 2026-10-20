@@ -1,3 +1,4 @@
+import { codexOAuthSessions } from "@magi/launcher/composition/oauth.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, readFileSync, readdirSync } from "node:fs";
@@ -33,7 +34,7 @@ test("only authenticated private owner chat can initiate OAuth; peer and groups 
 });
 test("OAuth config verifies before activation, stores tokens only in secrets, and replay does not log in again",async()=>{
  const f=fixture();let logins=0;let configured=false;
- const config=new ConfigWorker(f.bus,{...driver,async login(i){logins++;return driver.login(i);}});
+ const config=new ConfigWorker(f.bus,codexOAuthSessions({...driver,async login(i){logins++;return driver.login(i);}}));
  const providers=new ProvidersWorker(f.bus,{async complete(){return {role:"assistant",content:"OK"};},async verify(s){assert.ok(s.oauth_ref?.startsWith("provider.oauth.codex."));assert.equal(s.provider,"openai-codex");},configure(){configured=true;}});
  try{
   const owner=f.bus.chats.forChannel("local-owner","owner");await providers.start();
@@ -50,7 +51,7 @@ test("OAuth config verifies before activation, stores tokens only in secrets, an
 });
 test("failed OAuth verification preserves the active API-key provider and removes candidate tokens",async()=>{
  const f=fixture();f.bus.settings.set("provider.name","custom");f.bus.settings.set("provider.model","old-model");f.bus.secrets.set("provider.api_key","existing-key");
- const config=new ConfigWorker(f.bus,driver);
+ const config=new ConfigWorker(f.bus,codexOAuthSessions(driver));
  const providers=new ProvidersWorker(f.bus,{async complete(){return {role:"assistant",content:"OK"};},async verify(){throw new Error("rejected");},configure(){}});
  try{
   const owner=f.bus.chats.forChannel("local-owner","owner");await providers.start();
@@ -65,7 +66,7 @@ test("restart cannot replay a consumed device-login attempt",async()=>{
  const owner=f.bus.chats.forChannel("local-owner","owner");
  const binding={instance:f.bus.identity.publicKey,owner:f.bus.userContactId,chat:owner.id,attempt};
  f.bus.settings.set(`provider.oauth.attempt.${attempt}`,JSON.stringify({binding,update:{attempt,instance:binding.instance,state:"pending"}}));
- const config=new ConfigWorker(f.bus,{...driver,async login(i){logins++;return driver.login(i);}});
+ const config=new ConfigWorker(f.bus,codexOAuthSessions({...driver,async login(i){logins++;return driver.login(i);}}));
  try{
   chat(f.bus,owner.id,f.bus.userContactId,{content:"",metadata:{provider_oauth:{action:"start",attempt,model:"gpt-6-sol"}}});
   await config.poll();await new Promise(r=>setTimeout(r,10));
@@ -76,10 +77,10 @@ test("paused node refuses OAuth before login and stop during grant prevents acti
  for (const stoppedDuringGrant of [false, true]) {
   const f = fixture(); let logins = 0;
   if (!stoppedDuringGrant) f.bus.settings.set("node.enabled", "false");
-  const config = new ConfigWorker(f.bus, { ...driver, async login(i) {
+  const config = new ConfigWorker(f.bus, codexOAuthSessions({ ...driver, async login(i) {
     logins++; const value = await driver.login(i);
     f.bus.settings.set("node.enabled", "false"); return value;
-  } });
+  } }));
   try {
    const owner = f.bus.chats.forChannel("local-owner", "owner");
    chat(f.bus, owner.id, f.bus.userContactId, { content: "", metadata: { provider_oauth: { action: "start", attempt, model: "gpt-6-sol" } } });
