@@ -56,7 +56,7 @@ export class Shell {
       });
       this.manager = new ManagerWorker(this.bus, shellWorkers(this.bus, this.worker, this.peer, context.client), {
         drain: ["agent", "webapp"],
-        nodeWorkers: HOSTED_NODE_WORKERS,
+        nodeWorkers: HOSTED_NODE_WORKERS.filter(name => name !== "asp"),
         build: { app: "shell", script: "build:process" },
         installDesktopUpdate: context.installDesktopUpdate,
       });

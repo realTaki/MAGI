@@ -145,3 +145,13 @@ test("Remote URL connection sends hello and leaves recipient acceptance independ
   assert.equal(local.spawned(), 0);
   await api.dispose();
 });
+
+test("Built-in Shell reports running without an absent ASP worker", async t => {
+  const { context } = fixture(t);
+  const { Shell } = await import("@magi/node/shell.js");
+  const shell = new Shell(context);
+  try {
+    await shell.start();
+    assert.equal(shell.worker.methods["peer.contacts"]()[0].running, true);
+  } finally { await shell.stop(true); }
+});
