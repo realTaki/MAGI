@@ -11,10 +11,10 @@ import { MAGI_CONTACT_ID, validatePeerEndpoint, validatePeerPrincipal } from "./
 export type GroupMember = { principal: string; endpoint: string };
 export type GroupMembership = { v: 1; kind: "membership"; conversationUUID: string; owner: string; epoch: number; previousDigest: string | null; title: string; members: GroupMember[] };
 export type GroupEvent = { v: 1; kind: "message"; conversationUUID: string; eventId: string; author: string; sequence: number; lamport: number; epoch: number; content: string; replyTo?: string };
-export type SignedGroupMembership = { publicKey: string; payload: GroupMembership; signature?: string };
-export type SignedGroupEvent = { publicKey: string; payload: GroupEvent; signature?: string };
+export type GroupMembershipEnvelope = { publicKey: string; payload: GroupMembership };
+export type GroupEventEnvelope = { publicKey: string; payload: GroupEvent };
 export type Group = { conversation_uuid: string; owner: string; title: string; epoch: number; trust: "pending" | "accepted"; chat_id: number };
-export type GroupReceipt = { event: SignedGroupEvent; message_id: number; job_id: number | null; duplicate: boolean };
+export type GroupReceipt = { event: GroupEventEnvelope; message_id: number; job_id: number | null; duplicate: boolean };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function groupPrincipal(publicKey: string): string {
@@ -45,15 +45,15 @@ export class GroupBook {
     return (this.db.$client.prepare("SELECT * FROM books_groups WHERE conversation_uuid = ?").get(uuid) as Group | undefined) ?? null;
   }
   list(): Group[] { return this.db.$client.prepare("SELECT * FROM books_groups ORDER BY conversation_uuid").all() as Group[]; }
-  membership(uuid: string, epoch?: number): SignedGroupMembership {
+  membership(uuid: string, epoch?: number): GroupMembershipEnvelope {
     const group = this.get(uuid); if (!group) throw new Error("group not found");
     const row = this.db.$client.prepare("SELECT envelope FROM books_group_memberships WHERE conversation_uuid = ? AND epoch = ?").get(uuid, epoch ?? group.epoch);
     if (!row) throw new Error("group membership epoch missing");
-    return JSON.parse(String(row.envelope)) as SignedGroupMembership;
+    return JSON.parse(String(row.envelope)) as GroupMembershipEnvelope;
   }
-  memberships(uuid: string, afterEpoch = 0, limit = 100): SignedGroupMembership[] {
+  memberships(uuid: string, afterEpoch = 0, limit = 100): GroupMembershipEnvelope[] {
     if (!Number.isSafeInteger(afterEpoch) || afterEpoch < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error("invalid membership page");
-    return this.db.$client.prepare("SELECT envelope FROM books_group_memberships WHERE conversation_uuid = ? AND epoch > ? ORDER BY epoch LIMIT ?").all(uuid, afterEpoch, limit).map(row => JSON.parse(String(row.envelope)) as SignedGroupMembership);
+    return this.db.$client.prepare("SELECT envelope FROM books_group_memberships WHERE conversation_uuid = ? AND epoch > ? ORDER BY epoch LIMIT ?").all(uuid, afterEpoch, limit).map(row => JSON.parse(String(row.envelope)) as GroupMembershipEnvelope);
   }
   create(input: { title: string; members: GroupMember[]; endpoint?: string }): Group {
     const owner = groupPrincipal(this.bus.identity.publicKey);
@@ -63,7 +63,7 @@ export class GroupBook {
     const snapshot = this.envelope({ v: 1, kind: "membership", conversationUUID: randomUUID(), owner, epoch: 1, previousDigest: null, title: input.title, members });
     const group = this.offerMembership(snapshot); return this.accept(group.conversation_uuid);
   }
-  updateMembers(uuid: string, members: GroupMember[]): SignedGroupMembership {
+  updateMembers(uuid: string, members: GroupMember[]): GroupMembershipEnvelope {
     const group = this.get(uuid); const owner = groupPrincipal(this.bus.identity.publicKey);
     if (!group || group.owner !== owner) throw new Error("only group creator may change membership");
     checkMembers(members);
@@ -72,7 +72,7 @@ export class GroupBook {
     this.offerMembership(snapshot); return snapshot;
   }
   /** Import membership directly; all participating processes share the trusted LAN. */
-  offerMembership(envelope: SignedGroupMembership): Group {
+  offerMembership(envelope: GroupMembershipEnvelope): Group {
     const signer = checkEnvelope(envelope); const value = envelope.payload;
     if (value.v !== 1 || value.kind !== "membership" || !UUID.test(value.conversationUUID) || value.owner !== signer || !Number.isSafeInteger(value.epoch) || value.epoch < 1 || typeof value.title !== "string" || value.title.length > 200) throw new Error("invalid group membership");
     checkMembers(value.members);
@@ -120,7 +120,7 @@ export class GroupBook {
       return this.ingest(event);
     }
   }
-  ingest(event: SignedGroupEvent): GroupReceipt {
+  ingest(event: GroupEventEnvelope): GroupReceipt {
     const signer = checkEnvelope(event); const value = event.payload;
     if (value.v !== 1 || value.kind !== "message" || value.author !== signer || !UUID.test(value.conversationUUID) || !UUID.test(value.eventId) || !Number.isSafeInteger(value.sequence) || value.sequence < 1 || !Number.isSafeInteger(value.lamport) || value.lamport < 1 || !Number.isSafeInteger(value.epoch) || value.epoch < 1 || typeof value.content !== "string" || value.content.length > 32000 || (value.replyTo !== undefined && (typeof value.replyTo !== "string" || !UUID.test(value.replyTo)))) throw new Error("invalid group event");
     const group = this.get(value.conversationUUID);
@@ -153,19 +153,19 @@ export class GroupBook {
   /** Storage-order cursor is transport-local; restart each anti-entropy round at zero.
    * No per-sender high-water shortcut: gaps and reordered events remain discoverable.
    */
-  events(uuid: string, options: { after?: number; limit?: number } = {}): { events: SignedGroupEvent[]; nextCursor: number | null } {
+  events(uuid: string, options: { after?: number; limit?: number } = {}): { events: GroupEventEnvelope[]; nextCursor: number | null } {
     const after = options.after ?? 0, limit = options.limit ?? 100;
     if (!Number.isSafeInteger(after) || after < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error("invalid group event page");
     const rows = this.db.$client.prepare("SELECT id, envelope FROM books_group_events WHERE conversation_uuid = ? AND id > ? ORDER BY id LIMIT ?").all(uuid, after, limit + 1);
     const selected = rows.slice(0, limit);
-    return { events: selected.map(row => JSON.parse(String(row.envelope)) as SignedGroupEvent), nextCursor: rows.length > limit ? Number(selected.at(-1)!.id) : null };
+    return { events: selected.map(row => JSON.parse(String(row.envelope)) as GroupEventEnvelope), nextCursor: rows.length > limit ? Number(selected.at(-1)!.id) : null };
   }
   /** Display is deterministic regardless of arrival order. */
-  history(uuid: string, limit = 100): SignedGroupEvent[] {
+  history(uuid: string, limit = 100): GroupEventEnvelope[] {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) throw new Error("invalid group history limit");
-    return this.db.$client.prepare("SELECT envelope FROM (SELECT * FROM books_group_events WHERE conversation_uuid = ? ORDER BY lamport DESC, author DESC, event_id DESC LIMIT ?) ORDER BY lamport, author, event_id").all(uuid, limit).map(row => JSON.parse(String(row.envelope)) as SignedGroupEvent);
+    return this.db.$client.prepare("SELECT envelope FROM (SELECT * FROM books_group_events WHERE conversation_uuid = ? ORDER BY lamport DESC, author DESC, event_id DESC LIMIT ?) ORDER BY lamport, author, event_id").all(uuid, limit).map(row => JSON.parse(String(row.envelope)) as GroupEventEnvelope);
   }
-  private envelope<T extends GroupEvent | GroupMembership>(payload: T): { publicKey: string; payload: T; signature?: string } {
+  private envelope<T extends GroupEvent | GroupMembership>(payload: T): { publicKey: string; payload: T } {
     return { publicKey: this.bus.identity.publicKey, payload };
   }
 }

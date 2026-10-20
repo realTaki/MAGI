@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Bus } from "../bus.js";
-import { groupPrincipal, type SignedGroupEvent } from "../books/groupBook.js";
+import { groupPrincipal, type GroupEventEnvelope } from "../books/groupBook.js";
 
 function cluster() {
   const roots = [0, 1, 2].map(() => mkdtempSync(join(tmpdir(), "magi-group-")));
@@ -73,7 +73,7 @@ test("forwarded original author is retained and conflicting duplicate content is
     const request = a.groups.append(uuid, "request"); b.groups.ingest(request.event);
     const answer = b.groups.append(uuid, "reply", request.event.payload.eventId);
     const receipt = a.groups.ingest(answer.event); assert.equal(receipt.job_id, null);
-    const forged = structuredClone(answer.event) as SignedGroupEvent; forged.payload.content = "forged";
+    const forged = structuredClone(answer.event) as GroupEventEnvelope; forged.payload.content = "forged";
     assert.throws(() => a.groups.ingest(forged), /reused/);
     assert.equal(a.groups.history(uuid).at(-1)?.payload.author, f.peers[1].principal);
   } finally { f.clean(); }
