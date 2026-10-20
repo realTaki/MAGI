@@ -56,7 +56,7 @@ export function contactTools(bus: Bus, context?: ContactToolContext): Executable
       async run(args) { requireOwner(bus, context); return JSON.stringify({ accepted: bus.groups.accept(stringArg(args, "conversation_uuid")) }); },
     },
     {
-      name: "set_peer_tool_policy", description: "Set exact tool names the local owner delegates to an accepted peer. Grants apply to that tool's full ordinary capability, including file or external-service access where applicable; no wildcards. Provider, configuration, administration and cross-chat access remain owner-only. Only the local owner may grant or revoke these capabilities.",
+      name: "set_peer_tool_policy", description: "Set exact tool names the local owner delegates to an accepted peer. Grants apply to the tool's full capability; no wildcards. Raw shell, filesystem writes and powerful MCP tools grant broad trusted-code access to the workspace, including its databases and secrets: this is not sandbox isolation. Direct provider/configuration/admin and cross-chat messaging tools remain owner-only. Only the local owner may grant or revoke these capabilities.",
       input_schema: { type: "object", properties: { contact_id: { type: "integer" }, tools: { type: "array", items: { type: "string" }, maxItems: 64 } }, required: ["contact_id", "tools"], additionalProperties: false },
       async run(args) {
         requireOwner(bus, context);

@@ -9,7 +9,7 @@ const OWNER_ONLY = new Set([
   "provider_settings", "sync_provider", "mcp_server", "request_replace", "set_home_chat", "show_card",
   "set_self_profile", "set_peer_contact_policy", "set_peer_tool_policy", "block_peer_contact",
   "accept_group_invitation", "create_group", "update_group_members", "create_eva", "stop_eva", "restart_eva",
-  "connect_peer", "manage_workers", "search_contact_messages", "schedule_task",
+  "connect_peer", "create_local_eva", "local_eva_lifecycle", "manage_workers", "search_contact_messages", "schedule_task",
 ]);
 const PRIVILEGED_WITHOUT_CONTEXT = new Set(["bash", "bash_output", "bash_kill", "write_file", "edit_file", "read_file", "list_files", "search_files"]);
 export function peerToolPolicyKey(principal: string): string { return `peer.tools.${principal}`; }

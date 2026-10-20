@@ -71,9 +71,14 @@ worker may execute it. Pending peers can only request acceptance when the owner
 has enabled agent-message-only acceptance. Accepted peers can search only their
 current conversation by default. The owner may grant exact tool names to one
 accepted signing principal; shell, filesystem and MCP tools need such explicit
-grants. Tool grants do not allow crossing conversation boundaries, provider or
-MCP configuration, home-chat changes, task scheduling, process replacement, or
-local administration. Those require an actual owner-authored triggering message.
+grants. Direct chat tools cannot cross conversation boundaries. Direct provider or MCP
+configuration, home-chat changes, task scheduling, process replacement and local
+administration tools require an actual owner-authored triggering message, regardless
+of an exact tool-name grant. This is an in-process authorization boundary, not an
+OS sandbox. Explicitly granting raw shell, filesystem writes, or a powerful MCP
+tool is broad trusted-code delegation: such code may read secrets or modify local
+databases and bypass these application checks. Do not grant these capabilities to
+a peer you trust only to exchange messages.
 Claims with absent or conflicting peer provenance fail closed. Worker-side checks
 remain authoritative for recovered turns even if an older cached catalog contains
 more tools. Peer model prompts exclude private workspace instructions and global
