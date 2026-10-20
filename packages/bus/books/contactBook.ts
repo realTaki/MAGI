@@ -44,7 +44,9 @@ export class ContactBook {
     const endpoint = validatePeerEndpoint(input.endpoint);
     const known = this.db.select().from(contacts).where(eq(contacts.peer_id, principal)).get();
     if (known) {
-      return this.db.update(contacts).set({ peer_principal: principal, peer_url: endpoint, peer_trust: "accepted", last_seen_at: sql`(CURRENT_TIMESTAMP)` }).where(eq(contacts.id, known.id)).returning().get();
+      // Incoming announcements refresh presence, not locally saved routing preferences.
+      // Only an explicit contact save may change its route or unblock it.
+      return this.db.update(contacts).set({ peer_principal: principal, last_seen_at: sql`(CURRENT_TIMESTAMP)` }).where(eq(contacts.id, known.id)).returning().get();
     }
     return this.db.insert(contacts).values({ name: `peer:${principal}`, nickname: input.name?.trim() || null,
       role: "stranger", peer_id: principal, peer_principal: principal, peer_url: endpoint, peer_trust: "accepted" }).returning().get();
