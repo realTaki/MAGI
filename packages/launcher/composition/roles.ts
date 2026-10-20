@@ -11,12 +11,11 @@ import { MemoryWorker } from "@magi/memory/worker.js";
 import { ProvidersWorker } from "@magi/providers/worker.js";
 import type { LLMClient } from "@magi/providers/client.js";
 import { SkillWorker } from "@magi/skills/worker.js";
-import { PeerWorker, type PeerOptions } from "@magi/channel-peer";
+import { PeerWorker, type PeerOptions } from "@magi/channel-a2a";
 import { TelegramWorker } from "@magi/channel-telegram/worker.js";
-import { CliWorker } from "@magi/channel-cli/worker.js";
 import { TaskWorker } from "@magi/channel-tasks/worker.js";
 import { McpWorker, type McpConnector } from "@magi/mcp/worker.js";
-import type { ChatDelivery, BaseWorker } from "@magi/bus";
+import type { BaseWorker } from "@magi/bus";
 
 function shared(bus: Bus, client?: LLMClient, tools?: Tool[]): BaseWorker[] {
   return [
@@ -33,7 +32,6 @@ function shared(bus: Bus, client?: LLMClient, tools?: Tool[]): BaseWorker[] {
 export function agentWorkers(bus: Bus, options: {
   client?: LLMClient;
   tools?: Tool[];
-  deliver?: (text: string, delivery: ChatDelivery) => void;
   peer?: PeerOptions;
   owner?: boolean;
   telegram?: { token: string; apiBase?: string };
@@ -41,7 +39,6 @@ export function agentWorkers(bus: Bus, options: {
 } = {}): BaseWorker[] {
   return [
     ...shared(bus, options.client, options.tools),
-    new CliWorker(bus, options.deliver),
     new McpWorker(bus, options.mcpConnector),
     new PeerWorker(bus, options.peer),
     ...(options.owner ? [new LocalOwnerWorker(bus)] : []),

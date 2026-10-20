@@ -1,1 +1,1 @@
-export { Magi, type MagiOptions } from "@magi/node";
+export { Magi, type MagiOptions } from "@magi/launcher/composition";

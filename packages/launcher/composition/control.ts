@@ -3,7 +3,7 @@
  * LAUNCHER_PROTOCOL.
  */
 
-import { LAUNCHER_PROTOCOL } from "@magi/runtime/protocol.js";
+import { LAUNCHER_PROTOCOL } from "@magi/launcher/runtime/protocol.js";
 
 export function sendLauncher(message: { type: string }): void {
   process.send?.({ v: LAUNCHER_PROTOCOL, ...message });

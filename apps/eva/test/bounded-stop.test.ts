@@ -9,7 +9,7 @@ import { MUTATION_SETTLE_MS } from "@magi/bus/abort.js";
 import { AgentWorker } from "@magi/agent/worker.js";
 import { ToolsWorker } from "@magi/built-in-tools/worker.js";
 import { ProvidersWorker } from "@magi/providers/worker.js";
-import { ManagerWorker } from "@magi/manager";
+import { LauncherWorker } from "@magi/launcher";
 
 async function eventually(check: () => boolean) {
   for (let i = 0; i < 500; i++) { if (check()) return; await sleep(10); }
@@ -30,12 +30,12 @@ for (const mode of ["stop", "suspendForReplace", "tool timeout"] as const) test(
     claimed.push(job.id); return true;
   }, interrupt() { polling = false; }, stop() { polling = false; } };
   let modelCalls = 0;
-  const manager = new ManagerWorker(bus, [new AgentWorker(bus), new ProvidersWorker(bus, { async complete() { modelCalls++; return { role: "assistant", content: "", tool_calls: calls }; } }), orphan], { drain: ["agent"], build: { app: "eva", script: "build" } });
+  const manager = new LauncherWorker(bus, [new AgentWorker(bus), new ProvidersWorker(bus, { async complete() { modelCalls++; return { role: "assistant", content: "", tool_calls: calls }; } }), orphan], { drain: ["agent"], build: { app: "eva", script: "build" } });
   const turns: number[] = [];
   try {
     await manager.start();
     for (let i = 0; i < 2; i++) {
-      const chat = bus.chats.forChannel("cli", `chat-${i}`);
+      const chat = bus.chats.forChannel("test-owner", `chat-${i}`);
       turns.push(bus.board("MessageDeliveryJob").publish({ message_id: bus.messages.add(chat.id, SYSTEM_CONTACT_ID, "mutate") }, "test"));
     }
     await eventually(() => claimed.length === 6);
@@ -90,11 +90,11 @@ for (const mode of ["stop", "suspendForReplace"] as const) for (const outcome of
     if (outcome === "failed") throw new Error("late mutation failure");
     return "late committed";
   } }]);
-  const manager = new ManagerWorker(bus, [new AgentWorker(bus), new ProvidersWorker(bus, { async complete() { return { role: "assistant", content: "", tool_calls: [{ name: "edit_file", tool_call_id: "edit", arguments: {} }] }; } }), tools,
+  const manager = new LauncherWorker(bus, [new AgentWorker(bus), new ProvidersWorker(bus, { async complete() { return { role: "assistant", content: "", tool_calls: [{ name: "edit_file", tool_call_id: "edit", arguments: {} }] }; } }), tools,
     { worker_name: "last-worker", async poll() { return false; }, stop() { remainingStopped = true; } }], { drain: ["agent"], build: { app: "eva", script: "build" } });
   try {
     await manager.start();
-    const chat = bus.chats.forChannel("cli", "test");
+    const chat = bus.chats.forChannel("test-owner", "test");
     const turn = bus.board("MessageDeliveryJob").publish({ message_id: bus.messages.add(chat.id, SYSTEM_CONTACT_ID, "edit") }, "test");
     await eventually(() => runs === 1);
     await assert.rejects(manager[mode](), /Cannot stop tools safely.*outcome unknown/);
@@ -124,10 +124,10 @@ test("interruption cancels unclaimed mutations without invoking them", async () 
   const workspace = await mkdtemp(join(tmpdir(), "magi-pending-stop-"));
   const bus = new Bus("@pending-stop.magi", workspace);
   bus.tools.registerSource("absent", () => [{ name: "write_file", description: "absent", input_schema: {}, async run() { throw new Error("must not execute"); } }]);
-  const manager = new ManagerWorker(bus, [new AgentWorker(bus), new ProvidersWorker(bus, { async complete() { return { role: "assistant", content: "", tool_calls: [{ name: "write_file", tool_call_id: "write", arguments: {} }] }; } })], { drain: ["agent"], build: { app: "eva", script: "build" } });
+  const manager = new LauncherWorker(bus, [new AgentWorker(bus), new ProvidersWorker(bus, { async complete() { return { role: "assistant", content: "", tool_calls: [{ name: "write_file", tool_call_id: "write", arguments: {} }] }; } })], { drain: ["agent"], build: { app: "eva", script: "build" } });
   try {
     await manager.start();
-    const chat = bus.chats.forChannel("cli", "test");
+    const chat = bus.chats.forChannel("test-owner", "test");
     const turn = bus.board("MessageDeliveryJob").publish({ message_id: bus.messages.add(chat.id, SYSTEM_CONTACT_ID, "write") }, "test");
     await eventually(() => bus.agentTurns.has(turn) && Boolean(bus.agentTurns.get(turn).messages.find((m) => m.tool_calls?.length)));
     await manager.stop();
@@ -141,7 +141,7 @@ test("interruption cancels unclaimed mutations without invoking them", async () 
 
 
 test("Shell retries a rejected stop without closing BUS prematurely", async () => {
-  const { Shell } = await import("@magi/node/shell.js");
+  const { Shell } = await import("@magi/launcher/composition/shell.js");
   let attempts = 0;
   let closed = 0;
   // Isolate the lifecycle owner from unrelated startup/network dependencies.
@@ -163,7 +163,7 @@ test("Shell retries a rejected stop without closing BUS prematurely", async () =
 });
 
 test("replace attempts safe recovery after a partially failed suspension", { timeout: 15_000 }, async () => {
-  const { ReplaceWorker } = await import("@magi/manager/replace.js");
+  const { ReplaceWorker } = await import("@magi/launcher/replace.js");
   const workspace = await mkdtemp(join(tmpdir(), "magi-partial-suspend-"));
   const bus = new Bus("@partial-suspend.magi", join(workspace, "state"));
   const app = join(workspace, "apps", "eva");
@@ -226,10 +226,10 @@ for (const scenario of ["recover", "recover failed mutation", "deliberate stop",
     // A cancelled cold generation must be retired before its BUS can close.
     bus.settings.set("helper.stops", String(++helperStops));
   } };
-  const manager = new ManagerWorker(bus, [new AgentWorker(bus), new ProvidersWorker(bus, { async complete(request) { if (request.messages.at(-1)?.content.includes("source error:")) return { role: "assistant", content: "NO_REPLY" }; return { role: "assistant", content: "", tool_calls: [{ name: "edit_file", tool_call_id: "mutation", arguments: {} }] }; } }), tools, helper], { drain: ["agent"], build: { app: "eva", script: "build" } });
+  const manager = new LauncherWorker(bus, [new AgentWorker(bus), new ProvidersWorker(bus, { async complete(request) { if (request.messages.at(-1)?.content.includes("source error:")) return { role: "assistant", content: "NO_REPLY" }; return { role: "assistant", content: "", tool_calls: [{ name: "edit_file", tool_call_id: "mutation", arguments: {} }] }; } }), tools, helper], { drain: ["agent"], build: { app: "eva", script: "build" } });
   try {
     await manager.start();
-    const chat = bus.chats.forChannel("cli", "test");
+    const chat = bus.chats.forChannel("test-owner", "test");
     bus.board("MessageDeliveryJob").publish({ message_id: bus.messages.add(chat.id, SYSTEM_CONTACT_ID, "edit") }, "test");
     await eventually(() => mutationRuns === 1);
     const board = bus.board("ReplaceSelfJob");
@@ -295,7 +295,7 @@ test("a replacement resume arriving after deliberate stop cannot arm new recover
   let starts = 0;
   let polled = false;
   const worker = { worker_name: "held", start() { starts++; }, async poll() { polled = true; await held; return false; } };
-  const manager = new ManagerWorker(bus, [worker], { drain: ["held"], build: { app: "eva", script: "build" } });
+  const manager = new LauncherWorker(bus, [worker], { drain: ["held"], build: { app: "eva", script: "build" } });
   try {
     await manager.start();
     await eventually(() => polled);

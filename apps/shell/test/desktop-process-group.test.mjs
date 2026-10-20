@@ -42,7 +42,7 @@ linuxTest("Eva ignores a desktop group marker inherited into a different process
   const root = mkdtempSync(path.join(tmpdir(), "magi-mismatched-group-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const backend = path.join(root, "backend.mjs"), marker = path.join(root, "backend.pid");
-  const control = pathToFileURL(fileURLToPath(new URL("../../../packages/node/dist/control.js", import.meta.url))).href;
+  const control = pathToFileURL(fileURLToPath(new URL("../../../packages/launcher/dist/composition/control.js", import.meta.url))).href;
   writeFileSync(backend, `import{writeFileSync}from'node:fs';import{sendLauncher,untilShutdown}from ${JSON.stringify(control)};sendLauncher({type:'hello'});writeFileSync(${JSON.stringify(marker)},String(process.pid));const shutdown=untilShutdown();sendLauncher({type:'ready'});await shutdown;process.exit(0);`);
   const owner = createProcessOwner({ graceMs: 50 }); t.after(() => owner.close());
   const launcher = owner.spawn(process.execPath, [fileURLToPath(new URL("../../eva/eva.mjs", import.meta.url)), "--role", "agent"], {

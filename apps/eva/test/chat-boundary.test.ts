@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Bus, chat, encryptFor, EVA_MAGI_HANDLE, MAGI_CONTACT_ID, type ChatInput, type ChatDelivery, type CardSpec } from "@magi/bus";
-import { Magi } from "../eva.js";
+import { Magi } from "./harness.js";
 
 test("standard chat/deliver bootstraps an encrypted provider without a model or ASP", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "chat-boundary-"));
@@ -36,7 +36,7 @@ test("standard chat/deliver bootstraps an encrypted provider without a model or 
     assert.equal(verified, 1);
     assert.equal(magi.bus.settings.get("provider.model"), "MiniMax-M3");
     assert.ok(delivered.some(d => (d.job.metadata?.card_status as {state?:string})?.state === "saved"));
-    const history = magi.bus.messages.list(magi.bus.chats.forChannel("cli", "terminal").id, 100);
+    const history = magi.bus.messages.list(magi.bus.chats.forChannel("test-owner", "terminal").id, 100);
     const publicData = JSON.stringify({history, delivered});
     assert.ok(!publicData.includes("synthetic-good") && !publicData.includes(ciphertext) && !publicData.includes("must not persist"));
   } finally { await magi.stop(); await rm(workspace, {recursive:true, force:true}); }

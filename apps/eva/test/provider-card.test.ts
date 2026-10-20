@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { Magi } from "../eva.js";
+import { Magi } from "./harness.js";
 import { encryptFor, type CardSpec } from "@magi/bus";
 import { DatabaseSync } from "node:sqlite";
 import { PROVIDER_CATALOG } from "@magi/bus/jobs/providerCatalog.js";

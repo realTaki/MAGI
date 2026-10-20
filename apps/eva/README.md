@@ -1,7 +1,7 @@
 # EVA launcher and agent role
 
 `eva.mjs` is the executable launcher. It starts one
-[`packages/node/dist/child.js`](../../packages/node/child.ts) process for
+[`packages/launcher/dist/composition/child.js`](../../packages/launcher/composition/child.ts) process for
 `--role shell` or `--role agent`. The launcher has no BUS;
 the child owns the BUS, manager and role workers. `eva.ts` exports the `Magi`
 class and is not the executable composition root.

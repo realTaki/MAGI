@@ -1,12 +1,10 @@
 /**
- * The one child process: BUS + ManagerWorker + the workers for this role.
+ * The one child process: BUS + LauncherWorker + the workers for this role.
  * The eva launcher is the other OS process.
  */
 
-import { createInterface } from "node:readline/promises";
-import { stdin, stdout } from "node:process";
-import { healthyOrExit, untilHealthy } from "@magi/manager";
-import { resolveToolchain } from "@magi/runtime/toolchain.js";
+import { healthyOrExit, untilHealthy } from "@magi/launcher";
+import { resolveToolchain } from "@magi/launcher/runtime/toolchain.js";
 import { createOwnerApi } from "./owner.js";
 import { Magi } from "./agent.js";
 import { sendLauncher, untilShutdown, watchLauncherProtocol } from "./control.js";
@@ -32,25 +30,8 @@ async function runAgent(): Promise<{ stop: () => Promise<void>; done: Promise<vo
   await healthyOrExit(() => magi.healthy());
   const host = owner ? connectHost(process.stdin, process.stdout) : null;
   if (host) host.serve(Object.fromEntries(Object.entries(createOwnerApi(magi.bus)).map(([name, method]) => [name, (input: unknown) => method(input as never)])));
-  const done = owner || process.env.MAGI_SERVER === "1"
-    ? new Promise<void>(() => {})
-    : readLines(magi);
+  const done = new Promise<void>(() => {});
   return { stop: async () => { try { await magi.stop(); } finally { host?.close(); } }, done };
-}
-
-async function readLines(magi: Magi): Promise<void> {
-  const input = createInterface({ input: stdin, output: stdout });
-  try {
-    while (true) {
-      const line = await input.question("> ");
-      if (line.trim() === "/exit") return;
-      if (line.trim()) await magi.chat(line);
-    }
-  } catch {
-    return;
-  } finally {
-    input.close();
-  }
 }
 
 function requireEnv(name: string): string {
@@ -76,7 +57,7 @@ async function startShell(): Promise<() => Promise<void>> {
       repository: requireEnv("MAGI_REPOSITORY"),
       managed: process.env.MAGI_MANAGED === "1",
       sourceVerified: process.env.MAGI_SOURCE_VERIFIED === "1",
-      installDesktopUpdate: (manifest: import("@magi/runtime/desktop-package.js").DesktopManifest, job: number) => host.installDesktopUpdate({ manifest, job }),
+      installDesktopUpdate: (manifest: import("@magi/launcher/runtime/desktop-package.js").DesktopManifest, job: number) => host.installDesktopUpdate({ manifest, job }),
       shellUpdate: {
         packaged: process.env.MAGI_PACKAGED === "1",
         currentVersion: process.env.MAGI_SHELL_VERSION ?? "",

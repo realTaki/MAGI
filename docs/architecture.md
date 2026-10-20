@@ -29,8 +29,8 @@ that settings have disappeared, or that autonomous improvement is proven.
 ## Process and role boundaries
 
 `apps/eva/eva.mjs` is a launcher process without a BUS. It starts one
-`packages/node/dist/child.js` process with a BUS, `ManagerWorker` and role workers.
-[Role composition](../packages/node/roles.ts) shares the agent, provider, tool,
+`packages/launcher/dist/composition/child.js` process with a BUS, `LauncherWorker` and role workers.
+[Role composition](../packages/launcher/composition/roles.ts) shares the agent, provider, tool,
 contact, skill and memory workers; roles add their interfaces:
 
 | Role | Handle | Additional responsibility |
@@ -40,6 +40,13 @@ contact, skill and memory workers; roles add their interfaces:
 
 The human speaks as `@user.magi`; there is no separate User node. Package entry
 files under `apps/eva` export classes; the launcher is the executable entry.
+
+The [launcher package](../packages/launcher/README.md) contains database-free
+`runtime/` utilities, root lifecycle workers and `composition/` process assembly.
+Separate TypeScript projects keep BUS → runtime independent of lifecycle → BUS.
+The desktop/Web owner adapter remains the local user entry; no terminal chat
+channel is registered. Package renames preserve persisted worker keys and wire
+protocols.
 There is no central ASP role, registry or relay in the runtime.
 
 Electron owns the window and starts only the built-in Shell EVA through its
@@ -104,7 +111,7 @@ deterministic after convergence. This provides eventual history convergence,
 not consensus, authenticated authorship or exactly-once external side effects.
 Removal cannot revoke data already shared with a participant.
 
-The [MAGI peer subset](../packages/channel-peer/README.md) is inspired by A2A 1.0,
+The [MAGI peer subset](../packages/channel-a2a/README.md) is inspired by A2A 1.0,
 but is not a standards-compliant A2A implementation. See the
 [group synchronization design](architecture/peer-group-sync.md) for history
 reconciliation and offline recovery.
@@ -126,7 +133,7 @@ The model sees configuration status rather than a secret field's value.
 
 Provider bootstrap/configuration requires an authenticated local owner channel.
 Remote chat does not expose provider secret forms or local process controls. There is no global operator-settings broadcast. See the
-[provider catalog](provider-catalog.md), [configuration worker](../packages/manager/config.ts)
+[provider catalog](provider-catalog.md), [configuration worker](../packages/launcher/config.ts)
 and [security limits](../SECURITY.md).
 
 ## Source edits and activation
@@ -165,8 +172,8 @@ code is outside that child replacement: it requires a complete Electron restart,
 and a packaged installation requires an updated package for packaged files.
 
 Implementation: [source authority](../packages/built-in-tools/source.ts),
-[replace worker](../packages/manager/replace.ts),
-[revision builder](../packages/runtime/revise.ts),
+[replace worker](../packages/launcher/replace.ts),
+[revision builder](../packages/launcher/runtime/revise.ts),
 [launcher](../apps/eva/eva.mjs), [interface activation](../apps/shell/interface.mjs).
 Controlled self-edit tests establish mechanics, not measured recursive improvement
 or complete desktop-demo acceptance; see [Verification](verification.md).

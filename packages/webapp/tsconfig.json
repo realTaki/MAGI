@@ -16,7 +16,7 @@
   ],
   "references": [
     {
-      "path": "../runtime"
+      "path": "../launcher/runtime"
     },
     {
       "path": "../bus"

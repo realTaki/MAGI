@@ -2,7 +2,7 @@ import { expect, test , sleep} from "./test.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Magi } from "../eva.js";
+import { Magi } from "./harness.js";
 import { Bus, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "@magi/bus";
 import type { ExecutableTool, LLMMessage } from "@magi/bus";
 import { builtinTools, ToolsWorker } from "@magi/built-in-tools/worker.js";
@@ -11,7 +11,7 @@ test("message search includes archived history and send_message uses delivery jo
   const workspace = await mkdtemp(join(tmpdir(), "magi-tools-"));
   const delivered: string[] = [];
   const magi = new Magi("@tools.magi", { workspace, deliver: (text) => delivered.push(text), client: { async complete() { return { role: "assistant", content: "unused" }; } } });
-  const chat = magi.bus.chats.forChannel("cli", "terminal");
+  const chat = magi.bus.chats.forChannel("test-owner", "terminal");
   magi.bus.messages.add(chat.id, SYSTEM_CONTACT_ID, "remember the blue project");
   magi.bus.messages.add(chat.id, MAGI_CONTACT_ID, "assistant answer");
   magi.bus.messages.archiveBefore(chat.id, 1);
@@ -37,8 +37,8 @@ test("request_replace uses the job chat, not arguments.chat_id", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-replace-chat-id-"));
   const bus = new Bus("@replace-chat.magi", workspace);
   const worker = new ToolsWorker(bus);
-  const from = bus.chats.forChannel("cli", "from");
-  const spoof = bus.chats.forChannel("cli", "spoof");
+  const from = bus.chats.forChannel("test-owner", "from");
+  const spoof = bus.chats.forChannel("test-owner", "spoof");
   const ownerMessage = bus.messages.add(from.id, SYSTEM_CONTACT_ID, "Replace this EVA from this conversation");
   try {
     const id = bus.board("RunToolJob").publish({
@@ -65,8 +65,8 @@ test("send_message to another chat is not rewritten to the requester chat", asyn
   const workspace = await mkdtemp(join(tmpdir(), "magi-tools-chat-id-"));
   const bus = new Bus("@tools-chat.magi", workspace);
   const worker = new ToolsWorker(bus);
-  const from = bus.chats.forChannel("cli", "from");
-  const to = bus.chats.forChannel("cli", "to");
+  const from = bus.chats.forChannel("test-owner", "from");
+  const to = bus.chats.forChannel("test-owner", "to");
   const ownerMessage = bus.messages.add(from.id, SYSTEM_CONTACT_ID, "Send hello other chat to the selected conversation");
   try {
     const id = bus.board("RunToolJob").publish({
@@ -144,7 +144,7 @@ test("the catalog asks live sources, and a name clash fails at registration", as
 test("a tool call left over from a restart is failed instead of re-run", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-tools-restart-"));
   const before = new Bus("@restart.magi", workspace);
-  const chat = before.chats.forChannel("cli", "terminal");
+  const chat = before.chats.forChannel("test-owner", "terminal");
   const ownerMessage = before.messages.add(chat.id, SYSTEM_CONTACT_ID, "Send again in this conversation");
   const id = before.board("RunToolJob").publish({
     chat_id: chat.id, message_id: ownerMessage,

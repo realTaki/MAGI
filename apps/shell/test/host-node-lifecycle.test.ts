@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import { Shell } from "@magi/node";
+import { Shell } from "@magi/launcher/composition";
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 async function until(read: () => boolean) {

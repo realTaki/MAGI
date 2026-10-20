@@ -1,9 +1,9 @@
 {
-  "name": "@magi/manager",
+  "name": "@magi/channel-a2a",
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "MAGI runtime package: the manager worker that supervises the others.",
+  "description": "Direct trusted-network EVA peer chat (MAGI protocol, not full A2A).",
   "exports": {
     ".": {
       "types": "./dist/worker.d.ts",
@@ -12,14 +12,12 @@
     "./*": {
       "types": "./dist/*",
       "default": "./dist/*"
-    },
-    "./package.json": "./package.json"
+    }
   },
   "scripts": {
     "build": "tsc -b"
   },
   "dependencies": {
-    "@magi/bus": "*",
-    "@magi/runtime": "*"
+    "@magi/bus": "*"
   }
 }

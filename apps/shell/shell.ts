@@ -1,1 +1,1 @@
-export { Shell, createLocalApi } from "@magi/node";
+export { Shell, createLocalApi } from "@magi/launcher/composition";

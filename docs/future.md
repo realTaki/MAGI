@@ -42,11 +42,8 @@ The following items are goals or limitations, not shipped guarantees:
 - **Activation guarantees:** broader evaluation of crash/interruption recovery,
   dependency changes, data-schema changes and external side effects. Current
   process rollback does not prove an atomic whole-system rollback.
-- **Interactive launcher stdin:** the non-host launcher currently gives its
-  child ignored stdin even though the child has a terminal handler. Verify and
-  implement forwarding before claiming an interactive CLI through that entry.
 - **Additional integrations and isolation:** capabilities outside the current
-  desktop, peer channels, CLI, Telegram, tasks and MCP workers require implementation and
+  desktop, peer channels, Telegram, tasks and MCP workers require implementation and
   verification. Native tools are not an OS sandbox.
 
 Historical Python release notes describe older runtime generations, not the

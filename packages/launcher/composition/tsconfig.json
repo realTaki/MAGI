@@ -1,0 +1,58 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../dist/composition",
+    "tsBuildInfoFile": "../dist/.composition.tsbuildinfo"
+  },
+  "include": [
+    "*.ts"
+  ],
+  "exclude": [
+    "dist"
+  ],
+  "references": [
+    {
+      "path": "../runtime"
+    },
+    {
+      "path": "../../bus"
+    },
+    {
+      "path": ".."
+    },
+    {
+      "path": "../../agent"
+    },
+    {
+      "path": "../../providers"
+    },
+    {
+      "path": "../../built-in-tools"
+    },
+    {
+      "path": "../../contacts"
+    },
+    {
+      "path": "../../memory"
+    },
+    {
+      "path": "../../mcp"
+    },
+    {
+      "path": "../../skills"
+    },
+    {
+      "path": "../../channel-tasks"
+    },
+    {
+      "path": "../../channel-telegram"
+    },
+    {
+      "path": "../../webapp"
+    },
+    {
+      "path": "../../channel-a2a"
+    }
+  ]
+}

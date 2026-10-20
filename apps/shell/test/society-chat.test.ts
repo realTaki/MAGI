@@ -5,6 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { MAGI_CONTACT_ID, messageDelivery } from "@magi/bus";
 import { Magi } from "../../eva/eva.ts";
+import { createOwnerApi } from "@magi/launcher/composition/owner.js";
 
 async function until(read: () => boolean, timeout = 8_000) {
   const deadline = Date.now() + timeout;
@@ -13,13 +14,13 @@ async function until(read: () => boolean, timeout = 8_000) {
 }
 test("operator DMs independent EVAs and their direct peer replies do not create echo loops", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "magi-direct-society-"));
-  const calls = [0, 0, 0]; const outputs: string[][] = [[], [], []];
-  const nodes = ["one", "two", "three"].map((name, index) => new Magi(`@${name}.magi`, { workspace: path.join(root, name), peer: { port: 0 },
-    deliver(text) { outputs[index].push(text); }, client: { async complete() { calls[index]++; return { role: "assistant" as const, content: `reply:${name}` }; } } }));
+  const calls = [0, 0, 0];
+  const nodes = ["one", "two", "three"].map((name, index) => new Magi(`@${name}.magi`, { workspace: path.join(root, name), peer: { port: 0 }, owner: true,
+    client: { async complete() { calls[index]++; return { role: "assistant" as const, content: `reply:${name}` }; } } }));
   try {
     for (const node of nodes) await node.start();
     for (const node of nodes) for (const other of nodes) if (node !== other) node.bus.contacts.savePeer(node.bus.contacts.forPeer({ principal: other.bus.settings.get("peer.principal")!, endpoint: other.bus.settings.get("peer.reachableURL")! }).id);
-    for (const [index, node] of nodes.entries()) { await node.chat("owner hello"); await until(() => outputs[index].length > 0); }
+    for (const node of nodes) { const owner = createOwnerApi(node.bus); owner["owner.chat"]({ content: "owner hello" }); await until(() => owner["owner.events"]().some(message => message.role === "assistant")); }
     assert.deepEqual(calls, [1, 1, 1]);
     const target = nodes[0].bus.chats.forPeer(nodes[1].bus.settings.get("peer.principal")!);
     const job = messageDelivery.send(nodes[0].bus, target.id, "peer hello", MAGI_CONTACT_ID);

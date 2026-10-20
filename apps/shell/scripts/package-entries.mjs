@@ -9,7 +9,7 @@ export const requiredBootstrapEntries = [
   '/shell-path.mjs', '/preload.cjs',
   '/node_modules/@magi/bus/package.json', '/node_modules/@magi/bus/dist/index.js',
   '/node_modules/@magi/bus/dist/replaceMarker.js',
-  '/node_modules/@magi/runtime/package.json', '/node_modules/@magi/runtime/dist/protocol.js',
+  '/node_modules/@magi/launcher/package.json', '/node_modules/@magi/launcher/dist/runtime/protocol.js',
 ];
 
 export function assertBootstrapEntries(entries) {

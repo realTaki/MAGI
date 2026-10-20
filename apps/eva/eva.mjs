@@ -3,20 +3,20 @@
  * Shell and an independent EVA differ only by --role.
  *
  * A revision is a directory under MAGI_HOME. The child is that directory's
- * packages/node/dist/child.js, so a switch runs that revision's code.
+ * packages/launcher/dist/composition/child.js, so a switch runs that revision's code.
  */
 
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { magiHome } from "@magi/runtime/home.js";
-import { LAUNCHER_PROTOCOL } from "@magi/runtime/protocol.js";
-import { resolveToolchain } from "@magi/runtime/toolchain.js";
+import { magiHome } from "@magi/launcher/runtime/home.js";
+import { LAUNCHER_PROTOCOL } from "@magi/launcher/runtime/protocol.js";
+import { resolveToolchain } from "@magi/launcher/runtime/toolchain.js";
 
 const launcherFile = fileURLToPath(import.meta.url);
 const bundledChild = process.env.MAGI_CHILD
-  || fileURLToPath(new URL("../../packages/node/dist/child.js", import.meta.url));
+  || fileURLToPath(new URL("../../packages/launcher/dist/composition/child.js", import.meta.url));
 
 const CRASH_LIMIT = Number(process.env.MAGI_CRASH_LIMIT) || 5;
 const CRASH_BACKOFF_MS = Number(process.env.MAGI_CRASH_BACKOFF_MS) || 1000;

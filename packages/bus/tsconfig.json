@@ -12,6 +12,6 @@
     "dist"
   ],
   "references": [
-    { "path": "../runtime" }
+    { "path": "../launcher/runtime" }
   ]
 }

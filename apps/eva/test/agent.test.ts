@@ -6,7 +6,7 @@ import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { Magi } from "../eva.js";
+import { Magi } from "./harness.js";
 import { sequentialMagiHandle, SYSTEM_CONTACT_ID, messageDelivery, type LLMMessage, type LLMRequest } from "@magi/bus";
 import { PiAiClient } from "@magi/providers/client.js";
 import { AGENT_PROMPT, COMPACTION_PROMPT, SYSTEM_PROMPT } from "@magi/agent/prompt_defaults.js";
@@ -30,7 +30,7 @@ describe("local MAGI agent", () => {
       async complete(request) { seen.push(request); return { role: "assistant", content: "resumed" }; },
     } });
     magi.bus.memoryBook.save({ topic: "startup", detail: "memory must precede recovered work", kind: "long_term" });
-    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    const chat = magi.bus.chats.forChannel("test-owner", "terminal");
     const job = messageDelivery.send(magi.bus, chat.id, "already pending before startup");
     try {
       await magi.start();
@@ -281,7 +281,7 @@ describe("local MAGI agent", () => {
     expect(magi.bus.board("MessageDeliveryJob").result(id)).toMatchObject({ status: "failed", error: "bad credentials" });
     await sleep(100);
     expect(delivered).toEqual([]);
-    const room = magi.bus.chats.forChannel("cli", "terminal");
+    const room = magi.bus.chats.forChannel("test-owner", "terminal");
     expect(magi.bus.messages.list(room.id).some(message => message.contact_id === SYSTEM_CONTACT_ID && message.content === "bad credentials")).toBeTrue();
     await magi.stop();
   });
@@ -336,7 +336,7 @@ describe("local MAGI agent", () => {
     });
     magi.bus.memoryBook.save({ topic: "runtime goal", detail: "Finish magi", kind: "long_term" });
     magi.bus.settings.set("provider.context_window", "100");
-    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    const chat = magi.bus.chats.forChannel("test-owner", "terminal");
     for (let i = 0; i < 41; i++) magi.bus.messages.add(chat.id, SYSTEM_CONTACT_ID, `old message ${i}`);
     await magi.start();
     await magi.chat("continue");
@@ -372,7 +372,7 @@ describe("local MAGI agent", () => {
       workspace: path,
       client: { async complete(job) { requests.push(job); return { role: "assistant", content: "ok" }; } },
     });
-    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    const chat = magi.bus.chats.forChannel("test-owner", "terminal");
     const guest = magi.bus.contacts.forHandle(sequentialMagiHandle(1));
     magi.bus.contacts.update(guest.id, { nickname: "EVA" });
     magi.bus.chatMembers.add(chat.id, SYSTEM_CONTACT_ID);
@@ -396,7 +396,7 @@ describe("local MAGI agent", () => {
       workspace: path,
       client: { async complete(job) { requests.push(job); return { role: "assistant", content: "ok" }; } },
     });
-    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    const chat = magi.bus.chats.forChannel("test-owner", "terminal");
     // Any module can answer a block, and the conversation reaches it: the agent
     // knows nothing about this one.
     magi.bus.prompts.registerSource("probe", "Probe", (chat_id) => `- asked for chat ${chat_id}`);
@@ -415,7 +415,7 @@ describe("local MAGI agent", () => {
       workspace: path,
       client: { async complete() { return { role: "assistant", content: "ok" }; } },
     });
-    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    const chat = magi.bus.chats.forChannel("test-owner", "terminal");
     magi.bus.chatMembers.add(chat.id, SYSTEM_CONTACT_ID);
     magi.bus.memoryBook.save({ topic: "goal", detail: "ship it", kind: "long_term" });
     await magi.start();
@@ -434,7 +434,7 @@ describe("local MAGI agent", () => {
       workspace: path,
       client: { async complete(job) { requests.push(job); return { role: "assistant", content: "ok" }; } },
     });
-    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    const chat = magi.bus.chats.forChannel("test-owner", "terminal");
     magi.bus.chatMembers.add(chat.id, SYSTEM_CONTACT_ID);
     magi.bus.memoryBook.save({ topic: "goal", detail: "ship it", kind: "long_term" });
     await magi.start();

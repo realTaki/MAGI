@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { magiHome } from "@magi/runtime/home.js";
+import { magiHome } from "@magi/launcher/runtime/home.js";
 import { magiLocalName } from "./identity.js";
 
 /** Where a failed revision switch is recorded. The child reads the same path. */

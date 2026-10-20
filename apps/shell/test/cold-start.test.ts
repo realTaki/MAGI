@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { Bus, MAGI_CONTACT_ID, SHELL_MAGI_HANDLE } from "@magi/bus";
-import { Shell } from "@magi/node";
+import { Shell } from "@magi/launcher/composition";
 
 const repository = path.resolve(import.meta.dirname, "../../..");
 test("cold Shell starts only its built-in EVA and preserves existing peer/profile data", async () => {

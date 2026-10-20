@@ -86,10 +86,11 @@ from saving a source change.
 | --- | --- |
 | `apps/shell/` | Electron window, process ownership, startup/profile helpers and React UI |
 | `apps/eva/eva.mjs` | Launcher for Shell or an independent EVA |
-| `packages/node/` | Role composition and launcher child entry |
+| `packages/launcher/runtime/` | Database-free bootstrap, paths, toolchain and revision utilities |
+| `packages/launcher/composition/` | Role composition and launcher child entry |
 | `packages/bus/` | Books, durable jobs and shared contracts |
-| `packages/manager/` | Worker lifecycle, configuration and self-replacement |
-| `packages/channel-peer/` | Trusted-network direct EVA messaging and group synchronization |
+| `packages/launcher/` | Worker lifecycle, configuration and self-replacement |
+| `packages/channel-a2a/` | Trusted-network direct EVA messaging and group synchronization |
 | `packages/webapp/` | Shell's desktop backend and source/runtime actions |
 | `packages/agent/`, `packages/providers/`, other worker packages | Agent turns, model execution and tools/channels |
 | `docs/` | Current guides and clearly marked historical rationale |

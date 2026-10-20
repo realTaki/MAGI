@@ -66,9 +66,10 @@ credentials in URLs, chat, logs or source control.
 Ctrl-C stops the launcher and its child. Model replies require a verified provider
 configuration in that EVA. Peer endpoints accept ordinary conversation
 traffic, never owner/provider configuration. The server command above is not an
-interactive terminal-chat command.
+interactive terminal-chat command. The terminal chat channel has been removed;
+use the desktop/Web owner interface for local conversations.
 
-See the [peer channel contract](../packages/channel-peer/README.md) and
+See the [peer channel contract](../packages/channel-a2a/README.md) and
 [group synchronization boundaries](architecture/peer-group-sync.md). This MAGI
 peer subset is inspired by A2A 1.0, not a standards-compliant A2A implementation.
 Only Shell and independent agent launcher roles are supported; the central ASP runtime has been removed.

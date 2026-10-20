@@ -21,7 +21,7 @@ export async function resolveShellCheckout({ isPackaged, shellDirectory, overrid
   await run(["symbolic-ref", "--quiet", "--short", "HEAD"]).catch(() => {
     throw new Error(`MAGI source is detached: ${checkout}. Start Electron from its editable source branch, not a revision directory.`);
   });
-  const markers = ["package.json", "apps/shell/package.json", "apps/shell/main.mjs", "apps/eva/eva.mjs", "packages/node/child.ts"];
+  const markers = ["package.json", "apps/shell/package.json", "apps/shell/main.mjs", "apps/eva/eva.mjs", "packages/launcher/composition/child.ts"];
   await run(["ls-files", "--error-unmatch", "--", ...markers]);
   for (const file of markers) {
     if (realpathSync(path.join(checkout, file)) !== path.join(checkout, file)) {

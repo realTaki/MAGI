@@ -76,7 +76,7 @@
   },
   "dependencies": {
     "@magi/bus": "*",
-    "@magi/manager": "*",
+    "@magi/launcher": "*",
     "@magi/agent": "*",
     "@magi/providers": "*",
     "@magi/built-in-tools": "*",
@@ -91,7 +91,7 @@
     "react-markdown": "^10.1.0",
     "react-dom": "^19.3.0",
     "remark-gfm": "^4.0.1",
-    "@magi/channel-peer": "*"
+    "@magi/channel-a2a": "*"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

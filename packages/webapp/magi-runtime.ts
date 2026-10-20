@@ -148,7 +148,7 @@ export function createMagiRuntime({
       cwd: root, env: tools.env,
       description: `Could not build local EVA workspace in ${root}`,
     });
-    const required = ["apps/eva/eva.mjs", "packages/runtime/dist/home.js", "packages/runtime/dist/protocol.js", "packages/runtime/dist/toolchain.js", "packages/node/dist/child.js", "packages/node/dist/agent.js", "packages/bus/dist/index.js", "packages/manager/dist/worker.js"];
+    const required = ["apps/eva/eva.mjs", "packages/launcher/dist/runtime/home.js", "packages/launcher/dist/runtime/protocol.js", "packages/launcher/dist/runtime/toolchain.js", "packages/launcher/dist/composition/child.js", "packages/launcher/dist/composition/agent.js", "packages/bus/dist/index.js", "packages/launcher/dist/worker.js"];
     const missing = required.filter((file) => !existsSync(path.join(root, file)));
     if (missing.length) throw new Error(`Local EVA build is incomplete; missing: ${missing.join(", ")}`);
     sources.set(handle, root);

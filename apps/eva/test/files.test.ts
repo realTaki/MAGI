@@ -165,7 +165,7 @@ test("ToolsWorker completes two same-file edit jobs without losing either update
     try {
       worker.start();
       await writeFile(join(bus.workspace, "a.txt"), "alpha\nbeta\ngamma\n");
-      const chat = bus.chats.forChannel("cli", "file-safety");
+      const chat = bus.chats.forChannel("test-owner", "file-safety");
       const board = bus.board("RunToolJob");
       const jobs = [
         board.publish({ call: { name: "edit_file", tool_call_id: "one", arguments: { path: "a.txt", old_str: "alpha", new_str: "ALPHA" } }, chat_id: chat.id }, "agent"),

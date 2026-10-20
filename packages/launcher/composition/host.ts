@@ -148,7 +148,7 @@ export function connectHost(stdin: Readable, stdout: Writable) {
     stop: (params: { id: string }) => rpc("stop", params),
     openExternal: (params: { url: string }) => rpc("openExternal", params),
     copy: (params: { text: string }) => rpc("copy", params),
-    installDesktopUpdate: (params: { manifest: import("@magi/runtime/desktop-package.js").DesktopManifest; job: number }) => rpc("installDesktopUpdate", params),
+    installDesktopUpdate: (params: { manifest: import("@magi/launcher/runtime/desktop-package.js").DesktopManifest; job: number }) => rpc("installDesktopUpdate", params),
     installShellUpdate: (params: { installer: string }) => rpc("installShellUpdate", params),
     emit: (params: { event: string; payload?: unknown }) => rpc("emit", params),
     progress: (params: { message: string; percent: number }) => rpc("progress", params),

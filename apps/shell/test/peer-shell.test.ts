@@ -61,9 +61,9 @@ test("Lifecycle bookkeeping rejects a contact that has no owned process", async 
 });
 
 test("Shell composition has no ASP process or relay worker", () => {
-  const shell = readFileSync(new URL("../../../packages/node/shell.ts", import.meta.url), "utf8");
+  const shell = readFileSync(new URL("../../../packages/launcher/composition/shell.ts", import.meta.url), "utf8");
   assert.doesNotMatch(shell, /AspProcessWorker|aspProcess/);
-  const roles = readFileSync(new URL("../../../packages/node/roles.ts", import.meta.url), "utf8").split("export function shellWorkers")[1].split("HOSTED_NODE_WORKERS")[0];
+  const roles = readFileSync(new URL("../../../packages/launcher/composition/roles.ts", import.meta.url), "utf8").split("export function shellWorkers")[1].split("HOSTED_NODE_WORKERS")[0];
   assert.doesNotMatch(roles, /new AspWorker/);
 });
 
@@ -96,7 +96,7 @@ test("Local create waits for matching process readiness and rolls back failures"
 
 test("Local owner adapter exposes sealed provider chat without granting peer ownership", async t => {
   const { bus } = fixture(t);
-  const { createOwnerApi, LocalOwnerWorker } = await import("@magi/node/owner.js");
+  const { createOwnerApi, LocalOwnerWorker } = await import("@magi/launcher/composition/owner.js");
   const api = createOwnerApi(bus);
   assert.equal(api["owner.profile"]().owner, true);
   assert.equal(api["owner.profile"]().public_key, bus.identity.publicKey);
@@ -127,7 +127,7 @@ test("Group UI lists membership and uses deterministic event identities", async 
 
 test("Remote URL connection sends hello and shares a contact on the trusted network", async t => {
   const local = fixture(t); const remote = fixture(t);
-  const { PeerServer } = await import("@magi/channel-peer/server.js");
+  const { PeerServer } = await import("@magi/channel-a2a/server.js");
   const { messageDelivery } = await import("@magi/bus");
   const server = new PeerServer(remote.bus.identity, "@remote.magi", (principal, message) => messageDelivery.receivePeer(remote.bus, {
     principal, endpoint: message.reachableURL, conversationUUID: message.conversationUUID,
@@ -135,8 +135,8 @@ test("Remote URL connection sends hello and shares a contact on the trusted netw
   }), { host: "127.0.0.1", port: 0 });
   await server.start(); t.after(() => server.stop());
   local.bus.settings.set("peer.reachableURL", "http://127.0.0.1:49221");
-  const { discoverPeer } = await import("@magi/channel-peer/client.js");
-  const { PeerWorker } = await import("@magi/channel-peer/worker.js");
+  const { discoverPeer } = await import("@magi/channel-a2a/client.js");
+  const { PeerWorker } = await import("@magi/channel-a2a/worker.js");
   const worker = new PeerWorker(local.bus);
   await worker.start(); t.after(() => worker.stop());
   const api = createLocalApi({ ...local.context, peerTransport: { discover: discoverPeer } });
@@ -160,7 +160,7 @@ test("Remote URL connection sends hello and shares a contact on the trusted netw
 
 test("Built-in Shell reports running without an absent ASP worker", async t => {
   const { context } = fixture(t);
-  const { Shell } = await import("@magi/node/shell.js");
+  const { Shell } = await import("@magi/launcher/composition/shell.js");
   const shell = new Shell(context);
   try {
     await shell.start();

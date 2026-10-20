@@ -2,7 +2,7 @@ import { expect, test , sleep} from "./test.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Magi } from "../eva.js";
+import { Magi } from "./harness.js";
 import { messageDelivery, SYSTEM_CONTACT_ID } from "@magi/bus";
 import type { McpConnector } from "@magi/mcp/worker.js";
 
@@ -33,7 +33,7 @@ test("MCP worker owns configuration, connections, and dynamic tools", async () =
     await magi.chat("use the available tools");
     expect(modelCatalogs.at(-1)).toContain("demo__echo");
 
-    const ownerChat = magi.bus.chats.forChannel("cli", "mcp-tools");
+    const ownerChat = magi.bus.chats.forChannel("test-owner", "mcp-tools");
     const ownerMessage = magi.bus.messages.add(ownerChat.id, SYSTEM_CONTACT_ID, "Run the demo echo tool with value 42");
     const runs = magi.bus.board("RunToolJob");
     const runId = runs.publish({ chat_id: ownerChat.id, message_id: ownerMessage, call: { tool_call_id: "call-1", name: "demo__echo", arguments: { value: 42 } } }, "test");
@@ -61,14 +61,14 @@ test("an MCP server that cannot connect at boot reaches the operator", async () 
     client: { async complete() { return { role: "assistant", content: "unused" }; } },
   });
   try {
-    messageDelivery.setHomeChat(magi.bus, magi.bus.chats.forChannel("cli", "terminal").id);
+    messageDelivery.setHomeChat(magi.bus, magi.bus.chats.forChannel("test-owner", "terminal").id);
     magi.bus.mcpServers.save({
       name: "dead", connection_type: "stdio", command: "missing", args: [], url: null,
       env: {}, headers: {}, enabled: true, connect_timeout: null, execute_timeout: null,
     });
     await magi.start();
     for (let i = 0; i < 200 && delivered.length === 0; i++) await sleep(10);
-    const room = magi.bus.chats.forChannel("cli", "terminal");
+    const room = magi.bus.chats.forChannel("test-owner", "terminal");
     const diagnostic = magi.bus.messages.list(room.id).find(message => message.content.includes("connect refused"))!;
     expect(diagnostic.contact_id).toBe(SYSTEM_CONTACT_ID);
     expect(magi.bus.deliveries.get(diagnostic.id)?.publisher).toBe("error:mcp");

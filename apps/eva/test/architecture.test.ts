@@ -22,18 +22,18 @@ async function sources(directory: string): Promise<string[]> {
 function permitted(owner: string, file: string, imported: string): boolean {
   if (imported.startsWith("@magi/")) {
     const name = imported.slice(6).split("/")[0];
-    return name === owner || name === "bus" || name === "runtime";
+    return name === owner || name === "bus" || imported.startsWith("@magi/launcher/runtime/");
   }
   if (imported.startsWith(".")) {
     const name = relative(packages, resolve(dirname(file), imported)).split(sep)[0];
-    return name === owner || name === "bus" || name === "runtime";
+    return name === owner || name === "bus" || relative(packages, resolve(dirname(file), imported)).split(sep).slice(0, 2).join("/") === "launcher/runtime";
   }
   return true; // Platform and third-party imports do not cross worker boundaries.
 }
 
 test("every worker package imports only itself, BUS, or the shared runtime", async () => {
   const workers = (await readdir(packages, { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory() && existsSync(join(packages, entry.name, "package.json")) && !["bus", "node", "runtime"].includes(entry.name));
+    .filter((entry) => entry.isDirectory() && existsSync(join(packages, entry.name, "package.json")) && !["bus", "launcher"].includes(entry.name));
   assert.ok(workers.length > 0, "worker packages must be discovered");
   for (const worker of workers) {
     const files = await sources(join(packages, worker.name));
@@ -46,7 +46,27 @@ test("every worker package imports only itself, BUS, or the shared runtime", asy
     }
     const manifest = JSON.parse(await readFile(join(packages, worker.name, "package.json"), "utf8"));
     for (const dependency of Object.keys({ ...manifest.dependencies, ...manifest.devDependencies })) {
-      assert.ok(permitted(worker.name, files[0], dependency), `${worker.name} declares peer dependency ${dependency}`);
+      assert.ok(dependency === "@magi/launcher" || permitted(worker.name, files[0], dependency), `${worker.name} declares peer dependency ${dependency}`);
+    }
+  }
+});
+
+
+test("launcher runtime stays independent and lifecycle cannot import composition", async () => {
+  const root = join(packages, "launcher");
+  const files = await sources(root);
+  for (const file of files) {
+    const part = relative(root, file).split(sep)[0];
+    const content = await readFile(file, "utf8");
+    for (const match of content.matchAll(/\b(?:from\s+|import\s*\(\s*|import\s+)["']([^"']+)["']/g)) {
+      const imported = match[1];
+      if (part === "runtime") {
+        assert.ok(!imported.startsWith("@magi/") || imported.startsWith("@magi/launcher/runtime/"), `${file} imports ${imported}`);
+        if (imported.startsWith(".")) assert.ok(resolve(dirname(file), imported).startsWith(join(root, "runtime") + sep), `${file} escapes runtime`);
+      } else if (part !== "composition") {
+        assert.ok(!imported.includes("composition"), `${file} imports composition`);
+        assert.ok(permitted("launcher", file, imported), `${file} crosses lifecycle boundary`);
+      }
     }
   }
 });

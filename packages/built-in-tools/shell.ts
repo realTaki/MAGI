@@ -4,7 +4,7 @@
  */
 
 import type { ExecutableTool } from "@magi/bus";
-import { toolchainEnv } from "@magi/runtime/toolchain.js";
+import { toolchainEnv } from "@magi/launcher/runtime/toolchain.js";
 import { stringArg } from "./args.js";
 import { clipShellOutput, ShellManager } from "./shellManager.js";
 

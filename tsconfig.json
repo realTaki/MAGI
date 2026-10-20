@@ -2,16 +2,16 @@
   "files": [],
   "references": [
     {
-      "path": "packages/runtime"
+      "path": "packages/launcher/runtime"
     },
     {
       "path": "packages/bus"
     },
     {
-      "path": "packages/node"
+      "path": "packages/launcher/composition"
     },
     {
-      "path": "packages/manager"
+      "path": "packages/launcher"
     },
     {
       "path": "packages/webapp"
@@ -38,9 +38,6 @@
       "path": "packages/skills"
     },
     {
-      "path": "packages/channel-cli"
-    },
-    {
       "path": "packages/channel-tasks"
     },
     {
@@ -53,7 +50,7 @@
       "path": "apps/shell"
     },
     {
-      "path": "packages/channel-peer"
+      "path": "packages/channel-a2a"
     }
   ]
 }

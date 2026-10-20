@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { magiHome } from "@magi/runtime/home.js";
+import { magiHome } from "@magi/launcher/runtime/home.js";
 import { and, eq, inArray, ne, or } from "drizzle-orm";
 import { openDatabase, pragma, transaction } from "./sqlite.js";
 import { workspaceDatabase, migrateBooks, migrateJobs, type BusDb } from "./drizzle/database.js";

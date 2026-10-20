@@ -64,7 +64,7 @@ export type StartableWorker = {
 
 type RunningWorker = { worker: StartableWorker; loop: Promise<void>; stopping?: Promise<void> };
 
-export type ManagerOptions = {
+export type LauncherOptions = {
   /** Workers that must finish their current poll before anything else stops. */
   drain?: string[];
   /** Hosted node workers, excluding the UI backend and relay infrastructure. */
@@ -74,7 +74,7 @@ export type ManagerOptions = {
   installDesktopUpdate?: ReplaceHost["installDesktopUpdate"];
 };
 
-export class ManagerWorker extends BaseWorker {
+export class LauncherWorker extends BaseWorker {
   readonly worker_name = "manager";
   private readonly workers: StartableWorker[];
   readonly installDesktopUpdate?: ReplaceHost["installDesktopUpdate"];
@@ -97,7 +97,7 @@ export class ManagerWorker extends BaseWorker {
   private resumeTask: Promise<void> | null = null;
   private stopRequested = false;
 
-  constructor(bus: Bus, workers: StartableWorker[], options: ManagerOptions) {
+  constructor(bus: Bus, workers: StartableWorker[], options: LauncherOptions) {
     super(bus);
     this.installDesktopUpdate = options.installDesktopUpdate;
     this.drain = options.drain ?? [];

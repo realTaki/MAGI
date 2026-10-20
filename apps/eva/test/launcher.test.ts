@@ -2,10 +2,10 @@ import { expect, test , sleep} from "./test.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Magi } from "../eva.js";
+import { Magi } from "./harness.js";
 import assert from "node:assert/strict";
 import { Bus, messageDelivery } from "@magi/bus";
-import { ManagerWorker } from "@magi/manager";
+import { LauncherWorker } from "@magi/launcher";
 import { jsonServer } from "./httpServer.js";
 
 /** Stands in for the Telegram API: it answers slowly, the way long polling does. */
@@ -97,7 +97,7 @@ test("a channel that fails while it runs reaches the chat the operator used", as
   try {
     await magi.start();
     // Speaking once is what gives the workspace an address to report trouble to.
-    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    const chat = magi.bus.chats.forChannel("test-owner", "terminal");
     messageDelivery.setHomeChat(magi.bus, chat.id);
     magi.bus.secrets.set("telegram.bot_token", "bad-token");
     magi.bus.settings.set("telegram.api_base", telegram.base);
@@ -127,7 +127,7 @@ test("a channel that cannot log in is reported instead of starting", async () =>
   });
   try {
     await magi.start();
-    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    const chat = magi.bus.chats.forChannel("test-owner", "terminal");
     messageDelivery.setHomeChat(magi.bus, chat.id);
     magi.bus.secrets.set("telegram.bot_token", "bad-token");
     magi.bus.settings.set("telegram.api_base", telegram.base);
@@ -171,7 +171,7 @@ test("shutdown retires an old poll loop when a concurrent request restarts the s
     start() { starts++; },
     async poll() { if (first) { first = false; await held; } return false; },
   };
-  const manager = new ManagerWorker(bus, [worker], { drain: ["drainer"], build: { app: "eva", script: "build" } });
+  const manager = new LauncherWorker(bus, [worker], { drain: ["drainer"], build: { app: "eva", script: "build" } });
   let stopping: Promise<void> | undefined;
   try {
     await manager.start();

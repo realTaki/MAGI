@@ -20,10 +20,8 @@
     "start": "node eva.mjs"
   },
   "dependencies": {
-    "@magi/node": "*",
-    "@magi/runtime": "*",
     "@magi/bus": "*",
-    "@magi/manager": "*",
+    "@magi/launcher": "*",
     "@magi/agent": "*",
     "@magi/providers": "*",
     "@magi/built-in-tools": "*",
@@ -31,7 +29,6 @@
     "@magi/memory": "*",
     "@magi/mcp": "*",
     "@magi/skills": "*",
-    "@magi/channel-cli": "*",
     "@magi/channel-tasks": "*",
     "@magi/channel-telegram": "*"
   }

@@ -15,7 +15,7 @@ import { cpSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from
 import { basename, dirname, resolve } from "node:path";
 import { SHELL_MAGI_HANDLE } from "@magi/bus";
 import { replaceFailedPath } from "@magi/bus/replaceMarker.js";
-import { LAUNCHER_PROTOCOL } from "@magi/runtime/protocol.js";
+import { LAUNCHER_PROTOCOL } from "@magi/launcher/runtime/protocol.js";
 import { createInterface } from "node:readline";
 
 /** Bootstrap Shell before it can run its own prepare method. */
@@ -32,11 +32,11 @@ export async function prepareShellProcess(spec, { node, npm, env, managed, comma
   const launcher = resolve(spec.entry) === resolve(checkout, "apps/eva/eva.mjs");
   const required = launcher ? [
     spec.entry,
-    ...["home", "protocol", "toolchain"].map((name) => resolve(checkout, `packages/runtime/dist/${name}.js`)),
-    resolve(checkout, "packages/node/dist/child.js"),
-    resolve(checkout, "packages/node/dist/shell.js"),
+    ...["home", "protocol", "toolchain"].map((name) => resolve(checkout, `packages/launcher/dist/runtime/${name}.js`)),
+    resolve(checkout, "packages/launcher/dist/composition/child.js"),
+    resolve(checkout, "packages/launcher/dist/composition/shell.js"),
     resolve(checkout, "packages/bus/dist/index.js"),
-    resolve(checkout, "packages/manager/dist/worker.js"),
+    resolve(checkout, "packages/launcher/dist/worker.js"),
   ] : [spec.entry];
   const needsOutputs = required.some((file) => !existsSync(file));
   if (verifiedRevision && needsOutputs) throw new Error("Verified desktop revision is missing compiled Shell dependencies; it must not be rebuilt during activation");

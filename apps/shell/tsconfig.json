@@ -19,13 +19,13 @@
   ],
   "references": [
     {
-      "path": "../../packages/node"
+      "path": "../../packages/launcher/composition"
     },
     {
       "path": "../../packages/bus"
     },
     {
-      "path": "../../packages/manager"
+      "path": "../../packages/launcher"
     },
     {
       "path": "../../packages/webapp"
@@ -52,7 +52,7 @@
       "path": "../../packages/channel-telegram"
     },
     {
-      "path": "../../packages/channel-peer"
+      "path": "../../packages/channel-a2a"
     }
   ]
 }

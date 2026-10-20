@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { Bus, SYSTEM_CONTACT_ID, type LLMRequest } from "@magi/bus";
 import { actionItemTools } from "@magi/memory/actionItems.js";
 import { MemoryWorker } from "@magi/memory/worker.js";
-import { Magi } from "../eva.js";
+import { Magi } from "./harness.js";
 
 test("working notes persist across restart, archive explicitly, and remain EVA-local", async () => {
   const path = await mkdtemp(join(tmpdir(), "magi-actions-"));
@@ -95,7 +95,7 @@ test("compaction preserves working notes, tool results update this turn, next tu
   } });
   try {
     id = magi.bus.actionItems.save({ content: "Review still underway" }).id;
-    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    const chat = magi.bus.chats.forChannel("test-owner", "terminal");
     for (let i = 0; i < 41; i++) magi.bus.messages.add(chat.id, SYSTEM_CONTACT_ID, `old message ${i}`);
     magi.bus.settings.set("provider.context_window", "100");
     await magi.start();

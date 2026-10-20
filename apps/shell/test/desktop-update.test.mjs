@@ -18,7 +18,7 @@ const linuxTest = process.platform === "linux" ? test : test.skip;
 const MODULE = fileURLToPath(new URL("../desktop-update.mjs", import.meta.url));
 const OWNER_MODULE = fileURLToPath(new URL("../process-owner.mjs", import.meta.url));
 const EVA_MODULE = fileURLToPath(new URL("../../eva/eva.mjs", import.meta.url));
-const CONTROL_MODULE = fileURLToPath(new URL("../../../packages/node/dist/control.js", import.meta.url));
+const CONTROL_MODULE = fileURLToPath(new URL("../../../packages/launcher/dist/composition/control.js", import.meta.url));
 const REVISION = "a".repeat(40), PREVIOUS = "b".repeat(40);
 const hash = (file) => createHash("sha256").update(readFileSync(file)).digest("hex");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

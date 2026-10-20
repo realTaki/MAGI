@@ -2,7 +2,7 @@ import { expect, test } from "./test.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Magi } from "../eva.js";
+import { Magi } from "./harness.js";
 import { sequentialMagiHandle } from "@magi/bus";
 import { contactTools } from "@magi/contacts/tools.js";
 
@@ -81,7 +81,7 @@ test("chat membership is a set, not a log", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-members-"));
   const magi = new Magi("@members.magi", { workspace, client: { async complete() { return { role: "assistant", content: "unused" }; } } });
   try {
-    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    const chat = magi.bus.chats.forChannel("test-owner", "terminal");
     const guest = magi.bus.contacts.forHandle(sequentialMagiHandle(1));
     magi.bus.chatMembers.add(chat.id, guest.id);
     magi.bus.chatMembers.add(chat.id, guest.id);

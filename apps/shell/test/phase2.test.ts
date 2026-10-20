@@ -5,7 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 
 import { Bus, chat as receiveChat, encryptFor, messageDelivery, replaceFailedPath, type CardSpec, type ChatInput } from "@magi/bus";
-import { createOwnerApi } from "@magi/node/owner.js";
+import { createOwnerApi } from "@magi/launcher/composition/owner.js";
 import { Magi } from "../../eva/eva.ts";
 import { createSupervisor } from "../process.mjs";
 

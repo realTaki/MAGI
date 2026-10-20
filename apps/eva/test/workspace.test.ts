@@ -35,7 +35,7 @@ test("Book references reject rows without their chat or contact", async () => {
   const path = await workspace();
   const bus = new Bus("@references.magi", path);
   try {
-    const chat = bus.chats.forChannel("cli", "terminal");
+    const chat = bus.chats.forChannel("test-owner", "terminal");
     expect(() => bus.messages.add(chat.id + 1, SYSTEM_CONTACT_ID, "orphan")).toThrow("FOREIGN KEY");
     expect(() => bus.messages.add(chat.id, 999, "orphan")).toThrow("FOREIGN KEY");
     expect(() => bus.chatMembers.add(chat.id + 1, SYSTEM_CONTACT_ID)).toThrow("FOREIGN KEY");
@@ -48,14 +48,14 @@ test("a notice reaches the operator's home chat", async () => {
   const bus = new Bus("@notice.magi", path);
   try {
     expect(messageDelivery.notify(bus, "nobody to tell yet")).toBeNull();
-    const home = bus.chats.forChannel("cli", "terminal");
+    const home = bus.chats.forChannel("test-owner", "terminal");
     messageDelivery.setHomeChat(bus, home.id);
     expect(messageDelivery.homeChat(bus)).toBe(home.id);
 
     messageDelivery.notify(bus, "[mcp] demo: connect refused");
     expect(bus.messages.list(home.id).at(-1)?.content).toBe("[mcp] demo: connect refused");
 
-    const elsewhere = bus.chats.forChannel("cli", "other");
+    const elsewhere = bus.chats.forChannel("test-owner", "other");
     messageDelivery.notify(bus, "just here", elsewhere.id);
     expect(bus.messages.list(elsewhere.id).at(-1)?.content).toBe("just here");
   } finally {
@@ -68,7 +68,7 @@ test("one message job records both directions and carries only the message id", 
   const path = await workspace();
   const bus = new Bus("@record.magi", path);
   try {
-    const chat = bus.chats.forChannel("cli", "terminal");
+    const chat = bus.chats.forChannel("test-owner", "terminal");
     // Received: the row is the durable fact, the job is only the wake-up call, and the
     // author the chat does not name is the operator.
     messageDelivery.send(bus, chat.id, "hello");

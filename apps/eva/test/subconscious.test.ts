@@ -3,8 +3,8 @@ import { afterEach, test, sleep } from "./test.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createOwnerApi } from "@magi/node/owner.js";
-import { Magi } from "../eva.js";
+import { createOwnerApi } from "@magi/launcher/composition/owner.js";
+import { Magi } from "./harness.js";
 import { chat, messageDelivery, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, type LLMRequest } from "@magi/bus";
 
 const paths: string[] = [];
@@ -90,7 +90,7 @@ test("an explicit internal handoff wakes the foreground, not a second private co
   try {
     await magi.start();
     const owner = createOwnerApi(magi.bus);
-    const home = magi.bus.chats.forChannel("cli", "terminal");
+    const home = magi.bus.chats.forChannel("test-owner", "terminal");
     // The first handoff is retained for reasoning, but never presented as user text.
     const ownerChat = magi.bus.chats.list("local-owner")[0];
     magi.bus.deliveries.persist({ chat_id: ownerChat.id, contact_id: SYSTEM_CONTACT_ID, content: "internal finding", publisher: "subconscious", enqueue: false });
@@ -136,7 +136,7 @@ test("private failures and restart notices remain private", async () => {
 
 test("both role compositions own exactly one task worker and one private conversation", async () => {
   const { Bus, BaseWorker } = await import("@magi/bus");
-  const { agentWorkers, shellWorkers, HOSTED_NODE_WORKERS } = await import("@magi/node/roles.js");
+  const { agentWorkers, shellWorkers, HOSTED_NODE_WORKERS } = await import("@magi/launcher/composition/roles.js");
   const bus = new Bus("@roles.magi", await workspace());
   class EmptyWorker extends BaseWorker { readonly worker_name = "empty"; async poll() { return false; } }
   try {
@@ -186,7 +186,7 @@ test("ordinary message searches omit private history but preserve shared foregro
   const magi = new Magi("@history-boundary.magi", { workspace: await workspace() });
   try {
     const inner = magi.bus.chats.forChannel("subconscious", "self");
-    const foreground = magi.bus.chats.forChannel("cli", "terminal");
+    const foreground = magi.bus.chats.forChannel("test-owner", "terminal");
     magi.bus.messages.add(foreground.id, MAGI_CONTACT_ID, "search-token foreground");
     for (let i = 0; i < 25; i++) magi.bus.messages.add(inner.id, MAGI_CONTACT_ID, "search-token private");
     const tools = messageTools(magi.bus);

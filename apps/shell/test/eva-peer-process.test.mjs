@@ -10,7 +10,7 @@ import { createServer } from 'node:net';
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { Bus, MAGI_CONTACT_ID, messageDelivery } from '../../../packages/bus/dist/index.js';
-import { principalFor } from '../../../packages/channel-peer/dist/worker.js';
+import { principalFor } from '../../../packages/channel-a2a/dist/worker.js';
 
 async function freePort() {
   const server = createServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));

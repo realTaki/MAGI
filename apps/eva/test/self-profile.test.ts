@@ -2,7 +2,7 @@ import { expect, test, sleep } from "./test.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Magi } from "../eva.js";
+import { Magi } from "./harness.js";
 import { MAGI_CONTACT_ID, messageDelivery, type MessageDeliveryJob, type RunToolJob } from "@magi/bus";
 import { ContactsWorker } from "@magi/contacts";
 import { contactTools } from "@magi/contacts/tools.js";
@@ -13,8 +13,8 @@ test("self profile fails closed without owner message provenance and preserves t
   const worker = new ContactsWorker(magi.bus);
   try {
     await worker.start();
-    const chat = magi.bus.chats.forChannel("cli", "profile");
-    const other = magi.bus.chats.forChannel("cli", "other");
+    const chat = magi.bus.chats.forChannel("test-owner", "profile");
+    const other = magi.bus.chats.forChannel("test-owner", "other");
     const ownerMessage = magi.bus.messages.add(chat.id, magi.bus.userContactId, "Call yourself Nova");
     const guest = magi.bus.contacts.create({ name: "guest", role: "authorized" });
     // Being authorized or sharing an owner's room does not make this guest the owner.
@@ -59,7 +59,7 @@ test("queued owner and guest turns carry their actual authors to self profile to
     },
   } });
   try {
-    const chat = magi.bus.chats.forChannel("cli", "profile-turn");
+    const chat = magi.bus.chats.forChannel("test-owner", "profile-turn");
     const guest = magi.bus.contacts.create({ name: "guest" });
     magi.bus.chatMembers.add(chat.id, magi.bus.userContactId);
     const ownerJob = messageDelivery.send(magi.bus, chat.id, "Please call yourself Owner chosen", magi.bus.userContactId);
@@ -86,7 +86,7 @@ test("queued turn bounds recent history and compaction before selecting messages
     },
   } });
   try {
-    const chat = magi.bus.chats.forChannel("cli", "backlog");
+    const chat = magi.bus.chats.forChannel("test-owner", "backlog");
     for (let i = 0; i < 25; i++) messageDelivery.record(magi.bus, chat.id, `EARLIER-${i}`, magi.bus.userContactId);
     const job = messageDelivery.send(magi.bus, chat.id, "ACTUAL-OWNER-REQUEST", magi.bus.userContactId);
     const triggerId = magi.bus.messages.list(chat.id).at(-1)!.id;

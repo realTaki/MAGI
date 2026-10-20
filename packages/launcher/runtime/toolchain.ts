@@ -25,7 +25,7 @@ function bundledNode(): string {
     : "";
   return existing([
     resources,
-    join(here, "..", "..", "..", "apps", "shell", "runtime", "bin", name),
+    join(here, "..", "..", "..", "..", "apps", "shell", "runtime", "bin", name),
   ]);
 }
 
@@ -35,7 +35,7 @@ function bundledNpm(): string {
     : "";
   return existing([
     resources,
-    join(here, "..", "..", "..", "apps", "shell", "runtime", "npm", "node_modules", "npm", "bin", "npm-cli.js"),
+    join(here, "..", "..", "..", "..", "apps", "shell", "runtime", "npm", "node_modules", "npm", "bin", "npm-cli.js"),
   ]);
 }
 

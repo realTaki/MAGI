@@ -16,10 +16,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BaseWorker, messageDelivery, replaceFailedPath, type Bus } from "@magi/bus";
-import { LAUNCHER_PROTOCOL } from "@magi/runtime/protocol.js";
-import { packageDesktopRevision, type DesktopManifest } from "@magi/runtime/desktop-package.js";
-import { reviseCheckout } from "@magi/runtime/revise.js";
-import { resolveToolchain } from "@magi/runtime/toolchain.js";
+import { LAUNCHER_PROTOCOL } from "@magi/launcher/runtime/protocol.js";
+import { packageDesktopRevision, type DesktopManifest } from "@magi/launcher/runtime/desktop-package.js";
+import { reviseCheckout } from "@magi/launcher/runtime/revise.js";
+import { resolveToolchain } from "@magi/launcher/runtime/toolchain.js";
 
 const GATE_TRIES = 3;
 const LOG_TAIL = 8_000;

@@ -14,16 +14,16 @@
   ],
   "references": [
     {
-      "path": "../../packages/node"
+      "path": "../../packages/launcher/composition"
     },
     {
       "path": "../../packages/bus"
     },
     {
-      "path": "../../packages/runtime"
+      "path": "../../packages/launcher/runtime"
     },
     {
-      "path": "../../packages/manager"
+      "path": "../../packages/launcher"
     },
     {
       "path": "../../packages/skills"
@@ -45,9 +45,6 @@
     },
     {
       "path": "../../packages/mcp"
-    },
-    {
-      "path": "../../packages/channel-cli"
     },
     {
       "path": "../../packages/channel-tasks"

@@ -55,7 +55,7 @@ test('Windows packaging uses the owned node.exe for every stage', () => {
 
 test('native archive verification rejects missing compiled workspace bootstrap dependencies', () => {
   assert.doesNotThrow(() => assertBootstrapEntries(requiredBootstrapEntries));
-  for (const missing of ['/node_modules/@magi/bus/dist/index.js', '/node_modules/@magi/bus/dist/replaceMarker.js', '/node_modules/@magi/runtime/dist/protocol.js']) {
+  for (const missing of ['/node_modules/@magi/bus/dist/index.js', '/node_modules/@magi/bus/dist/replaceMarker.js', '/node_modules/@magi/launcher/dist/runtime/protocol.js']) {
     assert.throws(() => assertBootstrapEntries(requiredBootstrapEntries.filter((file) => file !== missing)), /missing from package/);
   }
 });

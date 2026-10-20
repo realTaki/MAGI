@@ -1,4 +1,4 @@
-import { LAUNCHER_PROTOCOL } from "@magi/runtime/protocol.js";
+import { LAUNCHER_PROTOCOL } from "@magi/launcher/runtime/protocol.js";
 import { spawn, type ChildProcess } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 

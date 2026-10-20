@@ -33,7 +33,7 @@ running update; a running update is not evidence that the change helped.
 
 | Question | Guide |
 | --- | --- |
-| How do direct endpoints, hello and contact routing work? | [MAGI peer channel](../packages/channel-peer/README.md) |
+| How do direct endpoints, hello and contact routing work? | [MAGI peer channel](../packages/channel-a2a/README.md) |
 | How do shared conversations recover and converge? | [Peer group synchronization](architecture/peer-group-sync.md) |
 | Which checks should I run? | [Testing MAGI](testing.md) |
 | What does a passing check actually establish? | [Verification](verification.md) |

@@ -6,13 +6,17 @@
     "tsBuildInfoFile": "dist/.tsbuildinfo"
   },
   "include": [
-    "**/*.ts"
+    "*.ts"
   ],
   "exclude": [
     "dist"
   ],
   "references": [
-    { "path": "../bus" },
-    { "path": "../runtime" }
+    {
+      "path": "../bus"
+    },
+    {
+      "path": "./runtime"
+    }
   ]
 }

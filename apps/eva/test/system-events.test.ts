@@ -7,8 +7,8 @@ import { DatabaseSync } from "node:sqlite";
 import { Bus, chat, messageDelivery, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID } from "@magi/bus";
 import { toLLMMessage } from "@magi/agent/chats.js";
 import { PiAiClient } from "@magi/providers/client.js";
-import { createOwnerApi } from "@magi/node/owner.js";
-import { Magi } from "../eva.js";
+import { createOwnerApi } from "@magi/launcher/composition/owner.js";
+import { Magi } from "./harness.js";
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check: () => boolean) { for (let i = 0; i < 300 && !check(); i++) await sleep(10); assert.ok(check()); }
 
@@ -62,7 +62,7 @@ test("module system errors stay local, wake the agent once and do not constrain 
   } });
   try {
     const owner = createOwnerApi(magi.bus);
-    const room = magi.bus.chats.forChannel("cli", "terminal");
+    const room = magi.bus.chats.forChannel("test-owner", "terminal");
     const job = messageDelivery.reportError(magi.bus, "module failure", { module: "mcp", source: "startup:demo", chat_id: room.id });
     assert.equal(messageDelivery.reportError(magi.bus, "module failure", { module: "mcp", source: "startup:demo", chat_id: room.id }), job);
     const row = magi.bus.messages.list(room.id)[0];
@@ -171,7 +171,7 @@ test("repeated channel failure retains causal error records without self-trigger
     await until(() => attempts === 2);
     await sleep(100);
     assert.equal(calls, 2);
-    const room = magi.bus.chats.forChannel("cli", "terminal");
+    const room = magi.bus.chats.forChannel("test-owner", "terminal");
     const errors = magi.bus.messages.list(room.id).filter(message => message.contact_id === SYSTEM_CONTACT_ID);
     assert.equal(errors.length, 2);
     assert.equal(magi.bus.deliveries.get(errors[0].id)?.enqueue, true);

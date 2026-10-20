@@ -4,7 +4,7 @@ import test from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Magi } from "../eva.js";
+import { Magi } from "./harness.js";
 import { builtinTools } from "@magi/built-in-tools/worker.js";
 import { ShellManager } from "@magi/built-in-tools/shellManager.js";
 

@@ -3,7 +3,7 @@ import { afterEach, expect, test , sleep} from "./test.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Magi } from "../eva.js";
+import { Magi } from "./harness.js";
 import { SYSTEM_CONTACT_ID } from "@magi/bus";
 import { cronMatches } from "@magi/channel-tasks/worker.js";
 
@@ -25,7 +25,7 @@ test("the task worker carries schedule_task and a due task enters the agent", as
     await magi.start();
     expect(magi.bus.tools.get("schedule_task")).not.toBeNull();
 
-    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    const chat = magi.bus.chats.forChannel("test-owner", "terminal");
     const saved = await runTool(magi, "schedule_task", {
       name: "daily review", prompt: "Review the project", frequency: "daily", hour: 9, minute: 30,
       chat_id: chat.id,
@@ -93,7 +93,7 @@ test("one-time tasks atomically disable and concurrent scanners deduplicate", as
   const workspace = await mkdtemp(join(tmpdir(), "magi-once-")); workspaces.push(workspace);
   const magi = new Magi("@once.magi", { workspace });
   try {
-    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    const chat = magi.bus.chats.forChannel("test-owner", "terminal");
     const once = magi.bus.tasks.create({ name: "once", prompt: "review", cron: "", run_at: "2026-01-01T00:00:00Z", chat_id: chat.id });
     expect(magi.bus.tasks.claimFire(once.id, "2026-01-01T00:00")).toBeTrue();
     expect(magi.bus.tasks.claimFire(once.id, "2026-01-01T00:00")).toBeFalse();
@@ -132,7 +132,7 @@ test("private task tools cannot inspect, retarget or change external tasks", asy
   try {
     const worker = new TaskWorker(magi.bus, { isReady: () => false }); await worker.start();
     const internal = magi.bus.chats.forChannel("subconscious", "self");
-    const external = magi.bus.chats.forChannel("cli", "terminal");
+    const external = magi.bus.chats.forChannel("test-owner", "terminal");
     const task = magi.bus.tasks.create({ name: "external reminder", prompt: "external private text", cron: "0 8 * * *", chat_id: external.id });
     async function call(name: string, args: Record<string, unknown>) {
       const board = magi.bus.board("RunToolJob");
@@ -153,7 +153,7 @@ test("private task tools cannot inspect, retarget or change external tasks", asy
 test("task fire rolls back on persistence failure and committed journal recovers after restart", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "magi-task-journal-")); workspaces.push(workspace);
   let magi = new Magi("@journal.magi", { workspace });
-  const chat = magi.bus.chats.forChannel("cli", "terminal");
+  const chat = magi.bus.chats.forChannel("test-owner", "terminal");
   const task = magi.bus.tasks.create({ name: "once journal", prompt: "review", cron: "", run_at: "2026-01-01T00:00:00Z", chat_id: chat.id });
   expect(() => magi.bus.tasks.fire(task.id, "2026-01-01T00:00", () => { throw new Error("disk failure"); })).toThrow("disk failure");
   expect(magi.bus.tasks.get(task.id)?.enabled).toBeTrue();
@@ -173,7 +173,7 @@ test("stopped task workers neither fire nor claim tools", async () => {
   const magi = new Magi("@stop.magi", { workspace });
   try {
     const worker = new TaskWorker(magi.bus); await worker.start(); await worker.stop();
-    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    const chat = magi.bus.chats.forChannel("test-owner", "terminal");
     const task = magi.bus.tasks.create({ name: "stopped", prompt: "review", cron: "* * * * *", chat_id: chat.id });
     expect(await worker.poll()).toBeFalse();
     expect(magi.bus.tasks.get(task.id)?.last_fired_minute).toBeNull();
@@ -212,7 +212,7 @@ test("completed one-time tasks require a future reschedule, not a bare re-enable
   const workspace = await mkdtemp(join(tmpdir(), "magi-task-rearm-")); workspaces.push(workspace);
   const magi = new Magi("@task-rearm.magi", { workspace });
   try {
-    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    const chat = magi.bus.chats.forChannel("test-owner", "terminal");
     const input = { name: "once", prompt: "review", cron: "", run_at: "2020-01-01T00:00:00Z", chat_id: chat.id };
     const task = magi.bus.tasks.create(input);
     assert.equal(magi.bus.tasks.claimFire(task.id, "2020-01-01T00:01"), true, "never-fired overdue task can catch up");
@@ -251,7 +251,7 @@ test("preset seed identity is independent of task label and survives restart", a
   const workspace = await mkdtemp(join(tmpdir(), "magi-seed-id-")); workspaces.push(workspace);
   let magi = new Magi("@seed-id.magi", { workspace });
   try {
-    const chat = magi.bus.chats.forChannel("cli", "terminal");
+    const chat = magi.bus.chats.forChannel("test-owner", "terminal");
     const user = magi.bus.tasks.create({ name: "Subconscious review", prompt: "user task", cron: "0 8 * * *", chat_id: chat.id });
     const worker = new TaskWorker(magi.bus, { isReady: () => false });
     await worker.start();

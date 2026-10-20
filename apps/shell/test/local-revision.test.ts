@@ -4,14 +4,14 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { reviseCheckout, trackingRef } from '@magi/runtime/revise.js';
+import { reviseCheckout, trackingRef } from '@magi/launcher/runtime/revise.js';
 import { Bus, MAGI_CONTACT_ID, SYSTEM_CONTACT_ID, magiLocalName, messageDelivery, sequentialMagiHandle, SHELL_MAGI_HANDLE } from '@magi/bus';
 import { replaceTools } from '@magi/built-in-tools/replace.js';
 import { shellTools } from '@magi/built-in-tools/shell.js';
 import { ShellManager } from '@magi/built-in-tools/shellManager.js';
-import { resolveToolchain, toolchainEnv } from '@magi/runtime/toolchain.js';
-import { VERIFY_NPM_ARGS } from '@magi/runtime/verify.js';
-import { ReplaceWorker } from '../../../packages/manager/dist/replace.js';
+import { resolveToolchain, toolchainEnv } from '@magi/launcher/runtime/toolchain.js';
+import { VERIFY_NPM_ARGS } from '@magi/launcher/runtime/verify.js';
+import { ReplaceWorker } from '../../../packages/launcher/dist/replace.js';
 
 const repo = path.resolve(import.meta.dirname, '../../..');
 const node = process.execPath;

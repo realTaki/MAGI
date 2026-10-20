@@ -4,14 +4,14 @@ import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Magi } from "../eva.js";
-import { VERIFY_NPM_ARGS } from "@magi/runtime/verify.js";
+import { Magi } from "./harness.js";
+import { VERIFY_NPM_ARGS } from "@magi/launcher/runtime/verify.js";
 import { expect, test } from "./test.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, "../../../..");
 const skillPath = resolve(here, "../../../../packages/skills/builtin_skills/self_update/SKILL.md");
-const verifySource = readFileSync(resolve(repo, "packages/runtime/verify.ts"), "utf8");
+const verifySource = readFileSync(resolve(repo, "packages/launcher/runtime/verify.ts"), "utf8");
 const verifyScript = readFileSync(resolve(repo, "scripts/verify.mjs"), "utf8");
 const pkg = JSON.parse(readFileSync(resolve(repo, "package.json"), "utf8")) as { scripts: Record<string, string> };
 

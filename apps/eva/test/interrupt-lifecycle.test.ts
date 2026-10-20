@@ -60,7 +60,7 @@ test("restart terminalizes claimed turns and model calls without retrying tool s
   const workspace = await mkdtemp(join(tmpdir(), "magi-turn-restart-"));
   let bus = new Bus("@restart.magi", workspace);
   try {
-    const chat = bus.chats.forChannel("cli", "terminal");
+    const chat = bus.chats.forChannel("test-owner", "terminal");
     const message = bus.messages.add(chat.id, SYSTEM_CONTACT_ID, "do something");
     const turn = bus.board("MessageDeliveryJob").publish({ message_id: message }, "test");
     bus.board("MessageDeliveryJob").claimId("agent", turn);
@@ -119,20 +119,20 @@ test("launcher ownership gate reaps shell groups when the EVA worker is SIGKILLe
 });
 
 for (const mode of ["stop", "suspendForReplace"] as const) test(`manager ${mode} interrupts active shell turns and records their tool result`, { skip: process.platform === "win32" }, async () => {
-  const { ManagerWorker } = await import("@magi/manager");
+  const { LauncherWorker } = await import("@magi/launcher");
   const { AgentWorker } = await import("@magi/agent/worker.js");
   const { ToolsWorker } = await import("@magi/built-in-tools/worker.js");
   const { ProvidersWorker } = await import("@magi/providers/worker.js");
   const workspace = await mkdtemp(join(tmpdir(), "magi-manager-interrupt-"));
   const bus = new Bus("@manager-interrupt.magi", workspace);
   let modelCalls = 0;
-  const manager = new ManagerWorker(bus, [new AgentWorker(bus), new ToolsWorker(bus), new ProvidersWorker(bus, { async complete() {
+  const manager = new LauncherWorker(bus, [new AgentWorker(bus), new ToolsWorker(bus), new ProvidersWorker(bus, { async complete() {
     modelCalls++;
     return { role: "assistant", content: "", tool_calls: [{ name: "bash", tool_call_id: "blocking", arguments: { command: "echo $$ > active.pid; sleep 120" } }] };
   } })], { drain: ["agent"], build: { app: "eva", script: "build" } });
   try {
     await manager.start();
-    const chat = bus.chats.forChannel("cli", "terminal");
+    const chat = bus.chats.forChannel("test-owner", "terminal");
     const message = bus.messages.add(chat.id, SYSTEM_CONTACT_ID, "run");
     const turn = bus.board("MessageDeliveryJob").publish({ message_id: message }, "test");
     await eventually(async () => { try { return Number(await readFile(join(workspace, "active.pid"), "utf8")) > 0; } catch { return false; } });
@@ -181,14 +181,14 @@ for (const name of ["write_file", "edit_file"]) test(`ToolsWorker stop waits for
 });
 
 for (const mode of ["stop", "suspendForReplace"] as const) test(`${mode} retains a second same-chat turn for restart`, async () => {
-  const { ManagerWorker } = await import("@magi/manager");
+  const { LauncherWorker } = await import("@magi/launcher");
   const { AgentWorker } = await import("@magi/agent/worker.js");
   const { ProvidersWorker } = await import("@magi/providers/worker.js");
   const workspace = await mkdtemp(join(tmpdir(), "magi-queued-restart-"));
   let bus = new Bus("@queued.magi", workspace);
-  let manager = new ManagerWorker(bus, [new AgentWorker(bus)], { drain: ["agent"], build: { app: "eva", script: "build" } });
+  let manager = new LauncherWorker(bus, [new AgentWorker(bus)], { drain: ["agent"], build: { app: "eva", script: "build" } });
   try {
-    const chat = bus.chats.forChannel("cli", "terminal");
+    const chat = bus.chats.forChannel("test-owner", "terminal");
     const turns = ["first", "second"].map((text) => bus.board("MessageDeliveryJob").publish({ message_id: bus.messages.add(chat.id, SYSTEM_CONTACT_ID, text) }, "test"));
     await manager.start();
     await eventually(() => bus.agentTurns.has(turns[0]!));
@@ -201,7 +201,7 @@ for (const mode of ["stop", "suspendForReplace"] as const) test(`${mode} retains
     await manager.stop(); bus.close();
     bus = new Bus("@queued.magi", workspace);
     let modelCalls = 0;
-    manager = new ManagerWorker(bus, [new AgentWorker(bus), new ProvidersWorker(bus, { async complete() { modelCalls++; return { role: "assistant", content: "second completed" }; } })], { drain: ["agent"], build: { app: "eva", script: "build" } });
+    manager = new LauncherWorker(bus, [new AgentWorker(bus), new ProvidersWorker(bus, { async complete() { modelCalls++; return { role: "assistant", content: "second completed" }; } })], { drain: ["agent"], build: { app: "eva", script: "build" } });
     await manager.start();
     await eventually(() => bus.board("MessageDeliveryJob").result(turns[1]!)?.status === "completed");
     assert.equal(modelCalls, 1);
@@ -209,7 +209,7 @@ for (const mode of ["stop", "suspendForReplace"] as const) test(`${mode} retains
 });
 
 test("interrupted agent records the actual result of an active uncancellable edit", async () => {
-  const { ManagerWorker } = await import("@magi/manager");
+  const { LauncherWorker } = await import("@magi/launcher");
   const { AgentWorker } = await import("@magi/agent/worker.js");
   const { ProvidersWorker } = await import("@magi/providers/worker.js");
   const { ToolsWorker } = await import("@magi/built-in-tools/worker.js");
@@ -219,10 +219,10 @@ test("interrupted agent records the actual result of an active uncancellable edi
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
   let editing = false;
-  const manager = new ManagerWorker(bus, [new AgentWorker(bus), new ProvidersWorker(bus, { async complete() { return { role: "assistant", content: "", tool_calls: [{ name: "edit_file", tool_call_id: "edit", arguments: {} }] }; } }), new ToolsWorker(bus, [{ name: "edit_file", description: "edit", input_schema: {}, async run() { editing = true; await gate; await writeFile(join(workspace, "changed.txt"), "committed"); return "Edit committed"; } }])], { drain: ["agent"], build: { app: "eva", script: "build" } });
+  const manager = new LauncherWorker(bus, [new AgentWorker(bus), new ProvidersWorker(bus, { async complete() { return { role: "assistant", content: "", tool_calls: [{ name: "edit_file", tool_call_id: "edit", arguments: {} }] }; } }), new ToolsWorker(bus, [{ name: "edit_file", description: "edit", input_schema: {}, async run() { editing = true; await gate; await writeFile(join(workspace, "changed.txt"), "committed"); return "Edit committed"; } }])], { drain: ["agent"], build: { app: "eva", script: "build" } });
   try {
     await manager.start();
-    const chat = bus.chats.forChannel("cli", "terminal");
+    const chat = bus.chats.forChannel("test-owner", "terminal");
     const turn = bus.board("MessageDeliveryJob").publish({ message_id: bus.messages.add(chat.id, SYSTEM_CONTACT_ID, "edit") }, "test");
     await eventually(() => editing);
     let stopped = false;

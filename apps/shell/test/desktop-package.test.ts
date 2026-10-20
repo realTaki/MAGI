@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { packageDesktopRevision } from '@magi/runtime/desktop-package.js';
+import { packageDesktopRevision } from '@magi/launcher/runtime/desktop-package.js';
 import { replaceTools } from '@magi/built-in-tools/replace.js';
 import { Bus, SHELL_MAGI_HANDLE, EVA_MAGI_HANDLE } from '@magi/bus';
 
@@ -61,7 +61,7 @@ test('desktop request is explicit, packaged Shell only; ordinary self remains un
 });
 
 test('desktop handoff cannot complete until artifact readiness journal matches job and running revision', async t => {
-  const { ReplaceWorker } = await import('../../../packages/manager/dist/replace.js');
+  const { ReplaceWorker } = await import('../../../packages/launcher/dist/replace.js');
   const home = mkdtempSync(path.join(tmpdir(), 'magi-desktop-ack-'));
   const old = { ...process.env };
   const bus = new Bus(SHELL_MAGI_HANDLE, home);

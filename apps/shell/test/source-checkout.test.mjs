@@ -18,7 +18,7 @@ function fixture(t) {
     'apps/shell/package.json': JSON.stringify({ name: '@magi/shell' }),
     'apps/shell/main.mjs': '// Electron entry',
     'apps/eva/eva.mjs': '// launcher',
-    'packages/node/child.ts': '// node',
+    'packages/launcher/composition/child.ts': '// node',
   })) { mkdirSync(path.dirname(path.join(root, file)), { recursive: true }); writeFileSync(path.join(root, file), text); }
   git(root, 'add', '.'); git(root, 'commit', '-m', 'MAGI source');
   const calls = [];

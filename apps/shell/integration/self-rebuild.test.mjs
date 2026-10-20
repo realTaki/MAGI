@@ -248,7 +248,7 @@ test("a failed switch records the switch error on the job", async (t) => {
   const resultFile = path.join(home, "result.json");
   const badDir = path.join(home, node, "revisions", "bad");
   const busModule = pathToFileURL(path.join(repo, "packages/bus/dist/index.js")).href;
-  const replaceModule = pathToFileURL(path.join(repo, "packages/manager/dist/replace.js")).href;
+  const replaceModule = pathToFileURL(path.join(repo, "packages/launcher/dist/replace.js")).href;
   childAt(home, node, "a", `const { mkdirSync, writeFileSync } = require("node:fs");
 const { dirname } = require("node:path");
 async function main() {
@@ -267,7 +267,7 @@ async function main() {
       bus.close();
     } else {
       setTimeout(() => {
-        const badChild = ${JSON.stringify(path.join(badDir, "packages/node/dist/child.js"))};
+        const badChild = ${JSON.stringify(path.join(badDir, "packages/launcher/dist/composition/child.js"))};
         mkdirSync(dirname(badChild), { recursive: true });
         writeFileSync(badChild, "process.exit(2);\\n");
         process.send({ v: 1, type: "switch", revision: "bad", dir: ${JSON.stringify(badDir)}, job: ${id} });
@@ -319,9 +319,9 @@ test('a Shell switch activates its revision UI path and auto-reloads the open wi
   const source = path.join(home, 'shell', 'MAGI');
   const next = path.join(home, 'shell', 'revisions', 'next');
   mkdirSync(source, { recursive: true });
-  childAt(home, 'shell', 'next', `require('node:fs').writeFileSync(${JSON.stringify(proof)},JSON.stringify({checkout:process.env.MAGI_CHECKOUT,appCheckout:process.env.MAGI_APP_CHECKOUT}));import(${JSON.stringify(pathToFileURL(path.join(repo,'packages/node/dist/child.js')).href)});`);
-  const candidateChild = readFileSync(path.join(next, 'packages/node/dist/child.js'), 'utf8');
-  childAt(home, 'shell', 'old', `process.send({v:1,type:'hello'});process.send({v:1,type:'ready'});process.on('message',m=>{if(m.type==='shutdown')process.exit(0)});setTimeout(()=>{const f=require('node:fs');f.mkdirSync(${JSON.stringify(path.join(next,'packages/node/dist'))},{recursive:true});f.writeFileSync(${JSON.stringify(path.join(next,'packages/node/dist/child.js'))},${JSON.stringify(candidateChild)});f.mkdirSync(${JSON.stringify(path.join(next,'apps/shell/dist'))},{recursive:true});f.writeFileSync(${JSON.stringify(path.join(next,'apps/shell/dist/index.html'))},'candidate UI');process.send({v:1,type:'switch',revision:'next',dir:${JSON.stringify(next)},job:7})},100);setInterval(()=>{},1000);`);
+  childAt(home, 'shell', 'next', `require('node:fs').writeFileSync(${JSON.stringify(proof)},JSON.stringify({checkout:process.env.MAGI_CHECKOUT,appCheckout:process.env.MAGI_APP_CHECKOUT}));import(${JSON.stringify(pathToFileURL(path.join(repo,'packages/launcher/dist/composition/child.js')).href)});`);
+  const candidateChild = readFileSync(path.join(next, 'packages/launcher/dist/composition/child.js'), 'utf8');
+  childAt(home, 'shell', 'old', `process.send({v:1,type:'hello'});process.send({v:1,type:'ready'});process.on('message',m=>{if(m.type==='shutdown')process.exit(0)});setTimeout(()=>{const f=require('node:fs');f.mkdirSync(${JSON.stringify(path.join(next,'packages/launcher/dist/composition'))},{recursive:true});f.writeFileSync(${JSON.stringify(path.join(next,'packages/launcher/dist/composition/child.js'))},${JSON.stringify(candidateChild)});f.mkdirSync(${JSON.stringify(path.join(next,'apps/shell/dist'))},{recursive:true});f.writeFileSync(${JSON.stringify(path.join(next,'apps/shell/dist/index.html'))},'candidate UI');process.send({v:1,type:'switch',revision:'next',dir:${JSON.stringify(next)},job:7})},100);setInterval(()=>{},1000);`);
   mkdirSync(path.join(next, 'apps/shell/dist'), { recursive: true });
   writeFileSync(path.join(next, 'apps/shell/dist/index.html'), 'candidate UI');
   const events = [];
@@ -348,7 +348,7 @@ test('a failed Shell candidate restores the old checkout and never offers UI act
   const proof = path.join(home, 'restored.json');
   const source = path.join(home, 'shell/MAGI'), old = path.join(home, 'shell/revisions/old'), bad = path.join(home, 'shell/revisions/bad');
   mkdirSync(source, { recursive: true });
-  childAt(home, 'shell', 'old', `process.send({v:1,type:'hello'});process.on('message',m=>{if(m.type==='shutdown')process.exit(0)});process.send({v:1,type:'ready'});if(process.env.MAGI_REPLACE_ERROR)require('node:fs').writeFileSync(${JSON.stringify(proof)},JSON.stringify({checkout:process.env.MAGI_CHECKOUT,appCheckout:process.env.MAGI_APP_CHECKOUT,error:process.env.MAGI_REPLACE_ERROR}));else setTimeout(()=>{const f=require('node:fs');f.mkdirSync(${JSON.stringify(path.join(bad,'packages/node/dist'))},{recursive:true});f.writeFileSync(${JSON.stringify(path.join(bad,'packages/node/dist/child.js'))},"process.send({v:1,type:'hello'});process.exit(2)");process.send({v:1,type:'switch',revision:'bad',dir:${JSON.stringify(bad)},job:8})},100);setInterval(()=>{},1000);`);
+  childAt(home, 'shell', 'old', `process.send({v:1,type:'hello'});process.on('message',m=>{if(m.type==='shutdown')process.exit(0)});process.send({v:1,type:'ready'});if(process.env.MAGI_REPLACE_ERROR)require('node:fs').writeFileSync(${JSON.stringify(proof)},JSON.stringify({checkout:process.env.MAGI_CHECKOUT,appCheckout:process.env.MAGI_APP_CHECKOUT,error:process.env.MAGI_REPLACE_ERROR}));else setTimeout(()=>{const f=require('node:fs');f.mkdirSync(${JSON.stringify(path.join(bad,'packages/launcher/dist/composition'))},{recursive:true});f.writeFileSync(${JSON.stringify(path.join(bad,'packages/launcher/dist/composition/child.js'))},"process.send({v:1,type:'hello'});process.exit(2)");process.send({v:1,type:'switch',revision:'bad',dir:${JSON.stringify(bad)},job:8})},100);setInterval(()=>{},1000);`);
   const events = [];
   const loaded = [];
   const win = { isDestroyed: () => false, loadFile: async (file) => { loaded.push(file); } };
@@ -378,7 +378,7 @@ test('desktop handoff preserves rollback revisions and consumes its override bef
   const {proc, stderr} = start(home, ['--role','shell'], {MAGI_REVISION:'candidate',MAGI_REVISION_DIR:candidate,MAGI_REPLACE_JOB:'9',MAGI_DESKTOP_UPDATE_JOURNAL:path.join(home,'journal.json')}, t);
   const wait = async predicate => { const deadline=Date.now()+6000;while(Date.now()<deadline){try{if(predicate())return}catch{}await new Promise(r=>setTimeout(r,20))}assert.fail(stderr())};
   await wait(()=>JSON.parse(readFileSync(path.join(home,'shell','launcher.json'),'utf8')).current==='candidate');
-  assert.doesNotThrow(()=>readFileSync(path.join(older,'packages/node/dist/child.js')),'desktop readiness must preserve the previous rollback history');
+  assert.doesNotThrow(()=>readFileSync(path.join(older,'packages/launcher/dist/composition/child.js')),'desktop readiness must preserve the previous rollback history');
   writeFileSync(trigger,'go');
   await wait(()=>{const body=JSON.parse(readFileSync(proof,'utf8'));return body.revision==='next'});
   const body=JSON.parse(readFileSync(proof,'utf8'));

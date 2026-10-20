@@ -14,7 +14,7 @@ import { agentBranch, agentSource, createMagiRuntime } from "@magi/webapp/magi-r
 
 const exec = promisify(execFile);
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
-const builtFiles = ["packages/runtime/dist/home.js", "packages/runtime/dist/protocol.js", "packages/runtime/dist/toolchain.js", "packages/node/dist/child.js", "packages/node/dist/agent.js", "packages/bus/dist/index.js", "packages/manager/dist/worker.js"];
+const builtFiles = ["packages/launcher/dist/runtime/home.js", "packages/launcher/dist/runtime/protocol.js", "packages/launcher/dist/runtime/toolchain.js", "packages/launcher/dist/composition/child.js", "packages/launcher/dist/composition/agent.js", "packages/bus/dist/index.js", "packages/launcher/dist/worker.js"];
 const agent = { handle: EVA_MAGI_HANDLE, token: "tok" };
 
 // Node is supplied by the project test runner; npm execution is stubbed.
@@ -35,7 +35,7 @@ async function makeOrigin(root, autocrlf = false) {
   writeFileSync(path.join(seed, "README.md"), "one\n");
   mkdirSync(path.join(seed, "apps/eva"), { recursive: true });
   writeFileSync(path.join(seed, ".gitignore"), "**/dist/\nnode_modules/\n");
-  writeFileSync(path.join(seed, "apps/eva/eva.mjs"), 'import "../../packages/runtime/dist/home.js"; import "../../packages/node/dist/child.js"; if (process.send) { process.send({type:"ready"}); setInterval(() => {}, 1000); }');
+  writeFileSync(path.join(seed, "apps/eva/eva.mjs"), 'import "../../packages/launcher/dist/runtime/home.js"; import "../../packages/launcher/dist/composition/child.js"; if (process.send) { process.send({type:"ready"}); setInterval(() => {}, 1000); }');
   // No compiled files are committed or prebuilt. This small build driver makes
   // clone/bootstrap ordering executable without running a whole MAGI build.
   writeFileSync(path.join(seed, "build.mjs"), `import {mkdirSync,writeFileSync} from 'node:fs'; import path from 'node:path'; for(const file of ${JSON.stringify(builtFiles)}) { mkdirSync(path.dirname(file),{recursive:true}); writeFileSync(file, 'export const compiled = true;'); }`);
