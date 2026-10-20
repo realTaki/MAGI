@@ -106,3 +106,16 @@ clear startup error; there is no hardcoded repository fallback. For source
 launches, the entry checkout's current Git origin supplies the default, without
 requiring a package manifest. The existing explicit `MAGI_REPOSITORY_URL` override
 is retained for advanced/private development and deployment configurations.
+
+## Packaging prerequisites
+
+Use `apps/shell/scripts/build.mjs` (or the shell workspace `build` command) to
+produce desktop artifacts. It uses the repository-owned Node to prepare the
+bundled runtime, forces a root workspace compile, builds the shell UI, and only
+then invokes electron-builder. Any failed prerequisite aborts packaging. Release
+CI uses this same entry point. Running electron-builder directly bypasses these
+prerequisites and is only appropriate for an already prepared workspace.
+
+The Linux native package verifier checks compiled workspace bootstrap entries
+and imports the packaged process module using the packaged Electron in Node
+mode, so an archive containing only top-level shell files cannot pass validation.

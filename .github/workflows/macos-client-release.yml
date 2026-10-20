@@ -93,9 +93,7 @@ jobs:
               --config.mac.hardenedRuntime=false
             )
           fi
-          npm run build:ui
-          node scripts/prepare-runtime.mjs
-          npx electron-builder \
+          ../../node_modules/node/bin/node scripts/build.mjs \
             --mac dmg \
             --${{ matrix.arch }} \
             --publish never \

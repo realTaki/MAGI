@@ -87,18 +87,7 @@ jobs:
           if [[ -z "${WIN_CSC_LINK:-}" ]]; then
             unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD CSC_LINK CSC_KEY_PASSWORD
           fi
-          npm run build:ui
-          node scripts/prepare-runtime.mjs
-          for required in \
-            runtime/bin/node.exe \
-            runtime/npm/node_modules/npm/bin/npm-cli.js
-          do
-            if [[ ! -f "$required" ]]; then
-              echo "Bundled runtime is missing $required" >&2
-              exit 1
-            fi
-          done
-          npx electron-builder \
+          ../../node_modules/node/bin/node.exe scripts/build.mjs \
             --win nsis \
             --x64 \
             --publish never \

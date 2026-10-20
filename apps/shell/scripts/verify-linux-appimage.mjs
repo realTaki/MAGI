@@ -6,6 +6,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { extractFile, listPackage } from "@electron/asar";
+import { assertBootstrapEntries } from "./package-entries.mjs";
 
 const artifact = path.resolve(process.argv[2] ?? "");
 assert.equal(process.platform, "linux", "AppImage must be verified on native Linux");
@@ -17,14 +18,14 @@ try {
   const resources = path.join(appDir, "resources");
   const archive = path.join(resources, "app.asar");
   const entries = listPackage(archive);
-  for (const file of ["/main.mjs", "/repository-origin.mjs", "/build-origin.json", "/interface.mjs", "/process.mjs", "/process-owner.mjs", "/installation.mjs", "/profile-layout.mjs", "/app-spec.mjs", "/dependency-state.mjs", "/runtime-environment.mjs", "/shell-path.mjs", "/preload.cjs"]) assert.ok(entries.includes(file), `${file} missing from package`);
+  assertBootstrapEntries(entries);
   const origin = JSON.parse(extractFile(archive, "build-origin.json").toString());
   assert.equal(origin.schemaVersion, 1);
   if (process.env.GITHUB_ACTIONS === "true") assert.equal(origin.repository, `https://github.com/${process.env.GITHUB_REPOSITORY}.git`);
   const helper = path.join(dir, "shell-path.mjs");
   writeFileSync(helper, extractFile(archive, "shell-path.mjs"));
   const probe = path.join(dir, "probe.mjs");
-  writeFileSync(probe, `import {shellArtifactPath} from ${JSON.stringify(pathToFileURL(helper).href)}; console.log(JSON.stringify({platform:process.platform,arch:process.arch,electron:process.versions.electron,execPath:process.execPath,appImage:process.env.APPIMAGE,artifactPath:shellArtifactPath({platform:process.platform,execPath:process.execPath,appImage:process.env.APPIMAGE})}));`);
+  writeFileSync(probe, `await import(${JSON.stringify(pathToFileURL(path.join(archive, "process.mjs")).href)}); import {shellArtifactPath} from ${JSON.stringify(pathToFileURL(helper).href)}; console.log(JSON.stringify({platform:process.platform,arch:process.arch,electron:process.versions.electron,execPath:process.execPath,appImage:process.env.APPIMAGE,artifactPath:shellArtifactPath({platform:process.platform,execPath:process.execPath,appImage:process.env.APPIMAGE})}));`);
   const environment = { ...process.env, ELECTRON_RUN_AS_NODE: "1", APPIMAGE: artifact, APPDIR: appDir, LD_LIBRARY_PATH: [path.join(appDir, "usr", "lib"), process.env.LD_LIBRARY_PATH ?? ""].filter(Boolean).join(":") };
   const result = JSON.parse(execFileSync(path.join(appDir, "MAGI"), [probe], { env: environment, encoding: "utf8" }));
   assert.equal(result.platform, "linux"); assert.equal(result.arch, "x64");
@@ -42,6 +43,6 @@ try {
     assert.equal(header.subarray(0, 4).toString("hex"), "7f454c46");
     assert.equal(header.readUInt16LE(18), 62, "packaged executable must be Linux x86-64");
   }
-  const metadata = { artifact: path.basename(artifact), bytes: statSync(artifact).size, sha256: createHash("sha256").update(readFileSync(artifact)).digest("hex"), ...result, nodeVersion, npmVersion, gitVersion, verification: "native Linux; official extraction without FUSE; embedded Electron Node mode; no GUI" };
+  const metadata = { artifact: path.basename(artifact), bytes: statSync(artifact).size, sha256: createHash("sha256").update(readFileSync(artifact)).digest("hex"), ...result, nodeVersion, npmVersion, gitVersion, verification: "native Linux; official extraction without FUSE; embedded Electron Node mode with packaged process import; no GUI" };
   console.log(JSON.stringify(metadata, null, 2));
 } finally { rmSync(dir, { recursive: true, force: true }); }
