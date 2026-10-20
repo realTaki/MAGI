@@ -43,7 +43,7 @@ export function presetCron(args: Record<string, unknown>): string {
 export function taskTools(bus: Bus): ExecutableTool[] {
   return [
     {
-      name: "schedule_task", description: "Create or update a recurring or one-time task. Use target subconscious for private background thinking; no external delivery. Times are UTC.",
+      name: "schedule_task", description: "Create a new recurring or one-time task with its own ID. Names are labels and may repeat; use update_task with task_id to modify an existing task. Use target subconscious for private background thinking; no external delivery. Times are UTC.",
       input_schema: { type: "object", properties: {
         name: { type: "string" }, prompt: { type: "string" },
         frequency: { type: "string", enum: ["hourly", "daily", "weekly", "monthly", "once"] },
@@ -56,7 +56,7 @@ export function taskTools(bus: Bus): ExecutableTool[] {
         const prompt = stringArg(args, "prompt");
         const chatId = args.target === "subconscious" ? bus.chats.forChannel("subconscious", "self").id : positiveInteger(args.chat_id, "chat_id");
         if (!bus.chats.get(chatId)) throw new Error(`unknown chat ${chatId}`);
-        const task = bus.tasks.save({ name, prompt, cron: args.frequency === "once" ? "" : presetCron(args), run_at: args.frequency === "once" ? stringArg(args, "run_at") : null, chat_id: chatId });
+        const task = bus.tasks.create({ name, prompt, cron: args.frequency === "once" ? "" : presetCron(args), run_at: args.frequency === "once" ? stringArg(args, "run_at") : null, chat_id: chatId });
         return JSON.stringify({ task_id: task.id, name: task.name, cron: task.cron, chat_id: task.chat_id });
       },
     },

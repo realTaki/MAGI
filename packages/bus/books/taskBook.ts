@@ -7,7 +7,7 @@ import { chats } from "./chatBook.js";
 
 export const tasks = sqliteTable("books_tasks", {
   id: integer("id").primaryKey(),
-  name: text("name").notNull().unique(),
+  name: text("name").notNull(),
   prompt: text("prompt").notNull(),
   source: text("source").$type<"user" | "subconscious">().notNull().default("user"),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
@@ -25,13 +25,10 @@ export class TaskBook {
     return this.db.select().from(tasks).where(enabledOnly ? eq(tasks.enabled, true) : undefined).orderBy(tasks.id).all();
   }
   get(id: number): Task | null { return this.db.select().from(tasks).where(eq(tasks.id, id)).get() ?? null; }
-  save(input: TaskInput): Task {
-    const old = this.list().find(task => task.name === input.name.trim());
-    if (old && old.chat_id !== input.chat_id) throw new Error("task name already belongs to another conversation; choose a distinct name");
+  create(input: TaskInput): Task {
     this.validate(input);
     const fields = { ...input, name: input.name.trim(), prompt: input.prompt.trim(), enabled: input.enabled !== false, run_at: input.run_at ?? null };
-    this.validateRearm(old, fields);
-    return this.db.insert(tasks).values(fields).onConflictDoUpdate({ target: tasks.name, set: fields }).returning().get();
+    return this.db.insert(tasks).values(fields).returning().get();
   }
   update(id: number, patch: Partial<TaskInput>): Task {
     const old = this.get(id);
@@ -48,7 +45,7 @@ export class TaskBook {
       const marker = `subconscious.task.seed.${key}`;
       if (this.db.select().from(settings).where(eq(settings.key, marker)).get()) return;
       this.validate(input);
-      this.db.insert(tasks).values({ ...input, source: "subconscious", last_fired_minute: now.toISOString().slice(0, 16) }).onConflictDoNothing().run();
+      this.db.insert(tasks).values({ ...input, source: "subconscious", last_fired_minute: now.toISOString().slice(0, 16) }).run();
       this.db.insert(settings).values({ key: marker, value: "1" }).run();
     }, "immediate");
   }

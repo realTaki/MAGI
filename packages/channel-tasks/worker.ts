@@ -68,8 +68,6 @@ export class TaskWorker extends BaseWorker {
     if (name === "list_tasks") return { chat_id: chatId };
     if (name === "schedule_task") {
       if (args.target !== "subconscious" && args.chat_id !== chatId) throw new Error("subconscious tasks must target the private self conversation");
-      const existing = this.bus.tasks.list().find(task => task.name === String(args.name).trim());
-      if (existing && existing.chat_id !== chatId) throw new Error("cannot change another conversation's task");
       args.chat_id = chatId;
     } else if (this.bus.tasks.get(Number(args.task_id))?.chat_id !== chatId) {
       throw new Error("cannot change another conversation's task");

@@ -225,7 +225,14 @@ messaging tools are not in the subconscious tool set.
 owns its CRUD tools and contributes active notes to the next turn's context.
 Updates, archive and deletion require the version observed by the caller, so a
 stale background snapshot cannot overwrite a newer foreground note.
-`TaskBook` contains recurring or one-time timed prompts. TaskWorker records a fire
+`TaskBook` contains recurring or one-time timed prompts. A task's identity is its
+integer ID, not its name: `create` / `schedule_task` always create a new task,
+labels may repeat, and updates/deletions select an explicit task ID. Renaming
+never changes identity. Foreground tools may create and modify subconscious tasks.
+The name-uniqueness migration only drops an index and preserves existing IDs and
+execution state. IDs retain SQLite's existing allocation semantics; deleting the
+highest ID can allow its reuse, so they are not globally or permanently unique.
+TaskWorker records a fire
 and its delivery in one transaction; one-time tasks disable after firing.
 Foreground and subconscious share notes, while subconscious task tools can only
 manage tasks targeting its own conversation.

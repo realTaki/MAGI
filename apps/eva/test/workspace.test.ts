@@ -39,7 +39,7 @@ test("Book references reject rows without their chat or contact", async () => {
     expect(() => bus.messages.add(chat.id + 1, SYSTEM_CONTACT_ID, "orphan")).toThrow("FOREIGN KEY");
     expect(() => bus.messages.add(chat.id, 999, "orphan")).toThrow("FOREIGN KEY");
     expect(() => bus.chatMembers.add(chat.id + 1, SYSTEM_CONTACT_ID)).toThrow("FOREIGN KEY");
-    expect(() => bus.tasks.save({ name: "orphan", prompt: "no chat", cron: "* * * * *", chat_id: chat.id + 1 })).toThrow("FOREIGN KEY");
+    expect(() => bus.tasks.create({ name: "orphan", prompt: "no chat", cron: "* * * * *", chat_id: chat.id + 1 })).toThrow("FOREIGN KEY");
   } finally { bus.close(); }
 });
 
