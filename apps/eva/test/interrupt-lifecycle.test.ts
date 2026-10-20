@@ -144,3 +144,35 @@ for (const mode of ["stop", "suspendForReplace"] as const) test(`manager ${mode}
     assert.equal(bus.board("RunToolJob").claim("tools"), null);
   } finally { await manager.stop(); bus.close(); await rm(workspace, { recursive: true, force: true }); }
 });
+
+for (const name of ["write_file", "edit_file"]) test(`ToolsWorker stop waits for an uncancellable ${name} mutation`, async () => {
+  const { ToolsWorker } = await import("@magi/built-in-tools/worker.js");
+  const { writeFile } = await import("node:fs/promises");
+  const workspace = await mkdtemp(join(tmpdir(), "magi-write-stop-"));
+  const bus = new Bus("@write-stop.magi", workspace);
+  let release!: () => void;
+  let interrupted!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const cancelled = new Promise<void>((resolve) => { interrupted = resolve; });
+  const worker = new ToolsWorker(bus, [{ name, description: "uncancellable file mutation", input_schema: {}, async run(_args, signal) {
+    signal?.addEventListener("abort", interrupted, { once: true });
+    await gate;
+    await writeFile(join(workspace, "result.txt"), "finished");
+    return "written";
+  } }]);
+  try {
+    worker.start();
+    const board = bus.board("RunToolJob");
+    const id = board.publish({ call: { name, tool_call_id: "mutation", arguments: {} } }, "test");
+    await worker.poll();
+    let stopped = false;
+    const stopping = worker.stop().then(() => { stopped = true; });
+    await cancelled;
+    await sleep(20);
+    assert.equal(stopped, false, "shutdown must retain the raw mutation promise");
+    release();
+    await stopping;
+    assert.equal(await readFile(join(workspace, "result.txt"), "utf8"), "finished");
+    assert.equal(board.result(id)?.status, "completed");
+  } finally { release(); await worker.stop(); bus.close(); await rm(workspace, { recursive: true, force: true }); }
+});

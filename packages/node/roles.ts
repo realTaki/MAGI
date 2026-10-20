@@ -52,6 +52,7 @@ export function agentWorkers(bus: Bus, options: {
 export function shellWorkers(bus: Bus, webapp: BaseWorker, peer: BaseWorker, client?: LLMClient): BaseWorker[] {
   return [
     ...shared(bus, client),
+    new McpWorker(bus),
     webapp,
     peer,
     new TelegramWorker(bus),

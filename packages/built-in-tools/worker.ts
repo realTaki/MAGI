@@ -79,7 +79,13 @@ export class ToolsWorker extends BaseWorker {
     try {
       const tool = this.own.get(name);
       if (!tool) throw new Error(`unknown tool ${name}`);
-      board.submit(this.worker_name, id, { output: { content: await abortable(tool.run(args, this.controller.signal, context), this.controller.signal) } });
+      const operation = tool.run(args, this.controller.signal, context);
+      // File mutations cannot be rolled back by AbortSignal. Keep ownership until
+      // their atomic write/rename settles, even when the requesting turn stops.
+      // Otherwise stop() can close the workspace while a write is still in flight.
+      const content = name === "write_file" || name === "edit_file"
+        ? await operation : await abortable(operation, this.controller.signal);
+      board.submit(this.worker_name, id, { output: { content } });
     } catch (error) {
       board.submit(this.worker_name, id, { error: error instanceof Error ? error.message : String(error) });
     }
