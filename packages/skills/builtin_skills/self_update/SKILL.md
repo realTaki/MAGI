@@ -16,7 +16,7 @@ Work like a coding agent in this turn: read, edit, compile, and run the full tes
 
 Paths for `list_files`, `read_file`, `search_files`, `edit_file`, and `write_file` are relative to the workspace. Prefix source paths with `MAGI/`, or with the Source checkout path when that block names `MAGI_CHECKOUT`.
 
-`search_files` finds a literal string and returns `path:line: text`. Narrow it with `path` and `glob` before reading. `read_file` returns numbered lines (`N|text`); the number is not part of the file. Pass `offset` and `limit` to read past the first window. Load `codebase_search` before hunting for a symbol. Read `MAGI/docs/architecture.md` before changing a boundary between Shell, the peer channel, and an EVA.
+`search_files` finds a literal string and returns `path:line: text`. Narrow it with `path` and `glob` before reading. `read_file` returns a full-file SHA-256, byte/line counts and truncation metadata, followed by numbered lines (`N|text`); neither the header nor the number is part of the file. Pass `offset` and `limit` to read past the first window. Load `codebase_search` before hunting for a symbol. Read `MAGI/docs/architecture.md` before changing a boundary between Shell, the peer channel, and an EVA.
 
 | Tree | What runs from it |
 | --- | --- |
@@ -29,7 +29,7 @@ Each node edits only its own `MAGI/`. On Shell EVA (`@shell.magi`, role `shell`)
 
 Edit only under `MAGI/` or the Source checkout path. Do not write product source into `memories/`, `skills/`, `logs/`, or `prompts/`.
 
-Prefer `edit_file` with one unique exact substring. Use `write_file` for a new file or a full rewrite of at most 256 KiB. Do not commit, push, or merge unless the operator asked. Never change git config. If a commit is required and git reports a missing `user.name` or `user.email`, stop and tell the operator.
+Prefer `edit_file` with one unique exact substring. Use `write_file` for a new file or a full rewrite of at most 256 KiB. Overwriting an existing file requires `expected_sha`, using the full-file SHA-256 returned by `read_file`. Read all windows before a full rewrite; the hash detects stale content but does not prove that omitted content was preserved. `edit_file` also accepts `expected_sha` for stale-edit checks. Same-file tool mutations are serialized within one runtime, not across independent processes. Do not commit, push, or merge unless the operator asked. Never change git config. If a commit is required and git reports a missing `user.name` or `user.email`, stop and tell the operator.
 
 A commit, when one was asked for, stays on this branch:
 

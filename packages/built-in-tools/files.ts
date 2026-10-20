@@ -6,8 +6,9 @@
  * inspects `RunToolJob`, not by the tool's own worker.
  */
 
-import { mkdir, mkdtemp, readdir, readFile, rename, rmdir, stat, writeFile } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { chmod, link, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { Dirent } from "node:fs";
 import type { ExecutableTool } from "@magi/bus";
 import { optionalBoundedInteger, stringArg } from "./args.js";
@@ -26,7 +27,7 @@ export function fileTools(workspace: string): ExecutableTool[] {
   return [
     {
       name: "read_file",
-      description: "Read a UTF-8 file as numbered lines (N|text). The number is not part of the file. offset is the first line (default 1). limit is how many lines (default 200, max 400).",
+      description: "Read a UTF-8 file with full-file SHA-256 and window/truncation metadata, followed by numbered lines (N|text). The number is not part of the file. offset is the first line (default 1). limit is how many lines (default 200, max 400).",
       input_schema: {
         type: "object",
         properties: {
@@ -70,39 +71,105 @@ export function fileTools(workspace: string): ExecutableTool[] {
       },
     },
     {
-      name: "write_file", description: "Write a UTF-8 file in the workspace.",
-      input_schema: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"] },
+      name: "write_file", description: "Write a complete UTF-8 file. Creating a new file needs no hash. Overwriting requires expected_sha from read_file; read all windows first and preserve omitted content. A hash detects stale content, not whether you read the whole file. Prefer edit_file for partial changes.",
+      input_schema: { type: "object", properties: { path: { type: "string" }, content: { type: "string" }, expected_sha: hashSchema }, required: ["path", "content"] },
       async run(args) {
         const path = resolve(workspace, stringArg(args, "path"));
         const content = args.content;
+        const expected = expectedHash(args.expected_sha);
         if (typeof content !== "string" || Buffer.byteLength(content) > 256 * 1024) throw new Error("content must be text of at most 256 KiB");
         await mkdir(dirname(path), { recursive: true });
-        const tempDir = await mkdtemp(join(dirname(path), ".magi-write-"));
-        const temp = join(tempDir, "content");
-        try { await writeFile(temp, content, "utf8"); await rename(temp, path); }
-        finally { await rmdir(tempDir).catch(() => {}); }
-        return `wrote ${Buffer.byteLength(content)} bytes`;
+        const target = await canonicalPath(path);
+        return serializeMutation(target, async () => {
+          const previous = await readFile(target).catch((error: NodeJS.ErrnoException) => {
+            if (error.code === "ENOENT") return undefined;
+            throw error;
+          });
+          if (previous !== undefined && expected === undefined) throw new Error("overwriting an existing file requires expected_sha from read_file; read all windows or use edit_file");
+          checkHash(previous, expected);
+          const mode = previous === undefined ? undefined : (await stat(target)).mode;
+          await atomicWrite(target, content, mode);
+          return `wrote ${Buffer.byteLength(content)} bytes; sha256=${sha256(Buffer.from(content))}`;
+        });
       },
     },
     {
-      name: "edit_file", description: "Replace one unique exact substring in a workspace file.",
-      input_schema: { type: "object", properties: { path: { type: "string" }, old_str: { type: "string" }, new_str: { type: "string" } }, required: ["path", "old_str", "new_str"] },
+      name: "edit_file", description: "Replace one unique exact substring with literal text. Optional expected_sha (full-file SHA-256 from read_file) rejects stale edits. Same-path tool mutations are serialized within this runtime.",
+      input_schema: { type: "object", properties: { path: { type: "string" }, old_str: { type: "string" }, new_str: { type: "string" }, expected_sha: hashSchema }, required: ["path", "old_str", "new_str"] },
       async run(args) {
-        const path = resolve(workspace, stringArg(args, "path"));
+        const path = await canonicalPath(resolve(workspace, stringArg(args, "path")));
         const oldText = stringArg(args, "old_str");
         const newText = args.new_str;
+        const expected = expectedHash(args.expected_sha);
         if (typeof newText !== "string") throw new Error("new_str must be text");
-        const content = await readFile(path, "utf8");
-        if (content.indexOf(oldText) < 0) throw new Error("old_str was not found");
-        if (content.indexOf(oldText) !== content.lastIndexOf(oldText)) throw new Error("old_str is not unique");
-        const tempDir = await mkdtemp(join(dirname(path), ".magi-edit-"));
-        const temp = join(tempDir, "content");
-        try { await writeFile(temp, content.replace(oldText, newText), "utf8"); await rename(temp, path); }
-        finally { await rmdir(tempDir).catch(() => {}); }
-        return "edit applied";
+        return serializeMutation(path, async () => {
+          const bytes = await readFile(path);
+          checkHash(bytes, expected);
+          const content = bytes.toString("utf8");
+          const index = content.indexOf(oldText);
+          if (index < 0) throw new Error("old_str was not found");
+          if (index !== content.lastIndexOf(oldText)) throw new Error("old_str is not unique");
+          const updated = content.slice(0, index) + newText + content.slice(index + oldText.length);
+          await atomicWrite(path, updated, (await stat(path)).mode);
+          return `edit applied; sha256=${sha256(Buffer.from(updated))}`;
+        });
       },
     },
   ];
+}
+
+const hashSchema = { type: "string", pattern: "^[a-fA-F0-9]{64}$", description: "Full-file SHA-256 returned by read_file. Required to overwrite an existing file." };
+
+function sha256(bytes: Buffer): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function expectedHash(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !/^[a-fA-F0-9]{64}$/.test(value)) throw new Error("expected_sha must be a 64-character SHA-256 hex digest from read_file");
+  return value.toLowerCase();
+}
+
+function checkHash(bytes: Buffer | undefined, expected: string | undefined): void {
+  if (expected !== undefined && (bytes === undefined || sha256(bytes) !== expected)) {
+    throw new Error("expected_sha conflict: file changed or is missing; read it again before retrying");
+  }
+}
+
+async function canonicalPath(path: string): Promise<string> {
+  try { return await realpath(path); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    return join(await realpath(dirname(path)), basename(path));
+  }
+}
+
+// Shared across tool instances, including concurrent ToolsWorker jobs. This is
+// an in-process queue, not a lock against unrelated applications/processes.
+const mutations = new Map<string, Promise<void>>();
+async function serializeMutation<T>(path: string, action: () => Promise<T>): Promise<T> {
+  const previous = mutations.get(path) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => { release = resolve; });
+  mutations.set(path, current);
+  await previous;
+  try { return await action(); }
+  finally {
+    release();
+    if (mutations.get(path) === current) mutations.delete(path);
+  }
+}
+
+async function atomicWrite(path: string, content: string, mode: number | undefined): Promise<void> {
+  const tempDir = await mkdtemp(join(dirname(path), ".magi-write-"));
+  const temp = join(tempDir, "content");
+  try {
+    await writeFile(temp, content, "utf8");
+    if (mode !== undefined) await chmod(temp, mode & 0o7777);
+    // Exclusive creation also protects against a file created outside our queue.
+    if (mode === undefined) await link(temp, path);
+    else await rename(temp, path);
+  } finally { await rm(tempDir, { recursive: true, force: true }); }
 }
 
 /** Numbered lines. A trailing newline does not invent an extra empty line. */
@@ -117,16 +184,19 @@ async function readNumberedLines(path: string, offset: number, limit: number): P
   const info = await stat(path);
   if (!info.isFile()) throw new Error("path is not a file");
   if (info.size > MAX_READ_BYTES) throw new Error("file is larger than 8 MiB");
-  const text = await readFile(path, "utf8");
+  const bytes = await readFile(path);
+  if (bytes.length > MAX_READ_BYTES) throw new Error("file is larger than 8 MiB");
+  const text = bytes.toString("utf8");
   if (text.includes("\0")) throw new Error("path is not a text file");
   const lines = splitLines(text);
-  if (lines.length === 0) return "(empty file)";
+  const end = Math.min(lines.length, offset - 1 + limit);
+  const metadata = `sha256=${sha256(bytes)}; bytes=${bytes.length}; total_lines=${lines.length}; lines=${lines.length === 0 ? "0-0" : `${offset}-${end}`}; truncated=${offset > 1 || end < lines.length}`;
+  if (lines.length === 0) return `${metadata}\n(empty file)`;
   if (offset > lines.length) throw new Error(`offset ${offset} is past the end (${lines.length} lines)`);
   const selected = lines.slice(offset - 1, offset - 1 + limit);
-  const end = offset + selected.length - 1;
   const body = selected.map((line, index) => `${offset + index}|${line}`).join("\n");
-  if (end >= lines.length) return body;
-  return `${body}\n… ${lines.length - end} more lines. Read again with offset ${end + 1}.`;
+  if (end >= lines.length) return `${metadata}\n${body}`;
+  return `${metadata}\n${body}\n… ${lines.length - end} more lines. Read again with offset ${end + 1}.`;
 }
 
 function workspacePath(workspace: string, absolute: string): string {
