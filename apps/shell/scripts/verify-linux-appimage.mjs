@@ -7,8 +7,10 @@ import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { extractFile, listPackage } from "@electron/asar";
 import { assertBootstrapEntries } from "./package-entries.mjs";
+import { packagedElectronVersion } from "./electron-version.mjs";
 
 const artifact = path.resolve(process.argv[2] ?? "");
+const expectedElectron = packagedElectronVersion(JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")));
 assert.equal(process.platform, "linux", "AppImage must be verified on native Linux");
 assert.equal(process.arch, "x64");
 const dir = mkdtempSync(path.join(tmpdir(), "magi-appimage-verify-"));
@@ -29,7 +31,7 @@ try {
   const environment = { ...process.env, ELECTRON_RUN_AS_NODE: "1", APPIMAGE: artifact, APPDIR: appDir, LD_LIBRARY_PATH: [path.join(appDir, "usr", "lib"), process.env.LD_LIBRARY_PATH ?? ""].filter(Boolean).join(":") };
   const result = JSON.parse(execFileSync(path.join(appDir, "MAGI"), [probe], { env: environment, encoding: "utf8" }));
   assert.equal(result.platform, "linux"); assert.equal(result.arch, "x64");
-  assert.equal(result.electron, "44.4.5");
+  assert.equal(result.electron, expectedElectron);
   assert.notEqual(result.execPath, artifact, "Electron runs inside the extracted AppDir");
   assert.equal(result.artifactPath, artifact, "updates must target the outer artifact");
   const node = path.join(resources, "runtime", "bin", "node");
