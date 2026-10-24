@@ -253,6 +253,7 @@ async function main() {
   if (process.env.MAGI_REVISION) state.current = process.env.MAGI_REVISION;
 
   let replaced = false;
+  let stopping = false;
   let acceptingCrashes = false;
   let crashes = 0;
   let current = null;
@@ -286,7 +287,7 @@ async function main() {
   };
 
   const onMessage = async (message) => {
-    if (message?.v !== LAUNCHER_PROTOCOL) return;
+    if (stopping || message?.v !== LAUNCHER_PROTOCOL) return;
     if (message.type === "upgrade") {
       await handoff(message);
       return;
@@ -309,9 +310,11 @@ async function main() {
     try {
       const script = childScript(name, message.dir);
       await stopAndWait(old, role);
+      if (stopping) return;
       next = launch({ script, revision: message.revision, replaceJob: job, dir: message.dir });
       current = next;
       await waitHealthy(next);
+      if (stopping) return;
       state.previous = state.current;
       state.previousDir = previousDir;
       state.current = String(message.revision ?? "");
@@ -320,6 +323,7 @@ async function main() {
       pruneRevisions(name, new Set([state.current, state.previous].filter(Boolean)));
       interfaceUpdated(state.currentDir);
     } catch (error) {
+      if (stopping) return;
       if (next) killTree(next);
       const text = report(name, error, job);
       try {
@@ -330,7 +334,7 @@ async function main() {
         process.exit(1);
       }
     } finally {
-      replaced = false;
+      if (!stopping) replaced = false;
     }
   }
 
@@ -358,10 +362,12 @@ async function main() {
         return;
       }
       await stopAndWait(current, role);
+      if (stopping) return;
       current = null;
       process.exit(0);
     }
     await stopAndWait(current, role);
+    if (stopping) return;
     current = null;
     const { node } = resolveToolchain();
     const next = spawn(node, [launcher, "--role", role, ...rest], {
@@ -419,6 +425,18 @@ async function main() {
     report(name, error);
     process.exit(1);
   }
+  // Own shutdown before any startup await: a revision may switch while the
+  // initial child's health poll is still pending. Always stop the live child.
+  const stop = () => {
+    if (stopping) return;
+    stopping = true;
+    replaced = true;
+    acceptingCrashes = false;
+    void stopAndWait(current, role).then(() => process.exit(0));
+  };
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
+
   if (process.env.MAGI_HEALTH === "1") {
     const code = await new Promise((resolve) => current.once("exit", (exit) => resolve(exit ?? 1)));
     process.exit(code);
@@ -426,9 +444,11 @@ async function main() {
   try {
     await waitHealthy(current);
   } catch (error) {
+    if (stopping) return;
     report(name, error);
     process.exit(1);
   }
+  if (stopping) return;
   acceptingCrashes = true;
   if (state.current !== saved.current || state.currentDir !== saved.currentDir) {
     state.previous = saved.current;
@@ -440,12 +460,6 @@ async function main() {
   }
   if (typeof process.send === "function") process.send({ v: LAUNCHER_PROTOCOL, type: "ready" });
   if (Number.isInteger(inheritedJob) && !inheritedError) interfaceUpdated(state.currentDir);
-  const stop = () => {
-    replaced = true;
-    void stopAndWait(current, role).then(() => process.exit(0));
-  };
-  process.once("SIGINT", stop);
-  process.once("SIGTERM", stop);
 }
 
 main().catch((error) => {
