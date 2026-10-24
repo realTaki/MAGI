@@ -102,7 +102,13 @@ export function createProcessOwner({ spawnProcess = spawn, graceMs = 3000, force
     if (!record?.pid) return;
     if (process.platform !== "win32") {
       if (!record.keepProcessGroup) {
-        try { process.kill(-record.pid, force ? "SIGKILL" : "SIGTERM"); } catch (error) { if (error.code !== "ESRCH") throw error; }
+        try { process.kill(-record.pid, force ? "SIGKILL" : "SIGTERM"); }
+        catch (error) {
+          // Darwin can return EPERM for a group containing only zombies during
+          // concurrent exit reaping. Fall through to verified owned PIDs: their
+          // signals still surface real permission failures instead of hiding them.
+          if (error.code !== "ESRCH" && !(process.platform === "darwin" && error.code === "EPERM")) throw error;
+        }
       }
       // Separate sessions created by owned descendants are still owned if they
       // were observed before reparenting. Normal npm descendants share the group.
