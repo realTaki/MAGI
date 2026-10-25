@@ -12,7 +12,7 @@ test('online and offline EVA entries persist, update status, and only online cli
   const active = new Map(), dictionaries = new Map(), cleanup = [], opens = [];
   const react = {
     createElement(type, props, ...children) { return { type, props: { ...props, children } }; },
-    useSyncExternalStore() {},
+    useSyncExternalStore(_subscribe, getSnapshot) { return getSnapshot(); },
     useState(value) {
       if (typeof value === 'string') return [frameURL ?? value, (next) => { frameURL = next; }];
       return [value, () => {}];
@@ -43,6 +43,8 @@ test('online and offline EVA entries persist, update status, and only online cli
   plugin.apply({
     effect(callback) { const dispose = callback(); if (dispose) cleanup.push(dispose); },
     locale: {
+      getSnapshot() { return locale; },
+      subscribe() { return () => {}; },
       register(_namespace, language, dict) { dictionaries.set(language, dict); return () => {}; },
       bind() { return (key) => dictionaries.get(locale)[key]; },
     },

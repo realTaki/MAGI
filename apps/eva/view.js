@@ -1,7 +1,10 @@
 // Owner-only, authenticated routes supplied by DSH Connection. Never publish child
 // login credentials in status JSON, tool output, or errors; only an explicit user
-// navigation receives them. POST supports desktop's fetch-only IPC carrier.
+// navigation receives them. POST open supports desktop's fetch-only IPC carrier.
+import { validateName } from './runtime.js';
+
 export const VIEW_PATH = '/api/eva/view';
+export const WAKE_PATH = '/api/eva/wake';
 export const OPEN_PATH = '/api/eva/open';
 export const EMBED_PATH = '/eva/embed';
 
@@ -30,8 +33,54 @@ export function registerEmbeddedLogin(ctx) {
   }));
 }
 const headers = { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' };
+const safeNode = ({ handle, status, workspace, mainSessionId }) => ({ handle, status, workspace, mainSessionId });
+const wakeFailure = (status, code, error) => Response.json({ code, error }, { status, headers });
 
 export function registerParentView(ctx, manager) {
+  ctx.connection.fetch.register({ path: WAKE_PATH, methods: ['POST'], requestBody: 'buffered',
+    async fetch(request) {
+      // Exact Fetch routes receive no Peer in the current native contract.
+      // Re-admit preserved credentials; API Peers can be owners too, so only
+      // the actual browserPeer is user authority. Credential-less desktop IPC
+      // fails closed rather than inferring authority from headers or transport.
+      try {
+        const admission = ctx.connection.admit({ method: request.method, url: request.url,
+          headers: Object.fromEntries(request.headers) });
+        if (!ctx.connection.browserPeer || admission.peer !== ctx.connection.browserPeer) {
+          return wakeFailure(403, 'forbidden', 'Use the signed-in parent Host web page. Agent callers must use the EVA tool.');
+        }
+      } catch {
+        return wakeFailure(403, 'forbidden', 'Browser identity could not be verified. Use the signed-in parent Host web page.');
+      }
+      const handles = new URL(request.url).searchParams.getAll('handle');
+      const handle = handles[0];
+      try {
+        if (handles.length !== 1) throw new Error('Explicit handle required.');
+        validateName(handle);
+      } catch { return wakeFailure(400, 'invalid', 'Choose one existing EVA handle.'); }
+      try {
+        // Bare status(handle) describes unknown handles as not-started too.
+        // Only current inventory establishes a known persisted identity.
+        const { nodes } = await manager.status();
+        const node = nodes.find((node) => node.handle === handle);
+        if (!node) return wakeFailure(404, 'unknown', 'This EVA is no longer known. Refresh the EVA list.');
+        if (node.status === 'stopping') return wakeFailure(409, 'busy', 'EVA is stopping. Wait before waking it again.');
+        // Share the tool's fixed-handle domain operation and pending lock.
+        // Do not pass request/navigation abort: plugin unload retains startup
+        // ownership through its existing manager.dispose() registration.
+        return Response.json(safeNode(await manager.start(undefined, handle)), { headers });
+      } catch {
+        // A stop may race inventory. Never expose raw child failures or URLs.
+        try {
+          const { nodes } = await manager.status();
+          if (nodes.some((node) => node.handle === handle && node.status === 'stopping')) {
+            return wakeFailure(409, 'busy', 'EVA is stopping. Wait before waking it again.');
+          }
+        } catch { /* The fixed failure below covers unavailable inventory too. */ }
+        return wakeFailure(503, 'start-failed', 'EVA could not start. Retry after checking that the node is not in use and the runtime is available.');
+      }
+    },
+  });
   ctx.connection.fetch.register({ path: VIEW_PATH, methods: ['GET'], requestBody: 'buffered',
     async fetch() {
       const { nodes } = await manager.status();

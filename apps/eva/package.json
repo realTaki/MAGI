@@ -1,6 +1,6 @@
 {
   "name": "@local/eva",
-  "version": "0.6.6",
+  "version": "0.6.9",
   "private": true,
   "type": "module",
   "description": "Manage desktop-free DSH nodes with profile, state, and workspace under one persistent home per handle.",
