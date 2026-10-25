@@ -15,9 +15,14 @@ apps/shell/runtime/bin/node apps/shell/integration/chat-history.browser.mjs
 apps/shell/runtime/bin/node apps/shell/integration/provider-form.browser.mjs
 ```
 
-Root `npm test` builds the workspace and runs EVA, Shell, bus, contacts and
-peer-channel tests. Shell includes both `.test.ts` and `.test.mjs` files. The
-runner selects compiled EVA and package tests from their current source names; obsolete files left in `dist` are not discovered. Running the entire Shell suite again in the same CI job
+Root `npm test` builds the remaining TypeScript projects and runs the DSH EVA
+plugin's source `.test.js` files, Shell, bus, contacts, action-items, providers
+and peer-channel tests. The plugin needs no compilation. Shell includes both
+`.test.ts` and `.test.mjs` files. The runner selects compiled package tests from
+their current source names; obsolete files left in `dist` are not discovered.
+Legacy Shell tests and startup still reference the removed EVA launcher; this
+entry-point adjustment does not complete that migration or certify the desktop.
+See [the DSH handoff](../DSH-HANDOFF.md). Running the entire Shell suite again in the same CI job
 adds no coverage. Tests use disposable local workspaces and fake providers;
 they must close workers/databases before removing their workspaces. Never use a
 real profile, credentials or paid model service as a test fixture.

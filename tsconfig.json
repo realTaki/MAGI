@@ -44,9 +44,6 @@
       "path": "packages/channel-telegram"
     },
     {
-      "path": "apps/eva"
-    },
-    {
       "path": "apps/shell"
     },
     {

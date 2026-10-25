@@ -8,7 +8,7 @@ import { Bus, encryptFor, messageDelivery, MAGI_CONTACT_ID, type CardSpec } from
 import { ProvidersWorker } from "@magi/providers/worker.js";
 import { PiAiClient } from "@magi/providers/client.js";
 import { providerFailureCode } from "@magi/bus/jobs/providerFailure.js";
-import { Magi } from "../../eva/eva.ts";
+import { Magi } from "@magi/launcher/composition/agent.js";
 
 async function until(read: () => unknown, timeout = 8000) {
   const deadline = Date.now() + timeout;

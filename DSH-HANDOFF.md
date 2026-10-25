@@ -79,9 +79,10 @@ apps/shell/runtime/bin/node --test apps/eva/test/*.test.js
 
 ## 尚未改造的旧 MAGI 集成
 
-- [根级 TypeScript 配置](<tsconfig.json>) 仍引用旧的 EVA TypeScript 项目，而新插件不提供旧项目配置。
-- [根级测试脚本](<scripts/test.mjs>) 仍按旧 EVA `.test.ts` / 编译输出规则收集测试，不会自动运行这批插件 `.test.js`。
-- [根级 npm 脚本](<package.json>)、现有依赖锁、Shell、其余包及旧架构文档仍属于原实现。原来依赖 EVA launcher 的导入、打包与启动流程也需要后续梳理；本次没有声称旧的整仓 build/test 可以继续通过。
+- [根级 TypeScript 配置](<tsconfig.json>) 已移除旧 EVA 项目引用；新插件无需编译，不补回旧配置。
+- [根级测试脚本](<scripts/test.mjs>) 已直接收集插件源码 `.test.js`，不再寻找旧 EVA 编译测试；其余包仍按当前 TypeScript 源文件收集编译输出，避免运行已删除测试的残留产物。
+- 三项旧 Shell 测试已直接从仍保留的 `@magi/launcher/composition/agent.js` 导入 `Magi`，绕过被删除的同名 EVA 转导出文件；不改变旧 composition 的行为或宣称它已改造成 DSH。`atomic-launcher-state` 测试仍依赖已删 helper，旧 launcher 启动／集成路径也尚未迁移，不删除或跳过这些失败来假装整仓通过。
+- 依赖锁已同步新插件 workspace 元数据。根级 npm 脚本、Shell、其余包及旧架构文档仍大多属于原实现。原来依赖 EVA launcher 的导入、打包与启动流程还需梳理；这些静态入口修正不代表旧 Shell、整仓测试或 DSH 集成已通过。
 
 不要为了让旧整仓构建表面通过而补回旧 EVA launcher，或把旧架构继续塞进新插件。
 

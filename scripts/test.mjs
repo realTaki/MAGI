@@ -1,5 +1,5 @@
-// Select compiled tests from current sources, so deleted tests left in dist
-// cannot reappear in a developer's incremental build.
+// Run the DSH plugin and Shell tests directly; select compiled package tests
+// from current sources so deleted tests left in dist cannot reappear.
 import { readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -9,7 +9,7 @@ const files = [];
 for (const app of ['eva', 'shell']) {
   for (const name of readdirSync(new URL(`../apps/${app}/test/`, import.meta.url)).sort()) {
     if (app === 'shell' && /\.test\.(mjs|ts)$/.test(name)) files.push(`apps/shell/test/${name}`);
-    else if (app !== 'shell' && name.endsWith('.test.ts')) files.push(`apps/${app}/dist/test/${name.replace(/\.ts$/, '.js')}`);
+    else if (app === 'eva' && name.endsWith('.test.js')) files.push(`apps/eva/test/${name}`);
   }
 }
 for (const pkg of ['bus', 'contacts', 'action-items', 'channel-a2a', 'providers']) {
