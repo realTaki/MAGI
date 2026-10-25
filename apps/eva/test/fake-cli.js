@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { join } from 'node:path';
 
 export async function runDesktopCli() {
   const args = process.argv.slice(2);
@@ -22,6 +23,6 @@ export async function runDesktopCli() {
     workspace: config.workspace, home: process.env.DSH_HOME,
     cwd: config.profile === 'wrong-cwd' ? config.workspace : config.profile === 'missing-cwd' ? undefined : process.cwd(),
     defaultAgentPreset: config.profile === 'missing-preset' ? undefined : config.profile === 'user-standard' ? 'standard' : patch.find((row) => row.id === 'agent-preset-registry')?.config.default,
-    profileDir: `${process.env.DSH_HOME}/profiles/${config.profile}`, origin: 'http://127.0.0.1:12345', workspaceId: 'fake-workspace', leafPid,
+    profileDir: join(process.env.DSH_HOME, 'profiles', config.profile), origin: 'http://127.0.0.1:12345', workspaceId: 'fake-workspace', leafPid,
   });
 }
