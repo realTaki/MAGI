@@ -5,8 +5,7 @@ on:
   pull_request:
     branches: ["main"]
   workflow_dispatch:
-# Desktop packaging embeds GitHub Actions' built-in GITHUB_REPOSITORY.
-# Fork builds therefore clone and check releases in their own repository.
+# Validation only: MAGI is migrating to DSH plugins; no desktop packages are published.
 permissions:
   contents: read
 concurrency:

@@ -7,8 +7,7 @@ on:
     branches: ["main"]
   workflow_dispatch:
 
-# Desktop packaging embeds GitHub Actions' built-in GITHUB_REPOSITORY.
-# Fork builds therefore clone and check releases in their own repository.
+# Validation only: MAGI is migrating to DSH plugins; no desktop packages are published.
 permissions:
   contents: read
 
@@ -18,7 +17,7 @@ concurrency:
 
 jobs:
   windows:
-    name: Windows tests and unsigned installer
+    name: Windows tests and build checks
     runs-on: windows-latest
     timeout-minutes: 45
     defaults:
@@ -57,25 +56,3 @@ jobs:
           & ./apps/shell/runtime/bin/node.exe ./apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run build:ui --prefix apps/shell
           if ($LASTEXITCODE -ne 0) { throw "Shell UI build failed" }
           if (!(Test-Path apps/shell/dist/shell.js)) { throw "Shell process entry was removed by UI build" }
-      - name: Build unsigned Windows installer without publishing
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: |
-          $env:PATH = "$PWD/apps/shell/runtime/bin;$env:PATH"
-          $node = (Resolve-Path apps/shell/runtime/bin/node.exe).Path
-          Push-Location apps/shell
-          & $node scripts/build.mjs --win nsis --x64 --publish never --config.win.signExecutable=false
-          if ($LASTEXITCODE -ne 0) { throw "Windows installer build failed" }
-          Pop-Location
-          if (!(Get-ChildItem apps/shell/release/*.exe)) { throw "Installer was not produced" }
-          & ./apps/shell/release/win-unpacked/resources/runtime/bin/node.exe --version
-          if ($LASTEXITCODE -ne 0) { throw "Packaged runtime cannot run" }
-      - name: Keep unsigned validation installer as CI artifact
-        if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v6
-        with:
-          name: windows-unsigned-validation
-          path: apps/shell/release/*.exe
-          if-no-files-found: error
-          retention-days: 7
