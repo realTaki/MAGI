@@ -148,21 +148,26 @@ test('a fresh start does not create or require Documents', async (t) => {
 test('concurrent managers atomically allocate distinct automatic handles', async (t) => {
   const { base, manager } = await fixture(t);
   const other = new EvaRuntime(runtime, { homeRoot: base, startupTimeout: 3000, stopTimeout: 1000 });
-  t.after(() => other.dispose());
-  const [first, second] = await Promise.all([manager.start(base), other.start(base)]);
-  assert.deepEqual([first.handle, second.handle].sort(), ['eva-000', 'eva-001']);
-  assert.notEqual(first.pid, second.pid);
-  for (const [controller, managed, external] of [[manager, first, second], [other, second, first]]) {
-    const { nodes } = await controller.status(base);
-    assert.deepEqual(nodes.map((node) => node.handle), ['eva-000', 'eva-001']);
-    assert.deepEqual(nodes.find((node) => node.handle === managed.handle), managed, 'managed readiness wins over inventory');
-    const offline = nodes.find((node) => node.handle === external.handle);
-    assert.equal(offline.status, 'not-started', 'external liveness is not inferred');
-    assert.equal(offline.pid, null);
-    assert.equal(offline.origin, null);
-    assert.equal(offline.mainSessionId, null);
-    assert.equal(controller.launchUrl(external.handle), undefined);
-    assert.equal(controller.nodes.size, 1, 'discovery does not adopt another manager’s process');
+  try {
+    const [first, second] = await Promise.all([manager.start(base), other.start(base)]);
+    assert.deepEqual([first.handle, second.handle].sort(), ['eva-000', 'eva-001']);
+    assert.notEqual(first.pid, second.pid);
+    for (const [controller, managed, external] of [[manager, first, second], [other, second, first]]) {
+      const { nodes } = await controller.status(base);
+      assert.deepEqual(nodes.map((node) => node.handle), ['eva-000', 'eva-001']);
+      assert.deepEqual(nodes.find((node) => node.handle === managed.handle), managed, 'managed readiness wins over inventory');
+      const offline = nodes.find((node) => node.handle === external.handle);
+      assert.equal(offline.status, 'not-started', 'external liveness is not inferred');
+      assert.equal(offline.pid, null);
+      assert.equal(offline.origin, null);
+      assert.equal(offline.mainSessionId, null);
+      assert.equal(controller.launchUrl(external.handle), undefined);
+      assert.equal(controller.nodes.size, 1, 'discovery does not adopt another manager’s process');
+    }
+  } finally {
+    // The fixture's earlier after-hook removes their shared home. Stop this
+    // second manager first, even on assertion failure, before that hook runs.
+    await other.dispose();
   }
 });
 

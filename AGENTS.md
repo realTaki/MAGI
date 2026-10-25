@@ -29,9 +29,11 @@ apps/shell/runtime/bin/node --test packages/channel-a2a/dist/test/*.test.js
 apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js test
 ```
 
-The repository is a workspace: the runtime lives in `apps/eva` and `packages/`,
-so `npm test` at the root builds every package through the project references and
-then runs the runtime tests.
+The repository is a workspace. `apps/eva` is now a directly executed DSH Host
+plugin and has no TypeScript build. Root `npm test` builds the remaining
+TypeScript project references, checks the Shell bootstrap helpers, and runs the
+plugin, Shell, and selected package tests. Legacy Shell launcher integration is
+still being migrated; see `DSH-HANDOFF.md` for the current boundary.
 
 Do not install alternate JavaScript runtimes globally or substitute a
 system-installed Node.js for MAGI's bundled Node 24.

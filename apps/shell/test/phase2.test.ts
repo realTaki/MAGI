@@ -6,7 +6,7 @@ import { test } from "node:test";
 
 import { Bus, chat as receiveChat, encryptFor, messageDelivery, replaceFailedPath, type CardSpec, type ChatInput } from "@magi/bus";
 import { createOwnerApi } from "@magi/launcher/composition/owner.js";
-import { Magi } from "../../eva/eva.ts";
+import { Magi } from "@magi/launcher/composition/agent.js";
 import { createSupervisor } from "../process.mjs";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
