@@ -20,8 +20,17 @@ export async function runDesktopCli() {
   process.send({
     type: 'eva-ready', pid: process.pid, profile: config.profile,
     workspace: config.workspace, home: process.env.DSH_HOME,
-    cwd: config.profile === 'wrong-cwd' ? config.workspace : config.profile === 'missing-cwd' ? undefined : process.cwd(),
+    cwd: config.profile === 'wrong-cwd' ? `${config.workspace}/workspace` : config.profile === 'missing-cwd' ? undefined : process.cwd(),
     defaultAgentPreset: config.profile === 'missing-preset' ? undefined : config.profile === 'user-standard' ? 'standard' : patch.find((row) => row.id === 'agent-preset-registry')?.config.default,
     profileDir: `${process.env.DSH_HOME}/profiles/${config.profile}`, origin: 'http://127.0.0.1:12345', workspaceId: 'fake-workspace', leafPid,
+    mainSessionId: config.profile === 'nav-missing-main' ? undefined : 'fake-main-session',
+    launchUrl: ({
+      'nav-origin-mismatch': 'http://127.0.0.1:54321/?token=do-not-leak#eva-main',
+      'nav-bad-hash': 'http://127.0.0.1:12345/?token=do-not-leak#wrong',
+      'nav-credentials': 'http://user:do-not-leak@127.0.0.1:12345/?token=do-not-leak#eva-main',
+      'nav-external-protocol': 'https://127.0.0.1:12345/?token=do-not-leak#eva-main',
+      'nav-external-host': 'http://example.com:12345/?token=do-not-leak#eva-main',
+      'nav-path': 'http://127.0.0.1:12345/private?token=do-not-leak#eva-main',
+    })[config.profile] ?? 'http://127.0.0.1:12345/?token=do-not-leak#eva-main',
   });
 }

@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { constants, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { mkdir, realpath, lstat, readFile, writeFile, open, unlink, access, readdir } from 'node:fs/promises';
 import { basename, dirname, join, resolve, relative, isAbsolute } from 'node:path';
@@ -11,6 +12,16 @@ const here = dirname(fileURLToPath(import.meta.url));
 const installationId = createHash('sha256').update(here).digest('hex').slice(0, 16);
 const START_TIMEOUT = 60_000;
 const STOP_TIMEOUT = 8_000;
+const CHILD_NODE_CONFIG = JSON.stringify({ role: 'eva-child' }) + '\n';
+
+// A home-level marker survives profile changes and later plugin installation.
+export function isEvaChild(home) {
+  let config;
+  try { config = JSON.parse(readFileSync(join(home, 'eva', 'node.json'), 'utf8')); }
+  catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+  if (config?.role !== 'eva-child') throw new Error('Invalid EVA node role in eva/node.json.');
+  return true;
+}
 
 export function validateName(name) {
   if (typeof name !== 'string' || !/^[a-z][a-z0-9-]{0,31}$/.test(name)) throw new Error('Node name must match [a-z][a-z0-9-]{0,31}.');
@@ -86,6 +97,29 @@ async function lockNode(path) {
   };
 }
 
+// Inventory reads only fixed, bounded metadata files, never profiles or credentials.
+// Missing, unsafe, or malformed entries are not evidence of an EVA node.
+async function inventoryDirectory(path) {
+  try {
+    const stat = await lstat(path);
+    return stat.isDirectory() && !stat.isSymbolicLink() && await realpath(path) === path;
+  } catch { return false; }
+}
+
+async function inventoryRecord(path) {
+  let file;
+  try {
+    const stat = await lstat(path);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4096 ||
+        (process.getuid && stat.uid !== process.getuid())) return undefined;
+    file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const opened = await file.stat();
+    if (!opened.isFile() || opened.ino !== stat.ino || opened.dev !== stat.dev || opened.size > 4096) return undefined;
+    return JSON.parse(await file.readFile('utf8'));
+  } catch { return undefined; }
+  finally { await file?.close(); }
+}
+
 export class EvaRuntime {
   constructor(runtime, { startupTimeout = START_TIMEOUT, stopTimeout = STOP_TIMEOUT, homeRoot = homedir() } = {}) {
     this.runtime = runtime;
@@ -102,7 +136,7 @@ export class EvaRuntime {
     const home = join(this.homeRoot, `.dsh-${handle}`);
     const state = join(home, 'eva');
     return { handle, home, state, lock: join(state, 'owner.lock'), profile: handle,
-      profileDir: join(home, 'profiles', handle), workspace: join(home, 'workspace') };
+      profileDir: join(home, 'profiles', handle), workspace: home };
   }
 
   // Node identity is user-wide, not tied to the calling Session or workspace.
@@ -133,15 +167,55 @@ export class EvaRuntime {
       workspace: node.workspace, home: node.home, cwd: node.ready?.cwd ?? null,
       defaultAgentPreset: node.ready?.defaultAgentPreset ?? null,
       origin: node.ready?.origin ?? null, workspaceId: node.ready?.workspaceId ?? null,
+      mainSessionId: node.ready?.mainSessionId ?? null,
       exitCode: node.exitCode ?? null, exitSignal: node.exitSignal ?? null,
       credentials: 'Parent credentials are not copied; existing child data is preserved.',
     };
   }
 
+  // User navigation only. The credential-bearing URL must never enter snapshot().
+  launchUrl(handle) {
+    const node = this.nodes.get(this.paths(handle).home);
+    return node?.status === 'running' ? node.ready.launchUrl : undefined;
+  }
+
+  async discoverNode(handle) {
+    const paths = this.paths(handle);
+    if (!await inventoryDirectory(paths.home) || !await inventoryDirectory(paths.state)) return undefined;
+    const marker = await inventoryRecord(join(paths.state, 'node.json'));
+    if (marker?.role !== 'eva-child') {
+      const mapping = await inventoryRecord(join(paths.state, 'main-session.json'));
+      if (![1, 2].includes(mapping?.version) || mapping.profile !== handle ||
+          typeof mapping.sessionId !== 'string' || !/^session-[A-Za-z0-9-]{1,160}$/.test(mapping.sessionId)) return undefined;
+    }
+    // A persisted identity says nothing about external process liveness. Do not
+    // retain pseudo-processes or read a lock, launch URL, or Session storage.
+    return this.snapshot({ ...paths, name: handle, status: 'not-started' });
+  }
+
   async status(base, name) {
-    if (name === undefined) return { nodes: [...this.nodes.values()].map((node) => this.snapshot(node)) };
-    const node = this.nodes.get(await this.key(base, name));
-    return node ? this.snapshot(node) : { handle: validateName(name), name, status: 'not-started' };
+    if (name !== undefined) {
+      const key = await this.key(base, name);
+      let node = this.nodes.get(key);
+      if (node) return this.snapshot(node);
+      const discovered = await inventoryDirectory(this.homeRoot) ? await this.discoverNode(name) : undefined;
+      node = this.nodes.get(key); // A concurrent start remains authoritative.
+      return node ? this.snapshot(node) : discovered ?? { handle: name, name, status: 'not-started' };
+    }
+    const discovered = new Map();
+    if (await inventoryDirectory(this.homeRoot)) {
+      let entries = [];
+      try { entries = await readdir(this.homeRoot, { withFileTypes: true }); } catch { /* Inventory is best-effort. */ }
+      for (const entry of entries) {
+        if (!entry.isDirectory() || !/^\.dsh-[a-z][a-z0-9-]{0,31}$/.test(entry.name)) continue;
+        const handle = entry.name.slice(5);
+        if (this.nodes.has(this.paths(handle).home)) continue;
+        const snapshot = await this.discoverNode(handle);
+        if (snapshot) discovered.set(handle, snapshot);
+      }
+    }
+    for (const node of this.nodes.values()) discovered.set(node.name, this.snapshot(node));
+    return { nodes: [...discovered.values()].sort((a, b) => a.handle < b.handle ? -1 : a.handle > b.handle ? 1 : 0) };
   }
 
   async start(base, name, signal) {
@@ -170,9 +244,9 @@ export class EvaRuntime {
     try {
       const migrationPending = await lstat(join(state, 'migration.pending.json')).then(() => true, (error) => { if (error.code === 'ENOENT') return false; throw error; });
       if (migrationPending) throw new Error('EVA has an incomplete migration; inspect migration.pending.json before starting.');
-      await ensureWorkspace({ home, handle: name,
-        legacyWorkspace: join(hostHome, 'Documents', 'deepseek-harness', `${name}-workspace`) });
-      const workspace = join(home, 'workspace');
+      // Persist the child role before any plugins can load in the spawned Host.
+      await exclusiveContent(join(state, 'node.json'), CHILD_NODE_CONFIG);
+      const workspace = await ensureWorkspace({ home, handle: name, rootWorkspace: true });
       const profile = name;
       const profileDir = await directories(home, ['profiles', profile]);
       // Include session defaults so earlier exclusive startup patches remain unchanged.
@@ -252,6 +326,12 @@ export class EvaRuntime {
             let url;
             try { url = new URL(message.origin); } catch { settle(new Error('Invalid child origin.')); return; }
             if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') { settle(new Error('Child is not loopback-only.')); return; }
+            let launch;
+            try { launch = new URL(message.launchUrl); } catch { settle(new Error('Invalid child navigation readiness.')); return; }
+            if (launch.origin !== url.origin || launch.pathname !== '/' || launch.username || launch.password ||
+                launch.hash !== '#eva-main' || typeof message.mainSessionId !== 'string' || !message.mainSessionId) {
+              settle(new Error('Invalid child navigation readiness.')); return;
+            }
             node.ready = message;
             node.status = 'running';
             settle();

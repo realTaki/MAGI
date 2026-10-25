@@ -58,6 +58,70 @@ async function patch(t, method, implementation) {
   t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
 }
 
+test('root mode fresh start returns home without creating nested workspace or probing legacy paths', async (t) => {
+  const f = await fixture(t, false);
+  for (const method of ['lstat', 'realpath', 'readdir', 'readFile', 'open', 'mkdir']) {
+    await patch(t, method, (original) => async (path, ...args) => {
+      if (String(path).startsWith(join(f.root, 'Documents')) || path === f.workspace) throw new Error('unused workspace was probed');
+      return original(path, ...args);
+    });
+  }
+  assert.equal(await ensureWorkspace({ ...f.options, rootWorkspace: true }), f.home);
+  assert.deepEqual(await readdir(f.home), ['eva']);
+});
+
+for (const kind of ['legacy', 'nested', 'root-and-other']) {
+  test(`root mode preserves ${kind} registry bytes and history across repeated calls`, async (t) => {
+    const f = await fixture(t);
+    if (kind === 'nested') {
+      await mkdir(f.workspace);
+      await writeFile(join(f.workspace, 'keep.bin'), bytes);
+      f.data.tables.workspaces[id].path = f.workspace;
+    }
+    if (kind === 'root-and-other') {
+      f.data.tables.workspaces[id].path = f.home;
+      const other = '222e2849-79ba-44e9-9c8d-20a11c80f995';
+      f.data.global.workspaceIds.push(other);
+      f.data.tables.workspaces[other] = { path: join(f.root, 'unrelated'), sessionIds: ['ordinary'] };
+    }
+    f.data.tables.workspaces[id].sessionIds = ['existing-history'];
+    f.data.global.archivedSessionIds = ['archived'];
+    const original = JSON.stringify(f.data, null, 2) + '\n';
+    await writeFile(f.registryPath, original);
+    for (let round = 0; round < 2; round++) {
+      assert.equal(await ensureWorkspace({ ...f.options, rootWorkspace: true }), f.home);
+      assert.equal(await readFile(f.registryPath, 'utf8'), original);
+      assert.deepEqual(await readFile(join(f.legacyWorkspace, 'nested', 'bytes.bin')), bytes);
+      if (kind === 'nested') assert.deepEqual(await readFile(join(f.workspace, 'keep.bin')), bytes);
+      else await missing(f.workspace);
+      await missing(f.pending);
+      await missing(f.facts);
+    }
+  });
+}
+
+for (const kind of ['storage-link', 'registry-link', 'invalid-registry', 'pending-marker', 'pending-mutation']) {
+  test(`root mode refuses unsafe ${kind} without creating nested workspace`, async (t) => {
+    const f = await fixture(t, false);
+    await mkdir(dirname(f.registryPath));
+    if (kind === 'storage-link') {
+      await fs.rmdir(dirname(f.registryPath));
+      await symlink(f.root, dirname(f.registryPath));
+    } else if (kind === 'registry-link') {
+      const target = join(f.root, 'registry.json');
+      await writeFile(target, JSON.stringify(f.data));
+      await symlink(target, f.registryPath);
+    } else if (kind === 'invalid-registry') await writeFile(f.registryPath, '{}');
+    else if (kind === 'pending-marker') await writeFile(f.pending, '{}');
+    else {
+      f.data.global.pendingMutation = { type: 'pending' };
+      await writeFile(f.registryPath, JSON.stringify(f.data));
+    }
+    await assert.rejects(ensureWorkspace({ ...f.options, rootWorkspace: true }), /symlink|registry|relocation|pendingMutation/);
+    await missing(f.workspace);
+  });
+}
+
 test('fresh start creates only nested workspace and never probes legacy Documents', async (t) => {
   const f = await fixture(t, false);
   const probes = [];

@@ -40,19 +40,26 @@ test('start is idempotent, status is live, stop releases the lock, and restart w
   assert.equal(a.handle, 'eva-000');
   assert.equal(a.name, a.handle);
   assert.equal(a.profile, 'eva-000');
-  assert.equal(a.workspace, join(base, '.dsh-eva-000/workspace'));
+  assert.equal(a.workspace, join(base, '.dsh-eva-000'));
   assert.equal(a.home, join(base, '.dsh-eva-000'));
   assert.equal(a.cwd, a.home);
-  assert.notEqual(a.cwd, a.workspace);
+  assert.equal(a.cwd, a.workspace);
   assert.equal(a.defaultAgentPreset, 'cordis');
+  const nodeConfig = join(a.home, 'eva', 'node.json');
+  const marker = await readFile(nodeConfig, 'utf8');
+  assert.deepEqual(JSON.parse(marker), { role: 'eva-child' });
   assert.equal((await manager.status(base, 'eva-000')).pid, a.pid);
   const other = new EvaRuntime(runtime, { homeRoot: base });
   t.after(() => other.dispose());
   await assert.rejects(other.start(base, 'eva-000'), /locked/);
-  assert.equal((await manager.stop(base, 'eva-000')).status, 'stopped');
+  const stopped = await manager.stop(base, 'eva-000');
+  assert.equal(stopped.status, 'stopped');
+  assert.deepEqual((await manager.status(base)).nodes, [stopped], 'stopped nodes remain listed');
   await assert.rejects(access(join(base, '.dsh-eva-000/eva/owner.lock')));
+  assert.equal(await readFile(nodeConfig, 'utf8'), marker, 'stopping retains the child role');
   const next = await manager.start(base, 'eva-000');
   assert.notEqual(next.pid, a.pid);
+  assert.equal(await readFile(nodeConfig, 'utf8'), marker, 'restart reuses the persistent child role');
   assert.equal((await manager.stop(base, 'eva-000')).status, 'stopped');
 });
 
@@ -75,7 +82,7 @@ test('paths synchronously describe handle-global home, workspace, profile, and s
   const { base, manager } = await fixture(t);
   assert.deepEqual(manager.paths('melchior'), {
     home: join(base, '.dsh-melchior'),
-    workspace: join(base, '.dsh-melchior/workspace'),
+    workspace: join(base, '.dsh-melchior'),
     profile: 'melchior',
     profileDir: join(base, '.dsh-melchior/profiles/melchior'),
     state: join(base, '.dsh-melchior/eva'),
@@ -117,21 +124,24 @@ test('automatic allocation skips occupied file and symlink roots without followi
   assert.deepEqual(await readdir(join(base, 'target')), []);
 });
 
-test('allocation reserves only the home root; start creates its nested workspace', async (t) => {
+test('allocation and start use only the root workspace without creating a nested workspace', async (t) => {
   const { base, manager } = await fixture(t);
   const handle = await manager.allocateHandle();
   const paths = manager.paths(handle);
   assert.ok((await lstat(paths.home)).isDirectory());
   assert.deepEqual(await readdir(paths.home), []);
   await manager.start(base, handle);
+  assert.equal(paths.workspace, paths.home);
   assert.ok((await lstat(paths.workspace)).isDirectory());
+  await assert.rejects(access(join(paths.home, 'workspace')), { code: 'ENOENT' });
 });
 
 test('a fresh start does not create or require Documents', async (t) => {
   const { base, manager } = await fixture(t);
   await assert.rejects(access(join(base, 'Documents')), { code: 'ENOENT' });
   const result = await manager.start(base);
-  assert.equal(result.workspace, join(result.home, 'workspace'));
+  assert.equal(result.workspace, result.home);
+  await assert.rejects(access(join(result.home, 'workspace')), { code: 'ENOENT' });
   await assert.rejects(access(join(base, 'Documents')), { code: 'ENOENT' });
 });
 
@@ -142,8 +152,18 @@ test('concurrent managers atomically allocate distinct automatic handles', async
   const [first, second] = await Promise.all([manager.start(base), other.start(base)]);
   assert.deepEqual([first.handle, second.handle].sort(), ['eva-000', 'eva-001']);
   assert.notEqual(first.pid, second.pid);
-  assert.deepEqual((await manager.status(base)).nodes.map((node) => node.handle), [first.handle]);
-  assert.deepEqual((await other.status(base)).nodes.map((node) => node.handle), [second.handle]);
+  for (const [controller, managed, external] of [[manager, first, second], [other, second, first]]) {
+    const { nodes } = await controller.status(base);
+    assert.deepEqual(nodes.map((node) => node.handle), ['eva-000', 'eva-001']);
+    assert.deepEqual(nodes.find((node) => node.handle === managed.handle), managed, 'managed readiness wins over inventory');
+    const offline = nodes.find((node) => node.handle === external.handle);
+    assert.equal(offline.status, 'not-started', 'external liveness is not inferred');
+    assert.equal(offline.pid, null);
+    assert.equal(offline.origin, null);
+    assert.equal(offline.mainSessionId, null);
+    assert.equal(controller.launchUrl(external.handle), undefined);
+    assert.equal(controller.nodes.size, 1, 'discovery does not adopt another manager’s process');
+  }
 });
 
 test('explicit handles have the same identity across caller workspaces', async (t) => {
@@ -156,13 +176,16 @@ test('explicit handles have the same identity across caller workspaces', async (
   assert.equal(first.name, 'melchior');
   assert.equal(first.profile, 'melchior');
   assert.equal(first.home, join(base, '.dsh-melchior'));
-  assert.equal(first.workspace, join(base, '.dsh-melchior/workspace'));
+  assert.equal(first.workspace, join(base, '.dsh-melchior'));
   assert.equal(first.profileDir, join(base, '.dsh-melchior/profiles/melchior'));
   assert.equal((await manager.status(caller, 'melchior')).pid, first.pid);
   assert.deepEqual((await manager.status(caller)).nodes.map((node) => node.handle), ['melchior']);
   const other = new EvaRuntime(runtime, { homeRoot: base });
   t.after(() => other.dispose());
-  assert.deepEqual(await other.status(caller), { nodes: [] });
+  const inventory = await other.status(caller);
+  assert.deepEqual(inventory.nodes.map((node) => [node.handle, node.status]), [['melchior', 'not-started']]);
+  assert.deepEqual(await other.status(caller, 'melchior'), inventory.nodes[0]);
+  assert.equal(other.nodes.size, 0);
   await assert.rejects(other.start(caller, 'melchior'), /locked/);
   assert.equal((await manager.stop(caller, 'melchior')).status, 'stopped');
   assert.equal((await manager.status(base, 'melchior')).status, 'stopped');
@@ -180,6 +203,140 @@ test('status without a handle lists owned nodes and stop requires a handle', asy
   assert.equal(nodes[0].pid, started.pid);
 });
 
+test('a new manager reconstructs numbered and named inventory after stop and dispose', async (t) => {
+  const { base, manager } = await fixture(t);
+  await manager.start(base, 'melchior');
+  await manager.start(base, 'eva-000');
+  await manager.stop(base, 'eva-000');
+  await manager.dispose();
+  assert.deepEqual((await manager.status(base)).nodes.map((node) => node.status), ['stopped', 'stopped']);
+  const restored = new EvaRuntime(runtime, { homeRoot: base });
+  t.after(() => restored.dispose());
+  const { nodes } = await restored.status(base);
+  assert.deepEqual(nodes.map((node) => node.handle), ['eva-000', 'melchior']);
+  for (const node of nodes) {
+    assert.equal(node.status, 'not-started');
+    assert.equal(node.name, node.handle);
+    assert.equal(node.home, manager.paths(node.handle).home);
+    assert.equal(node.workspace, node.home);
+    assert.equal(node.profile, node.handle);
+    assert.equal(node.profileDir, manager.paths(node.handle).profileDir);
+    for (const field of ['pid', 'cwd', 'origin', 'workspaceId', 'mainSessionId', 'defaultAgentPreset', 'exitCode', 'exitSignal']) {
+      assert.equal(node[field], null, field);
+    }
+    assert.deepEqual(await restored.status(base, node.handle), node);
+    assert.equal(restored.launchUrl(node.handle), undefined);
+  }
+  assert.equal(restored.nodes.size, 0);
+  assert.deepEqual(await restored.status(base, 'unknown'), { handle: 'unknown', name: 'unknown', status: 'not-started' });
+});
+
+test('inventory recognizes legacy v1 and v2 main Session mappings without creating role markers', async (t) => {
+  const { base, manager } = await fixture(t);
+  for (const [handle, version] of [['casper', 1], ['balthasar', 2]]) {
+    const paths = manager.paths(handle);
+    await mkdir(paths.state, { recursive: true });
+    const mapping = { version, state: 'ready', profile: handle, workspace: version === 1 ? join(paths.home, 'workspace') : paths.home,
+      ...(version === 2 ? { originalWorkspace: join(paths.home, 'workspace') } : {}), sessionId: `session-${handle}` };
+    await writeFile(join(paths.state, 'main-session.json'), JSON.stringify(mapping), { mode: 0o600 });
+  }
+  const { nodes } = await manager.status(base);
+  assert.deepEqual(nodes.map((node) => [node.handle, node.status]), [['balthasar', 'not-started'], ['casper', 'not-started']]);
+  for (const node of nodes) {
+    assert.equal(node.mainSessionId, null, 'inventory does not advertise a live Session');
+    assert.deepEqual(await manager.status(base, node.handle), node);
+    await assert.rejects(access(join(manager.paths(node.handle).state, 'node.json')), { code: 'ENOENT' });
+  }
+  assert.equal(manager.nodes.size, 0);
+});
+
+test('inventory ignores unrelated, malformed, nested, and symlink homes, state, and files', async (t) => {
+  const { base, manager } = await fixture(t);
+  const marker = JSON.stringify({ role: 'eva-child' });
+  async function state(handle) {
+    const paths = manager.paths(handle);
+    await mkdir(paths.state, { recursive: true });
+    return paths.state;
+  }
+  await writeFile(join(await state('valid'), 'node.json'), marker);
+  await mkdir(join(base, 'unrelated/.dsh-nested/eva'), { recursive: true });
+  await writeFile(join(base, 'unrelated/.dsh-nested/eva/node.json'), marker);
+  await mkdir(join(base, '.dsh-INVALID/eva'), { recursive: true });
+  await writeFile(join(base, '.dsh-INVALID/eva/node.json'), marker);
+  await mkdir(manager.paths('empty').home);
+  await writeFile(manager.paths('file').home, marker);
+  await writeFile(join(await state('wrong-role'), 'node.json'), JSON.stringify({ role: 'parent' }));
+  await writeFile(join(await state('corrupt'), 'node.json'), '{invalid');
+  await writeFile(join(await state('oversized'), 'node.json'), `${marker}${' '.repeat(4096)}`);
+  await mkdir(join(await state('directory-marker'), 'node.json'));
+  for (const [handle, mapping] of [
+    ['wrong-profile', { version: 1, profile: 'someone-else', sessionId: 'session-valid' }],
+    ['wrong-version', { version: 3, profile: 'wrong-version', sessionId: 'session-valid' }],
+    ['wrong-session', { version: 2, profile: 'wrong-session', sessionId: '../session-invalid' }],
+  ]) await writeFile(join(await state(handle), 'main-session.json'), JSON.stringify(mapping));
+  const target = join(base, 'target');
+  await mkdir(join(target, 'eva'), { recursive: true });
+  await writeFile(join(target, 'eva/node.json'), marker);
+  await writeFile(join(target, 'eva/main-session.json'), JSON.stringify({ version: 1, profile: 'linked-mapping', sessionId: 'session-valid' }));
+  await symlink(target, manager.paths('linked-home').home);
+  await symlink(join(base, 'missing'), manager.paths('broken-home').home);
+  await mkdir(manager.paths('linked-state').home);
+  await symlink(join(target, 'eva'), manager.paths('linked-state').state);
+  await symlink(join(target, 'eva/node.json'), join(await state('linked-marker'), 'node.json'));
+  await symlink(join(target, 'eva/main-session.json'), join(await state('linked-mapping'), 'main-session.json'));
+  // Even unsafe/unavailable profiles and credentials are irrelevant to inventory.
+  await symlink(join(base, 'missing-profile'), join(manager.paths('valid').home, 'profiles'));
+  await symlink(join(base, 'missing-credentials'), join(manager.paths('valid').state, 'web.json'));
+  assert.deepEqual((await manager.status(base)).nodes.map((node) => node.handle), ['valid']);
+  for (const handle of ['linked-home', 'broken-home', 'linked-state', 'linked-marker', 'linked-mapping', 'wrong-profile', 'wrong-version', 'wrong-session']) {
+    assert.deepEqual(await manager.status(base, handle), { handle, name: handle, status: 'not-started' });
+  }
+  const linkedRoot = join(base, 'linked-root');
+  await symlink(base, linkedRoot);
+  const other = new EvaRuntime(runtime, { homeRoot: linkedRoot });
+  assert.deepEqual(await other.status(base), { nodes: [] });
+  assert.deepEqual(await other.status(base, 'valid'), { handle: 'valid', name: 'valid', status: 'not-started' });
+  await other.dispose();
+  assert.equal(manager.nodes.size, 0);
+});
+
+test('inventory does not spawn, signal, migrate, or modify persisted files', async (t) => {
+  const { base, manager } = await fixture(t);
+  const paths = manager.paths('offline');
+  await mkdir(paths.state, { recursive: true });
+  const files = new Map([
+    ['node.json', JSON.stringify({ role: 'eva-child' })],
+    ['main-session.json', '{invalid-unused-mapping'],
+    ['owner.lock', JSON.stringify({ ownerPid: process.pid, token: 'not-owned' })],
+    ['migration.pending.json', '{}'],
+    ['workspace-relocation.pending.json', '{}'],
+  ]);
+  for (const [name, content] of files) await writeFile(join(paths.state, name), content);
+  const rootEntries = await readdir(base);
+  const homeEntries = await readdir(paths.home);
+  const stateEntries = await readdir(paths.state);
+  const before = new Map();
+  for (const name of files.keys()) before.set(name, await lstat(join(paths.state, name)));
+  manager.runtime = new Proxy({}, { get() { assert.fail('inventory must not access the spawn runtime'); } });
+  t.mock.method(manager, 'signalNode', () => assert.fail('inventory must not signal a process'));
+  const first = await manager.status(base, 'offline');
+  assert.equal(first.status, 'not-started');
+  assert.deepEqual((await manager.status(base)).nodes, [first]);
+  assert.equal(manager.nodes.size, 0);
+  assert.equal(manager.pending.size, 0);
+  assert.equal(manager.launchUrl('offline'), undefined);
+  await manager.dispose();
+  assert.deepEqual(await readdir(base), rootEntries);
+  assert.deepEqual(await readdir(paths.home), homeEntries);
+  assert.deepEqual(await readdir(paths.state), stateEntries);
+  for (const [name, content] of files) {
+    const path = join(paths.state, name);
+    assert.equal(await readFile(path, 'utf8'), content);
+    const after = await lstat(path);
+    for (const field of ['ino', 'size', 'mode', 'mtimeMs', 'ctimeMs']) assert.equal(after[field], before.get(name)[field], `${name}: ${field}`);
+  }
+});
+
 test('legacy caller .eva directories are ignored rather than reused', async (t) => {
   const { base, manager } = await fixture(t);
   const { writeFile, readFile } = await import('node:fs/promises');
@@ -190,7 +347,7 @@ test('legacy caller .eva directories are ignored rather than reused', async (t) 
   const result = await manager.start(base);
   assert.equal(result.handle, 'eva-000');
   assert.equal(result.home, join(base, '.dsh-eva-000'));
-  assert.equal(result.workspace, join(base, '.dsh-eva-000/workspace'));
+  assert.equal(result.workspace, join(base, '.dsh-eva-000'));
   assert.equal(await readFile(join(legacy, 'owner.lock'), 'utf8'), 'legacy owner');
 });
 
@@ -212,7 +369,8 @@ test('a helper pending marker blocks startup and releases the owner lock before 
   await writeFile(join(paths.state, 'workspace-relocation.pending.json'), '{}');
   await assert.rejects(manager.start(base, 'eva-000'), /incomplete workspace relocation/);
   await assert.rejects(access(paths.lock), { code: 'ENOENT' });
-  assert.deepEqual(await readdir(paths.state), ['workspace-relocation.pending.json']);
+  assert.deepEqual((await readdir(paths.state)).sort(), ['node.json', 'workspace-relocation.pending.json']);
+  assert.deepEqual(JSON.parse(await readFile(join(paths.state, 'node.json'), 'utf8')), { role: 'eva-child' });
   assert.equal(manager.nodes.size, 0);
 });
 
@@ -243,7 +401,7 @@ test('Creator startup patch preserves older installation-only and workspace-conf
   assert.ok(!JSON.stringify(overlay).includes('selectedDefault'));
 });
 
-test('start relocates only a registered empty-history legacy workspace before launch', async (t) => {
+test('root workspace start preserves registered legacy workspace without migration', async (t) => {
   const { base, manager } = await fixture(t);
   const paths = manager.paths('eva-000');
   const legacy = join(base, 'Documents/deepseek-harness/eva-000-workspace');
@@ -257,17 +415,17 @@ test('start relocates only a registered empty-history legacy workspace before la
   await writeFile(registryPath, JSON.stringify(registry));
   const result = await manager.start(base, 'eva-000');
   assert.equal(result.workspace, paths.workspace);
-  assert.equal(await readFile(join(paths.workspace, 'note.txt'), 'utf8'), 'preserved');
-  await assert.rejects(access(legacy), { code: 'ENOENT' });
-  registry.tables.workspaces[id].path = paths.workspace;
-  assert.deepEqual(JSON.parse(await readFile(registryPath, 'utf8')), registry);
-  assert.ok((await lstat(join(paths.state, 'workspace-relocation.json'))).isFile());
+  assert.equal(result.workspace, paths.home);
+  assert.equal(await readFile(join(legacy, 'note.txt'), 'utf8'), 'preserved');
+  assert.equal(await readFile(registryPath, 'utf8'), JSON.stringify(registry));
+  await assert.rejects(access(join(paths.home, 'note.txt')), { code: 'ENOENT' });
+  await assert.rejects(access(join(paths.state, 'workspace-relocation.json')), { code: 'ENOENT' });
 });
 
-test('start refuses historical legacy workspace before creating a patch or launching', async (t) => {
+test('start preserves historical nested workspace without rewriting history', async (t) => {
   const { base, manager } = await fixture(t);
   const paths = manager.paths('eva-000');
-  const legacy = join(base, 'Documents/deepseek-harness/eva-000-workspace');
+  const legacy = join(paths.home, 'workspace');
   await mkdir(legacy, { recursive: true });
   await writeFile(join(legacy, 'note.txt'), 'untouched');
   await mkdir(join(paths.home, 'storages'), { recursive: true });
@@ -277,11 +435,31 @@ test('start refuses historical legacy workspace before creating a patch or launc
   const registryPath = join(paths.home, 'storages/workspace.json');
   const original = JSON.stringify(registry);
   await writeFile(registryPath, original);
-  await assert.rejects(manager.start(base, 'eva-000'), /historical sessions/);
+  assert.equal((await manager.start(base, 'eva-000')).workspace, paths.home);
   assert.equal(await readFile(registryPath, 'utf8'), original);
   assert.equal(await readFile(join(legacy, 'note.txt'), 'utf8'), 'untouched');
-  assert.deepEqual(await readdir(paths.state), []);
-  assert.equal(manager.nodes.size, 0);
+  await assert.rejects(access(join(paths.home, 'note.txt')), { code: 'ENOENT' });
+  await manager.stop(base, 'eva-000');
+  assert.equal((await manager.start(base, 'eva-000')).workspace, paths.home);
+  assert.equal(await readFile(registryPath, 'utf8'), original);
+});
+
+test('root plus other registered workspaces survive restart without nested creation', async (t) => {
+  const { base, manager } = await fixture(t);
+  const paths = manager.paths('eva-000');
+  await mkdir(join(paths.home, 'storages'), { recursive: true });
+  const ids = ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'];
+  const registry = { unit: { name: 'workspace', version: 2 }, global: { workspaceIds: ids },
+    tables: { workspaces: { [ids[0]]: { path: paths.home, sessionIds: ['main'] },
+      [ids[1]]: { path: join(base, 'other'), sessionIds: ['ordinary'] } } } };
+  const registryPath = join(paths.home, 'storages/workspace.json');
+  const original = JSON.stringify(registry, null, 2) + '\n';
+  await writeFile(registryPath, original);
+  assert.equal((await manager.start(base, 'eva-000')).workspace, paths.home);
+  await manager.stop(base, 'eva-000');
+  assert.equal((await manager.start(base, 'eva-000')).workspace, paths.home);
+  assert.equal(await readFile(registryPath, 'utf8'), original);
+  await assert.rejects(access(join(paths.home, 'workspace')), { code: 'ENOENT' });
 });
 
 test('startup timeout kills the child and releases ownership', async (t) => {
@@ -323,11 +501,11 @@ test('pre-existing home symlinks are refused', async (t) => {
   await assert.rejects(manager.start(base, 'eva-000'), /symlink/i);
 });
 
-test('workspace symlinks are refused', async (t) => {
+test('storage symlinks are refused even with root workspace', async (t) => {
   const { base, manager } = await fixture(t);
   await mkdir(join(base, 'elsewhere'));
   await mkdir(join(base, '.dsh-eva-000'));
-  await symlink(join(base, 'elsewhere'), join(base, '.dsh-eva-000/workspace'));
+  await symlink(join(base, 'elsewhere'), join(base, '.dsh-eva-000/storages'));
   await assert.rejects(manager.start(base, 'eva-000'), /symlink/i);
   await assert.rejects(access(join(base, '.dsh-eva-000/eva/owner.lock')));
 });

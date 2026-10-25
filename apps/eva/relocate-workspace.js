@@ -95,7 +95,7 @@ function contents(tree) { return tree.map(({ name, kind, hash }) => ({ name, kin
  * No defaults: in particular this helper never discovers or probes a real user home.
  * Failed transactions are quarantined permanently by the exclusive pending marker.
  */
-export async function ensureWorkspace({ home, handle, legacyWorkspace }) {
+export async function ensureWorkspace({ home, handle, legacyWorkspace, rootWorkspace = false }) {
   absolute(home);
   if (typeof handle !== 'string' || !/^[a-z][a-z0-9-]{0,31}$/.test(handle)) refuse('invalid handle.');
   await directory(home);
@@ -112,6 +112,7 @@ export async function ensureWorkspace({ home, handle, legacyWorkspace }) {
   const registryStat = storageStat ? await statOrNull(registryPath) : null;
   if (!registryStat) {
     // Fresh nodes never inspect legacyWorkspace (not even its ancestors).
+    if (rootWorkspace) return home;
     try { await mkdir(workspace, { mode: 0o700 }); }
     catch (error) { if (error.code !== 'EEXIST') throw error; }
     await directory(workspace);
@@ -122,6 +123,19 @@ export async function ensureWorkspace({ home, handle, legacyWorkspace }) {
   try { registry = JSON.parse(originalRegistry.bytes.toString('utf8')); }
   catch { refuse('invalid workspace registry JSON.'); }
   const records = registryRecords(registry);
+  if (rootWorkspace) {
+    // Registration of home is additive in the child. Never rewrite this registry
+    // or inspect/move older workspaces, which may contain arbitrary history.
+    const rejectPending = (value) => {
+      if (!value || typeof value !== 'object') return;
+      for (const [key, item] of Object.entries(value)) {
+        if (key === 'pendingMutation' && item !== null && item !== false) refuse('pendingMutation is unsupported.');
+        rejectPending(item);
+      }
+    };
+    rejectPending(registry);
+    return home;
+  }
   const nested = records.filter(({ record }) => record.path === workspace);
   if (nested.length > 1) refuse('duplicate nested workspace records.');
   if (nested.length === 1 || records.length === 0) {

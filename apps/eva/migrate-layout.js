@@ -103,7 +103,10 @@ export async function migrateLegacy({
     await lock.writeFile(lockText);
     await inspectTree(legacyRoot);
     const handle = await allocator.allocateHandle();
-    const target = allocator.paths(handle);
+    const allocated = allocator.paths(handle);
+    // Offline imports retain the legacy payload layout; new main Sessions use
+    // the node home independently. Never merge imported files into Host state.
+    const target = { ...allocated, workspace: join(allocated.home, 'workspace') };
     if (!/^eva-\d{3,}$/.test(handle) || target.home !== join(homeRoot, `.dsh-${handle}`) ||
         target.workspace !== join(target.home, 'workspace') ||
         target.state !== join(target.home, 'eva') || target.profileDir !== join(target.home, 'profiles', handle) ||
