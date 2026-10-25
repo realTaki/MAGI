@@ -138,12 +138,17 @@ test('a fresh start does not create or require Documents', async (t) => {
 test('concurrent managers atomically allocate distinct automatic handles', async (t) => {
   const { base, manager } = await fixture(t);
   const other = new EvaRuntime(runtime, { homeRoot: base, startupTimeout: 3000, stopTimeout: 1000 });
-  t.after(() => other.dispose());
-  const [first, second] = await Promise.all([manager.start(base), other.start(base)]);
-  assert.deepEqual([first.handle, second.handle].sort(), ['eva-000', 'eva-001']);
-  assert.notEqual(first.pid, second.pid);
-  assert.deepEqual((await manager.status(base)).nodes.map((node) => node.handle), [first.handle]);
-  assert.deepEqual((await other.status(base)).nodes.map((node) => node.handle), [second.handle]);
+  try {
+    const [first, second] = await Promise.all([manager.start(base), other.start(base)]);
+    assert.deepEqual([first.handle, second.handle].sort(), ['eva-000', 'eva-001']);
+    assert.notEqual(first.pid, second.pid);
+    assert.deepEqual((await manager.status(base)).nodes.map((node) => node.handle), [first.handle]);
+    assert.deepEqual((await other.status(base)).nodes.map((node) => node.handle), [second.handle]);
+  } finally {
+    // The fixture's earlier after-hook removes their shared home. Stop this
+    // second manager first, even on assertion failure, before that hook runs.
+    await other.dispose();
+  }
 });
 
 test('explicit handles have the same identity across caller workspaces', async (t) => {
