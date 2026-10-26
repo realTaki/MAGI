@@ -189,3 +189,35 @@ export function ensureMainSession(ctx, options) {
   pending.set(key, entry);
   return entry.promise;
 }
+
+/** Pin only this node's fixed main title using the native user-rename owner. */
+export async function ensureMainSessionTitle(ctx, sessionId, profile) {
+  const title = profile.toUpperCase();
+  const current = await ctx.sessionQuery.readTitle(sessionId);
+  // Equal generated text is not enough: only a user title suppresses later
+  // automatic generation. Already-pinned names need no duplicate log event.
+  if (current?.title === title && current.source.kind === 'user') return;
+  const accepted = await ctx.sessionController.rename({ sessionId, title });
+  if (accepted?.title !== title || !Number.isSafeInteger(accepted.seq) || accepted.seq < 0) {
+    throw new Error('EVA main Session title was not accepted.');
+  }
+  await ctx.sessionPersistence.flush();
+}
+
+/**
+ * Native blank-session composition requires durable Workspace membership, not
+ * just a selected Session with a cwd. Use the immutable header's owner: a legacy
+ * main may have an effective working directory different from its original one.
+ * Registration never creates a directory or changes the Session's cwd/history.
+ */
+export async function attachMainSessionWorkspace(ctx, sessionId) {
+  const { meta } = await ctx.sessionController.inspect(sessionId);
+  if (meta?.id !== sessionId || typeof meta.cwd !== 'string' || !isAbsolute(meta.cwd)) {
+    throw new Error('EVA main Session has no valid Workspace owner.');
+  }
+  const workspace = await ctx.workspaceRegistry.create(meta.cwd);
+  await workspace.attachSession(sessionId);
+  if (!workspace.sessionIds.includes(sessionId)) {
+    throw new Error('EVA main Session Workspace membership was not published.');
+  }
+}

@@ -15,11 +15,17 @@ registerHooks({ resolve(specifier, context, next) {
   return next(specifier, context);
 } });
 const { apply } = await import('../index.js');
+// Discovery boundary only: child providers below are real native services.
+const { default: LocalCredentialProvider } = await import(pathToFileURL(createRequire(anchor).resolve('@deepseek-ai/dsh-credentials-local')).href);
+const parentCredentials = Object.assign(Object.create(LocalCredentialProvider.prototype), {
+  config: { path: join(base, 'synthetic-parent-credentials.yaml'), watch: true },
+});
 let tool;
 const cleanup = [];
 const routes = new Map();
 const ctx = {
   profileContext: { installAnchor: anchor, home: homedir() },
+  credentials: parentCredentials,
   connection: { fetch: { register(route) { routes.set(route.path, route); return () => routes.delete(route.path); } } },
   tools: { register(definition) { tool = definition; } },
   workingDirectory: { async ensure() { return resolve(base); } },

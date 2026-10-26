@@ -121,8 +121,9 @@ async function inventoryRecord(path) {
 }
 
 export class EvaRuntime {
-  constructor(runtime, { startupTimeout = START_TIMEOUT, stopTimeout = STOP_TIMEOUT, homeRoot = homedir() } = {}) {
+  constructor(runtime, { startupTimeout = START_TIMEOUT, stopTimeout = STOP_TIMEOUT, homeRoot = homedir(), credentialsPath } = {}) {
     this.runtime = runtime;
+    this.credentialsPath = credentialsPath;
     this.startupTimeout = startupTimeout;
     this.stopTimeout = stopTimeout;
     this.homeRoot = resolve(homeRoot);
@@ -166,10 +167,13 @@ export class EvaRuntime {
       profile: node.profile, profileDir: node.profileDir,
       workspace: node.workspace, home: node.home, cwd: node.ready?.cwd ?? null,
       defaultAgentPreset: node.ready?.defaultAgentPreset ?? null,
+      codexAvailable: node.ready?.codexAvailable ?? null,
       origin: node.ready?.origin ?? null, workspaceId: node.ready?.workspaceId ?? null,
       mainSessionId: node.ready?.mainSessionId ?? null,
       exitCode: node.exitCode ?? null, exitSignal: node.exitSignal ?? null,
-      credentials: 'Parent credentials are not copied; existing child data is preserved.',
+      credentials: this.credentialsPath
+        ? 'Local startup shares the parent credential store, including sign-in/out, account changes and saved API keys. Existing child credentials are preserved, not merged.'
+        : 'Parent credentials are not copied; existing child data is preserved.',
     };
   }
 
@@ -221,6 +225,13 @@ export class EvaRuntime {
   async start(base, name, signal) {
     signal?.throwIfAborted();
     if (this.disposed) throw new Error('eva is unloading.');
+    const credentialsPath = typeof this.credentialsPath === 'function'
+      ? await this.credentialsPath() : this.credentialsPath;
+    if (credentialsPath !== undefined && (typeof credentialsPath !== 'string' || !isAbsolute(credentialsPath))) {
+      throw new Error('EVA sharing requires an absolute credential store path.');
+    }
+    signal?.throwIfAborted();
+    if (this.disposed) throw new Error('eva is unloading.');
     if (name === undefined) name = await this.allocateHandle(signal);
     const key = await this.key(base, name);
     if (this.pending.has(key)) return this.pending.get(key);
@@ -229,12 +240,12 @@ export class EvaRuntime {
       if (existing.status === 'running') return this.snapshot(existing);
       throw new Error(`Node is ${existing.status}; wait before starting it again.`);
     }
-    const operation = this.startNode(base, name, key, signal);
+    const operation = this.startNode(base, name, key, signal, credentialsPath);
     this.pending.set(key, operation);
     try { return await operation; } finally { this.pending.delete(key); }
   }
 
-  async startNode(base, name, key, signal) {
+  async startNode(base, name, key, signal, credentialsPath) {
     const hostHome = await realpath(this.homeRoot);
     if (hostHome !== this.homeRoot) throw new Error('EVA home root must be canonical.');
     const home = await directories(hostHome, [`.dsh-${validateName(name)}`]);
@@ -251,15 +262,26 @@ export class EvaRuntime {
       const profileDir = await directories(home, ['profiles', profile]);
       // Include session defaults so earlier exclusive startup patches remain unchanged.
       const defaultAgentPreset = 'cordis'; // Creator mode, not a process-wide permission mode.
-      const startupConfigId = createHash('sha256').update(JSON.stringify({ workspace, profile, defaultAgentPreset })).digest('hex').slice(0, 16);
+      const sharing = credentialsPath === undefined ? {} : { credentialsPath, credentialSharingVersion: 1 };
+      const startupConfigId = createHash('sha256').update(JSON.stringify({ workspace, profile, defaultAgentPreset, providerDefaultsVersion: 1, ...sharing })).digest('hex').slice(0, 16);
       const patch = join(state, `startup-${installationId}-${startupConfigId}.patch.yml`);
-      await exclusiveContent(patch, JSON.stringify([{ insert: [{
+      const overlay = [{ insert: [{
         id: 'eva-child', name: join(here, 'child.js'),
-        config: { workspace, profile },
+        config: { workspace, profile, ...sharing },
       }] }, {
         id: 'agent-preset-registry', name: '@deepseek-ai/dsh-agent-preset-registry',
         config: { default: defaultAgentPreset },
-      }], null, 2) + '\n');
+      }, {
+        // A shared OAuth grant does not register a model route. Activate the
+        // native catalog route without copying parent headers/endpoints/secrets.
+        id: 'llm-pi-ai', name: '@deepseek-ai/dsh-llm-pi-ai', disabled: false,
+        config: { providers: { 'openai-codex': {} } },
+      }];
+      if (credentialsPath !== undefined) overlay.push({
+        id: 'credentials', name: '@deepseek-ai/dsh-credentials-local', disabled: false,
+        config: { path: credentialsPath, watch: true },
+      });
+      await exclusiveContent(patch, JSON.stringify(overlay, null, 2) + '\n');
       const args = ['--profile', profile];
       // Initialize through the official CLI, and never reset a pre-existing profile.
       try { await access(join(profileDir, 'package.json')); }
@@ -322,6 +344,12 @@ export class EvaRuntime {
             if (message?.type !== 'eva-ready') return;
             if (message.pid !== child.pid || message.profile !== profile || message.workspace !== workspace || message.home !== home || message.cwd !== home || message.profileDir !== profileDir || typeof message.defaultAgentPreset !== 'string' || !message.defaultAgentPreset) {
               settle(new Error('Child readiness facts do not match the requested isolation.')); return;
+            }
+            if (credentialsPath !== undefined && message.credentialsShared !== true) {
+              settle(new Error('Child did not verify the shared credential store.')); return;
+            }
+            if (message.codexAvailable !== true) {
+              settle(new Error('Child did not verify the native Codex provider.')); return;
             }
             let url;
             try { url = new URL(message.origin); } catch { settle(new Error('Invalid child origin.')); return; }

@@ -1,19 +1,26 @@
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import { EvaRuntime, desktopRuntime, validateName, isEvaChild } from './runtime.js';
 import { registerParentView } from './view.js';
+import { credentialStorePath } from './credentials.js';
 
 export const name = 'eva';
-export const inject = ['tools', 'workingDirectory', 'profileContext', 'approval', 'connection'];
+export const inject = ['tools', 'workingDirectory', 'profileContext', 'approval', 'connection', 'credentials'];
 
 export function apply(ctx) {
   // Child Hosts retain their native features, but cannot expose another EVA launcher.
   if (isEvaChild(ctx.profileContext.home)) return;
-  const manager = new EvaRuntime(desktopRuntime(ctx.profileContext.installAnchor));
+  // Capture the provider's location at activation, before later node starts.
+  // Keep inventory/stop available if unsupported; start reports the exact error.
+  const sharedStore = credentialStorePath(ctx);
+  sharedStore.catch(() => {});
+  const manager = new EvaRuntime(desktopRuntime(ctx.profileContext.installAnchor), {
+    credentialsPath: () => sharedStore,
+  });
   ctx.effect(() => () => manager.dispose());
   registerParentView(ctx, manager);
   ctx.tools.register(defineTool({
     name: 'eva',
-    description: 'Launch, inspect, or stop desktop-free DSH Hosts. Each handle keeps its profile, state, and workspace under ~/.dsh-<handle>; the main Session workspace and process cwd are its DSH_HOME, and no parent credentials are copied. Each node creates or reuses its persistent main Session; the EVA sidebar panel opens it on the node’s own page. Other Sessions remain available. New Sessions default to the Creator (cordis) preset unless the user saved another default; existing Sessions are unchanged. Creator does not bypass tool approvals. Existing workspace directories are preserved. Start without a handle scans only direct home directory entries and atomically allocates eva-000, eva-001, etc. Each such call creates a new node; reuse its returned handle for status/stop or idempotent start. Status lists known nodes, including offline ones; not-started does not check external process liveness. Binds loopback without opening a window. Start/stop require one-shot approval. Nodes stop when the plugin or parent Host exits. Not an OS security boundary.',
+    description: 'Launch, inspect, or stop desktop-free DSH Hosts. Each handle keeps its profile, state, and workspace under ~/.dsh-<handle>; the main Session workspace and process cwd are its DSH_HOME, and local nodes share the parent credential store (login, logout, account changes, and saved API keys). Each node creates or reuses its persistent main Session; the EVA sidebar panel opens it on the node’s own page. Other Sessions remain available. New Sessions default to the Creator (cordis) preset unless the user saved another default; existing Sessions are unchanged. Creator does not bypass tool approvals. Existing workspace directories are preserved. Start without a handle scans only direct home directory entries and atomically allocates eva-000, eva-001, etc. Each such call creates a new node; reuse its returned handle for status/stop or idempotent start. Status lists known nodes, including offline ones; not-started does not check external process liveness. Binds loopback without opening a window. Start/stop require one-shot approval. Nodes stop when the plugin or parent Host exits. Not an OS security boundary.',
     parameters: {
       action: { type: 'string', enum: ['start', 'status', 'stop'], required: true, description: 'Start a DSH, inspect known nodes, or stop a node.' },
       handle: { type: 'string', description: 'Optional node handle: lowercase letters, digits and hyphens; starts with a letter, maximum 32 characters. Start omitting it allocates eva-000 upward from directory occupancy. Stop requires it.' },
@@ -38,11 +45,11 @@ export function apply(ctx) {
         ? { home: `${manager.homeRoot}/.dsh-eva-NNN`, workspace: `${manager.homeRoot}/.dsh-eva-NNN` }
         : manager.paths(handle);
       const reason = args.action === 'start'
-        ? `启动独立 DSH 节点 ${label}：数据根及 cwd ${paths.home}，注册工作区 ${paths.workspace}，独立 profile，创建或复用固定主会话（保留其他会话功能），新对话默认 Creator（尊重用户已保存默认，不改变已有对话或权限）；无桌面本地服务，不复制主实例凭证。主会话工作区使用节点根目录；已有目录与其他会话保持原样。未指定 handle 时，每次启动创建一个新编号节点。`
+        ? `启动独立 DSH 节点 ${label}：数据根及 cwd ${paths.home}，注册工作区 ${paths.workspace}，独立 profile，创建或复用固定主会话（保留其他会话功能），新对话默认 Creator（尊重用户已保存默认，不改变已有对话或权限）；无桌面本地服务，与主实例共用官方凭据库（登录、退出、切换账号和已保存 API key 会互相影响；不合并旧节点凭据）。主会话工作区使用节点根目录；已有目录与其他会话保持原样。未指定 handle 时，每次启动创建一个新编号节点。`
         : `停止 eva 管理的 DSH 节点 ${handle}；该节点正在进行的任务可能被中断。`;
       const outcome = await ctx.approval.request({
         agent: exec.agent, toolName: 'eva', callId: exec.callId,
-        reason, displayReason: { zh: reason, en: `${args.action} EVA node ${label}; data and cwd: ${paths.home}; registered workspace: ${paths.workspace}. A separate DSH process, without copied credentials. New Sessions default to Creator (cordis), respecting saved user defaults; existing Sessions and permissions are unchanged. The main Session uses the node home as workspace; existing directories and other Sessions are preserved. An unnamed start allocates a new node; stopping may interrupt work.` },
+        reason, displayReason: { zh: reason, en: `${args.action} EVA node ${label}; data and cwd: ${paths.home}; registered workspace: ${paths.workspace}. A separate DSH process sharing the parent local credential store: login, logout, account changes and saved API keys affect all nodes; old child credentials are preserved, not merged. New Sessions default to Creator (cordis), respecting saved user defaults; existing Sessions and permissions are unchanged. The main Session uses the node home as workspace; existing directories and other Sessions are preserved. An unnamed start allocates a new node; stopping may interrupt work.` },
         signal: exec.signal,
       });
       if (outcome !== 'allowed-once') throw new Error(`eva ${args.action} was not approved (${outcome}); no action was performed.`);

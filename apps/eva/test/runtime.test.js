@@ -399,7 +399,7 @@ test('Creator startup patch preserves older installation-only and workspace-conf
   assert.equal(await readFile(previousPatch, 'utf8'), previousContent);
   const patches = (await readdir(paths.state)).filter((name) => name.endsWith('.patch.yml'));
   assert.equal(patches.length, 3);
-  const workspaceId = createHash('sha256').update(JSON.stringify({ workspace: paths.workspace, profile: 'eva-000', defaultAgentPreset: 'cordis' })).digest('hex').slice(0, 16);
+  const workspaceId = createHash('sha256').update(JSON.stringify({ workspace: paths.workspace, profile: 'eva-000', defaultAgentPreset: 'cordis', providerDefaultsVersion: 1 })).digest('hex').slice(0, 16);
   assert.ok(patches.includes(`startup-${installationId}-${workspaceId}.patch.yml`));
   const overlay = JSON.parse(await readFile(join(paths.state, `startup-${installationId}-${workspaceId}.patch.yml`), 'utf8'));
   assert.deepEqual(overlay[1], { id: 'agent-preset-registry', name: '@deepseek-ai/dsh-agent-preset-registry', config: { default: 'cordis' } });

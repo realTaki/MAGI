@@ -13,11 +13,6 @@ window.__ModuleLoader__.load({
       if (!response.ok) throw new Error('EVA view unavailable');
       return response.json();
     }
-    function Icon({ size = 18 }) {
-      return h('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, 'aria-hidden': true },
-        h('path', { d: 'M12 3 21 19H3L12 3Z' }),
-        h('circle', { cx: 12, cy: 12, r: 2.3 }), h('path', { d: 'M12 14.3V19M10 10.8 7 9M14 10.8 17 9' }));
-    }
     return {
       name: 'eva', inject: ['slots', 'locale', 'uiWorkspace', 'sessions', 'workspaces'],
       apply(ctx) {
@@ -52,6 +47,64 @@ window.__ModuleLoader__.load({
         function nodeState(node) {
           if (node.status === 'running') return node.mainSessionId ? 'online' : 'starting';
           return ['starting', 'stopping', 'failed'].includes(node.status) ? node.status : 'offline';
+        }
+        // Keep the native child mounted and laid out, but do not expose its
+        // login/default-view/navigation paints before its own readiness signal.
+        function ConversationFrame({ src, title, sessionId, onError }) {
+          const frame = React.useRef(null);
+          const [ready, setReady] = React.useState(false);
+          React.useEffect(() => {
+            let disposed = false, pending = true, deadline;
+            const origin = new URL(src).origin;
+            const probe = () => frame.current?.contentWindow?.postMessage({ type: 'eva:main-state-request', sessionId }, origin);
+            const wait = () => {
+              pending = true;
+              clearTimeout(deadline);
+              // Background tabs can pause the child's paint callbacks. Only
+              // count a visible wait, not time spent away from this page.
+              if (!document.hidden) deadline = setTimeout(() => {
+                if (!disposed && pending && !document.hidden) { pending = false; onError(true); }
+              }, 30000);
+            };
+            const visibility = () => {
+              if (disposed || !pending) return;
+              wait();
+              if (!document.hidden) probe();
+            };
+            const receive = (event) => {
+              if (disposed || event.source !== frame.current?.contentWindow || event.origin !== origin) return;
+              const message = event.data;
+              if (message?.type !== 'eva:main-state' || message.sessionId !== sessionId) return;
+              if (message.state === 'ready' || message.state === 'failed') {
+                pending = false;
+                clearTimeout(deadline);
+                setReady(true); // A child failure has its own explicit retry UI.
+              } else if (message.state === 'opening') {
+                setReady(false); wait();
+              }
+            };
+            window.addEventListener('message', receive);
+            document.addEventListener('visibilitychange', visibility);
+            wait();
+            // Also recover a signal sent before this passive effect attached.
+            probe();
+            return () => {
+              disposed = true; pending = false; clearTimeout(deadline);
+              window.removeEventListener('message', receive);
+              document.removeEventListener('visibilitychange', visibility);
+            };
+          }, [src, sessionId, onError]);
+          return h('section', { 'aria-busy': !ready, style: { position: 'relative', width: '100%', height: '100%', background: 'var(--dsw-alias-bg-base)' } },
+            h('iframe', {
+              ref: frame, src, title, referrerPolicy: 'no-referrer',
+              sandbox: 'allow-scripts allow-same-origin allow-forms allow-modals allow-downloads allow-popups',
+              allow: 'clipboard-write', onError: () => onError(true),
+              'aria-hidden': !ready, inert: !ready, tabIndex: ready ? 0 : -1,
+              // Do not use display:none: the child must render to become ready.
+              style: { display: 'block', width: '100%', height: '100%', border: 0,
+                opacity: ready ? 1 : 0, pointerEvents: ready ? 'auto' : 'none', background: 'var(--dsw-alias-bg-base)' },
+            }),
+            !ready && h('div', { role: 'status', style: { position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', padding: 24, color: 'var(--dsw-alias-label-primary)' } }, t('opening')));
         }
         // The parent stays on its own Host. Only an online node opens a frame.
         function MainConversation(node) {
@@ -96,15 +149,13 @@ window.__ModuleLoader__.load({
                 cursor: wake.pending ? 'wait' : 'pointer', opacity: wake.pending ? 0.6 : 1 },
             }, t(wake.pending ? 'waking' : 'wake')),
             wake.error && h('p', { role: 'alert', style: { color: 'var(--dsw-alias-state-error-primary)' } }, t(wake.error)));
-          if (src && !error) return h('iframe', {
+          if (src && !error) return h(ConversationFrame, {
             key: src, src, title: `${handle.toUpperCase()} — ${t('conversation')}`,
-            referrerPolicy: 'no-referrer',
-            sandbox: 'allow-scripts allow-same-origin allow-forms allow-modals allow-downloads allow-popups',
-            allow: 'clipboard-write', onError: () => setError(true),
-            style: { display: 'block', width: '100%', height: '100%', border: 0, background: 'var(--dsw-alias-bg-base)' },
+            sessionId: mainSessionId, onError: setError,
           });
-          return h('section', { style: { padding: 24, color: 'var(--dsw-alias-label-primary)' }, 'aria-label': handle },
-            h('p', { role: error ? 'alert' : 'status' }, `${handle.toUpperCase()} — ${t(error ? 'error' : 'opening')}`),
+          return h('section', { style: { width: '100%', height: '100%', display: 'grid', placeContent: 'center', gap: 12,
+            padding: 24, background: 'var(--dsw-alias-bg-base)', color: 'var(--dsw-alias-label-primary)' }, 'aria-label': handle },
+            h('p', { role: error ? 'alert' : 'status', style: { margin: 0 } }, error ? `${handle.toUpperCase()} — ${t('error')}` : t('opening')),
             error && h('button', { type: 'button', onClick: () => setAttempt((value) => value + 1) }, t('retry')));
         }
         ctx.effect(() => {
@@ -122,15 +173,10 @@ window.__ModuleLoader__.load({
               if (existing?.signature === signature) continue;
               existing?.dispose(); entries.delete(node.handle);
               const id = `eva:${node.handle}`;
-              const state = nodeState(node);
+              // Node navigation lives in MAGI workbench now. Keep existing main
+              // panel addresses compatible, but never add legacy sidebar rows.
               const disposeMain = ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: id }, () => h(MainConversation, node)));
-              let disposeEntry;
-              try {
-                disposeEntry = ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id, order: 20,
-                  label: () => `${node.handle.toUpperCase()} · ${t(state)}` },
-                  (props) => h('span', { style: { display: 'inline-flex', opacity: state === 'online' ? 1 : 0.5 } }, h(Icon, props))));
-              } catch (error) { disposeMain(); throw error; }
-              entries.set(node.handle, { signature, dispose() { disposeEntry(); disposeMain(); } });
+              entries.set(node.handle, { signature, dispose: disposeMain });
             }
           }
           async function refresh() {
@@ -145,6 +191,29 @@ window.__ModuleLoader__.load({
                 function ChildFrame() {
                   const [state, setState] = React.useState('opening');
                   const [attempt, setAttempt] = React.useState(0);
+                  React.useEffect(() => {
+                    if (!embedded) return;
+                    let disposed = false, painted = state !== 'ready', firstPaint, secondPaint;
+                    const report = (value = state) => {
+                      // No URLs, tokens or cookies cross this channel. Parent
+                      // validates our exact WindowProxy, origin and main ID.
+                      if (!disposed) window.parent.postMessage({ type: 'eva:main-state', sessionId: view.mainSessionId, state: value }, '*');
+                    };
+                    const receive = (event) => {
+                      if (event.source === window.parent && event.data?.type === 'eva:main-state-request' && event.data.sessionId === view.mainSessionId && painted) report();
+                    };
+                    const leaving = () => report('opening');
+                    window.addEventListener('message', receive);
+                    window.addEventListener('pagehide', leaving);
+                    if (painted) report();
+                    else firstPaint = requestAnimationFrame(() => {
+                      secondPaint = requestAnimationFrame(() => { painted = true; report(); });
+                    });
+                    return () => {
+                      disposed = true; cancelAnimationFrame(firstPaint); cancelAnimationFrame(secondPaint);
+                      window.removeEventListener('message', receive); window.removeEventListener('pagehide', leaving);
+                    };
+                  }, [state]);
                   React.useEffect(() => {
                     let disposed = false, scheduled = false, offSession;
                     const live = () => !disposed && !controller.signal.aborted;

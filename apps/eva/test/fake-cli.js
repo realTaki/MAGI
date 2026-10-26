@@ -20,6 +20,10 @@ export async function runDesktopCli() {
   process.on('SIGTERM', () => process.exit(0));
   process.send({
     type: 'eva-ready', pid: process.pid, profile: config.profile,
+    credentialsShared: config.profile === 'missing-sharing' ? undefined
+      : !!config.credentialsPath && patch.some((row) => row.id === 'credentials' && row.config.path === config.credentialsPath && row.config.watch === true),
+    codexAvailable: config.profile === 'missing-codex' ? undefined
+      : patch.some((row) => row.id === 'llm-pi-ai' && row.disabled === false && Object.hasOwn(row.config?.providers ?? {}, 'openai-codex')),
     workspace: config.workspace, home: process.env.DSH_HOME,
     cwd: config.profile === 'wrong-cwd' ? `${config.workspace}/workspace` : config.profile === 'missing-cwd' ? undefined : process.cwd(),
     defaultAgentPreset: config.profile === 'missing-preset' ? undefined : config.profile === 'user-standard' ? 'standard' : patch.find((row) => row.id === 'agent-preset-registry')?.config.default,

@@ -6,7 +6,9 @@ import { runInNewContext } from 'node:vm';
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 async function fixture({ embedded = true, hash = '#eva-main', failure, initiallyReady = false } = {}) {
   let plugin, mounted = false, retained = false;
-  const opened = [], entries = [], cleanup = [], effects = [], states = [], replacements = [];
+  const opened = [], entries = [], cleanup = [], effects = [], states = [], replacements = [], messages = [];
+  const listeners = new Map(), paints = new Map();
+  let phaseOverride, offReport, paintId = 0;
   function source(snapshot) {
     const listeners = new Set();
     return { snapshot, listeners, getSnapshot() { return this.snapshot; }, subscribe(callback) { listeners.add(callback); return () => listeners.delete(callback); }, update(patch) { Object.assign(this.snapshot, patch); for (const callback of [...listeners]) callback(); } };
@@ -18,15 +20,21 @@ async function fixture({ embedded = true, hash = '#eva-main', failure, initially
   const React = {
     Fragment: Symbol('Fragment'),
     createElement(type, props, ...children) { return { type, props, children }; },
-    useState(value) { return [value, (next) => states.push(next)]; },
+    useState(value) { return [value === 'opening' ? phaseOverride ?? value : value, (next) => states.push(next)]; },
     useEffect(callback) { effects.push(callback); },
   };
-  const window = { __ModuleLoader__: { load({ factory }) { plugin = factory(() => React); } } };
-  window.parent = embedded ? {} : window;
+  const window = {
+    __ModuleLoader__: { load({ factory }) { plugin = factory(() => React); } },
+    addEventListener(type, callback) { if (!listeners.has(type)) listeners.set(type, new Set()); listeners.get(type).add(callback); },
+    removeEventListener(type, callback) { listeners.get(type)?.delete(callback); },
+  };
+  window.parent = embedded ? { postMessage(message, origin) { messages.push({ message, origin }); } } : window;
   const historyState = { native: 'preserved' };
   runInNewContext(await readFile(new URL('../client.js', import.meta.url), 'utf8'), {
     window, location: { hash, pathname: '/', search: '' },
     history: { state: historyState, replaceState(...args) { replacements.push(args); } }, AbortController, queueMicrotask,
+    requestAnimationFrame(callback) { const id = ++paintId; paints.set(id, callback); return id; },
+    cancelAnimationFrame(id) { paints.delete(id); },
     globalThis: { __DSH_TRANSPORT__: { fetch: async () => ({ ok: true, json: async () => ({ mode: 'child', mainSessionId: 'fixed-main' }) }) } },
     setTimeout() { assert.fail('Child must not poll parent EVA entries'); }, clearTimeout() {},
   });
@@ -59,13 +67,28 @@ async function fixture({ embedded = true, hash = '#eva-main', failure, initially
   });
   await tick();
   return {
-    opened, entries, states, replacements, sessionList, workspaceList, session, historyState,
+    opened, entries, states, replacements, sessionList, workspaceList, session, historyState, messages, paints, listeners,
     mount() {
       mounted = true;
       const declaration = entries[0].component();
-      for (const effect of effects.splice(0)) { const dispose = effect(); if (dispose) cleanup.push(dispose); }
+      effects.splice(0).forEach((effect, index) => {
+        const dispose = effect();
+        if (index === 0) offReport = dispose;
+        if (dispose) cleanup.push(dispose);
+      });
       return declaration;
     },
+    // Exercise just the reporting effect's dependency change, not a DOM renderer.
+    reportPhase(phase) {
+      offReport?.(); phaseOverride = phase; entries[0].component();
+      offReport = effects.splice(0)[0]();
+      if (offReport) cleanup.push(offReport);
+    },
+    paint() { const pending = [...paints.values()]; paints.clear(); for (const callback of pending) callback(); },
+    request(sourceIsParent = true) {
+      for (const callback of listeners.get('message') ?? []) callback({ source: sourceIsParent ? window.parent : {}, data: { type: 'eva:main-state-request', sessionId: 'fixed-main' } });
+    },
+    pagehide() { for (const callback of listeners.get('pagehide') ?? []) callback(); },
     dispose() { for (const dispose of cleanup.splice(0).reverse()) dispose(); },
   };
 }
@@ -157,4 +180,50 @@ test('a target disappearing during history opening is not reported as success', 
   assert.equal(f.states.at(-1), 'failed');
   assert.equal(f.replacements.length, 0);
   f.dispose();
+});
+
+test('child announces ready only after the ready commit gets a full paint opportunity', async () => {
+  const f = await fixture({ initiallyReady: true });
+  try {
+    f.mount(); await tick();
+    assert.equal(f.messages.at(-1).message.state, 'opening');
+    f.session.update({ openState: 'open' });
+    assert.equal(f.states.at(-1), 'ready');
+    f.reportPhase('ready');
+    f.request(); // A probe must not bypass the paint gate.
+    assert.equal(f.messages.at(-1).message.state, 'opening');
+    f.paint();
+    assert.equal(f.messages.at(-1).message.state, 'opening');
+    f.paint();
+    assert.equal(f.messages.at(-1).message.state, 'ready');
+    assert.equal(f.messages.at(-1).message.sessionId, 'fixed-main');
+    assert.deepEqual(Object.keys(f.messages.at(-1).message).sort(), ['sessionId', 'state', 'type'], 'never send credentials or launch URLs');
+    const count = f.messages.length;
+    f.request(false); assert.equal(f.messages.length, count, 'ignore non-parent probes');
+    f.request(); assert.equal(f.messages.length, count + 1, 'recover a missed readiness message');
+    f.pagehide(); assert.equal(f.messages.at(-1).message.state, 'opening', 'cover native reload before its intermediate page');
+  } finally { f.dispose(); }
+  assert.equal(f.paints.size, 0);
+  for (const callbacks of f.listeners.values()) assert.equal(callbacks.size, 0);
+});
+
+test('unmount cancels pending readiness paints and failure remains retryable', async () => {
+  const f = await fixture();
+  f.mount();
+  f.reportPhase('ready'); f.paint();
+  assert.equal(f.paints.size, 1);
+  f.reportPhase('failed');
+  assert.equal(f.paints.size, 0);
+  assert.equal(f.messages.at(-1).message.state, 'failed', 'reveal the native error/retry overlay');
+  f.reportPhase('ready'); f.paint();
+  const count = f.messages.length;
+  f.dispose(); f.paint(); f.request();
+  assert.equal(f.messages.length, count);
+  assert.equal(f.paints.size, 0);
+});
+
+test('standalone main navigation never sends framing messages or waits for paints', async () => {
+  const f = await fixture({ embedded: false });
+  try { f.mount(); f.reportPhase('ready'); assert.equal(f.messages.length, 0); assert.equal(f.paints.size, 0); }
+  finally { f.dispose(); }
 });
