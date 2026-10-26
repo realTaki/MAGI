@@ -6,10 +6,10 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const files = [];
-for (const app of ['eva', 'shell']) {
+for (const app of ['eva', 'magi-shell', 'shell']) {
   for (const name of readdirSync(new URL(`../apps/${app}/test/`, import.meta.url)).sort()) {
     if (app === 'shell' && /\.test\.(mjs|ts)$/.test(name)) files.push(`apps/shell/test/${name}`);
-    else if (app === 'eva' && name.endsWith('.test.js')) files.push(`apps/eva/test/${name}`);
+    else if (app !== 'shell' && name.endsWith('.test.js')) files.push(`apps/${app}/test/${name}`);
   }
 }
 for (const pkg of ['bus', 'contacts', 'action-items', 'channel-a2a', 'providers']) {

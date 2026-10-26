@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">MAGI Shell</title>
+  <desc id="desc">An original M monogram within a split workbench frame, with opposing switch arrows.</desc>
+  <rect x="3" y="3" width="58" height="58" rx="16" fill="#152836"/>
+  <path d="M15 39V23L23 33L31 23V39" stroke="#E7F4EE" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M39 22H50L46 18M50 22L46 26M50 40H39L43 36M39 40L43 44" stroke="#79D8B2" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M15 48H31" stroke="#79D8B2" stroke-width="3" stroke-linecap="round"/>
+</svg>

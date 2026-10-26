@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "MAGI Shell",
+    "description": "Switch between native DSH and the MAGI Bot interface, with a persistent Main Bot and optional independent EVA nodes."
+  }
+}

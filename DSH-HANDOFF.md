@@ -1,5 +1,27 @@
 # MAGI → DSH 重构交接
 
+## 当前补充：MAGI Shell
+
+- MAGI workbench 与原父实例 Main Bot companion 已合并为 [MAGI Shell](<apps/magi-shell/README.md>)，包名 `@local/magi-shell`。当前 profile 已通过官方 Plugin Manager 安装、启用新 bundle，旧两个 bundle 已移除；旧源码目录也已合并清理。
+- [Host 入口](<apps/magi-shell/index.js>) 只负责当前 Host 的固定主机器人初始化；[Client 入口](<apps/magi-shell/client.js>) 同时提供 MAGI 导航与主机器人原生会话适配，只注册一个 Client 插件。聊天、工作区、Session 与历史仍复用 DSH，不再单独安装 Main Bot 插件。
+- EVA 继续作为 [独立节点管理插件](<apps/eva/README.md>) 保留。MAGI Shell 在 EVA 未安装时也能使用主机器人；此次迁移未重载 EVA。迁移前后核对既有节点 PID、origin、workspace UUID 与主 Session 均不变。
+- 原 `eva-parent-main` 身份目录、`parent-main` 命名空间、`/api/eva/parent-main` 和 handle `dsh-main` 均有意保留。主机器人已有 Session ID、工作区与历史复用，不因插件重命名迁移或新建。旧父框架 hash/query 标记与握手协议已移除。
+- [根测试发现脚本](<scripts/test.mjs>) 与 [workspace 锁元数据](<package-lock.json>) 已接入新包。合并阶段曾有 80 项 MAGI、316 项联合 EVA 回归通过；随后 iframe 入口版本曾有 113 项 MAGI、349 项联合回归通过。这些均为历史版本结果，不能作为下述原生导航版本的验证数量。
+
+### 当前修正：保留左右布局，直接复用 Desktop 原生主会话
+
+- 用户明确选择保留 MAGI 左侧 Bot / 右侧聊天布局，但当前 Desktop 自己的主会话不应再嵌入第二套 DSH。先前 iframe 方案虽修复 `file://` URL 拒绝，实际仍报告“正在打开主会话…”，并未完成真实桌面打开验证；现已从源码删除该方案，而非继续补丁。
+- [Client](<apps/magi-shell/client.js>) 仅在 MAGI 打开时通过条件 `sidebar.workspaces` 注册替换工作区浏览区为 Bot 列表；返回 DSH 时销毁该注册，恢复原生工作区列表。原生 sidebar 外壳、设置、主区域、Conversation、历史、输入与布局继续挂载；不再使用全屏 `shell.overlay` modal。
+- 点击主机器人只清除辅助 panel 选择，再调用当前 Desktop 的 `uiWorkspace.openSession(existingMainSessionId)`。会话的加载、错误、retain 与历史全部交回原生功能；不再加自定义就绪门槛，不新建、fork 或替换主 Session，不创建第二个 Client/Host。
+- 点击在线 EVA 使用 `layout.selectPanel('eva:' + handle)`，选择 EVA 已有主区域 panel。MAGI 不再自己嵌入/管理 EVA iframe；原 EVA panel 的认证、加载与草稿行为保持其原有所有权。此次改动不重启、不卸载、不重载 EVA，不改变节点身份。
+- [Host](<apps/magi-shell/index.js>) 保留原身份初始化与只读清单接口；已删除旧父 iframe 的 main-open/embed 认证路由、分区 Cookie 适配及配套 helper/test。原身份辅助代码未修改，持久化身份文件不迁移。包分发与回归断言相应更新。
+- 当前原生导航版本已使用 MAGI 自有 Node 完成联合回归：**301 通过、0 失败**，Host/Client 语法检查通过。旧 modal/iframe 布局测试已替换为原生浏览区、折叠栏和无加载遮罩约束。
+- 已通过 Plugin Manager 仅移除后重装链接的 `@local/magi-shell@0.1.0`，两个操作均返回 `application: applied`；没有重载 EVA。连接页面的 live Slots 已确认 MAGI brand/footer 注册有效、旧 MAGI overlay 消失、原生 `conversation` 与已有 `eva:eva-000` main panel 仍保留。条件 Bot 浏览区需要点击 MAGI 后才注册。
+- 应用后复读固定身份记录，仍为 `session-899d4db2-b59b-491a-80b7-00473082fb15`。`eva status eva-000` 仍为原 PID `22564`、origin `http://127.0.0.1:57355`、workspace UUID `a2a8bde2-134b-470b-9b85-958ea039b846`、主 Session `session-955a2fee-7c8e-4a5e-9cc9-406ca72e2a7e`；均未替换。
+- 无可用浏览器操作/截图工具，尚未实际点击当前 Desktop 的 MAGI → 主机器人，也未验证真实历史、输入、键盘或明暗主题渲染。请在现有页面刷新后执行该交互；安装成功、测试通过与 live Slot 注册均不能冒充实际桌面打开成功。
+
+**以下为首轮 EVA 目录替换的历史记录。安装状态、凭据共享等后续行为，以当前插件说明与上述补充为准。**
+
 ## 用户意图与本次范围
 
 用户决定逐步把 MAGI 重做成基于 DeepSeek Harness（DSH）的版本。当前只做第一步：删除原有的 [EVA 应用目录](<apps/eva>) 内容，换入已开发的 DSH Host 插件。不要把这次目录替换描述为整个 MAGI 已迁移完成。
