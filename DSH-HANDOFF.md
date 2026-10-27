@@ -22,6 +22,14 @@
 
 **以下为首轮 EVA 目录替换的历史记录。安装状态、凭据共享等后续行为，以当前插件说明与上述补充为准。**
 
+## 当前 CI / 验收入口（2026-10-27）
+
+- 当前生产入口是 `@local/eva` 与 `@local/magi-shell` 的 Host / Client exports 及各自 `cordis.patch.yml`。逐模块核验仅依赖同 bundle、Node 和官方 DSH 服务；不再调用旧 `apps/shell` 或 `packages/*`。
+- 根 `npm test` 现直接检查两个插件的源模块语法、分发资源与锁元数据，运行全部当前插件回归和依赖安全策略。Linux/macOS 执行完整套件；Windows 明确仅执行 portable Client/认证/导航/包契约，不冒称 POSIX Host 生命周期已通过。
+- CI 不再编译旧 Electron UI、运行旧 EVA self-rebuild IPC 或构建/上传 AppImage、安装器；手动运行也没有打包步骤。保留旧源码与断言于显式 `test:legacy`，不是删掉有意义的断言来凑绿，也不是声称旧 Shell 已迁移。
+- 当前 DSH 原子身份持久化新增对两个真实 public initializer 的 partial-write / rename 故障回归；写失败清理仅限本次私有临时文件，原 mapping 与 Session identity 保持。真实子进程归属、并发启动、readiness、auth/凭据与持久化断言继续由当前插件测试覆盖。
+- 详见 [测试范围与平台边界](docs/testing.md)。这些 CI 不安装/重载真实 DSH 插件、不触发模型服务，也不替代原生 GUI / live 模型验收。
+
 ## 用户意图与本次范围
 
 用户决定逐步把 MAGI 重做成基于 DeepSeek Harness（DSH）的版本。当前只做第一步：删除原有的 [EVA 应用目录](<apps/eva>) 内容，换入已开发的 DSH Host 插件。不要把这次目录替换描述为整个 MAGI 已迁移完成。
@@ -103,7 +111,7 @@ apps/shell/runtime/bin/node --test apps/eva/test/*.test.js
 
 - [根级 TypeScript 配置](<tsconfig.json>) 已移除旧 EVA 项目引用；新插件无需编译，不补回旧配置。
 - [根级测试脚本](<scripts/test.mjs>) 已直接收集插件源码 `.test.js`，不再寻找旧 EVA 编译测试；其余包仍按当前 TypeScript 源文件收集编译输出，避免运行已删除测试的残留产物。
-- 三项旧 Shell 测试已直接从仍保留的 `@magi/launcher/composition/agent.js` 导入 `Magi`，绕过被删除的同名 EVA 转导出文件；不改变旧 composition 的行为或宣称它已改造成 DSH。`atomic-launcher-state` 测试仍依赖已删 helper，旧 launcher 启动／集成路径也尚未迁移，不删除或跳过这些失败来假装整仓通过。
+- 三项旧 Shell 测试已直接从仍保留的 `@magi/launcher/composition/agent.js` 导入 `Magi`，绕过被删除的同名 EVA 转导出文件；不改变旧 composition 的行为或宣称它已改造成 DSH。旧 `atomic-launcher-state` 与 launcher 启动／集成测试作为历史断言保留在 `test:legacy`；当前 DSH 验收改为两个真实插件的入口，原子状态与进程安全契约有对应当前回归。不能据此声称旧 launcher 已迁移或 legacy suite 已通过。
 - 依赖锁已同步新插件 workspace 元数据。根级 npm 脚本、Shell、其余包及旧架构文档仍大多属于原实现。原来依赖 EVA launcher 的导入、打包与启动流程还需梳理；这些静态入口修正不代表旧 Shell、整仓测试或 DSH 集成已通过。
 
 不要为了让旧整仓构建表面通过而补回旧 EVA launcher，或把旧架构继续塞进新插件。

@@ -1,4 +1,4 @@
-name: Windows validation (no release)
+name: Windows DSH portable validation (no release)
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: ["main"]
   workflow_dispatch:
 
-# Validation only: MAGI is migrating to DSH plugins; no desktop packages are published.
+# Portable DSH Client/auth/manifest contracts only; not native Host lifecycle acceptance.
 permissions:
   contents: read
 
@@ -17,8 +17,10 @@ concurrency:
 
 jobs:
   windows:
-    name: Windows tests and build checks
+    name: DSH portable Client and bundle contracts (Windows)
     runs-on: windows-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     timeout-minutes: 45
     defaults:
       run:
@@ -41,18 +43,8 @@ jobs:
           if (!(Test-Path $env:npm_execpath)) { throw "Bootstrap npm CLI is missing" }
           & ./node_modules/node/bin/node.exe apps/shell/scripts/prepare-runtime.mjs
           if ($LASTEXITCODE -ne 0) { throw "Runtime preparation failed" }
-      - name: Root acceptance tests
+      - name: DSH source and portable contracts (not POSIX Host lifecycle)
         run: |
           $env:PATH = "$PWD/apps/shell/runtime/bin;$env:PATH"
-          & ./apps/shell/runtime/bin/node.exe ./apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js test
-          if ($LASTEXITCODE -ne 0) { throw "Root acceptance failed" }
-      - name: EVA self-modification through real process IPC
-        run: |
-          apps/shell/runtime/bin/node.exe --test apps/shell/integration/self-rebuild.test.mjs
-          if ($LASTEXITCODE -ne 0) { throw "EVA self-modification acceptance failed" }
-      - name: Build Shell interface and backend
-        run: |
-          $env:PATH = "$PWD/apps/shell/runtime/bin;$env:PATH"
-          & ./apps/shell/runtime/bin/node.exe ./apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run build:ui --prefix apps/shell
-          if ($LASTEXITCODE -ne 0) { throw "Shell UI build failed" }
-          if (!(Test-Path apps/shell/dist/shell.js)) { throw "Shell process entry was removed by UI build" }
+          & ./apps/shell/runtime/bin/node.exe ./apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run test:portable
+          if ($LASTEXITCODE -ne 0) { throw "DSH portable acceptance failed" }

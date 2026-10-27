@@ -66,10 +66,10 @@ async function publish(stateDir, value, initial) {
   const temporary = join(stateDir, `.main-session-${randomUUID()}.tmp`);
   const handle = await open(temporary, 'wx', 0o600);
   try {
-    await handle.writeFile(`${JSON.stringify(value)}\n`);
-    await handle.sync();
-  } finally { await handle.close(); }
-  try {
+    try {
+      await handle.writeFile(`${JSON.stringify(value)}\n`);
+      await handle.sync();
+    } finally { await handle.close(); }
     if (initial) await link(temporary, target);
     else await rename(temporary, target);
     await syncDirectory(stateDir);

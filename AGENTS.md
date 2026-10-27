@@ -29,11 +29,18 @@ apps/shell/runtime/bin/node --test packages/channel-a2a/dist/test/*.test.js
 apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js test
 ```
 
-The repository is a workspace. `apps/eva` is now a directly executed DSH Host
-plugin and has no TypeScript build. Root `npm test` builds the remaining
-TypeScript project references, checks the Shell bootstrap helpers, and runs the
-plugin, Shell, and selected package tests. Legacy Shell launcher integration is
-still being migrated; see `DSH-HANDOFF.md` for the current boundary.
+The current product is the directly executed DSH Host/Client bundles in
+`apps/eva` and `apps/magi-shell`; neither needs a TypeScript or Electron build.
+Root `npm test` checks their source syntax/manifests and runs every DSH plugin
+regression plus shared dependency-policy checks. Linux/macOS run this complete
+suite. `npm run test:portable` is the explicitly narrower Windows Client/auth/
+bundle-contract gate; it does not certify Host lifecycle or POSIX persistence.
+
+`apps/shell` and `packages/*` remain pre-DSH source, not dependencies of these
+bundles. Their TypeScript build and old acceptance remain explicitly available
+as `npm run test:legacy` / `npm run verify:legacy`, with known removed-launcher
+fixtures. Do not restore the retired EVA launcher to make them pass. There is no
+standalone Electron/AppImage/installer/release pipeline. See `DSH-HANDOFF.md`.
 
 Do not install alternate JavaScript runtimes globally or substitute a
 system-installed Node.js for MAGI's bundled Node 24.
