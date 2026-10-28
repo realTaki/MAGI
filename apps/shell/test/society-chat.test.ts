@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { MAGI_CONTACT_ID, messageDelivery } from "@magi/bus";
-import { Magi } from "../../eva/eva.ts";
+import { Magi } from "@magi/launcher/composition/agent.js";
 import { createOwnerApi } from "@magi/launcher/composition/owner.js";
 
 async function until(read: () => boolean, timeout = 8_000) {

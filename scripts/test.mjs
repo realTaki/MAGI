@@ -1,25 +1,39 @@
-// Select compiled tests from current sources, so deleted tests left in dist
-// cannot reappear in a developer's incremental build.
+// Current product acceptance: the two DSH bundles, without the retired desktop.
 import { readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const files = [];
-for (const app of ['eva', 'shell']) {
-  for (const name of readdirSync(new URL(`../apps/${app}/test/`, import.meta.url)).sort()) {
-    if (app === 'shell' && /\.test\.(mjs|ts)$/.test(name)) files.push(`apps/shell/test/${name}`);
-    else if (app !== 'shell' && name.endsWith('.test.ts')) files.push(`apps/${app}/dist/test/${name.replace(/\.ts$/, '.js')}`);
+// Windows currently exercises portable Client/auth/manifest contracts, not the
+// POSIX home permissions, Unix sockets or native DSH Desktop lifecycle.
+export const portableTests = {
+  eva: ['client-embed', 'client-frame-readiness', 'client-wake', 'client', 'embed-login', 'navigation', 'view'],
+  'magi-shell': ['layout', 'main-client', 'package', 'workbench-client'],
+};
+export function collectTests({ portable = false } = {}) {
+  const files = [];
+  for (const app of ['eva', 'magi-shell']) {
+    const names = readdirSync(new URL(`../apps/${app}/test/`, import.meta.url))
+      .filter(name => name.endsWith('.test.js')).sort();
+    if (!names.length) throw new Error(`No DSH tests discovered for ${app}`);
+    for (const name of names) {
+      if (!portable || portableTests[app].includes(name.slice(0, -'.test.js'.length))) files.push(`apps/${app}/test/${name}`);
+    }
+    if (portable && portableTests[app].some(name => !names.includes(`${name}.test.js`))) throw new Error(`Missing portable test for ${app}`);
   }
-}
-for (const pkg of ['bus', 'contacts', 'action-items', 'channel-a2a', 'providers']) {
-  for (const name of readdirSync(new URL(`../packages/${pkg}/test/`, import.meta.url)).sort()) {
-    if (name.endsWith('.test.ts')) files.push(`packages/${pkg}/dist/test/${name.replace(/\.ts$/, '.js')}`);
+  for (const name of readdirSync(new URL('./test/', import.meta.url)).sort()) {
+    if (name.endsWith('.test.mjs')) files.push(`scripts/test/${name}`);
   }
+  files.push('apps/shell/test/dependency-policy.test.mjs');
+  return files;
 }
-// Separate test processes each poll WMI; cap their contention on Windows.
-// Ownership/concurrency tests inside each file still execute all real children.
-const concurrency = process.platform === 'win32' ? ['--test-concurrency=2'] : [];
-const result = spawnSync(process.execPath, ['--test', ...concurrency, ...process.argv.slice(2), ...files], { cwd: root, env: process.env, stdio: 'inherit' });
-if (result.error) console.error(result.error);
-process.exitCode = result.status ?? 1;
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const portable = process.argv.includes('--portable');
+  const args = process.argv.slice(2).filter(arg => arg !== '--portable');
+  const files = collectTests({ portable });
+  console.log(`DSH acceptance: ${portable ? 'portable contracts only' : 'complete plugin suite'} (${files.length} files)`);
+  const result = spawnSync(process.execPath, ['--test', ...args, ...files], { cwd: root, env: process.env, stdio: 'inherit' });
+  if (result.error) console.error(result.error);
+  process.exitCode = result.status ?? 1;
+}

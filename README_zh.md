@@ -6,6 +6,8 @@
 
 [English](README.md) · [开始使用](docs/running.md) · [架构](docs/architecture.md) · [文档导航](docs/README.md)
 
+> **正在迁移至 DSH。** `apps/eva` 现为 DSH Host 插件，不再是原来的 EVA launcher。本文及关联文档中的桌面／Shell 与修订切换流程属于迁移前实现，尚未完成与新插件的集成。操作前请先阅读[当前范围与验收边界](DSH-HANDOFF.md)。
+
 **Fork 一份，养出你自己的 MAGI。**
 
 MAGI 探索的是一种新的软件形态：Agent 不只是替你使用软件，也能修改软件，让它逐渐长成你需要的样子。

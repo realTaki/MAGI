@@ -5,6 +5,17 @@ Development source is [realTaki/MAGI](https://github.com/realTaki/MAGI).
 contain the same revision. For a substantial upstream change, discuss the scope
 in an Issue, then work on a focused branch and open a reviewable PR.
 
+## Current DSH development
+
+The active product is `apps/eva` + `apps/magi-shell`, loaded by DSH as Host/Client
+plugins. Use the owned runtime below with `npm test` (complete plugin acceptance)
+or `npm run test:portable` (portable contracts only). No Electron UI compilation,
+AppImage, installer or standalone release is required. See [Testing](docs/testing.md)
+and [DSH handoff](DSH-HANDOFF.md) for exact coverage and real-DSH/GUI limitations.
+The older architecture/build/source-map sections below describe retained
+pre-DSH modules; their optional gate is `npm run test:legacy`, not current product
+acceptance. In particular `apps/eva/eva.mjs` no longer exists. Do not recreate it.
+
 ## Your fork is not a temporary copy
 
 MAGI is designed for users and their agents to change its source. Keep personal

@@ -1,4 +1,4 @@
-name: Windows validation (no release)
+name: Windows DSH portable validation (no release)
 
 on:
   push:
@@ -7,8 +7,7 @@ on:
     branches: ["main"]
   workflow_dispatch:
 
-# Desktop packaging embeds GitHub Actions' built-in GITHUB_REPOSITORY.
-# Fork builds therefore clone and check releases in their own repository.
+# Portable DSH Client/auth/manifest contracts only; not native Host lifecycle acceptance.
 permissions:
   contents: read
 
@@ -18,8 +17,10 @@ concurrency:
 
 jobs:
   windows:
-    name: Windows tests and unsigned installer
+    name: DSH portable Client and bundle contracts (Windows)
     runs-on: windows-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     timeout-minutes: 45
     defaults:
       run:
@@ -42,40 +43,8 @@ jobs:
           if (!(Test-Path $env:npm_execpath)) { throw "Bootstrap npm CLI is missing" }
           & ./node_modules/node/bin/node.exe apps/shell/scripts/prepare-runtime.mjs
           if ($LASTEXITCODE -ne 0) { throw "Runtime preparation failed" }
-      - name: Root acceptance tests
+      - name: DSH source and portable contracts (not POSIX Host lifecycle)
         run: |
           $env:PATH = "$PWD/apps/shell/runtime/bin;$env:PATH"
-          & ./apps/shell/runtime/bin/node.exe ./apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js test
-          if ($LASTEXITCODE -ne 0) { throw "Root acceptance failed" }
-      - name: EVA self-modification through real process IPC
-        run: |
-          apps/shell/runtime/bin/node.exe --test apps/shell/integration/self-rebuild.test.mjs
-          if ($LASTEXITCODE -ne 0) { throw "EVA self-modification acceptance failed" }
-      - name: Build Shell interface and backend
-        run: |
-          $env:PATH = "$PWD/apps/shell/runtime/bin;$env:PATH"
-          & ./apps/shell/runtime/bin/node.exe ./apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run build:ui --prefix apps/shell
-          if ($LASTEXITCODE -ne 0) { throw "Shell UI build failed" }
-          if (!(Test-Path apps/shell/dist/shell.js)) { throw "Shell process entry was removed by UI build" }
-      - name: Build unsigned Windows installer without publishing
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: |
-          $env:PATH = "$PWD/apps/shell/runtime/bin;$env:PATH"
-          $node = (Resolve-Path apps/shell/runtime/bin/node.exe).Path
-          Push-Location apps/shell
-          & $node scripts/build.mjs --win nsis --x64 --publish never --config.win.signExecutable=false
-          if ($LASTEXITCODE -ne 0) { throw "Windows installer build failed" }
-          Pop-Location
-          if (!(Get-ChildItem apps/shell/release/*.exe)) { throw "Installer was not produced" }
-          & ./apps/shell/release/win-unpacked/resources/runtime/bin/node.exe --version
-          if ($LASTEXITCODE -ne 0) { throw "Packaged runtime cannot run" }
-      - name: Keep unsigned validation installer as CI artifact
-        if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v6
-        with:
-          name: windows-unsigned-validation
-          path: apps/shell/release/*.exe
-          if-no-files-found: error
-          retention-days: 7
+          & ./apps/shell/runtime/bin/node.exe ./apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run test:portable
+          if ($LASTEXITCODE -ne 0) { throw "DSH portable acceptance failed" }

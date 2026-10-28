@@ -1,5 +1,5 @@
 /**
- * Shared compile/test entry for the agent self_update skill and the replace
+ * Legacy pre-DSH compile/test entry for the old self_update/replace
  * safety gate. npm ci if node_modules is missing, isolate MAGI homes, then
  * test → build (shell role also build:ui).
  */
@@ -59,7 +59,7 @@ delete env.NODE_TEST_CONTEXT;
 
 let code = 0;
 try {
-  code = run(['test'], env);
+  code = run(['run', 'test:legacy'], env);
   if (code === 0) code = run(['run', 'build'], env);
   if (code === 0 && role === 'shell') {
     code = run(['run', 'build:ui', '--prefix', 'apps/shell'], { ...env, MAGI_ROLE: role });

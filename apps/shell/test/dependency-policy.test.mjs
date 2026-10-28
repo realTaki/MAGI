@@ -11,14 +11,16 @@ const require = createRequire(import.meta.url);
 const lock = JSON.parse(readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
 const semver = require('semver');
 
-test('the workspace has one authoritative install lock and release cache key', () => {
+test('the workspace has one authoritative install lock and validation cache key', () => {
   for (const app of ['asp', 'shell']) {
     assert.equal(existsSync(path.join(root, `apps/${app}/package-lock.json`)), false);
   }
-  for (const platform of ['macos', 'windows']) {
-    const workflow = readFileSync(path.join(root, `.github/workflows/${platform}-client-release.yml`), 'utf8');
+  for (const platform of ['linux', 'macos', 'windows']) {
+    const workflow = readFileSync(path.join(root, `.github/workflows/${platform}-validation.yml`), 'utf8');
     assert.doesNotMatch(workflow, /apps\/(?:asp|shell)\/package-lock\.json/);
-    assert.match(workflow, /hashFiles\('package-lock\.json'/);
+    assert.match(workflow, /cache-dependency-path: package-lock\.json/);
+    assert.equal(existsSync(path.join(root, `.github/workflows/${platform}-client-release.yml`)), false);
+    assert.doesNotMatch(workflow, /electron-builder|upload-artifact|build:ui/);
   }
 });
 
