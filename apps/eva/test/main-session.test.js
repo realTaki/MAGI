@@ -115,6 +115,26 @@ test('new context after simulated storage restart inspects same durable nonblank
   assert.deepEqual(restarted.calls.map(([name]) => name), ['inspect', 'flush']);
 });
 
+for (const savedPreset of ['cordis', 'standard', 'user-custom']) {
+  test(`existing main retains its saved ${savedPreset} preset when the new default is EVA`, async t => {
+    const { options, marker } = await fixture(t);
+    const mapping = await seed(marker, options);
+    // Service-boundary fixture, not a claim about the native storage encoding.
+    // Existing inspection metadata must survive verbatim; ensureMainSession may
+    // neither create a replacement nor consult a new default to recompose it.
+    const record = { meta: { id: mapping.sessionId, cwd: options.workspace, isSeeded: false, agentPreset: savedPreset },
+      events: [{ type: 'turn/start' }] };
+    const before = structuredClone(record);
+    const { ctx, calls, stored, durable } = mock(options, new Map([[mapping.sessionId, record]]));
+    ctx.agentPresets = { async resolve() { assert.fail('existing main must not resolve the new EVA default'); } };
+    assert.deepEqual(await ensureMainSession(ctx, options), { sessionId: mapping.sessionId });
+    assert.deepEqual(calls.map(([name]) => name), ['inspect', 'flush']);
+    assert.deepEqual(stored.get(mapping.sessionId), before);
+    assert.deepEqual(durable.get(mapping.sessionId), before);
+    assert.deepEqual(JSON.parse(await readFile(marker, 'utf8')), mapping);
+  });
+}
+
 test('separate Node processes retain main identity and do not create a second Session', async (t) => {
   const { options, base } = await fixture(t);
   const moduleURL = new URL('../main-session.js', import.meta.url).href;

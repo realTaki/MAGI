@@ -13,9 +13,64 @@ window.__ModuleLoader__.load({
       if (!response.ok) throw new Error('EVA view unavailable');
       return response.json();
     }
+    // This is a business notification, never a human prompt or model output.
+    // Only durable native input records are evidence; content is model-only.
+    const dmKind = 'magi-user-dm';
+    function dmSource(message) {
+      const source = message?.source;
+      return source?.kind === 'eva-user-dm' && typeof source.peer === 'string' && source.peer.length > 0
+        && typeof source.messageId === 'string' && source.messageId.length > 0
+        && typeof source.text === 'string' ? source : null;
+    }
+    function dmMessage(event) {
+      if (event.type === 'user/message') return dmSource(event.data) ? event.data : null;
+      // Agent.inject inserts one message per splice. Do not claim this event:
+      // native inbox Definitions must also observe insertions and claims.
+      if (event.type === 'agent/inbox/spliced' && event.data.target === 'next-step') {
+        return event.data.inserted?.find((message) => dmSource(message)) ?? null;
+      }
+      return null;
+    }
+    function dmState(event) {
+      const source = dmSource(dmMessage(event));
+      return source ? { text: source.text, peer: source.peer, messageId: source.messageId, seq: event.seq } : undefined;
+    }
+    const dmDefinition = {
+      kind: dmKind, target: 'chat',
+      match(event) {
+        const source = dmSource(dmMessage(event));
+        return source ? { id: JSON.stringify([source.peer, source.messageId]), role: 'start',
+          ...(event.type === 'user/message' ? { exclusive: true } : {}) } : null;
+      },
+      start: (_context, match) => dmState(match.event),
+      update(context, match) {
+        const next = dmState(match.event);
+        return next ? { ...next, seq: context.state.seq } : context.state;
+      },
+      buildViewNode(context) {
+        if (!context.state) return null;
+        return { key: context.key, kind: dmKind, id: context.id, target: 'chat',
+          anchorSeq: context.state.seq,
+          location: context.start?.location ?? context.matches[0]?.location ?? { kind: 'unresolved' },
+          visibility: 'visible', groupTree: 'input', data: context.state };
+      },
+    };
+    function UserDmNotification({ node }) {
+      // React text children, not Markdown/HTML: preserve even hostile raw bodies.
+      return h('div', { 'data-magi-user-dm': '', style: {
+        alignSelf: 'flex-start', width: '100%', minWidth: 0, padding: '8px 0',
+        whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', textAlign: 'start',
+        color: 'var(--dsw-alias-label-primary)', font: 'inherit',
+      } }, node.data.text);
+    }
     return {
-      name: 'eva', inject: ['slots', 'locale', 'uiWorkspace', 'sessions', 'workspaces'],
+      name: 'eva', inject: ['slots', 'locale', 'uiWorkspace', 'sessions', 'workspaces', 'uiConversation'],
       apply(ctx) {
+        if (ctx.uiConversation) {
+          ctx.effect(() => ctx.uiConversation.events.register(dmDefinition));
+          ctx.effect(() => ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
+            { name: 'conversation.chat.node', key: dmKind }, UserDmNotification)));
+        }
         for (const [locale, dict] of Object.entries(dicts)) ctx.effect(() => ctx.locale.register('eva', locale, dict));
         const t = ctx.locale.bind('eva');
         // Status polling can remount a panel. Keep explicit wake requests owned
@@ -48,13 +103,137 @@ window.__ModuleLoader__.load({
           if (node.status === 'running') return node.mainSessionId ? 'online' : 'starting';
           return ['starting', 'stopping', 'failed'].includes(node.status) ? node.status : 'offline';
         }
+        // The native main owner unmounts its selected keyed entry on navigation.
+        // Own anchors only measure their own center-panel element; a persistent
+        // root overlay retains the real frame DOM, never moves it between seats.
+        let nodeSnapshot = new Map(), deckSnapshot = { anchor: null, frames: [] };
+        const nodeListeners = new Set(), deckListeners = new Set(), frames = new Map();
+        let serial = 0;
+        const subscribeNodes = (listener) => { nodeListeners.add(listener); return () => nodeListeners.delete(listener); };
+        const subscribeDeck = (listener) => { deckListeners.add(listener); return () => deckListeners.delete(listener); };
+        const nodeIdentity = (node) => JSON.stringify([node.status, node.mainSessionId, node.workspace, node.instanceId]);
+        // Browser monotonic clocks only. Missing clocks mean unknown, never 0ms.
+        const now = () => globalThis.performance?.now?.() ?? null;
+        const elapsed = (start) => {
+          const end = now();
+          return Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, Math.round((end - start) * 10) / 10) : null;
+        };
+        function notePhase(timing, phase) {
+          if (!timing || frames.get(timing.handle)?.timing !== timing) return;
+          timing.state = phase;
+          if (phase === 'opening' || phase === 'preparing') return;
+          if (timing.firstOutcome === null) {
+            timing.firstOutcome = phase;
+            if (phase === 'ready') timing.initialChildReadyMs = elapsed(timing.selectedAt);
+          } else if (phase === 'ready' && timing.firstOutcome !== 'ready' && timing.recoveredReadyMs === null) {
+            timing.recoveredReadyMs = elapsed(timing.selectedAt);
+          }
+        }
+        function timingSnapshot() {
+          return {
+            retainedCount: frames.size, pageLimit: null,
+            // Limit diagnostic output only, never the number of native pages.
+            frames: [...frames.values()].slice(-50).map(({ key, timing }) => ({
+              handle: timing.handle, generation: key, state: timing.state,
+              visits: timing.visits, openRequests: timing.openRequests,
+              firstOutcome: timing.firstOutcome, initialPreparationMs: timing.initialPreparationMs,
+              initialChildReadyMs: timing.initialChildReadyMs, recoveredReadyMs: timing.recoveredReadyMs,
+              backgroundDuringInitialOpen: timing.backgroundDuringInitialOpen,
+              readyOnLastVisit: timing.readyOnLastVisit, anchorToAnimationFrameMs: timing.anchorToAnimationFrameMs,
+            })),
+            memory: { status: 'not-measured', perFrameBytes: null,
+              secureContext: globalThis.isSecureContext === true,
+              crossOriginIsolated: globalThis.crossOriginIsolated === true,
+              applicationMemoryApiAvailable: typeof globalThis.performance?.measureUserAgentSpecificMemory === 'function' },
+          };
+        }
+        const publishDeck = (anchor = deckSnapshot.anchor) => {
+          deckSnapshot = { anchor, frames: [...frames.values()] };
+          for (const listener of deckListeners) listener();
+        };
+        function retainFrame(handle, element) {
+          const token = {}, node = nodeSnapshot.get(handle);
+          if (!node || nodeState(node) !== 'online') return () => {};
+          let frame = frames.get(handle);
+          if (!frame) {
+            frame = { key: ++serial, node, timing: {
+              handle, selectedAt: now(), state: 'opening', visits: 0, openRequests: 0,
+              firstOutcome: null, initialPreparationMs: null, initialChildReadyMs: null, recoveredReadyMs: null,
+              backgroundDuringInitialOpen: document.hidden, readyOnLastVisit: false, anchorToAnimationFrameMs: null,
+            } };
+            frames.set(handle, frame);
+          }
+          // A visit never evicts another Bot. Keep each opened native page for
+          // this parent-page lifetime; inventory removal/restart owns disposal.
+          let disposed = false, scheduled;
+          const visitedAt = now();
+          frame.timing.visits++;
+          frame.timing.readyOnLastVisit = frame.timing.state === 'ready';
+          frame.timing.anchorToAnimationFrameMs = null;
+          // This is scheduling latency from our owned anchor, NOT pixel paint
+          // or time from the user's click. Cancel it when that anchor leaves.
+          const visitPaint = requestAnimationFrame(() => {
+            if (!disposed && frames.get(handle) === frame) frame.timing.anchorToAnimationFrameMs = elapsed(visitedAt);
+          });
+          const measure = () => {
+            if (disposed) return;
+            const bounds = element.getBoundingClientRect();
+            const rect = { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height };
+            frame.rect = rect;
+            const previous = deckSnapshot.anchor;
+            if (previous?.token === token && Object.keys(rect).every((key) => rect[key] === previous.rect[key])) return;
+            publishDeck({ token, handle, rect });
+          };
+          const schedule = () => { if (!disposed) scheduled ??= requestAnimationFrame(() => { scheduled = undefined; measure(); }); };
+          const observer = new ResizeObserver(schedule);
+          observer.observe(element);
+          window.addEventListener('resize', schedule);
+          window.addEventListener('scroll', schedule, true);
+          // Publish even when the geometry matches the previous anchor: its new
+          // owner token must become visible to the persistent deck.
+          measure();
+          return () => {
+            disposed = true; observer.disconnect(); cancelAnimationFrame(scheduled); cancelAnimationFrame(visitPaint);
+            window.removeEventListener('resize', schedule);
+            window.removeEventListener('scroll', schedule, true);
+            if (deckSnapshot.anchor?.token === token) publishDeck(null);
+          };
+        }
+        function MainAnchor({ handle }) {
+          const nodes = React.useSyncExternalStore(subscribeNodes, () => nodeSnapshot);
+          const node = nodes.get(handle), anchor = React.useRef(null);
+          React.useLayoutEffect(() => node && nodeState(node) === 'online' && anchor.current
+            ? retainFrame(handle, anchor.current) : undefined, [node]);
+          if (!node) return null;
+          if (nodeState(node) !== 'online') return h(MainConversation, node);
+          return h('div', { ref: anchor, 'data-eva-panel-anchor': handle, 'aria-hidden': true,
+            style: { width: '100%', height: '100%', minWidth: 0, minHeight: 0 } });
+        }
+        function FrameDeck({ usePanelInfo }) {
+          const activePanelId = usePanelInfo((info) => info.activePanelId);
+          const snapshot = React.useSyncExternalStore(subscribeDeck, () => deckSnapshot);
+          return h(React.Fragment, null,
+            h('style', null, '[data-rightbar-fullscreen] [data-eva-retained-panel] { visibility: hidden !important; pointer-events: none !important; }'),
+            snapshot.frames.map((entry) => {
+              const { handle } = entry.node, anchor = snapshot.anchor;
+              const active = activePanelId === `eva:${handle}` && anchor?.handle === handle && anchor.rect.width > 0 && anchor.rect.height > 0;
+              const rect = active ? anchor.rect : entry.rect ?? { left: 0, top: 0, width: 1, height: 1 };
+              return h('section', { key: entry.key, 'data-eva-retained-panel': handle,
+                'aria-hidden': !active, inert: !active,
+                style: { position: 'fixed', ...rect, overflow: 'hidden',
+                  clipPath: 'polygon(0 var(--dsh-frame-top-clearance, 0px), var(--dsh-frame-leading-clearance, 0px) var(--dsh-frame-top-clearance, 0px), var(--dsh-frame-leading-clearance, 0px) 0, 100% 0, 100% 100%, 0 100%)',
+                  visibility: active ? 'visible' : 'hidden',
+                  pointerEvents: active ? 'auto' : 'none', background: 'var(--dsw-alias-bg-base)' } },
+                h(MainConversation, { ...entry.node, active, timing: entry.timing }));
+            }));
+        }
         // Keep the native child mounted and laid out, but do not expose its
         // login/default-view/navigation paints before its own readiness signal.
-        function ConversationFrame({ src, title, sessionId, onError }) {
+        function ConversationFrame({ src, title, sessionId, onError, error = false, onRetry, active = true, timing }) {
           const frame = React.useRef(null);
           const [ready, setReady] = React.useState(false);
           React.useEffect(() => {
-            let disposed = false, pending = true, deadline;
+            let disposed = false, pending = !ready || error, deadline;
             const origin = new URL(src).origin;
             const probe = () => frame.current?.contentWindow?.postMessage({ type: 'eva:main-state-request', sessionId }, origin);
             const wait = () => {
@@ -62,53 +241,62 @@ window.__ModuleLoader__.load({
               clearTimeout(deadline);
               // Background tabs can pause the child's paint callbacks. Only
               // count a visible wait, not time spent away from this page.
-              if (!document.hidden) deadline = setTimeout(() => {
-                if (!disposed && pending && !document.hidden) { pending = false; onError(true); }
+              if (active && !document.hidden) deadline = setTimeout(() => {
+                if (!disposed && pending && active && !document.hidden) {
+                  pending = false; notePhase(timing, 'timeout'); onError(true);
+                }
               }, 30000);
             };
             const visibility = () => {
-              if (disposed || !pending) return;
+              if (disposed) return;
+              if (!pending) return;
               wait();
-              if (!document.hidden) probe();
+              if (active && !document.hidden) probe();
             };
             const receive = (event) => {
               if (disposed || event.source !== frame.current?.contentWindow || event.origin !== origin) return;
               const message = event.data;
               if (message?.type !== 'eva:main-state' || message.sessionId !== sessionId) return;
               if (message.state === 'ready' || message.state === 'failed') {
+                notePhase(timing, message.state === 'ready' ? 'ready' : 'child-failed');
                 pending = false;
                 clearTimeout(deadline);
+                onError(false);
                 setReady(true); // A child failure has its own explicit retry UI.
               } else if (message.state === 'opening') {
+                notePhase(timing, 'opening');
                 setReady(false); wait();
               }
             };
             window.addEventListener('message', receive);
             document.addEventListener('visibilitychange', visibility);
-            wait();
+            if (pending) wait();
             // Also recover a signal sent before this passive effect attached.
-            probe();
+            if (pending && active) probe();
             return () => {
               disposed = true; pending = false; clearTimeout(deadline);
               window.removeEventListener('message', receive);
               document.removeEventListener('visibilitychange', visibility);
             };
-          }, [src, sessionId, onError]);
-          return h('section', { 'aria-busy': !ready, style: { position: 'relative', width: '100%', height: '100%', background: 'var(--dsw-alias-bg-base)' } },
+          }, [src, sessionId, onError, active, ready, error, timing]);
+          const exposed = ready && !error;
+          return h('section', { 'aria-busy': !ready && !error, style: { position: 'relative', width: '100%', height: '100%', background: 'var(--dsw-alias-bg-base)' } },
             h('iframe', {
               ref: frame, src, title, referrerPolicy: 'no-referrer',
               sandbox: 'allow-scripts allow-same-origin allow-forms allow-modals allow-downloads allow-popups',
-              allow: 'clipboard-write', onError: () => onError(true),
-              'aria-hidden': !ready, inert: !ready, tabIndex: ready ? 0 : -1,
+              allow: 'clipboard-write', onError: () => { notePhase(timing, 'frame-error'); onError(true); },
+              'aria-hidden': !exposed, inert: !exposed, tabIndex: exposed ? 0 : -1,
               // Do not use display:none: the child must render to become ready.
               style: { display: 'block', width: '100%', height: '100%', border: 0,
-                opacity: ready ? 1 : 0, pointerEvents: ready ? 'auto' : 'none', background: 'var(--dsw-alias-bg-base)' },
+                opacity: exposed ? 1 : 0, pointerEvents: exposed ? 'auto' : 'none', background: 'var(--dsw-alias-bg-base)' },
             }),
-            !ready && h('div', { role: 'status', style: { position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', padding: 24, color: 'var(--dsw-alias-label-primary)' } }, t('opening')));
+            !exposed && h('div', { role: error ? 'alert' : 'status', style: { position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', gap: 12, padding: 24, color: 'var(--dsw-alias-label-primary)' } },
+              h('p', { style: { margin: 0 } }, t(error ? 'error' : 'opening')),
+              error && h('button', { type: 'button', onClick: onRetry }, t('retry'))));
         }
         // The parent stays on its own Host. Only an online node opens a frame.
         function MainConversation(node) {
-          const { handle, workspace, mainSessionId } = node;
+          const { handle, workspace, mainSessionId, active = true, timing } = node;
           const state = nodeState(node);
           const online = state === 'online';
           React.useSyncExternalStore((listener) => ctx.locale.subscribe(listener), () => ctx.locale.getSnapshot());
@@ -117,10 +305,22 @@ window.__ModuleLoader__.load({
           const [src, setSrc] = React.useState('');
           const [error, setError] = React.useState(false);
           const [attempt, setAttempt] = React.useState(0);
+          const [preparedAttempt, setPreparedAttempt] = React.useState(0);
+          React.useEffect(() => {
+            if (!timing) return;
+            // Include time away while authentication is still pending, before
+            // ConversationFrame exists; otherwise a background open looks fast.
+            const observe = () => {
+              if (timing.firstOutcome === null && (!active || document.hidden)) timing.backgroundDuringInitialOpen = true;
+            };
+            observe(); document.addEventListener('visibilitychange', observe);
+            return () => document.removeEventListener('visibilitychange', observe);
+          }, [active, timing]);
           React.useEffect(() => {
             setSrc(''); setError(false);
             if (!online) return;
-            const controller = new AbortController();
+            const controller = new AbortController(), prepareStarted = now();
+            if (timing) { timing.openRequests++; notePhase(timing, 'preparing'); }
             async function open() {
               try {
                 // Prepare through authenticated transport; iframe navigation
@@ -128,9 +328,12 @@ window.__ModuleLoader__.load({
                 const response = await send(`api/eva/open?handle=${encodeURIComponent(handle)}`, { method: 'POST', signal: controller.signal, cache: 'no-store' });
                 if (!response.ok) throw new Error('EVA unavailable');
                 const { url } = await response.json();
-                if (!controller.signal.aborted) setSrc(url);
+                if (!controller.signal.aborted) {
+                  if (timing?.openRequests === 1) timing.initialPreparationMs = elapsed(prepareStarted);
+                  notePhase(timing, 'opening'); setSrc(url); setPreparedAttempt(attempt);
+                }
               } catch {
-                if (!controller.signal.aborted) setError(true);
+                if (!controller.signal.aborted) { notePhase(timing, 'prepare-error'); setError(true); }
               }
             }
             void open();
@@ -149,9 +352,16 @@ window.__ModuleLoader__.load({
                 cursor: wake.pending ? 'wait' : 'pointer', opacity: wake.pending ? 0.6 : 1 },
             }, t(wake.pending ? 'waking' : 'wake')),
             wake.error && h('p', { role: 'alert', style: { color: 'var(--dsw-alias-state-error-primary)' } }, t(wake.error)));
-          if (src && !error) return h(ConversationFrame, {
-            key: src, src, title: `${handle.toUpperCase()} — ${t('conversation')}`,
-            sessionId: mainSessionId, onError: setError,
+          // A timeout/iframe error covers the existing page, never destroys it.
+          // A valid child-ready message can recover it; only explicit retry
+          // prepares navigation again and intentionally rebuilds the frame.
+          // launchUrl is stable within a Host generation. The explicit epoch
+          // prevents React batching/same-URL responses from retaining old ready
+          // state, and never remounts a stale URL while retry preparation waits.
+          if (src && preparedAttempt === attempt) return h(ConversationFrame, {
+            key: `${preparedAttempt}:${src}`, src, title: `${handle.toUpperCase()} — ${t('conversation')}`,
+            sessionId: mainSessionId, onError: setError, error, active, timing,
+            onRetry: () => setAttempt((value) => value + 1),
           });
           return h('section', { style: { width: '100%', height: '100%', display: 'grid', placeContent: 'center', gap: 12,
             padding: 24, background: 'var(--dsw-alias-bg-base)', color: 'var(--dsw-alias-label-primary)' }, 'aria-label': handle },
@@ -161,22 +371,36 @@ window.__ModuleLoader__.load({
         ctx.effect(() => {
           const controller = new AbortController();
           const entries = new Map();
-          let timer, offEmbed;
+          let timer, offEmbed, offDeck, metricsAttached = false;
           function syncNodes(nodes) {
+            const next = new Map(nodes.map((node) => {
+              const previous = nodeSnapshot.get(node.handle);
+              return [node.handle, previous && nodeIdentity(previous) === nodeIdentity(node) ? previous : node];
+            }));
+            const changed = next.size !== nodeSnapshot.size || [...next].some(([handle, node]) => nodeSnapshot.get(handle) !== node);
+            if (changed) {
+              nodeSnapshot = next;
+              let invalidated = false;
+              for (const [handle, frame] of frames) {
+                const node = next.get(handle);
+                if (!node || nodeState(node) !== 'online' || nodeIdentity(node) !== nodeIdentity(frame.node)) {
+                  frames.delete(handle); invalidated = true;
+                }
+              }
+              if (invalidated) publishDeck();
+              for (const listener of nodeListeners) listener();
+            }
             const handles = new Set(nodes.map((node) => node.handle));
             for (const [handle, entry] of entries) {
               if (!handles.has(handle)) { entry.dispose(); entries.delete(handle); }
             }
             for (const node of nodes) {
-              const signature = JSON.stringify([node.status, node.mainSessionId, node.workspace]);
-              const existing = entries.get(node.handle);
-              if (existing?.signature === signature) continue;
-              existing?.dispose(); entries.delete(node.handle);
+              if (entries.has(node.handle)) continue;
               const id = `eva:${node.handle}`;
               // Node navigation lives in MAGI workbench now. Keep existing main
               // panel addresses compatible, but never add legacy sidebar rows.
-              const disposeMain = ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: id }, () => h(MainConversation, node)));
-              entries.set(node.handle, { signature, dispose: disposeMain });
+              const disposeMain = ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: id }, () => h(MainAnchor, { handle: node.handle })));
+              entries.set(node.handle, { dispose: disposeMain });
             }
           }
           async function refresh() {
@@ -271,7 +495,29 @@ window.__ModuleLoader__.load({
                 offEmbed = ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'eva:embedded-frame' }, ChildFrame));
                 return;
               }
-              if (view.mode === 'parent') syncNodes(view.nodes);
+              if (view.mode === 'parent') {
+                // Diagnostics are optional and never gate native chat/child boot.
+                // The read-only query copies existing counters; it cannot open,
+                // refresh, navigate, probe a child, or initiate memory sampling.
+                if (!metricsAttached && typeof ctx.inject === 'function') {
+                  metricsAttached = true;
+                  ctx.inject(['cordisInspect'], (scope) => {
+                    scope.effect(() => scope.cordisInspect.register({
+                      manifest: { id: 'EVAFrameTiming', description: 'Sanitized EVA page retention and parent-clock lifecycle timings.', methods: [{
+                        name: 'snapshot', description: 'Read retained count and up to 50 frame summaries; timings may be null. Anchor-to-rAF is scheduling, not paint/click latency. Memory is unmeasured, not estimated.',
+                        inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+                        outputSchema: { type: 'object', description: 'retainedCount, pageLimit(null), frames(last 50; no URLs/credentials/session text), memory(capabilities only, perFrameBytes null).' },
+                      }] },
+                      query(method) {
+                        if (method !== 'snapshot') throw new Error('Unknown EVA timing query');
+                        return timingSnapshot();
+                      },
+                    }));
+                  });
+                }
+                if (!offDeck) offDeck = ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'eva:retained-frames' }, (props) => h(FrameDeck, props)));
+                syncNodes(view.nodes);
+              }
             } catch (error) {
               // Retain entries on transient failure, but surface setup errors.
               if (!controller.signal.aborted) console.error('EVA view activation failed:', error);
@@ -280,9 +526,10 @@ window.__ModuleLoader__.load({
           }
           void refresh();
           return () => {
-            controller.abort(); clearTimeout(timer); offEmbed?.();
+            controller.abort(); clearTimeout(timer); offEmbed?.(); offDeck?.();
             for (const entry of entries.values()) entry.dispose();
-            entries.clear();
+            entries.clear(); frames.clear(); nodeSnapshot = new Map(); publishDeck(null);
+            for (const listener of nodeListeners) listener();
           };
         });
       },

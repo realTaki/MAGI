@@ -11,18 +11,20 @@ const rule = (selector) => {
 };
 
 // Source contracts, not mock DOM, pixel rendering, or browser assertions.
-test('MAGI fits inside the native browsing region without owning a second layout', () => {
-  assert.match(source, /register\(\{ name: 'sidebar\.workspaces', priority: -10 \}, BotBrowser\)/);
-  assert.doesNotMatch(source, /name: '(?:root|sidebar|main|shell\.overlay)'/);
+test('MAGI replaces only scoped sidebar actions and hidden-sidebar chrome, not conversation layout', () => {
+  assert.match(source, /register\(\{ name: 'sidebar', priority: -10 \}, Sidebar\)/);
+  assert.match(source, /register\(\{ name: 'shell\.leading', priority: -10 \}, Leading\)/);
+  assert.doesNotMatch(source, /name: '(?:root|main|shell\.overlay)'/);
+  assert.doesNotMatch(source, /children:\s*\{\s*'sidebar\./, 'never redeclare native sidebar child slots');
   assert.doesNotMatch(css, /grid-template-columns|position:fixed|100vh|100vw/);
   assert.doesNotMatch(source, /magi-wb-(?:layout|windowbar|content|toolbar|context|current|status)\b/);
   assert.match(rule('.magi-wb-browser'), /flex:1; min-width:0; min-height:0/);
 });
 
-test('Bot browser keeps two-line contacts, circular avatars, search and compact rail support', () => {
+test('Bot browser keeps two-line contacts, rounded color blocks, search and compact rail support', () => {
   assert.match(rule('.magi-wb-node'), /min-height:60px/);
   assert.match(rule('.magi-wb-node'), /border:0/);
-  assert.match(rule('.magi-wb-avatar'), /width:36px; height:36px; border-radius:50%/);
+  assert.match(rule('.magi-wb-avatar'), /width:36px; height:36px; border-radius:10px/);
   assert.match(rule('.magi-wb-node-copy'), /flex-direction:column/);
   assert.match(rule('.magi-wb-node-name'), /font-weight:600/);
   assert.match(rule('.magi-wb-node-preview'), /text-overflow:ellipsis/);

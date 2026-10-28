@@ -5,9 +5,9 @@
   "type": "module",
   "description": "Manage desktop-free DSH nodes with profile, state, and workspace under one persistent home per handle.",
   "exports": { ".": "./index.js", "./client": "./client.js", "./locale/*.json": "./locale/*.json", "./icon": "./icon.svg" },
-  "files": ["index.js", "runtime.js", "runner.js", "child.js", "credentials.js", "client.js", "view.js", "main-session.js", "relocate-workspace.js", "migrate-layout.js", "cordis.patch.yml", "locale/*.json", "icon.svg", "README.md"],
+  "files": ["index.js", "autostart.js", "dm-child.js", "dm-host.js", "dm-plugin.js", "dm-rpc.js", "dm-store.js", "dm-tool.js", "dm-user.js", "child-host.js", "child-entry.js", "eva-preset.yml", "runtime.js", "runner.js", "child.js", "credentials.js", "client.js", "view.js", "message-preview.js", "main-session.js", "relocate-workspace.js", "migrate-layout.js", "cordis.patch.yml", "locale/*.json", "icon.svg", "README.md"],
   "scripts": { "test": "node --test test/*.test.js" },
   "peerDependencies": { "@deepseek-ai/dsh-tools": "*" },
   "peerDependenciesMeta": { "@deepseek-ai/dsh-tools": { "optional": true } },
-  "dsh": { "bundle": { "patch": "./cordis.patch.yml" }, "client": { "platform": "web", "immediately": true, "inject": ["@deepseek-ai/dsh-client-ui-sidebar", "@deepseek-ai/dsh-client-ui-workspace"] } }
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" }, "client": { "platform": "web", "immediately": true, "inject": ["@deepseek-ai/dsh-client-ui-sidebar", "@deepseek-ai/dsh-client-ui-workspace", "@deepseek-ai/dsh-client-ui-conversation", "@deepseek-ai/dsh-client-ui-chat"] } }
 }

@@ -15,7 +15,7 @@ async function fixture() {
   const effects = [], cleanup = [], errors = [], probes = [];
   const src = 'http://127.0.0.1:4242/private-login#eva-main';
   const child = { postMessage(message, origin) { probes.push({ message, origin }); } };
-  const frameRef = { current: { contentWindow: child } };
+  const frameRef = { current: { contentWindow: child, getBoundingClientRect() { return { left: 200, top: 0, width: 800, height: 600 }; } } };
   const React = {
     createElement(type, props, ...children) { return { type, props: { ...props, children } }; },
     useSyncExternalStore(_subscribe, snapshot) { return snapshot(); },
@@ -25,15 +25,17 @@ async function fixture() {
       return [typeof value === 'string' ? src : value, (next) => errors.push(next)];
     },
     useEffect(callback) { if (framePhase && collect) effects.push(callback); },
+    useLayoutEffect(callback) { const dispose = callback(); if (dispose) cleanup.push(dispose); },
   };
   runInNewContext(await readFile(new URL('../client.js', import.meta.url), 'utf8'), {
     window: {
       __ModuleLoader__: { load({ factory }) { plugin = factory(() => React); } },
-      addEventListener(type, callback) { assert.equal(type, 'message'); listeners.add(callback); },
-      removeEventListener(type, callback) { assert.equal(type, 'message'); listeners.delete(callback); },
+      addEventListener(type, callback) { if (type === 'message') listeners.add(callback); },
+      removeEventListener(type, callback) { if (type === 'message') listeners.delete(callback); },
     },
     globalThis: { __DSH_TRANSPORT__: { fetch: async () => ({ ok: true, json: async () => ({ mode: 'parent', nodes: [{ handle: 'eva-001', status: 'running', mainSessionId: 'fixed-main' }] }) }) } },
     AbortController, URL, document,
+    ResizeObserver: class { observe() {} disconnect() {} }, requestAnimationFrame() { return 1; }, cancelAnimationFrame() {},
     setTimeout(callback, ms) { const id = Symbol('timer'); timers.set(id, { callback, ms }); return id; },
     clearTimeout(id) { timers.delete(id); },
   });
@@ -46,7 +48,11 @@ async function fixture() {
     },
   });
   await new Promise((resolve) => setImmediate(resolve));
-  const main = active.get('main/eva:eva-001')();
+  const anchor = active.get('main/eva:eva-001')();
+  anchor.type(anchor.props);
+  const deckElement = active.get('shell.overlay/eva:retained-frames')({ usePanelInfo: (select) => select({ activePanelId: 'eva:eva-001' }) });
+  const deck = deckElement.type(deckElement.props);
+  const main = deck.props.children[1][0].props.children[0];
   const frame = main.type(main.props);
   framePhase = true;
   const render = () => frame.type(frame.props);
@@ -119,7 +125,7 @@ test('background tabs suspend the deadline while child painting may be paused', 
     ui.visibility(false); assert.ok(ui.deadline());
     assert.equal(ui.probes.length, 2, 'probe again after returning to the page');
     const resumedDeadline = ui.deadline();
-    ui.message(); resumedDeadline.callback(); assert.deepEqual(ui.errors, [], 'settled readiness ignores a late timer');
+    ui.message(); resumedDeadline.callback(); assert.deepEqual(ui.errors, [false], 'valid readiness clears an error; a late timer cannot restore it');
     ui.visibility(true); ui.visibility(false);
     assert.equal(ui.deadline(), undefined, 'ready frames do not acquire a fresh deadline');
     assert.equal(ui.probes.length, 2);

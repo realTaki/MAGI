@@ -5,6 +5,17 @@ import { collectTests, portableTests } from '../test.mjs';
 
 const root = new URL('../../', import.meta.url);
 const read = file => readFileSync(new URL(file, root), 'utf8');
+const importSpecifiers = source => [...source.matchAll(/(?:\bfrom\s+|\bimport\s*\(\s*|\brequire\s*\(\s*)['"]([^'"]+)['"]/g)].map(match => match[1]);
+
+test('import closure scan ignores quoted protocol keys such as from', () => {
+  assert.deepEqual(importSpecifiers(`
+    const fields = ['version', 'from', 'to'];
+    import value from './value.js';
+    export { value } from './exports.js';
+    import('node:fs');
+    require('@deepseek-ai/dsh-tools');
+  `), ['./value.js', './exports.js', 'node:fs', '@deepseek-ai/dsh-tools']);
+});
 
 test('default discovery includes every current DSH regression without retired launcher acceptance', () => {
   const actual = collectTests();
@@ -30,7 +41,7 @@ test('active bundle import closures cannot depend on retired Shell or legacy wor
     for (const name of readdirSync(dir).filter(name => name.endsWith('.js'))) {
       const source = read(`apps/${app}/${name}`);
       // Static ESM imports, re-exports, literal dynamic imports and injected require.
-      const imports = [...source.matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*)['"]([^'"]+)['"]/g)].map(match => match[1]);
+      const imports = importSpecifiers(source);
       for (const specifier of imports) {
         assert.ok(specifier.startsWith('node:') || specifier.startsWith('./') || specifier.startsWith('@deepseek-ai/') || specifier === 'react', `${app}/${name}: ${specifier}`);
         if (specifier.startsWith('./')) assert.ok(existsSync(new URL(specifier, dir)), `${app}/${name}: missing ${specifier}`);

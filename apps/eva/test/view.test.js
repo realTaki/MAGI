@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { registerParentView, registerChildView, VIEW_PATH, OPEN_PATH, WAKE_PATH } from '../view.js';
+import { registerParentView, registerChildView, VIEW_PATH, OPEN_PATH, WAKE_PATH, CREATE_PATH } from '../view.js';
 
 function fixture() {
   const routes = new Map();
@@ -37,7 +37,8 @@ const launch = `http://127.0.0.1:2345/?token=${secret}#eva-main`;
 test('parent registers authenticated Connection routes with POST-only wake', () => {
   const { ctx, routes } = fixture();
   registerParentView(ctx, {});
-  assert.deepEqual([...routes.keys()], [WAKE_PATH, VIEW_PATH, OPEN_PATH]);
+  assert.deepEqual([...routes.keys()], [CREATE_PATH, WAKE_PATH, VIEW_PATH, OPEN_PATH]);
+  assert.deepEqual(routes.get(CREATE_PATH).methods, ['POST']);
   assert.deepEqual(routes.get(WAKE_PATH).methods, ['POST']);
   assert.deepEqual(routes.get(VIEW_PATH).methods, ['GET']);
   assert.deepEqual(routes.get(OPEN_PATH).methods, ['GET', 'POST']);
@@ -62,8 +63,44 @@ test('parent view projects list fields only and never asks for a child launch UR
   assert.ok(!text.includes(secret));
   assert.ok(!text.includes('launchUrl'));
   assert.deepEqual(JSON.parse(text), { mode: 'parent', nodes: [{ handle: 'eva-000', status: 'running',
-    workspace: '/private/workspace', mainSessionId: 'session-main' }] });
+    workspace: '/private/workspace', mainSessionId: 'session-main', preview: { state: 'unavailable' } }] });
   assert.equal(launchCalls, 0);
+});
+
+test('view exposes a stable opaque process generation and invalidates it across a between-poll restart', async () => {
+  const { ctx, request } = fixture();
+  let node = { handle: 'eva-000', status: 'running', workspace: '/home/eva', mainSessionId: 'session-main',
+    pid: 987654, origin: 'http://127.0.0.1:45678', launchUrl: launch, token: secret };
+  registerParentView(ctx, { status: async () => ({ nodes: [node] }), launchUrl() { assert.fail('inventory is not navigation'); } });
+  const read = async () => {
+    const response = await request(VIEW_PATH); privateResponse(response);
+    const body = await response.json();
+    const value = body.nodes[0];
+    assert.ok(!JSON.stringify(body).includes(secret));
+    for (const key of ['pid', 'origin', 'launchUrl', 'token']) assert.equal(Object.hasOwn(value, key), false);
+    return value;
+  };
+  const first = await read();
+  assert.match(first.instanceId, /^[a-f0-9]{24}$/);
+  node = { ...node, preview: { state: 'message', text: 'changed' } };
+  assert.equal((await read()).instanceId, first.instanceId, 'ordinary preview polling cannot recreate a page');
+  node = { ...node, pid: node.pid + 1, origin: 'http://127.0.0.1:45679' };
+  const restarted = await read();
+  assert.notEqual(restarted.instanceId, first.instanceId, 'same fixed main Session is not the same child process');
+  assert.equal(restarted.mainSessionId, first.mainSessionId);
+  node = { ...node, status: 'stopped' };
+  assert.equal(Object.hasOwn(await read(), 'instanceId'), false);
+});
+
+test('view omits process generation for offline and incomplete legacy snapshots', async () => {
+  const { ctx, request } = fixture();
+  registerParentView(ctx, { status: async () => ({ nodes: [
+    { handle: 'eva-offline', status: 'not-started' },
+    ...[null, 0, -1, Number.MAX_SAFE_INTEGER + 1, '123'].map(pid => ({ handle: 'eva-incomplete', status: 'running', pid, origin: 'http://127.0.0.1:2345' })),
+    { handle: 'eva-no-origin', status: 'running', pid: 123 },
+  ] }) });
+  const body = await (await request(VIEW_PATH)).json();
+  for (const node of body.nodes) assert.equal(Object.hasOwn(node, 'instanceId'), false);
 });
 
 for (const method of ['GET', 'POST']) {
@@ -219,6 +256,51 @@ test('duplicate wakes pass one fixed handle and never bind startup to request ab
   for (const response of await Promise.all([a, b])) {
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), safe);
+  }
+});
+
+test('create is explicit browser-only POST using the shared automatic manager allocation, with safe output', async () => {
+  const { ctx, request, routes } = fixture();
+  const calls = [];
+  registerParentView(ctx, { async start(...args) { calls.push(args); return { handle: 'eva-001', status: 'running', mainSessionId: 'main-1', workspace: '/node/workspace', token: secret, launchUrl: launch }; } });
+  assert.deepEqual(routes.get(CREATE_PATH).methods, ['POST']);
+  for (const cookie of ['', 'native-api-cookie']) {
+    const denied = await request(CREATE_PATH, 'POST', { headers: { cookie } });
+    assert.equal(denied.status, 403); privateResponse(denied);
+  }
+  const invalid = await request(`${CREATE_PATH}?handle=eva-000`, 'POST');
+  assert.equal(invalid.status, 400); assert.equal(calls.length, 0);
+  const response = await request(CREATE_PATH, 'POST');
+  assert.equal(response.status, 200); privateResponse(response);
+  assert.deepEqual(calls, [[undefined]], 'same manager.start primitive as the tool, no request abort/options/policy overrides');
+  assert.deepEqual(await response.json(), { handle: 'eva-001', status: 'running', mainSessionId: 'main-1', workspace: '/node/workspace' });
+});
+
+test('create coalesces concurrent allocations, ignores fetch abort for lifecycle ownership, and permits explicit later retry', async () => {
+  const { ctx, request } = fixture();
+  let resolve, reject, starts = 0;
+  registerParentView(ctx, { start() { starts++; return new Promise((yes, no) => { resolve = yes; reject = no; }); } });
+  const controller = new AbortController();
+  const a = request(CREATE_PATH, 'POST', { signal: controller.signal });
+  const b = request(CREATE_PATH, 'POST');
+  await Promise.resolve(); assert.equal(starts, 1); controller.abort();
+  resolve({ handle: 'eva-001', status: 'running', token: secret });
+  for (const response of await Promise.all([a, b])) { assert.equal(response.status, 200); assert.ok(!(await response.text()).includes(secret)); }
+  const failing = request(CREATE_PATH, 'POST'); await Promise.resolve(); assert.equal(starts, 2);
+  reject(new Error(secret));
+  const failure = await failing; assert.equal(failure.status, 503); assert.ok(!(await failure.text()).includes(secret));
+  const retry = request(CREATE_PATH, 'POST'); await Promise.resolve(); assert.equal(starts, 3);
+  resolve({ handle: 'eva-002', status: 'running' }); assert.equal((await retry).status, 200);
+});
+
+test('create rejects missing browserPeer and thrown admission before any process operation', async () => {
+  for (const variant of ['missing', 'throws']) {
+    const { ctx, request } = fixture();
+    if (variant === 'missing') ctx.connection.browserPeer = undefined;
+    else ctx.connection.admit = () => { throw new Error(secret); };
+    registerParentView(ctx, { start() { assert.fail('denied browser must not start a node'); } });
+    const response = await request(CREATE_PATH, 'POST');
+    assert.equal(response.status, 403); assert.ok(!(await response.text()).includes(secret));
   }
 });
 

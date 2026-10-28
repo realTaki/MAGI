@@ -11,6 +11,8 @@ async function fixture() {
     createElement(type, props, ...children) { return { type, props: { ...props, children } }; },
     useSyncExternalStore(subscribe, snapshot) { cleanup.push(subscribe(() => { notices++; })); return snapshot(); },
     useState(value) { return [value, () => {}]; },
+    useRef() { return { current: null }; },
+    useLayoutEffect() {},
     useEffect(callback) { const dispose = callback(); if (dispose) cleanup.push(dispose); },
   };
   runInNewContext(await readFile(new URL('../client.js', import.meta.url), 'utf8'), {
@@ -49,7 +51,7 @@ async function fixture() {
   const page = () => active.get('main/eva:eva-001')();
   return {
     requests, pending, active,
-    render() { const element = page(); return element.type(element.props); },
+    render() { const anchor = page(); const element = anchor.type(anchor.props); return element.type(element.props); },
     button() { return this.render().props.children.find((child) => child?.type === 'button'); },
     alert() { return this.render().props.children.find((child) => child?.props?.role === 'alert'); },
     async status(status) { nodes = [{ ...nodes[0], status }]; await refresh(); },

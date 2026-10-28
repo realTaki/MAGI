@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { ensureMainSession, attachMainSessionWorkspace, ensureMainSessionTitle } from './main-session.js';
 import { registerChildView, registerEmbeddedLogin } from './view.js';
 import { credentialStorePath } from './credentials.js';
+import { createMessagePreviewReader } from './message-preview.js';
 
 export const name = 'eva-child';
 export const inject = ['appReady', 'appExit', 'workspaceRegistry', 'webServer', 'profileContext', 'agentPresets', 'connection', 'sessionController', 'sessionPersistence', 'sessionQuery', 'workingDirectory', 'credentials', 'llm'];
@@ -11,8 +12,29 @@ export const inject = ['appReady', 'appExit', 'workspaceRegistry', 'webServer', 
 export function apply(ctx, config) {
   let disposed = false;
   let mainSessionId;
+  let mainSession;
+  // Optional Host-local identity: no lookup/create fallback; unavailable until
+  // startup is durable and after unload. Cordis owns provider removal/collisions.
+  ctx.provide('magiMainSession', { current: () => disposed ? undefined : mainSession });
   registerChildView(ctx, () => mainSessionId);
   registerEmbeddedLogin(ctx);
+  const readPreview = createMessagePreviewReader(ctx);
+  ctx.effect(() => {
+    let polling = false;
+    const abort = new AbortController();
+    const poll = async () => {
+      if (disposed || polling || !mainSessionId || !process.connected) return;
+      polling = true;
+      try {
+        const preview = await readPreview(mainSessionId, abort.signal);
+        if (!disposed && process.connected) process.send({ type: 'eva-preview', mainSessionId, preview }, () => {});
+      } finally { polling = false; }
+    };
+    const timer = setInterval(() => { void poll(); }, 3000);
+    timer.unref();
+    const cancel = () => { clearInterval(timer); abort.abort(); };
+    return cancel;
+  });
   ctx.effect(() => {
     const cancel = ctx.appReady.onReady(() => {
       void (async () => {
@@ -36,7 +58,9 @@ export function apply(ctx, config) {
         await attachMainSessionWorkspace(ctx, main.sessionId);
         await ensureMainSessionTitle(ctx, main.sessionId, config.profile);
         // Publish only an attached main whose node-name title is durable.
+        if (disposed) return;
         mainSessionId = main.sessionId;
+        mainSession = Object.freeze({ sessionId: mainSessionId, workspace });
         const launchUrl = new URL(ctx.connection.authenticatedUrl(ctx.webServer.getOrigin()));
         launchUrl.hash = 'eva-main';
         if (!disposed && process.connected) process.send({

@@ -57,7 +57,7 @@ try {
   await assert.rejects(access(join(proof.start.home, 'workspace')));
   assert.equal(proof.start.cwd, proof.start.home);
   assert.equal(proof.start.cwd, proof.start.workspace);
-  assert.equal(proof.start.defaultAgentPreset, 'cordis');
+  assert.equal(proof.start.defaultAgentPreset, 'eva');
   await assert.rejects(access(join(homedir(), 'Documents')));
   assert.equal(proof.start.profileDir, join(proof.start.home, 'profiles/eva-000'));
   assert.ok(proof.start.workspaceId);
@@ -125,7 +125,7 @@ try {
   assert.equal(restarted.workspace, proof.start.home);
   assert.equal(restarted.workspaceId, proof.start.workspaceId);
   assert.equal(restarted.cwd, restarted.home);
-  assert.equal(restarted.defaultAgentPreset, 'cordis');
+  assert.equal(restarted.defaultAgentPreset, 'eva');
   assert.equal(restarted.mainSessionId, proof.start.mainSessionId);
   assert.ok(await readFile(mappingPath, 'utf8') === mappingBeforeRestart, 'restart leaves main Session mapping bytes unchanged');
   proof.persistentMainSession = true;

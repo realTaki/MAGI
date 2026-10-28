@@ -13,7 +13,7 @@ const probe = `
   path.join = join;
   fs.readFile = async () => JSON.stringify([
     { insert: [{ config: { profile: 'eva-test', workspace: join(home, 'workspace') } }] },
-    { id: 'agent-preset-registry', config: { default: 'cordis' } },
+    { id: 'agent-preset-registry', config: { default: 'eva' } },
   ]);
   syncBuiltinESMExports();
   process.env.DSH_HOME = home;
@@ -37,5 +37,6 @@ for (const [style, home, profileDir] of [
     assert.equal(ready.type, 'eva-ready');
     assert.equal(ready.home, home);
     assert.equal(ready.profileDir, profileDir);
+    assert.equal(ready.defaultAgentPreset, 'eva');
   });
 }

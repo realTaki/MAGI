@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EvaRuntime, validateName, redact } from '../runtime.js';
+import { readEvaPreset } from '../child-host.js';
 
 const fake = fileURLToPath(new URL('./fake-cli.js', import.meta.url));
 const runtime = { executable: process.execPath, cli: fake, runtimeDir: '/unused', supportDir: '/unused' };
@@ -44,7 +45,7 @@ test('start is idempotent, status is live, stop releases the lock, and restart w
   assert.equal(a.home, join(base, '.dsh-eva-000'));
   assert.equal(a.cwd, a.home);
   assert.equal(a.cwd, a.workspace);
-  assert.equal(a.defaultAgentPreset, 'cordis');
+  assert.equal(a.defaultAgentPreset, 'eva');
   const nodeConfig = join(a.home, 'eva', 'node.json');
   const marker = await readFile(nodeConfig, 'utf8');
   assert.deepEqual(JSON.parse(marker), { role: 'eva-child' });
@@ -63,6 +64,75 @@ test('start is idempotent, status is live, stop releases the lock, and restart w
   assert.equal((await manager.stop(base, 'eva-000')).status, 'stopped');
 });
 
+test('managed child DM attachment owns the spawned IPC lifetime and startup overlay', async t => {
+  const attachments = [];
+  const { base, manager } = await fixture(t, { dmAttach(channel, handle) {
+    assert.equal(channel.connected, true);
+    assert.equal(typeof channel.send, 'function');
+    for (const event of ['message', 'error', 'exit', 'close']) assert.ok(channel.listenerCount(event) > 0, `runtime installs ${event} listeners before DM attachment`);
+    const entry = { channel, handle, closed: 0 };
+    attachments.push(entry);
+    const receive = () => {};
+    channel.on('message', receive);
+    return () => { entry.closed++; channel.off('message', receive); };
+  } });
+  const [first, duplicate] = await Promise.all([manager.start(base, 'eva-000'), manager.start(base, 'eva-000')]);
+  assert.equal(first.pid, duplicate.pid);
+  assert.equal(attachments.length, 1, 'idempotent starts attach only the actual spawned process');
+  assert.equal(attachments[0].handle, 'eva-000');
+  assert.equal(attachments[0].channel.pid, first.pid);
+  const args = attachments[0].channel.spawnargs;
+  const patch = JSON.parse(await readFile(args[args.indexOf('--patch') + 1], 'utf8'));
+  assert.equal(patch[0].insert.length, 2);
+  assert.equal(patch[0].insert[0].id, 'eva-child');
+  assert.equal(patch[0].insert[0].name, fileURLToPath(new URL('../child-entry.js', import.meta.url)));
+  assert.equal(patch[0].insert[0].config.profile, 'eva-000');
+  assert.equal(patch[0].insert.some(row => row.id === 'eva-dm-child'), false);
+  const preset = await readEvaPreset();
+  assert.deepEqual(patch[0].insert[1], { id: 'eva-agent-preset', name: 'cordis:include',
+    config: { path: join(first.home, 'profiles', '.eva-assets', first.profile, `preset-eva-${preset.digest}.yml`) } });
+  await manager.stop(base, 'eva-000');
+  assert.equal(attachments[0].closed, 1, 'process exit releases DM listener ownership exactly once');
+  await manager.start(base, 'eva-000');
+  assert.equal(attachments.length, 2);
+  assert.notEqual(attachments[0].channel, attachments[1].channel);
+  assert.equal(attachments[1].handle, 'eva-000');
+  await manager.dispose();
+  assert.deepEqual(attachments.map(entry => entry.closed), [1, 1]);
+});
+
+test('failed readiness also disposes the exact spawned DM attachment', async t => {
+  const attachments = [];
+  const { base, manager } = await fixture(t, { dmAttach(channel, handle) {
+    const entry = { channel, handle, closed: 0 }; attachments.push(entry);
+    return () => { entry.closed++; };
+  } });
+  await assert.rejects(manager.start(base, 'failure'), /before readiness/);
+  assert.equal(attachments.length, 1);
+  assert.equal(attachments[0].handle, 'failure');
+  assert.equal(attachments[0].closed, 1);
+  await assert.rejects(access(manager.paths('failure').lock), { code: 'ENOENT' });
+  await manager.dispose();
+  assert.equal(attachments[0].closed, 1, 'later Host disposal does not double-close an exited child');
+});
+
+test('managed child preview IPC is main-bound, bounded, isolated, and never publishes credentials', async (t) => {
+  const { base, manager } = await fixture(t);
+  const ready = await manager.start(base, 'eva-000');
+  const managed = manager.nodes.get(manager.paths('eva-000').home);
+  const send = message => managed.child.emit('message', message);
+  send({ type: 'eva-preview', mainSessionId: 'unrelated', preview: { state: 'message', text: 'wrong main' } });
+  assert.deepEqual((await manager.status(base, 'eva-000')).preview, { state: 'unavailable' });
+  send({ type: 'eva-preview', mainSessionId: ready.mainSessionId,
+    preview: { state: 'message', text: 'child latest\n message', token: 'private-secret', launchUrl: 'private-secret' }, token: 'private-secret' });
+  const snapshot = await manager.status(base, 'eva-000');
+  assert.deepEqual(snapshot.preview, { state: 'message', text: 'child latest message' });
+  assert.ok(!JSON.stringify(snapshot).includes('private-secret'));
+  await manager.stop(base, 'eva-000');
+  send({ type: 'eva-preview', mainSessionId: ready.mainSessionId, preview: { state: 'message', text: 'late update' } });
+  assert.deepEqual((await manager.status(base, 'eva-000')).preview, snapshot.preview, 'stopped nodes retain only last known preview');
+});
+
 for (const handle of ['wrong-cwd', 'missing-cwd', 'missing-preset']) {
   test(`readiness refuses missing or inconsistent isolation facts: ${handle}`, async (t) => {
     const { base, manager } = await fixture(t);
@@ -71,7 +141,7 @@ for (const handle of ['wrong-cwd', 'missing-cwd', 'missing-preset']) {
   });
 }
 
-test('readiness reports the saved user default instead of forcing Creator', async (t) => {
+test('readiness reports the saved user default instead of forcing EVA', async (t) => {
   const { base, manager } = await fixture(t);
   const node = await manager.start(base, 'user-standard');
   assert.equal(node.defaultAgentPreset, 'standard');
@@ -379,7 +449,7 @@ test('a helper pending marker blocks startup and releases the owner lock before 
   assert.equal(manager.nodes.size, 0);
 });
 
-test('Creator startup patch preserves older installation-only and workspace-config patches', async (t) => {
+test('EVA startup patch preserves older installation-only, workspace and Creator patches', async (t) => {
   const { base, manager } = await fixture(t);
   const paths = manager.paths('eva-000');
   await mkdir(paths.state, { recursive: true });
@@ -393,17 +463,147 @@ test('Creator startup patch preserves older installation-only and workspace-conf
   const previousPatch = join(paths.state, `startup-${installationId}-${previousConfigId}.patch.yml`);
   const previousContent = JSON.stringify([{ insert: [{ id: 'eva-child', config: { workspace: paths.workspace, profile: 'eva-000' } }] }]) + '\n';
   await writeFile(previousPatch, previousContent);
+  const creatorConfigId = createHash('sha256').update(JSON.stringify({ workspace: paths.workspace, profile: 'eva-000', defaultAgentPreset: 'cordis', providerDefaultsVersion: 1, dmProtocolVersion: 1 })).digest('hex').slice(0, 16);
+  const creatorPatch = join(paths.state, `startup-${installationId}-${creatorConfigId}.patch.yml`);
+  const creatorContent = JSON.stringify([{ id: 'agent-preset-registry', config: { default: 'cordis' } }]) + '\n';
+  await writeFile(creatorPatch, creatorContent);
   const result = await manager.start(base, 'eva-000');
   assert.equal(result.workspace, paths.workspace);
   assert.equal(await readFile(oldPatch, 'utf8'), oldContent);
   assert.equal(await readFile(previousPatch, 'utf8'), previousContent);
   const patches = (await readdir(paths.state)).filter((name) => name.endsWith('.patch.yml'));
-  assert.equal(patches.length, 3);
-  const workspaceId = createHash('sha256').update(JSON.stringify({ workspace: paths.workspace, profile: 'eva-000', defaultAgentPreset: 'cordis', providerDefaultsVersion: 1 })).digest('hex').slice(0, 16);
+  assert.equal(patches.length, 4);
+  assert.equal(await readFile(creatorPatch, 'utf8'), creatorContent);
+  const preset = await readEvaPreset();
+  const workspaceId = createHash('sha256').update(JSON.stringify({ workspace: paths.workspace, profile: 'eva-000', defaultAgentPreset: 'eva', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 2, evaPresetHash: preset.digest, desktopExclusions: [] })).digest('hex').slice(0, 16);
   assert.ok(patches.includes(`startup-${installationId}-${workspaceId}.patch.yml`));
   const overlay = JSON.parse(await readFile(join(paths.state, `startup-${installationId}-${workspaceId}.patch.yml`), 'utf8'));
-  assert.deepEqual(overlay[1], { id: 'agent-preset-registry', name: '@deepseek-ai/dsh-agent-preset-registry', config: { default: 'cordis' } });
+  assert.deepEqual(overlay[1], { id: 'agent-preset-registry', name: '@deepseek-ai/dsh-agent-preset-registry', config: { default: 'eva' } });
   assert.ok(!JSON.stringify(overlay).includes('selectedDefault'));
+});
+
+test('EVA preset cache is immutable, outside the initialized profile, and reused across restart', async t => {
+  const { base, manager } = await fixture(t);
+  const paths = manager.paths('eva-000');
+  await mkdir(paths.profileDir, { recursive: true });
+  const manifestPath = join(paths.profileDir, 'package.json');
+  const manifest = JSON.stringify({ private: true, dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] } } }, null, 2) + '\n';
+  const userPatch = join(paths.profileDir, 'user-owned.patch.yml');
+  await writeFile(manifestPath, manifest);
+  await writeFile(userPatch, 'saved-user-default: standard\n');
+  const preset = await readEvaPreset();
+  const cache = join(paths.home, 'profiles', '.eva-assets', paths.profile);
+  const presetPath = join(cache, `preset-eva-${preset.digest}.yml`);
+  assert.ok(!presetPath.startsWith(paths.profileDir + '/'), 'official profile initialization may recreate only the actual profile directory');
+  await manager.start(base, 'eva-000');
+  assert.equal(await readFile(presetPath, 'utf8'), preset.text);
+  assert.equal((await lstat(presetPath)).mode & 0o777, 0o600);
+  assert.deepEqual(await readdir(cache), [`preset-eva-${preset.digest}.yml`]);
+  await assert.rejects(access(join(cache, 'package.json')), { code: 'ENOENT' });
+  const patchNames = (await readdir(paths.state)).filter(name => name.endsWith('.patch.yml'));
+  const patchText = await readFile(join(paths.state, patchNames[0]), 'utf8');
+  await manager.stop(base, 'eva-000');
+  await manager.start(base, 'eva-000');
+  assert.equal(await readFile(presetPath, 'utf8'), preset.text);
+  assert.deepEqual((await readdir(paths.state)).filter(name => name.endsWith('.patch.yml')), patchNames);
+  assert.equal(await readFile(join(paths.state, patchNames[0]), 'utf8'), patchText);
+  assert.equal(await readFile(manifestPath, 'utf8'), manifest);
+  assert.equal(await readFile(userPatch, 'utf8'), 'saved-user-default: standard\n');
+});
+
+for (const kind of ['modified file', 'symlink', 'directory']) {
+  test(`an existing ${kind} cannot replace the content-addressed EVA preset`, async t => {
+    const { base, manager } = await fixture(t);
+    const paths = manager.paths('eva-000');
+    const preset = await readEvaPreset();
+    const cache = join(paths.home, 'profiles', '.eva-assets', paths.profile);
+    const presetPath = join(cache, `preset-eva-${preset.digest}.yml`);
+    await mkdir(cache, { recursive: true });
+    const external = join(base, 'unrelated-preset.yml');
+    await writeFile(external, preset.text);
+    if (kind === 'symlink') await symlink(external, presetPath);
+    else if (kind === 'directory') await mkdir(presetPath);
+    else await writeFile(presetPath, 'user-owned modified preset\n');
+    await assert.rejects(manager.start(base, 'eva-000'), /refuses to overwrite|existing or modified/);
+    await assert.rejects(access(paths.lock), { code: 'ENOENT' });
+    assert.equal(manager.nodes.size, 0, 'unsafe artifacts fail before spawning even the fake CLI');
+    assert.equal(await readFile(external, 'utf8'), preset.text);
+    const stat = await lstat(presetPath);
+    if (kind === 'symlink') assert.ok(stat.isSymbolicLink());
+    else if (kind === 'directory') assert.ok(stat.isDirectory());
+    else assert.equal(await readFile(presetPath, 'utf8'), 'user-owned modified preset\n');
+  });
+}
+
+test('preset tampering after a successful stop blocks restart rather than silently regenerating it', async t => {
+  const { base, manager } = await fixture(t);
+  const paths = manager.paths('eva-000');
+  const preset = await readEvaPreset();
+  const presetPath = join(paths.home, 'profiles', '.eva-assets', paths.profile, `preset-eva-${preset.digest}.yml`);
+  await manager.start(base, 'eva-000');
+  await manager.stop(base, 'eva-000');
+  await writeFile(presetPath, 'tampered after stop\n');
+  await assert.rejects(manager.start(base, 'eva-000'), /existing or modified/);
+  await assert.rejects(access(paths.lock), { code: 'ENOENT' });
+  assert.equal(await readFile(presetPath, 'utf8'), 'tampered after stop\n');
+});
+
+test('preset cache refuses symlinked ancestor directories without touching their target', async t => {
+  const { base, manager } = await fixture(t);
+  const paths = manager.paths('eva-000');
+  await mkdir(join(paths.home, 'profiles'), { recursive: true });
+  const external = join(base, 'unrelated-assets');
+  await mkdir(external);
+  await symlink(external, join(paths.home, 'profiles', '.eva-assets'), 'dir');
+  await assert.rejects(manager.start(base, 'eva-000'), /owned directory|symlink/);
+  await assert.rejects(access(paths.lock), { code: 'ENOENT' });
+  assert.deepEqual(await readdir(external), []);
+});
+
+test('desktop role selections select a new immutable overlay without rewriting existing profiles', async t => {
+  const credentialsPath = '/synthetic/shared-credentials.yaml';
+  const { base, manager } = await fixture(t, { credentialsPath });
+  const paths = manager.paths('eva-000');
+  await mkdir(paths.profileDir, { recursive: true });
+  const manifestPath = join(paths.profileDir, 'package.json');
+  await writeFile(manifestPath, JSON.stringify({ dsh: { profile: { bundles: ['@deepseek-ai/dsh-web-app'] } } }));
+  await manager.start(base, 'eva-000');
+  await manager.stop(base, 'eva-000');
+  const [previousName] = (await readdir(paths.state)).filter(name => name.endsWith('.patch.yml'));
+  const previousText = await readFile(join(paths.state, previousName), 'utf8');
+  const manifest = JSON.stringify({ private: true, dsh: { profile: { bundles: ['@local/unknown', '@local/eva', '@local/magi-shell'] } } }, null, 2) + '\n';
+  await writeFile(manifestPath, manifest);
+  await manager.start(base, 'eva-000');
+  const desktopExclusions = [
+    { id: 'magi-shell', name: '@local/magi-shell', disabled: true },
+    { id: 'eva', name: '@local/eva', disabled: true },
+  ];
+  const preset = await readEvaPreset();
+  const installationId = createHash('sha256').update(dirname(fileURLToPath(new URL('../runtime.js', import.meta.url)))).digest('hex').slice(0, 16);
+  const configId = createHash('sha256').update(JSON.stringify({ workspace: paths.workspace, profile: paths.profile,
+    defaultAgentPreset: 'eva', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 2,
+    evaPresetHash: preset.digest, desktopExclusions, credentialsPath, credentialSharingVersion: 1 })).digest('hex').slice(0, 16);
+  const nextName = `startup-${installationId}-${configId}.patch.yml`;
+  assert.notEqual(nextName, previousName);
+  assert.deepEqual((await readdir(paths.state)).filter(name => name.endsWith('.patch.yml')).sort(), [previousName, nextName].sort());
+  const overlay = JSON.parse(await readFile(join(paths.state, nextName), 'utf8'));
+  assert.deepEqual(overlay.slice(4), desktopExclusions);
+  assert.equal(overlay[3].id, 'credentials');
+  assert.ok(!JSON.stringify(overlay).includes('@local/unknown'), 'unrelated bundles are not patched or disabled');
+  assert.equal(await readFile(manifestPath, 'utf8'), manifest);
+  assert.equal(await readFile(join(paths.state, previousName), 'utf8'), previousText);
+});
+
+test('malformed existing profile fails before spawning and is not overwritten', async t => {
+  const { base, manager } = await fixture(t);
+  const paths = manager.paths('eva-000');
+  await mkdir(paths.profileDir, { recursive: true });
+  const manifest = join(paths.profileDir, 'package.json');
+  await writeFile(manifest, '{ do not repair user-owned content');
+  await assert.rejects(manager.start(base, 'eva-000'), SyntaxError);
+  assert.equal(await readFile(manifest, 'utf8'), '{ do not repair user-owned content');
+  await assert.rejects(access(paths.lock), { code: 'ENOENT' });
+  assert.equal(manager.nodes.size, 0);
 });
 
 test('root workspace start preserves registered legacy workspace without migration', async (t) => {

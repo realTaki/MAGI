@@ -10,20 +10,24 @@ window.__ModuleLoader__.load({
         mainBot: 'Main Bot', mode: 'Bot mode', nodes: 'My Bots', search: 'Search Bots',
         noMatch: 'No matching Bots', clear: 'Clear search', empty: 'No Bots yet',
         loading: 'Loading Bots…', refresh: 'Refresh', retry: 'Retry',
+        newBot: 'New Bot', creatingBot: 'Creating Bot…', createError: 'Unable to create a Bot. Check EVA and retry explicitly.',
+        expand: 'Expand sidebar', collapse: 'Collapse sidebar',
         listError: 'Unable to refresh all Bots. Previously loaded entries may be out of date.',
         navigationError: 'Unable to select this conversation. Retry or switch back to DSH.',
         online: 'Online', offline: 'Offline', starting: 'Starting', stopping: 'Stopping', failed: 'Failed',
-        conversation: 'Main conversation',
+        noMessages: 'No messages yet', previewUnavailable: 'Preview unavailable', attachment: '[Attachment]',
       },
       zh: {
         enter: '切换到 MAGI 工作台', back: '切换回 DSH', workbench: 'MAGI 工作台',
         mainBot: '主机器人', mode: 'Bot 模式', nodes: '我的 Bots', search: '搜索 Bot',
         noMatch: '没有匹配的 Bot', clear: '清除搜索', empty: '还没有 Bot',
         loading: '正在加载 Bots…', refresh: '刷新', retry: '重试',
+        newBot: '新 Bot', creatingBot: '正在创建 Bot…', createError: '无法创建 Bot，请检查 EVA 后明确重试。',
+        expand: '展开侧边栏', collapse: '收起侧边栏',
         listError: '部分 Bot 刷新失败，已显示的状态可能不是最新。',
         navigationError: '无法选中此会话，请重试或切回 DSH 检查。',
         online: '在线', offline: '离线', starting: '启动中', stopping: '停止中', failed: '异常退出',
-        conversation: '主会话',
+        noMessages: '暂无消息', previewUnavailable: '消息预览暂不可用', attachment: '[附件]',
       },
     };
     const send = (path, init) => (globalThis.__DSH_TRANSPORT__?.fetch ?? globalThis.fetch.bind(globalThis))(path, init);
@@ -46,7 +50,7 @@ window.__ModuleLoader__.load({
           nodes = view.nodes.filter((node) => {
             if (!node || typeof node.handle !== 'string' || !handlePattern.test(node.handle) || seen.has(node.handle)) return false;
             seen.add(node.handle); return true;
-          }).map(({ handle, status, workspace, mainSessionId }) => ({ handle, status, workspace, mainSessionId }))
+          }).map(({ handle, status, workspace, mainSessionId, preview }) => ({ handle, status, workspace, mainSessionId, preview }))
             .sort((a, b) => a.handle.localeCompare(b.handle));
         }
       } catch (error) {
@@ -62,7 +66,7 @@ window.__ModuleLoader__.load({
           const bot = parent?.bot;
           if (parent?.mode !== 'parent' || bot?.kind !== 'parent' || bot.handle !== 'dsh-main' || bot.status !== 'running'
             || typeof bot.mainSessionId !== 'string' || !bot.mainSessionId || typeof bot.workspace !== 'string' || !bot.workspace) throw new Error('Invalid Main Bot');
-          mainBot = { handle: 'dsh-main', kind: 'parent', status: 'running', workspace: bot.workspace, mainSessionId: bot.mainSessionId };
+          mainBot = { handle: 'dsh-main', kind: 'parent', status: 'running', workspace: bot.workspace, mainSessionId: bot.mainSessionId, preview: bot.preview };
         }
       } catch (error) {
         if (signal?.aborted) throw error;
@@ -75,6 +79,14 @@ window.__ModuleLoader__.load({
       return h('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
         h('path', { d: 'M4 8h15m-4-4 4 4-4 4M20 16H5m4-4-4 4 4 4' }));
     }
+    function SidebarIcon() {
+      return h('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
+        h('rect', { x: 3, y: 3, width: 18, height: 18, rx: 2 }), h('path', { d: 'M9 3v18' }));
+    }
+    function NewChatIcon() {
+      return h('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
+        h('path', { d: 'm4.8 17.7-1.3 3.3 3.8-1.4a8.5 8.5 0 1 0-2.5-1.9ZM12 8v8m-4-4h8' }));
+    }
     function RefreshIcon() {
       return h('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
         h('path', { d: 'M20 11a8 8 0 1 0-2.3 6.7M20 4v7h-7' }));
@@ -83,15 +95,26 @@ window.__ModuleLoader__.load({
       return h('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, 'aria-hidden': true },
         h('circle', { cx: 10.5, cy: 10.5, r: 6.5 }), h('path', { d: 'm16 16 4 4' }));
     }
-    function BotIcon() {
-      return h('svg', { width: 22, height: 22, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', 'aria-hidden': true },
-        h('path', { d: 'M12 3v3M5 11H3m18 0h-2' }), h('rect', { x: 5, y: 6, width: 14, height: 14, rx: 5 }), h('path', { d: 'M9 11v2m6-2v2m-5 3h4' }));
-    }
     const avatarColor = (handle) => {
       const hash = Array.from(handle).reduce((value, letter) => (value * 31 + letter.charCodeAt(0)) >>> 0, 0);
-      return `var(--dsw-alias-${['brand-primary', 'state-success-primary', 'state-warn-primary', 'label-secondary'][hash % 4]})`;
+      // Decorative identity colors, independent of the presence dot's semantics.
+      return ['#7189ad', '#8f7fac', '#6e9e91', '#b08a70', '#a77d92', '#8a946d'][hash % 6];
     };
     const css = `
+      .magi-wb-sidebar { display:flex; flex-direction:column; height:100%; min-height:0; min-width:0; background:var(--dsw-specific-sidebar-fill); color:var(--dsw-alias-label-primary); }
+      .magi-wb-chrome { display:flex; align-items:center; justify-content:flex-end; box-sizing:border-box; width:100%; height:36px; flex-shrink:0; padding:4px 12px; -webkit-app-region:drag; }
+      html[data-platform=darwin] .magi-wb-chrome { height:52px; }
+      .magi-wb-sidebar[data-collapsed=true] .magi-wb-chrome { justify-content:center; padding-inline:4px; }
+      .magi-wb-sidebar-top { display:flex; align-items:center; box-sizing:border-box; height:40px; gap:4px; padding:0 12px; flex-shrink:0; }
+      .magi-wb-sidebar[data-collapsed=true] .magi-wb-sidebar-top { justify-content:center; padding:4px; }
+      .magi-wb-new { box-sizing:border-box; display:flex; align-items:center; justify-content:center; flex-shrink:0; align-self:stretch; min-height:38px; gap:8px; margin:8px 12px 12px; padding:8px 12px; border:1px solid var(--dsw-alias-border-l1); border-radius:12px; background:var(--dsw-alias-bg-base); color:var(--dsw-alias-label-primary); font:inherit; font-size:14px; font-weight:500; line-height:20px; cursor:pointer; -webkit-app-region:no-drag; }
+      .magi-wb-new svg { display:block; flex-shrink:0; }
+      .magi-wb-new:hover:not(:disabled) { background:var(--dsw-alias-bg-layer-2); }
+      .magi-wb-new[data-compact=true] { align-self:center; width:28px; min-height:28px; height:28px; margin:0; padding:6px; border:0; border-radius:var(--dsw-radius-sm,6px); background:transparent; color:var(--dsw-alias-label-secondary); }
+      .magi-wb-new:disabled { opacity:.5; cursor:default; }
+      .magi-wb-new:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:2px; }
+      .magi-wb-leading { display:flex; align-items:center; gap:4px; }
+      .magi-wb-chrome .magi-wb-switch, .magi-wb-leading .magi-wb-switch { width:28px; height:28px; padding:6px; border-radius:var(--dsw-radius-sm,6px); }
       .magi-wb-brand { display:flex; align-items:center; gap:8px; min-width:0; width:100%; color:var(--dsw-alias-label-primary); }
       .magi-wb-wordmark { font-weight:750; letter-spacing:-.04em; white-space:nowrap; }
       .magi-wb-badge { padding:2px 5px; border:1px solid var(--dsw-alias-border-l2); border-radius:4px; font-size:10px; font-weight:650; letter-spacing:.06em; line-height:1.4; }
@@ -116,7 +139,7 @@ window.__ModuleLoader__.load({
       .magi-wb-nodes { flex:1; min-height:0; overflow:auto; }
       .magi-wb-node { display:flex; align-items:center; gap:12px; width:100%; min-height:60px; margin:2px 0; padding:6px 8px; border:0; border-radius:10px; background:transparent; color:var(--dsw-alias-label-primary); font:inherit; text-align:left; cursor:pointer; }
       .magi-wb-node[aria-current=true] { background:color-mix(in srgb,var(--dsw-alias-label-primary) 6%,transparent); }
-      .magi-wb-avatar { position:relative; display:flex; align-items:center; justify-content:center; flex-shrink:0; width:36px; height:36px; border-radius:50%; background:color-mix(in srgb,currentColor 14%,transparent); }
+      .magi-wb-avatar { position:relative; display:block; flex-shrink:0; width:36px; height:36px; border-radius:10px; }
       .magi-wb-node-copy { display:flex; flex-direction:column; gap:4px; flex:1; min-width:0; }
       .magi-wb-node-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; font-weight:600; line-height:18px; }
       .magi-wb-node-preview { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; line-height:16px; color:var(--dsw-alias-label-secondary); }
@@ -135,8 +158,11 @@ window.__ModuleLoader__.load({
         for (const [language, dict] of Object.entries(dicts)) ctx.effect(() => ctx.locale.register('magi-shell', language, dict));
         const t = ctx.locale.bind('magi-shell');
         const nameOf = (node) => node.kind === 'parent' ? t('mainBot') : node.handle.toUpperCase();
-        let snapshot = { open: false, nodes: [], selected: '', error: false, loading: false, navError: false, failedTarget: '' };
-        let disposed = false, installed = false, childHost = false, controller, timer, releaseBrowser;
+        const previewOf = (node) => node.preview?.state === 'message' && typeof node.preview.text === 'string' && node.preview.text.trim()
+          ? Array.from(node.preview.text.replace(/\s+/gu, ' ').trim()).slice(0, 240).join('')
+          : t(node.preview?.state === 'empty' ? 'noMessages' : node.preview?.state === 'attachment' ? 'attachment' : 'previewUnavailable');
+        let snapshot = { open: false, nodes: [], selected: '', error: false, loading: false, navError: false, failedTarget: '', creating: false, createError: false };
+        let disposed = false, installed = false, childHost = false, controller, timer, releaseBrowser, releaseLeading, creationRequest, failedNode;
         const listeners = new Set();
         const subscribe = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
         const getSnapshot = () => snapshot;
@@ -148,6 +174,7 @@ window.__ModuleLoader__.load({
         function pause() { clearTimeout(timer); controller?.abort(); controller = undefined; }
         function select(node) {
           if (!node || disposed || !snapshot.open) return;
+          ctx.layout.beginNavigation();
           try {
             if (node.kind === 'parent') {
               // Native navigation owns history, migration, drafts, retention and error UI.
@@ -157,25 +184,31 @@ window.__ModuleLoader__.load({
               // EVA already owns this registered main panel and its cross-Host transport.
               ctx.layout.selectPanel(`eva:${node.handle}`);
             }
+            failedNode = undefined;
             publish({ selected: identityOf(node), navError: false, failedTarget: '' });
           } catch {
             // Missing EVA panel during initial registration, or refused native navigation:
             // keep the current native view and offer an explicit retry, never a loading curtain.
+            failedNode = node;
             publish({ navError: true, failedTarget: identityOf(node) });
           }
         }
         function close() {
-          pause(); releaseBrowser?.(); releaseBrowser = undefined;
-          publish({ open: false, loading: false, navError: false, failedTarget: '' });
+          pause(); creationRequest?.abort();
+          releaseBrowser?.(); releaseBrowser = undefined;
+          releaseLeading?.(); releaseLeading = undefined;
+          publish({ open: false, loading: false, navError: false, failedTarget: '', createError: false });
           ctx.layout.selectPanel(null);
         }
         function open(event) {
           event?.preventDefault(); event?.stopPropagation();
           if (snapshot.open) return;
           publish({ open: true });
-          // Override only browsing while in MAGI mode. The native sidebar, settings,
-          // root, main/conversation slots and existing Client instance stay in place.
-          releaseBrowser = ctx.slots.inject('sidebar.workspaces', () => ctx.slots.register({ name: 'sidebar.workspaces', priority: -10 }, BotBrowser));
+          // New Session and the panel list have no narrower native action seats.
+          // Replace only this navigation column while MAGI is open; the native
+          // registration, main/conversation layout and all sessions stay intact.
+          releaseBrowser = ctx.slots.inject('sidebar', () => ctx.slots.register({ name: 'sidebar', priority: -10 }, Sidebar));
+          releaseLeading = ctx.slots.inject('shell.leading', () => ctx.slots.register({ name: 'shell.leading', priority: -10 }, Leading));
           select(snapshot.nodes.find((node) => identityOf(node) === snapshot.selected) ?? snapshot.nodes[0]);
           void refresh();
         }
@@ -191,6 +224,64 @@ window.__ModuleLoader__.load({
             h('span', { className: 'magi-wb-brand' }, h('span', { className: 'magi-wb-wordmark' }, view.open ? 'MAGI' : 'deepseek'),
               h('span', { className: 'magi-wb-badge' }, view.open ? 'BOT' : 'HARNESS'), h(Switch)));
         }
+        function Sidebar({ collapsed = false, width } = {}) {
+          useLocale();
+          return h('aside', { className: 'magi-wb-sidebar', 'data-collapsed': collapsed ? 'true' : 'false', style: { width }, 'aria-label': t('workbench') },
+            h('style', null, css),
+            h('div', { className: 'magi-wb-chrome' }, h(Toggle, { collapsed })),
+            h('div', { className: 'magi-wb-sidebar-top' }, collapsed ? h(Switch) : h(Brand)),
+            h(NewBot, { compact: collapsed }),
+            h(BotBrowser, { wide: !collapsed, expandSidebar: () => ctx.layout.toggleSidebar() }));
+        }
+        function Toggle({ collapsed = true } = {}) {
+          useLocale();
+          return h('button', { type: 'button', className: 'magi-wb-switch', title: t(collapsed ? 'expand' : 'collapse'), 'aria-label': t(collapsed ? 'expand' : 'collapse'),
+            'aria-expanded': !collapsed, onClick: () => ctx.layout.toggleSidebar() }, h(SidebarIcon));
+        }
+        function Leading() {
+          return h('div', { className: 'magi-wb-leading', style: { WebkitAppRegion: 'no-drag' } }, h('style', null, css), h(Toggle), h(NewBot, { compact: true }), h(Switch));
+        }
+        function NewBot({ compact = false } = {}) {
+          const view = React.useSyncExternalStore(subscribe, getSnapshot); useLocale();
+          const label = t(view.creating ? 'creatingBot' : 'newBot');
+          return h(React.Fragment, null,
+            h('button', { type: 'button', className: 'magi-wb-new', 'data-compact': compact ? 'true' : 'false', title: label, 'aria-label': label, 'aria-busy': view.creating, disabled: view.creating,
+              onClick: () => void createBot() }, h(NewChatIcon), !compact && h('span', null, label)),
+            view.createError && h('div', { className: 'magi-wb-error', role: 'alert' }, t('createError'),
+              h('button', { type: 'button', disabled: view.creating, onClick: () => void createBot() }, t('retry'))));
+        }
+        async function createBot() {
+          if (disposed || !snapshot.open || creationRequest) return;
+          const request = new AbortController(); creationRequest = request;
+          const navigation = ctx.layout.beginNavigation();
+          publish({ creating: true, createError: false, navError: false, failedTarget: '' });
+          let node;
+          try {
+            // Only an explicit click sends a POST. Request cancellation never
+            // cancels the Host manager's independent child lifecycle operation.
+            const response = await send('api/eva/create', { method: 'POST', signal: request.signal, cache: 'no-store' });
+            if (!response.ok) throw new Error('Creation failed');
+            const result = await response.json();
+            if (disposed || request.signal.aborted || !snapshot.open) return;
+            if (!result || typeof result.handle !== 'string' || !handlePattern.test(result.handle)) throw new Error('Invalid Bot');
+            node = { handle: result.handle, status: result.status, workspace: result.workspace, mainSessionId: result.mainSessionId };
+            await refresh();
+            if (disposed || request.signal.aborted || !snapshot.open) return;
+            if (!snapshot.nodes.some((item) => identityOf(item) === node.handle)) publish({ nodes: [...snapshot.nodes, node] });
+            // selectPanel admits only registered panels. A registration race
+            // keeps the current view and exposes the existing same-Bot retry.
+            if (!disposed && !request.signal.aborted && !navigation.aborted && snapshot.open) select(node);
+          } catch {
+            if (!disposed && !request.signal.aborted && snapshot.open) {
+              // Once allocated, retry only that panel. Never allocate another
+              // node because its panel registration/navigation was delayed.
+              if (node && !navigation.aborted) { failedNode = node; publish({ navError: true, failedTarget: node.handle }); }
+              else if (!node) publish({ createError: true });
+            }
+          } finally {
+            if (creationRequest === request) { creationRequest = undefined; publish({ creating: false }); }
+          }
+        }
         function BotBrowser({ wide = true, expandSidebar = () => {} } = {}) {
           const view = React.useSyncExternalStore(subscribe, getSnapshot); useLocale();
           const [query, setQuery] = React.useState('');
@@ -204,14 +295,14 @@ window.__ModuleLoader__.load({
               h('button', { type: 'button', className: 'magi-wb-switch', disabled: view.loading, onClick: () => void refresh(), title: t('refresh'), 'aria-label': t('refresh') }, h(RefreshIcon))),
             view.error && h('div', { className: 'magi-wb-error', role: 'alert' }, t('listError')),
             view.navError && h('div', { className: 'magi-wb-error', role: 'alert' }, t('navigationError'),
-              h('button', { type: 'button', onClick: () => select(view.nodes.find((node) => identityOf(node) === view.failedTarget)) }, t('retry'))),
+              h('button', { type: 'button', onClick: () => select(view.nodes.find((node) => identityOf(node) === view.failedTarget) ?? failedNode) }, t('retry'))),
             h('nav', { className: 'magi-wb-nodes', 'aria-label': t('nodes') },
               visible.map((node) => h('button', { key: identityOf(node), type: 'button', className: 'magi-wb-node', 'aria-current': identityOf(node) === view.selected ? 'true' : undefined,
-                title: `${nameOf(node)} — ${t(stateOf(node))}`, 'aria-label': `${nameOf(node)} — ${t(stateOf(node))}`, onClick: () => { if (!wide) expandSidebar(); select(node); } },
-                h('span', { className: 'magi-wb-avatar', style: { color: avatarColor(node.handle) }, 'aria-hidden': true }, h(BotIcon),
+                title: `${nameOf(node)} — ${previewOf(node)} — ${t(stateOf(node))}`, 'aria-label': `${nameOf(node)} — ${previewOf(node)} — ${t(stateOf(node))}`, onClick: () => { if (!wide) expandSidebar(); select(node); } },
+                h('span', { className: 'magi-wb-avatar', style: { background: avatarColor(identityOf(node)) }, 'aria-hidden': true },
                   h('span', { className: 'magi-wb-dot', style: { background: colorOf(stateOf(node)) } })),
                 h('span', { className: 'magi-wb-node-copy' }, h('span', { className: 'magi-wb-node-name' }, nameOf(node)),
-                  h('span', { className: 'magi-wb-node-preview' }, `${t(stateOf(node))} · ${t('conversation')}`)))),
+                  h('span', { className: 'magi-wb-node-preview' }, previewOf(node))))),
               visible.length === 0 && h('p', { className: 'magi-wb-no-match', role: 'status' }, t(query.trim() ? 'noMatch' : view.loading ? 'loading' : 'empty'))));
         }
         async function refresh() {
@@ -241,7 +332,7 @@ window.__ModuleLoader__.load({
             }
           }
         }
-        ctx.effect(() => { void refresh(); return () => { disposed = true; pause(); releaseBrowser?.(); releaseBrowser = undefined; listeners.clear(); }; });
+        ctx.effect(() => { void refresh(); return () => { disposed = true; pause(); creationRequest?.abort(); releaseBrowser?.(); releaseBrowser = undefined; releaseLeading?.(); releaseLeading = undefined; listeners.clear(); }; });
       },
     };
   },

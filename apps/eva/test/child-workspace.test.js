@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { ensureMainSession, attachMainSessionWorkspace, ensureMainSessionTitle } from '../main-session.js';
 import { registerChildView, registerEmbeddedLogin } from '../view.js';
+import { createMessagePreviewReader } from '../message-preview.js';
 
 async function fixture(t) {
   const root = await realpath(tmpdir());
@@ -18,17 +19,28 @@ async function fixture(t) {
     assert.ok(home.startsWith(join(root, 'eva-child-workspace-test-')));
     await rm(home, { recursive: true });
   });
-  const stored = new Map(), projects = new Map(), calls = [], routes = [], errors = [];
+  const stored = new Map(), projects = new Map(), calls = [], routes = [], errors = [], messages = [], cleanups = [], timers = new Set();
+  const services = new Map();
+  const dispose = () => { for (const cleanup of cleanups.splice(0).reverse()) cleanup(); };
+  t.after(dispose);
   let onReady, finish, attachGate, attachmentStarted, rejectAttach = false;
   const result = new Promise((done) => { finish = done; });
   const attaching = new Promise((done) => { attachmentStarted = done; });
   const options = { workspace: home, profile: 'eva-000', stateDir: join(home, 'eva') };
   const ctx = {
-    effect(callback) { callback(); },
+    get(name) { return services.get(name); },
+    provide(name, value) {
+      assert.ok(!services.has(name), `duplicate service: ${name}`);
+      services.set(name, value);
+      const cleanup = () => services.delete(name);
+      cleanups.push(cleanup);
+      return cleanup;
+    },
+    effect(callback) { const cleanup = callback(); if (cleanup) cleanups.push(cleanup); },
     appReady: { onReady(callback) { onReady = callback; return () => {}; } },
     appExit(code) { finish({ exit: code }); },
     profileContext: { home, name: 'eva-000', dir: profileDir },
-    agentPresets: { async resolve() { return { id: 'cordis' }; } },
+    agentPresets: { async resolve() { return { id: 'eva' }; } },
     llm: {
       listProviders() { calls.push(['provider-check']); return [{ id: 'openai-codex', name: 'OpenAI Codex' }]; },
       async listModels(provider) { assert.equal(provider, 'openai-codex'); return [{ id: 'synthetic-model' }]; },
@@ -76,7 +88,8 @@ async function fixture(t) {
     } },
   };
   return {
-    home, ctx, options, stored, projects, calls, routes, errors, result, attaching,
+    home, ctx, options, stored, projects, calls, routes, errors, result, attaching, messages, dispose,
+    poll() { for (const callback of timers) callback(); },
     holdAttachment() { let release; attachGate = new Promise((done) => { release = done; }); return release; },
     rejectAttachment() { rejectAttach = true; },
     async start(sharing = {}, resolvedStore = sharing.credentialsPath) {
@@ -87,8 +100,9 @@ async function fixture(t) {
       runInNewContext(`${source}\napply(ctx, config);`, {
         ctx, config: { workspace: home, profile: 'eva-000', ...sharing }, realpath, join,
         credentialStorePath: async () => { calls.push(['credential-check']); return resolvedStore; },
-        ensureMainSession, attachMainSessionWorkspace, ensureMainSessionTitle, registerChildView, registerEmbeddedLogin, URL,
-        process: { cwd: () => home, connected: true, pid: 123, ppid: 12, send(message) { calls.push(['ready']); finish({ message }); } },
+        ensureMainSession, attachMainSessionWorkspace, ensureMainSessionTitle, registerChildView, registerEmbeddedLogin, createMessagePreviewReader, URL, AbortController,
+        setInterval(callback) { timers.add(callback); return { callback, unref() {} }; }, clearInterval(timer) { timers.delete(timer.callback); },
+        process: { cwd: () => home, connected: true, pid: 123, ppid: 12, send(message, callback) { messages.push(message); if (message.type === 'eva-ready') { calls.push(['ready']); finish({ message }); } callback?.(); } },
         console: { error(message) { errors.push(message); } },
       });
       onReady();
@@ -97,16 +111,86 @@ async function fixture(t) {
   };
 }
 
+test('child optional main service is exact, frozen, read-only and unavailable after unload', async (t) => {
+  const f = await fixture(t);
+  assert.equal(f.ctx.get('magiMainSession'), undefined);
+  await f.start();
+  const service = f.ctx.get('magiMainSession');
+  assert.equal(service.current(), undefined);
+  const { message } = await f.result;
+  const current = service.current();
+  assert.deepEqual({ ...current }, { sessionId: message.mainSessionId, workspace: f.home });
+  assert.equal(Object.isFrozen(current), true);
+  assert.throws(() => { current.sessionId = 'other'; }, TypeError);
+  await writeFile(join(f.options.stateDir, 'main-session.json'), '{unreadable mapping');
+  const calls = f.calls.length;
+  assert.equal(service.current(), current);
+  assert.equal(f.calls.length, calls);
+  f.dispose();
+  assert.equal(service.current(), undefined);
+  assert.equal(f.ctx.get('magiMainSession'), undefined);
+});
+
+test('child disposal during attachment never publishes a late main service', async (t) => {
+  const f = await fixture(t);
+  const release = f.holdAttachment();
+  let finish, flushes = 0;
+  const finished = new Promise(resolve => { finish = resolve; });
+  f.ctx.sessionPersistence.flush = async () => { if (++flushes === 2) finish(); };
+  await f.start();
+  const service = f.ctx.get('magiMainSession');
+  await f.attaching;
+  f.dispose();
+  release();
+  await finished;
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(service.current(), undefined);
+  assert.equal(f.ctx.get('magiMainSession'), undefined);
+  assert.ok(!f.calls.some(([kind]) => kind === 'ready'));
+});
+
+test('child preview polling is fixed-main, non-overlapping and stops late sends on disposal', async (t) => {
+  const f = await fixture(t);
+  await f.start();
+  const { message } = await f.result;
+  let resolveObservation, reads = 0, released = 0, signal;
+  f.ctx.sessionQuery.observeSession = async (id, options) => {
+    reads++; signal = options.signal;
+    assert.equal(id, message.mainSessionId);
+    return new Promise(resolve => { resolveObservation = resolve; });
+  };
+  f.poll(); f.poll();
+  assert.equal(reads, 1);
+  resolveObservation({ cursor: 0, events: [{ seq: 0, type: 'user/message', surfaceOp: 'append', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'child question' }] } }], [Symbol.dispose]() { released++; } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.messages.at(-1).type, 'eva-preview');
+  assert.equal(f.messages.at(-1).preview.text, 'child question');
+  assert.equal(released, 1);
+  f.poll();
+  assert.equal(reads, 2);
+  f.dispose();
+  assert.equal(signal.aborted, true);
+  const count = f.messages.length;
+  resolveObservation({ cursor: 1, events: [], [Symbol.dispose]() { released++; } });
+  await new Promise(resolve => setImmediate(resolve));
+  f.poll();
+  assert.equal(reads, 2);
+  assert.equal(f.messages.length, count);
+  assert.equal(released, 2);
+});
+
 test('child attaches its blank fixed Session before exposing view/readiness', async (t) => {
   const f = await fixture(t);
   const release = f.holdAttachment();
   await f.start();
   await f.attaching;
+  assert.equal(f.ctx.get('magiMainSession').current(), undefined);
   assert.equal((await f.view()).status, 503);
   assert.ok(!f.calls.some(([kind]) => kind === 'ready'));
   release();
   const { message } = await f.result;
   assert.ok(f.projects.get(f.home).sessionIds.includes(message.mainSessionId));
+  assert.equal(message.defaultAgentPreset, 'eva');
   assert.equal((await (await f.view()).json()).mainSessionId, message.mainSessionId);
   assert.equal(f.calls.filter(([kind]) => kind === 'create').length, 1);
   assert.equal(f.calls.at(-1)[0], 'ready');
@@ -167,6 +251,7 @@ test('failed membership blocks readiness and never substitutes a Session', async
   f.rejectAttachment();
   await f.start();
   assert.equal((await f.result).exit, 1);
+  assert.equal(f.ctx.get('magiMainSession').current(), undefined);
   assert.equal((await f.view()).status, 503);
   assert.ok(!f.calls.some(([kind]) => kind === 'ready' || kind === 'create'));
   assert.ok(f.stored.has(main.sessionId));
@@ -188,6 +273,7 @@ test('child replaces only the fixed main generated title and waits for its durab
   };
   await f.start();
   await flushing;
+  assert.equal(f.ctx.get('magiMainSession').current(), undefined);
   assert.equal((await f.view()).status, 503);
   assert.ok(!f.calls.some(([kind]) => kind === 'ready'));
   release();
@@ -209,6 +295,7 @@ test('failed main title initialization blocks readiness without replacing the fi
   f.ctx.sessionController.rename = async () => { throw new Error('title write failed'); };
   await f.start();
   assert.equal((await f.result).exit, 1);
+  assert.equal(f.ctx.get('magiMainSession').current(), undefined);
   assert.equal((await f.view()).status, 503);
   assert.ok(!f.calls.some(([kind]) => kind === 'ready' || kind === 'create'));
   assert.ok(f.stored.has(main.sessionId));

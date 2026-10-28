@@ -1,10 +1,13 @@
 // Owner-only, authenticated routes supplied by DSH Connection. Never publish child
 // login credentials in status JSON, tool output, or errors; only an explicit user
 // navigation receives them. POST open supports desktop's fetch-only IPC carrier.
+import { createHash } from 'node:crypto';
 import { validateName } from './runtime.js';
+import { safePreview } from './message-preview.js';
 
 export const VIEW_PATH = '/api/eva/view';
 export const WAKE_PATH = '/api/eva/wake';
+export const CREATE_PATH = '/api/eva/create';
 export const OPEN_PATH = '/api/eva/open';
 export const EMBED_PATH = '/eva/embed';
 
@@ -34,24 +37,45 @@ export function registerEmbeddedLogin(ctx) {
 }
 const headers = { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' };
 const safeNode = ({ handle, status, workspace, mainSessionId }) => ({ handle, status, workspace, mainSessionId });
+// A page cache must notice a stop+restart even between inventory polls. Publish
+// an opaque process generation, never the origin, PID or credential-bearing URL.
+function instanceMetadata({ handle, status, pid, origin }) {
+  if (status !== 'running' || !Number.isSafeInteger(pid) || pid <= 0 || typeof origin !== 'string' || !origin) return {};
+  return { instanceId: createHash('sha256').update(JSON.stringify([handle, pid, origin])).digest('hex').slice(0, 24) };
+}
 const wakeFailure = (status, code, error) => Response.json({ code, error }, { status, headers });
 
 export function registerParentView(ctx, manager) {
+  // Exact Fetch routes receive no Peer. Re-admit credentials and require the
+  // actual browserPeer, not merely an owner principal (API owners are distinct).
+  function browserRejection(request) {
+    try {
+      const admission = ctx.connection.admit({ method: request.method, url: request.url,
+        headers: Object.fromEntries(request.headers) });
+      if (ctx.connection.browserPeer && admission.peer === ctx.connection.browserPeer) return;
+    } catch { /* Fail closed, including credential-less desktop transports. */ }
+    return wakeFailure(403, 'forbidden', 'Use the signed-in parent Host web page. Agent callers must use the EVA tool.');
+  }
+  let creating;
+  ctx.connection.fetch.register({ path: CREATE_PATH, methods: ['POST'], requestBody: 'buffered',
+    async fetch(request) {
+      const rejection = browserRejection(request);
+      if (rejection) return rejection;
+      if (new URL(request.url).search) return wakeFailure(400, 'invalid', 'New Bots use an automatically allocated EVA handle.');
+      // A double click or concurrent browser call shares one allocation. Never
+      // tie process ownership to a fetch abort: manager.dispose owns shutdown.
+      if (!creating) {
+        creating = Promise.resolve().then(() => manager.start(undefined)).then(safeNode);
+        creating.finally(() => { creating = undefined; }).catch(() => {});
+      }
+      try { return Response.json(await creating, { headers }); }
+      catch { return wakeFailure(503, 'start-failed', 'EVA could not start. Check the runtime and retry explicitly.'); }
+    },
+  });
   ctx.connection.fetch.register({ path: WAKE_PATH, methods: ['POST'], requestBody: 'buffered',
     async fetch(request) {
-      // Exact Fetch routes receive no Peer in the current native contract.
-      // Re-admit preserved credentials; API Peers can be owners too, so only
-      // the actual browserPeer is user authority. Credential-less desktop IPC
-      // fails closed rather than inferring authority from headers or transport.
-      try {
-        const admission = ctx.connection.admit({ method: request.method, url: request.url,
-          headers: Object.fromEntries(request.headers) });
-        if (!ctx.connection.browserPeer || admission.peer !== ctx.connection.browserPeer) {
-          return wakeFailure(403, 'forbidden', 'Use the signed-in parent Host web page. Agent callers must use the EVA tool.');
-        }
-      } catch {
-        return wakeFailure(403, 'forbidden', 'Browser identity could not be verified. Use the signed-in parent Host web page.');
-      }
+      const rejection = browserRejection(request);
+      if (rejection) return rejection;
       const handles = new URL(request.url).searchParams.getAll('handle');
       const handle = handles[0];
       try {
@@ -84,8 +108,8 @@ export function registerParentView(ctx, manager) {
   ctx.connection.fetch.register({ path: VIEW_PATH, methods: ['GET'], requestBody: 'buffered',
     async fetch() {
       const { nodes } = await manager.status();
-      return Response.json({ mode: 'parent', nodes: nodes.map(({ handle, status, workspace, mainSessionId }) =>
-        ({ handle, status, workspace, mainSessionId })) }, { headers });
+      return Response.json({ mode: 'parent', nodes: nodes.map((node) =>
+        ({ ...safeNode(node), ...instanceMetadata(node), preview: safePreview(node.preview) })) }, { headers });
     },
   });
   ctx.connection.fetch.register({ path: OPEN_PATH, methods: ['GET', 'POST'], requestBody: 'buffered',

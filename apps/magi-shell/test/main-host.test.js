@@ -29,7 +29,16 @@ function mock(paths, stored = new Map()) {
   const ready = new Set();
   const cleanups = [];
   const projects = new Map();
+  const services = new Map();
   const ctx = {
+    get(name) { return services.get(name); },
+    provide(name, value) {
+      assert.ok(!services.has(name), `duplicate service: ${name}`);
+      services.set(name, value);
+      const cleanup = () => services.delete(name);
+      cleanups.push(cleanup);
+      return cleanup;
+    },
     profileContext: { home: paths.home, dir: paths.profile, name: 'User Profile.With Spaces' },
     appReady: { onReady(callback) { ready.add(callback); return () => ready.delete(callback); } },
     effect(callback) { const cleanup = callback(); if (cleanup) cleanups.push(cleanup); },
@@ -95,7 +104,7 @@ async function seed(paths, extra = {}) {
 
 test('consolidated Host export has only the native dependencies needed for initialization', () => {
   assert.equal(name, 'magi-shell');
-  assert.deepEqual(inject, ['appReady', 'profileContext', 'connection', 'workspaceRegistry', 'sessionController', 'sessionPersistence']);
+  assert.deepEqual(inject, ['appReady', 'profileContext', 'connection', 'workspaceRegistry', 'sessionController', 'sessionPersistence', 'sessionQuery']);
   assert.equal(PARENT_MAIN_PATH, '/api/eva/parent-main');
 });
 
@@ -235,7 +244,7 @@ test('only the read-only inventory route is registered, unavailable until appRea
   const value = await response.json();
   assert.deepEqual(Object.keys(value).sort(), ['bot', 'mode']);
   assert.equal(value.mode, 'parent');
-  assert.deepEqual(Object.keys(value.bot).sort(), ['handle', 'kind', 'mainSessionId', 'status', 'workspace']);
+  assert.deepEqual(Object.keys(value.bot).sort(), ['handle', 'kind', 'mainSessionId', 'preview', 'status', 'workspace']);
   assert.equal(value.bot.mainSessionId, (await mapping(paths)).sessionId);
   const count = m.calls.length;
   await route.fetch();
@@ -245,6 +254,61 @@ test('only the read-only inventory route is registered, unavailable until appRea
   assert.equal((await route.fetch()).status, 503);
 });
 
+test('optional parent main service publishes only the exact attached startup identity', async t => {
+  const paths = await fixture(t);
+  const m = mock(paths);
+  assert.equal(m.ctx.get('magiMainSession'), undefined);
+  await apply(m.ctx);
+  const service = m.ctx.get('magiMainSession');
+  assert.equal(service.current(), undefined);
+  let entered, release;
+  const attaching = new Promise(resolve => { entered = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  const createWorkspace = m.ctx.workspaceRegistry.create;
+  m.ctx.workspaceRegistry.create = async (...args) => {
+    const project = await createWorkspace(...args);
+    const attach = project.attachSession;
+    return { ...project, async attachSession(id) { entered(); await gate; await attach.call(project, id); } };
+  };
+  const starting = m.start();
+  await attaching;
+  assert.equal(service.current(), undefined);
+  release();
+  await starting;
+  const current = service.current();
+  const bot = (await (await m.routes.get(PARENT_MAIN_PATH).fetch()).json()).bot;
+  assert.deepEqual(current, { sessionId: bot.mainSessionId, workspace: bot.workspace });
+  assert.equal(Object.isFrozen(current), true);
+  assert.throws(() => { current.sessionId = 'other'; }, TypeError);
+  await writeFile(paths.marker, '{unreadable mapping');
+  const calls = m.calls.length;
+  assert.equal(service.current(), current);
+  assert.equal(m.calls.length, calls);
+  m.dispose();
+  assert.equal(service.current(), undefined);
+  assert.equal(m.ctx.get('magiMainSession'), undefined);
+});
+
+test('parent inventory previews only fixed main, refreshes text, and releases native observations', async t => {
+  const paths = await fixture(t);
+  const m = mock(paths);
+  let text = 'first answer', disposed = 0, cursor = 0;
+  const ids = [];
+  m.ctx.sessionQuery = { async observeSession(id) {
+    ids.push(id);
+    return { cursor, events: [{ seq: cursor, type: 'assistant/message', surfaceOp: 'append', data: { message: { content: [{ type: 'text', text }] } } }],
+      [Symbol.dispose]() { disposed++; } };
+  } };
+  await apply(m.ctx); await m.start();
+  const route = m.routes.get(PARENT_MAIN_PATH);
+  assert.deepEqual((await (await route.fetch()).json()).bot.preview, { state: 'message', text: 'first answer' });
+  text = 'new answer'; cursor++;
+  assert.deepEqual((await (await route.fetch()).json()).bot.preview, { state: 'message', text: 'new answer' });
+  assert.deepEqual(ids, [(await mapping(paths)).sessionId, (await mapping(paths)).sessionId]);
+  assert.equal(disposed, 2);
+  m.dispose();
+});
+
 test('startup errors are sanitized 503 and GET never retries a mutating initializer', async t => {
   const paths = await fixture(t);
   const m = mock(paths);
@@ -252,6 +316,7 @@ test('startup errors are sanitized 503 and GET never retries a mutating initiali
   m.ctx.sessionController.create = async () => { attempts++; throw new Error('secret-token /private/log'); };
   await apply(m.ctx);
   await m.start();
+  assert.equal(m.ctx.get('magiMainSession').current(), undefined);
   const route = m.routes.get(PARENT_MAIN_PATH);
   for (let i = 0; i < 3; i++) {
     const response = await route.fetch();
@@ -277,11 +342,15 @@ test('disposal before appReady cannot initialize and in-flight completion cannot
   during.ctx.sessionPersistence.flush = async () => { entered(); await new Promise(resolve => { release = resolve; }); await flush(); };
   await apply(during.ctx);
   const route = during.routes.get(PARENT_MAIN_PATH);
+  const service = during.ctx.get('magiMainSession');
+  assert.equal(service.current(), undefined);
   const starting = during.start();
   await enteredPromise;
   during.dispose();
   release();
   await starting;
+  assert.equal(service.current(), undefined);
+  assert.equal(during.ctx.get('magiMainSession'), undefined);
   assert.equal((await route.fetch()).status, 503);
 });
 
@@ -289,8 +358,17 @@ test('EVA child homes contribute no route, no readiness callback, no workspace o
   const paths = await fixture(t);
   await mkdir(join(paths.home, 'eva'));
   await writeFile(join(paths.home, 'eva', 'node.json'), JSON.stringify({ role: 'eva-child' }));
+  const empty = mock(paths);
+  await apply(empty.ctx);
+  assert.equal(empty.ctx.get('magiMainSession'), undefined);
+  assert.equal(empty.routes.size, 0);
+  assert.equal(empty.ready.size, 0);
+  assert.equal(empty.calls.length, 0);
   const m = mock(paths);
+  const childService = { current: () => Object.freeze({ sessionId: 'child-owned', workspace: paths.home }) };
+  m.ctx.provide('magiMainSession', childService);
   await apply(m.ctx);
+  assert.equal(m.ctx.get('magiMainSession'), childService);
   assert.equal(await initializeParentMain(m.ctx), undefined);
   assert.equal(m.routes.size, 0);
   assert.equal(m.ready.size, 0);
@@ -322,6 +400,7 @@ test('relative/noncanonical home and malformed role marker fail closed with sani
   await assert.rejects(initializeParentMain(m.ctx), /canonical absolute/);
   await apply(m.ctx);
   assert.equal((await m.routes.get(PARENT_MAIN_PATH).fetch()).status, 503);
+  assert.equal(m.ctx.get('magiMainSession').current(), undefined);
   assert.equal(m.ready.size, 0);
   await mkdir(join(paths.home, 'eva'));
   await writeFile(join(paths.home, 'eva', 'node.json'), '{broken');

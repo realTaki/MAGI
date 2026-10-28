@@ -10,8 +10,8 @@ const running = { handle: 'eva-000', status: 'running', mainSessionId: 'eva-main
 
 // Shallow native-slot/handler fixture: not a DOM renderer or visual verification.
 function harness({ embedded = false, mode = 'parent', nodes = [running], bot = mainBot,
-  href = 'http://127.0.0.1:57684/', fetchView, fetchMain, failMain = false, registeredEva = ['eva-000'] } = {}) {
-  let plugin, locale = 'en', snapshot, nextTimer = 0, currentHooks, cursor;
+  href = 'http://127.0.0.1:57684/', fetchView, fetchMain, fetchCreate, failMain = false, registeredEva = ['eva-000'] } = {}) {
+  let plugin, locale = 'en', snapshot, nextTimer = 0, currentHooks, cursor, onToggle, navigationController;
   const active = new Map(), cleanups = [], timers = new Map(), calls = [], dictionaries = new Map();
   const injections = [], registrations = [], navigation = [], hooks = new Map(), panels = new Set(registeredEva.map(handle => `eva:${handle}`));
   const React = {
@@ -29,7 +29,11 @@ function harness({ embedded = false, mode = 'parent', nodes = [running], bot = m
     setTimeout(fn) { const id = ++nextTimer; timers.set(id, fn); return id; }, clearTimeout(id) { timers.delete(id); },
     globalThis: { fetch() { assert.fail('Never bypass authenticated transport'); }, __DSH_TRANSPORT__: { async fetch(path, options) {
       calls.push({ path, options });
-      assert.ok(['api/eva/view', 'api/eva/parent-main'].includes(path), 'no iframe credentials, main-open, or Session mutation endpoints');
+      assert.ok(['api/eva/view', 'api/eva/parent-main', 'api/eva/create'].includes(path), 'no iframe credentials, main-open, or Session mutation endpoints');
+      if (path === 'api/eva/create') {
+        assert.equal(options.method, 'POST');
+        return fetchCreate ? fetchCreate(options) : { ok: true, json: async () => ({ handle: 'eva-001', status: 'running', mainSessionId: 'new-eva-main' }) };
+      }
       assert.equal(options.method, undefined);
       if (path === 'api/eva/view') return fetchView ? fetchView(options) : { ok: true, json: async () => ({ mode, nodes }) };
       return fetchMain ? fetchMain(options) : bot ? { ok: true, json: async () => ({ mode: 'parent', bot }) } : { ok: false, status: 404 };
@@ -44,7 +48,7 @@ function harness({ embedded = false, mode = 'parent', nodes = [running], bot = m
     },
     slots: {
       inject(name, fn) {
-        assert.ok(['sidebar.brand.name', 'sidebar.footer.action', 'sidebar.workspaces'].includes(name), 'native root, main, whole sidebar, and overlay must stay untouched');
+        assert.ok(['sidebar.brand.name', 'sidebar.footer.action', 'sidebar', 'shell.leading'].includes(name), 'only scoped sidebar/chrome seats; native root, main and overlay stay untouched');
         injections.push(name); const dispose = fn(); let disposed = false;
         const once = () => { if (!disposed) { disposed = true; dispose?.(); } }; cleanups.push(once); return once;
       },
@@ -59,7 +63,7 @@ function harness({ embedded = false, mode = 'parent', nodes = [running], bot = m
       startSession() { assert.fail('Never create a replacement conversation'); },
       openWorkspace() { assert.fail('Never adopt a Workspace conversation'); },
     },
-    layout: { selectPanel(id) { navigation.push({ panel: id }); if (id !== null && !panels.has(id)) throw new Error('EVA panel not registered yet'); } },
+    layout: { beginNavigation() { navigationController?.abort(); navigationController = new AbortController(); return navigationController.signal; }, toggleSidebar() { onToggle?.(); }, selectPanel(id) { navigation.push({ panel: id }); if (id !== null && !panels.has(id)) throw new Error('EVA panel not registered yet'); } },
   });
   function render(element) {
     if (!element || typeof element !== 'object' || !element.props) return element;
@@ -77,7 +81,8 @@ function harness({ embedded = false, mode = 'parent', nodes = [running], bot = m
   };
   return { active, calls, timers, injections, registrations, navigation, panels,
     get snapshot() { return snapshot; }, setLocale(value) { locale = value; }, setFailMain(value) { failMain = value; },
-    browser(props) { return slot('sidebar.workspaces', props); }, brand() { return slot('sidebar.brand.name'); },
+    sidebar(props) { return slot('sidebar', props); }, leading() { return slot('shell.leading'); },
+    browser(props = {}) { onToggle = props.expandSidebar; return elements(slot('sidebar', { collapsed: props.wide === false })).find(element => element.props.className === 'magi-wb-browser') ?? null; }, brand() { return slot('sidebar.brand.name'); },
     switch() { return elements(slot('sidebar.footer.action', { wide: false })).find(element => element.type === 'button'); },
     expandedSwitch() { return slot('sidebar.footer.action', { wide: true }); },
     async poll() { assert.equal(timers.size, 1); const [id, callback] = timers.entries().next().value; timers.delete(id); await callback(); await tick(); },
@@ -94,6 +99,195 @@ const text = tree => elements(tree).flatMap(element => element.props.children).f
 const retry = tree => elements(tree).find(element => element.type === 'button' && (element.props.children.includes('Retry') || element.props['aria-label'] === 'Retry'));
 async function open(app) { await tick(); app.switch().props.onClick(); await tick(); return app.browser(); }
 
+const newBotButton = (app) => elements(app.sidebar()).find(element => element.props.className === 'magi-wb-new');
+const createCalls = app => app.calls.filter(call => call.path === 'api/eva/create');
+
+test('New Bot uses an icon and full-width outlined surface; compact chrome keeps the same accessible action', async () => {
+  const app = harness();
+  try {
+    await open(app);
+    const button = newBotButton(app);
+    assert.equal(button.props['data-compact'], 'false');
+    assert.equal(elements(button).filter(element => element.type === 'svg').length, 1);
+    assert.ok(text(button).includes('New Bot'));
+    assert.equal(elements(button).find(element => element.type === 'svg').props['aria-hidden'], true);
+    for (const tree of [app.sidebar({ collapsed: true }), app.leading()]) {
+      const compact = elements(tree).find(element => element.props.className === 'magi-wb-new');
+      assert.equal(compact.props['data-compact'], 'true');
+      assert.equal(compact.props['aria-label'], 'New Bot');
+      assert.equal(elements(compact).filter(element => element.type === 'svg').length, 1);
+      assert.deepEqual(text(compact), [], 'compact action is an icon, not a plus glyph or clipped label');
+    }
+    const styles = elements(app.sidebar()).find(element => element.type === 'style').props.children.join('');
+    assert.match(styles, /\.magi-wb-new \{[^}]*align-self:stretch[^}]*min-height:38px[^}]*border:1px solid var\(--dsw-alias-border-l1\)[^}]*border-radius:12px[^}]*background:var\(--dsw-alias-bg-base\)/);
+    assert.match(styles, /\.magi-wb-new:focus-visible/);
+    assert.match(styles, /\.magi-wb-new:hover:not\(:disabled\)/);
+    assert.equal(createCalls(app).length, 0, 'styling/rendering never creates a Bot');
+    app.setLocale('zh'); assert.ok(text(newBotButton(app)).includes('新 Bot'));
+  } finally { app.dispose(); }
+});
+
+test('sidebar toggle is a panel icon in its own top chrome row, never a brand-row chevron', async () => {
+  const app = harness();
+  try {
+    await open(app);
+    let toggles = 0; app.browser({ expandSidebar() { toggles++; } });
+    const tree = app.sidebar({ collapsed: false });
+    const chrome = elements(tree).find(element => element.props.className === 'magi-wb-chrome');
+    const brandRow = elements(tree).find(element => element.props.className === 'magi-wb-sidebar-top');
+    const toggle = elements(chrome).find(element => element.type === 'button');
+    assert.equal(toggle.props['aria-label'], 'Collapse sidebar'); assert.equal(toggle.props['aria-expanded'], true);
+    assert.equal(elements(toggle).filter(element => element.type === 'rect').length, 1);
+    assert.equal(elements(brandRow).some(element => ['Collapse sidebar', 'Expand sidebar'].includes(element.props['aria-label'])), false);
+    toggle.props.onClick();
+    for (const compact of [app.sidebar({ collapsed: true }), app.leading()]) {
+      const reopen = elements(compact).find(element => element.props['aria-label'] === 'Expand sidebar');
+      assert.equal(reopen.props['aria-expanded'], false);
+      assert.equal(elements(reopen).filter(element => element.type === 'svg').length, 1);
+      reopen.props.onClick();
+    }
+    assert.equal(toggles, 3, 'all three controls delegate to the native sidebar action');
+    assert.equal(text(tree).some(value => ['‹', '›'].includes(value)), false);
+    assert.match(source, /html\[data-platform=darwin\] \.magi-wb-chrome \{ height:52px/);
+    assert.ok(!source.includes('.magi-wb-sidebar-top { padding-top:52px'));
+    assert.equal(createCalls(app).length, 0);
+  } finally { app.dispose(); }
+});
+
+test('MAGI sidebar and hidden-sidebar chrome own only Bot actions and restore both native seats on close', async () => {
+  const app = harness();
+  try {
+    await open(app);
+    assert.ok(text(app.sidebar()).includes('New Bot'));
+    for (const forbidden of ['New Session', 'Plugins', 'Automation Tasks', 'More']) assert.ok(!text(app.sidebar()).includes(forbidden));
+    assert.equal(createCalls(app).length, 0, 'open/poll/render never start nodes');
+    assert.ok(elements(app.leading()).some(element => element.props['aria-label'] === 'New Bot'));
+    app.setLocale('zh'); assert.equal(newBotButton(app).props['aria-label'], '新 Bot');
+    app.switch().props.onClick();
+    assert.equal(app.active.has('sidebar'), false); assert.equal(app.active.has('shell.leading'), false);
+    assert.equal(createCalls(app).length, 0);
+  } finally { app.dispose(); }
+});
+
+test('New Bot explicitly creates one EVA, deduplicates clicks, refreshes and selects its existing panel', async () => {
+  let resolve;
+  const app = harness({ registeredEva: ['eva-000', 'eva-001'], fetchCreate: () => new Promise(yes => { resolve = yes; }) });
+  try {
+    await open(app); const button = newBotButton(app); button.props.onClick(); button.props.onClick();
+    assert.equal(createCalls(app).length, 1); assert.equal(newBotButton(app).props.disabled, true);
+    assert.equal(newBotButton(app).props['aria-label'], 'Creating Bot…');
+    const beforeRefresh = app.calls.length;
+    resolve({ ok: true, json: async () => ({ handle: 'eva-001', status: 'running', mainSessionId: 'new-eva-main' }) }); await tick();
+    assert.ok(app.calls.length > beforeRefresh); assert.equal(newBotButton(app).props.disabled, false);
+    assert.deepEqual(app.navigation.at(-1), { panel: 'eva:eva-001' });
+    assert.equal(app.navigation.filter(row => row.session).length, 1, 'only original Main Bot opened; no native Session creation');
+    assert.ok(rows(app.browser()).some(row => row.props.key === 'eva-001'));
+  } finally { app.dispose(); }
+});
+
+test('New Bot panel registration race retries navigation to same Bot, never another POST', async () => {
+  const app = harness();
+  try {
+    await open(app); newBotButton(app).props.onClick(); await tick(); app.browser();
+    assert.equal(app.snapshot.navError, true); assert.equal(app.snapshot.failedTarget, 'eva-001');
+    app.panels.add('eva:eva-001'); await app.poll();
+    retry(app.browser()).props.onClick(); app.browser();
+    assert.deepEqual(app.navigation.at(-1), { panel: 'eva:eva-001' }); assert.equal(createCalls(app).length, 1);
+    assert.equal(app.snapshot.navError, false);
+  } finally { app.dispose(); }
+});
+
+test('New Bot failures are localized and retry only through another explicit click', async () => {
+  let succeeds = false;
+  const app = harness({ registeredEva: ['eva-000', 'eva-001'], fetchCreate() { if (!succeeds) throw new Error('private failure'); return { ok: true, json: async () => ({ handle: 'eva-001', status: 'running' }) }; } });
+  try {
+    await open(app); app.setLocale('zh'); newBotButton(app).props.onClick(); await tick();
+    assert.ok(text(app.sidebar()).includes('无法创建 Bot，请检查 EVA 后明确重试。'));
+    assert.ok(!text(app.sidebar()).includes('private failure'));
+    await app.poll(); assert.equal(createCalls(app).length, 1);
+    succeeds = true; const button = elements(app.sidebar()).find(element => element.type === 'button' && element.props.children.includes('重试'));
+    button.props.onClick(); await tick(); assert.equal(createCalls(app).length, 2);
+    assert.deepEqual(app.navigation.at(-1), { panel: 'eva:eva-001' });
+  } finally { app.dispose(); }
+});
+
+test('late New Bot completion refreshes inventory but cannot override a newer explicit navigation', async () => {
+  let resolve;
+  const app = harness({ registeredEva: ['eva-000', 'eva-001'], fetchCreate: () => new Promise(yes => { resolve = yes; }) });
+  try {
+    await open(app); newBotButton(app).props.onClick();
+    rows(app.browser())[1].props.onClick(); const before = app.navigation.length;
+    resolve({ ok: true, json: async () => ({ handle: 'eva-001', status: 'running' }) }); await tick();
+    assert.equal(app.navigation.length, before); assert.deepEqual(app.navigation.at(-1), { panel: 'eva:eva-000' });
+    assert.ok(rows(app.browser()).some(row => row.props.key === 'eva-001')); assert.equal(createCalls(app).length, 1);
+  } finally { app.dispose(); }
+});
+
+for (const action of ['close', 'dispose']) {
+  test(`pending New Bot aborts on ${action}, ignores late response and never recreates automatically`, async () => {
+    let resolve;
+    const app = harness({ fetchCreate: () => new Promise(yes => { resolve = yes; }) });
+    await open(app); newBotButton(app).props.onClick(); const signal = createCalls(app)[0].options.signal;
+    if (action === 'close') app.switch().props.onClick(); else app.dispose();
+    const before = app.navigation.length; assert.equal(signal.aborted, true);
+    resolve({ ok: true, json: async () => ({ handle: 'eva-001', status: 'running' }) }); await tick();
+    assert.equal(app.navigation.length, before); assert.equal(createCalls(app).length, 1);
+    assert.equal(app.active.has('sidebar'), false); assert.equal(app.active.has('shell.leading'), false);
+    if (action === 'close') { app.switch().props.onClick(); await tick(); assert.equal(createCalls(app).length, 1); app.dispose(); }
+    assert.equal(app.timers.size, 0);
+  });
+}
+
+test('Bot avatars are stable solid rounded blocks without robot artwork, retaining presence dots', async () => {
+  const app = harness();
+  const avatars = () => elements(app.browser()).filter(element => element.props.className === 'magi-wb-avatar');
+  try {
+    await open(app);
+    const initial = avatars().map(avatar => avatar.props.style.background);
+    assert.equal(initial.length, 2);
+    assert.ok(initial.every(color => /^#[\da-f]{6}$/i.test(color)));
+    assert.notEqual(initial[0], initial[1]);
+    for (const avatar of avatars()) {
+      assert.equal(avatar.props['aria-hidden'], true);
+      assert.equal(avatar.props.children.length, 1);
+      assert.equal(avatar.props.children[0].props.className, 'magi-wb-dot');
+      assert.equal(elements(avatar).some(element => element.type === 'svg'), false);
+    }
+    await app.poll();
+    assert.deepEqual(avatars().map(avatar => avatar.props.style.background), initial);
+    assert.match(source, /\.magi-wb-avatar \{[^}]*border-radius:10px/);
+    assert.ok(!source.includes('BotIcon'));
+  } finally { app.dispose(); }
+});
+
+test('Bot subtitles show independent latest previews and localized empty/unavailable states on refresh', async () => {
+  let parentPreview = { state: 'message', text: 'Parent answer' };
+  let childPreview = { state: 'message', text: 'Child\n answer' };
+  const app = harness({
+    fetchMain: async () => ({ ok: true, json: async () => ({ mode: 'parent', bot: { ...mainBot, preview: parentPreview } }) }),
+    fetchView: async () => ({ ok: true, json: async () => ({ mode: 'parent', nodes: [{ ...running, preview: childPreview }] }) }),
+  });
+  const previews = () => elements(app.browser()).filter(element => element.props.className === 'magi-wb-node-preview').map(element => element.props.children[0]);
+  try {
+    await open(app);
+    assert.deepEqual(previews(), ['Parent answer', 'Child answer']);
+    assert.match(rows(app.browser())[0].props['aria-label'], /Online/);
+    parentPreview = { state: 'empty' }; childPreview = { state: 'unavailable' };
+    await app.poll();
+    assert.deepEqual(previews(), ['No messages yet', 'Preview unavailable']);
+    app.setLocale('zh');
+    assert.deepEqual(previews(), ['暂无消息', '消息预览暂不可用']);
+    childPreview = { state: 'message', text: 'New child answer' };
+    await app.poll();
+    assert.deepEqual(previews(), ['暂无消息', 'New child answer']);
+    childPreview = { state: 'attachment' };
+    await app.poll();
+    assert.deepEqual(previews(), ['暂无消息', '[附件]']);
+    assert.match(source, /\.magi-wb-node-preview \{[^}]*text-overflow:ellipsis;[^}]*white-space:nowrap/);
+    assert.ok(!source.includes('Main conversation'));
+  } finally { app.dispose(); }
+});
+
 for (const href of ['http://127.0.0.1:57684/', 'file:///Applications/DeepSeek%20Harness.app/Contents/Resources/app.asar/dsh/index.html']) {
   test(`native conversation selection reuses the exact fixed Session on ${new URL(href).protocol}`, async () => {
     const app = harness({ href });
@@ -104,8 +298,9 @@ for (const href of ['http://127.0.0.1:57684/', 'file:///Applications/DeepSeek%20
       const tree = await open(app);
       assert.deepEqual(app.navigation, [{ session: mainBot.mainSessionId }]);
       assert.equal(app.active.get('sidebar.brand.name'), initialBrand, 'no brand/root/native conversation remount');
-      assert.deepEqual([...app.active.keys()].sort(), ['sidebar.brand.name', 'sidebar.footer.action', 'sidebar.workspaces']);
-      assert.equal(app.active.get('sidebar.workspaces').options.priority, -10);
+      assert.deepEqual([...app.active.keys()].sort(), ['shell.leading', 'sidebar', 'sidebar.brand.name', 'sidebar.footer.action']);
+      assert.equal(app.active.get('sidebar').options.priority, -10);
+      assert.equal(app.active.get('shell.leading').options.priority, -10);
       assert.equal(elements(tree).some(element => ['iframe', 'dialog', 'main'].includes(element.type)), false);
       assert.ok(text(app.brand()).includes('MAGI')); assert.ok(text(app.brand()).includes('BOT'));
       assert.equal(rows(tree)[0].props['aria-current'], 'true');

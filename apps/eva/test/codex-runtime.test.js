@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EvaRuntime } from '../runtime.js';
+import { readEvaPreset } from '../child-host.js';
 
 const runtime = { executable: process.execPath, cli: fileURLToPath(new URL('./fake-cli.js', import.meta.url)),
   runtimeDir: '/unused', supportDir: '/unused' };
@@ -66,9 +67,59 @@ test('provider defaults version creates a distinct overlay and preserves the pre
   const all = await patches(paths.state);
   assert.equal(all.length, 2);
   assert.equal(all.find(({ name }) => name === previousName).text, previousText);
-  const nextName = `startup-${installationId}-${hash(JSON.stringify({ ...previousConfig, providerDefaultsVersion: 1 }))}.patch.yml`;
+  const preset = await readEvaPreset();
+  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'eva', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 2, evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
   assert.notEqual(nextName, previousName);
   assert.ok(all.some(({ name }) => name === nextName), 'provider-default version is part of the immutable startup filename');
+});
+
+test('DM protocol version selects a new immutable overlay without replacing the provider-default overlay', async t => {
+  const { manager } = await fixture(t);
+  const paths = manager.paths('eva-000');
+  await mkdir(paths.state, { recursive: true });
+  const previousConfig = { workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'cordis', providerDefaultsVersion: 1 };
+  const previousName = `startup-${installationId}-${hash(JSON.stringify(previousConfig))}.patch.yml`;
+  const previousText = JSON.stringify([{ previousWithoutDm: true }], null, 2) + '\n';
+  await writeFile(join(paths.state, previousName), previousText);
+  await manager.start(undefined, 'eva-000');
+  const all = await patches(paths.state);
+  assert.equal(all.length, 2);
+  assert.equal(all.find(patch => patch.name === previousName).text, previousText);
+  const preset = await readEvaPreset();
+  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'eva', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 2, evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
+  assert.notEqual(nextName, previousName);
+  const next = all.find(patch => patch.name === nextName);
+  assert.ok(next, 'DM protocol version is part of the immutable startup filename');
+  assert.equal(next.data[0].insert.length, 2);
+  assert.equal(next.data[0].insert[0].id, 'eva-child');
+  assert.equal(next.data[0].insert[0].name, fileURLToPath(new URL('../child-entry.js', import.meta.url)));
+  assert.deepEqual(next.data[0].insert[0].config, { workspace: paths.home, profile: 'eva-000' });
+  assert.equal(next.data[0].insert.some(row => row.id === 'eva-dm-child'), false);
+});
+
+test('composite child Host version preserves the previous split-entry immutable overlay', async t => {
+  const { manager } = await fixture(t);
+  const paths = manager.paths('eva-000');
+  const preset = await readEvaPreset();
+  const previousConfig = { workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'eva',
+    providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 1, evaPresetHash: preset.digest, desktopExclusions: [] };
+  const previousName = `startup-${installationId}-${hash(JSON.stringify(previousConfig))}.patch.yml`;
+  const previousText = JSON.stringify([{ insert: [
+    { id: 'eva-child', name: fileURLToPath(new URL('../child.js', import.meta.url)), config: { workspace: paths.home, profile: 'eva-000' } },
+    { id: 'eva-dm-child', name: fileURLToPath(new URL('../dm-child.js', import.meta.url)), config: { profile: 'eva-000' } },
+  ] }], null, 2) + '\n';
+  await mkdir(paths.state, { recursive: true });
+  await writeFile(join(paths.state, previousName), previousText);
+  await manager.start(undefined, 'eva-000');
+  const all = await patches(paths.state);
+  assert.equal(all.length, 2);
+  assert.equal(all.find(patch => patch.name === previousName).text, previousText, 'existing split-entry patch is immutable');
+  const nextName = `startup-${installationId}-${hash(JSON.stringify({ ...previousConfig, childHostVersion: 2 }))}.patch.yml`;
+  assert.notEqual(nextName, previousName);
+  const next = all.find(patch => patch.name === nextName);
+  assert.ok(next, 'composite version chooses a new immutable startup filename');
+  assert.equal(next.data[0].insert[0].name, fileURLToPath(new URL('../child-entry.js', import.meta.url)));
+  assert.equal(next.data[0].insert.some(row => row.id === 'eva-dm-child'), false);
 });
 
 test('readiness refuses missing native Codex confirmation and releases child ownership', async (t) => {

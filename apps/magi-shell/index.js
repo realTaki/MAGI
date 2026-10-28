@@ -3,9 +3,10 @@ import { constants } from 'node:fs';
 import { lstat, realpath, mkdir, open } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { ensureMainSession, attachMainSessionWorkspace } from './main-session.js';
+import { createMessagePreviewReader } from './message-preview.js';
 
 export const name = 'magi-shell';
-export const inject = ['appReady', 'profileContext', 'connection', 'workspaceRegistry', 'sessionController', 'sessionPersistence'];
+export const inject = ['appReady', 'profileContext', 'connection', 'workspaceRegistry', 'sessionController', 'sessionPersistence', 'sessionQuery'];
 export const PARENT_MAIN_PATH = '/api/eva/parent-main';
 const headers = { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' };
 
@@ -80,6 +81,8 @@ export async function initializeParentMain(ctx) {
 
 export async function apply(ctx) {
   let bot;
+  let mainSession;
+  const readPreview = createMessagePreviewReader(ctx);
   let disposed = false;
   let validParent = false;
   // Probe before route registration so an EVA child contributes nothing. Invalid
@@ -88,19 +91,27 @@ export async function apply(ctx) {
     if (await childHome(ctx.profileContext.home)) return;
     validParent = true;
   } catch { /* Publish only the fixed unavailable response below. */ }
+  // Optional Host-local identity: no lookup/create fallback; unavailable until
+  // startup is durable and after unload. Cordis owns provider removal/collisions.
+  ctx.provide('magiMainSession', { current: () => disposed ? undefined : mainSession });
   ctx.effect(() => {
     const disposeRoute = ctx.connection.fetch.register({ path: PARENT_MAIN_PATH, methods: ['GET'], requestBody: 'buffered',
-      async fetch() {
+      async fetch(request) {
         // Native Connection authenticates/adopts the browser or API Peer;
         // this exact Fetch handler does not implement a second login path.
-        return bot && !disposed
-          ? Response.json({ mode: 'parent', bot }, { headers })
+        const current = bot;
+        const preview = current && !disposed ? await readPreview(current.mainSessionId, request?.signal) : undefined;
+        return current && !disposed
+          ? Response.json({ mode: 'parent', bot: { ...current, preview } }, { headers })
           : Response.json({ code: 'parent-main-unavailable', error: 'The parent Bot is not ready.' }, { status: 503, headers });
       },
     });
     const cancelReady = validParent ? ctx.appReady.onReady(() =>
       initializeParentMain(ctx).then((value) => {
-        if (!disposed) bot = value;
+        if (!disposed && value) {
+          bot = value;
+          mainSession = Object.freeze({ sessionId: value.mainSessionId, workspace: value.workspace });
+        }
       }).catch(() => { /* Readiness stays unavailable; never leak raw paths/errors. */ })) : undefined;
     return () => { disposed = true; bot = undefined; cancelReady?.(); return disposeRoute(); };
   });

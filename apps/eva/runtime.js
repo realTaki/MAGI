@@ -7,6 +7,8 @@ import { ensureWorkspace } from './relocate-workspace.js';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { randomUUID, createHash } from 'node:crypto';
+import { safePreview } from './message-preview.js';
+import { CHILD_HOST_VERSION, DEFAULT_EVA_PRESET, readEvaPreset, desktopRoleExclusions, createChildHostPatch } from './child-host.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const installationId = createHash('sha256').update(here).digest('hex').slice(0, 16);
@@ -25,6 +27,7 @@ export function isEvaChild(home) {
 
 export function validateName(name) {
   if (typeof name !== 'string' || !/^[a-z][a-z0-9-]{0,31}$/.test(name)) throw new Error('Node name must match [a-z][a-z0-9-]{0,31}.');
+  if (name === 'user') throw new Error('Node handle user is reserved for the local human DM address.');
   return name;
 }
 
@@ -121,9 +124,10 @@ async function inventoryRecord(path) {
 }
 
 export class EvaRuntime {
-  constructor(runtime, { startupTimeout = START_TIMEOUT, stopTimeout = STOP_TIMEOUT, homeRoot = homedir(), credentialsPath } = {}) {
+  constructor(runtime, { startupTimeout = START_TIMEOUT, stopTimeout = STOP_TIMEOUT, homeRoot = homedir(), credentialsPath, dmAttach } = {}) {
     this.runtime = runtime;
     this.credentialsPath = credentialsPath;
+    this.dmAttach = dmAttach;
     this.startupTimeout = startupTimeout;
     this.stopTimeout = stopTimeout;
     this.homeRoot = resolve(homeRoot);
@@ -170,6 +174,7 @@ export class EvaRuntime {
       codexAvailable: node.ready?.codexAvailable ?? null,
       origin: node.ready?.origin ?? null, workspaceId: node.ready?.workspaceId ?? null,
       mainSessionId: node.ready?.mainSessionId ?? null,
+      preview: safePreview(node.preview),
       exitCode: node.exitCode ?? null, exitSignal: node.exitSignal ?? null,
       credentials: this.credentialsPath
         ? 'Local startup shares the parent credential store, including sign-in/out, account changes and saved API keys. Existing child credentials are preserved, not merged.'
@@ -260,27 +265,20 @@ export class EvaRuntime {
       const workspace = await ensureWorkspace({ home, handle: name, rootWorkspace: true });
       const profile = name;
       const profileDir = await directories(home, ['profiles', profile]);
-      // Include session defaults so earlier exclusive startup patches remain unchanged.
-      const defaultAgentPreset = 'cordis'; // Creator mode, not a process-wide permission mode.
+      // Native child-plugin imports must originate inside the profiles tree.
+      // Keep the shipped declaration outside the resettable profile itself:
+      // official first-run initialization atomically replaces that whole dir.
+      // Neither a default change nor a source update rewrites older artifacts.
+      const preset = await readEvaPreset();
+      const assets = await directories(home, ['profiles', '.eva-assets', profile]);
+      const presetPath = join(assets, `preset-eva-${preset.digest}.yml`);
+      await exclusiveContent(presetPath, preset.text);
+      const desktopExclusions = await desktopRoleExclusions(profileDir);
+      const defaultAgentPreset = DEFAULT_EVA_PRESET; // Not a permission mode.
       const sharing = credentialsPath === undefined ? {} : { credentialsPath, credentialSharingVersion: 1 };
-      const startupConfigId = createHash('sha256').update(JSON.stringify({ workspace, profile, defaultAgentPreset, providerDefaultsVersion: 1, ...sharing })).digest('hex').slice(0, 16);
+      const startupConfigId = createHash('sha256').update(JSON.stringify({ workspace, profile, defaultAgentPreset, providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: CHILD_HOST_VERSION, evaPresetHash: preset.digest, desktopExclusions, ...sharing })).digest('hex').slice(0, 16);
       const patch = join(state, `startup-${installationId}-${startupConfigId}.patch.yml`);
-      const overlay = [{ insert: [{
-        id: 'eva-child', name: join(here, 'child.js'),
-        config: { workspace, profile, ...sharing },
-      }] }, {
-        id: 'agent-preset-registry', name: '@deepseek-ai/dsh-agent-preset-registry',
-        config: { default: defaultAgentPreset },
-      }, {
-        // A shared OAuth grant does not register a model route. Activate the
-        // native catalog route without copying parent headers/endpoints/secrets.
-        id: 'llm-pi-ai', name: '@deepseek-ai/dsh-llm-pi-ai', disabled: false,
-        config: { providers: { 'openai-codex': {} } },
-      }];
-      if (credentialsPath !== undefined) overlay.push({
-        id: 'credentials', name: '@deepseek-ai/dsh-credentials-local', disabled: false,
-        config: { path: credentialsPath, watch: true },
-      });
+      const overlay = createChildHostPatch({ workspace, profile, presetPath, credentialsPath, desktopExclusions });
       await exclusiveContent(patch, JSON.stringify(overlay, null, 2) + '\n');
       const args = ['--profile', profile];
       // Initialize through the official CLI, and never reset a pre-existing profile.
@@ -311,9 +309,15 @@ export class EvaRuntime {
       node.exited = new Promise((done) => { resolveExit = done; });
       // Use process exit, not stdio close: descendants can inherit and hold output pipes.
       child.on('error', (error) => { node.spawnError = error; });
+      child.on('message', (message) => {
+        if (node.status !== 'running' || message?.type !== 'eva-preview' ||
+            message.mainSessionId !== node.ready?.mainSessionId) return;
+        node.preview = safePreview(message.preview);
+      });
       const finish = async (code, exitSignal) => {
         if (node.finished) return;
         node.finished = true;
+        node.dmClose?.();
         node.exitCode = code; node.exitSignal = exitSignal;
         node.status = code === 0 || node.stopping ? 'stopped' : 'failed';
         this.signalNode(node, 'SIGKILL');
@@ -334,6 +338,7 @@ export class EvaRuntime {
         });
       }
       try {
+        node.dmClose = this.dmAttach?.(child, name);
         await new Promise((done, fail) => {
           const cleanup = () => { clearTimeout(timer); child.off('message', onMessage); child.off('error', onError); child.off('close', onClose); signal?.removeEventListener('abort', onAbort); };
           const settle = (error) => { cleanup(); error ? fail(error) : done(); };
