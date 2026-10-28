@@ -63,7 +63,7 @@
       "app": ".",
       "output": "release"
     },
-    "electronVersion": "44.5.0",
+    "electronVersion": "44.9.1",
     "linux": {
       "target": [
         "AppImage"

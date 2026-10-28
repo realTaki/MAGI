@@ -1,70 +1,67 @@
-# Testing MAGI
+# Testing MAGI's DSH plugins
 
-Run tests with the project-owned Node and bundled npm CLI. Commands below use
-Linux/macOS shell syntax. Windows uses `runtime/bin/node.exe`; see the
-[Windows workflow](../.github/workflows/windows-validation.yml) for its
-process-scoped PATH and PowerShell invocation.
-
+Use the MAGI-owned Node 24 and npm required by [AGENTS.md](../AGENTS.md), not a
+system runtime. The existing repository-local toolchain path is retained only
+for tooling; using it does not build or launch the old Electron application.
 
 ```sh
-PATH="$PWD/apps/shell/runtime/bin:$PATH" apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js test
-PATH="$PWD/apps/shell/runtime/bin:$PATH" apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run build:ui --workspace @magi/shell
-PATH="$PWD/apps/shell/runtime/bin:$PATH" apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run lint:i18n --workspace @magi/shell
-apps/shell/runtime/bin/node --test apps/shell/integration/self-rebuild.test.mjs
-apps/shell/runtime/bin/node apps/shell/integration/chat-history.browser.mjs
-apps/shell/runtime/bin/node apps/shell/integration/provider-form.browser.mjs
+apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js test
+# Explicitly narrower portable gate (also used by Windows CI):
+apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run test:portable
 ```
 
-Root `npm test` builds the workspace and runs EVA, Shell, bus, contacts and
-peer-channel tests. Shell includes both `.test.ts` and `.test.mjs` files. The
-runner selects compiled EVA and package tests from their current source names; obsolete files left in `dist` are not discovered. Running the entire Shell suite again in the same CI job
-adds no coverage. Tests use disposable local workspaces and fake providers;
-they must close workers/databases before removing their workspaces. Never use a
-real profile, credentials or paid model service as a test fixture.
+`npm test` checks the two DSH package manifests, lock metadata, distributed
+resources and all top-level plugin JavaScript syntax, then runs **every**
+`apps/eva/test/*.test.js` and `apps/magi-shell/test/*.test.js` regression. No
+TypeScript output, old EVA launcher, Electron UI build, installer or AppImage is
+needed. Test discovery also includes its own wiring/bundle-boundary regression
+and the authoritative root-lock/dependency-advisory policy. Literal relative
+imports in active bundles must stay inside their bundle; official DSH services
+are supplied by the Host. Neither active bundle depends on `apps/shell` or the
+pre-DSH `packages/*` implementations.
 
-Keep regressions for startup, source ownership and local-change preservation,
-message routing/deduplication/history, provider failures, revision validation and
-activation, and owned-process shutdown. Test observable behavior and boundaries.
-Avoid checking fixture helpers against themselves, CSS placement, exact private
-callback ordering, or every Cartesian combination of equivalent options. A
-missing translation belongs in the locale lint, not a separate regex snapshot of
-a component. Native platform behavior still needs native tests; CRLF simulation
-on Linux does not establish Windows acceptance.
+## CI scope and meaningful coverage
 
-On push and pull requests, Linux runs the complete suite, UI build, locale lint
-and launcher integration; Windows retains the complete suite, UI build and
-launcher integration; macOS retains native lifecycle, process and Git-bootstrap
-coverage. The identical extra Shell runs and macOS's duplicate UI build are
-omitted. Native Windows tests are not skipped to accommodate fixture failures. The root
-runner caps Windows test-file concurrency at two: each isolated process owns a
-WMI process-table poller, so default file parallelism can overload the shared WMI
-service. All in-file process-ownership and concurrent-start checks still run.
+- **Linux and macOS:** complete current plugin suite, including real synthetic
+  child processes, concurrent start/owner locks, readiness rejection, stop and
+  controller-crash descendant cleanup, filesystem symlink/migration refusal,
+  credential/auth boundaries, durable identity and native Session navigation.
+- **Windows:** all plugin syntax/resources plus the explicitly enumerated
+  portable Client/auth/navigation/manifest tests in `scripts/test.mjs` and shared
+  wiring/dependency policy. It does **not** run the full Host suite: the latter
+  assumes POSIX private file modes, directory fsync and filesystem Unix sockets.
+  Green portable checks do not establish Windows Host/runtime support.
+- Both gates use synthetic temporary homes and controller/provider fixtures.
+  They do not install plugins in a real DSH profile, make paid model calls, or
+  certify the native DSH Desktop/GUI experience.
 
-AppImage and unsigned Windows installer build/verification/artifact steps run
-when their validation workflows are started manually with `workflow_dispatch`.
-The tag-triggered macOS/Windows release workflows still build their installers
-and test the built app with its owned runtime before uploading. This keeps
-packaging validation available without building distribution artifacts for every
-source push. Run the manual packaging workflows before a release candidate;
-ordinary green source checks alone do not certify an installer.
+The retired launcher's atomic-state contract is now also tested against the
+**public DSH main-Session initializer** in `main-session-atomic.test.js`, for both
+EVA and MAGI Shell. Partial writes and failed rename must preserve the previous
+complete mapping, remove only their private temporary file, and retry without
+creating another identity. Existing persistence-barrier, competing Host,
+credential/auth and descendant-cleanup assertions remain enabled in the complete
+suite. A failed meaningful safety assertion is not deleted or silently skipped.
 
-A failing meaningful regression is a defect or a fixture problem to investigate,
-not a reason to delete or skip it. In particular, keep the real cold-start and
-shutdown checks: an unconfigured instance that cannot stop must remain visible.
+## Retained pre-DSH code, not current acceptance
 
-[Verification](verification.md) separates these checks from native desktop,
-installer and real-provider acceptance. Passing or documenting the commands does
-not certify those outcomes; inspect the actual result at the target revision.
-
-### Bootstrap helper types
-
-The shell's `check:bootstrap` script runs a strict, no-emit TypeScript check over
-`interface.mjs`, `runtime-environment.mjs`, and their TypeScript tests. Both the
-root and shell test commands include this check. The bootstrap helpers deliberately
-remain directly executable JavaScript: this type gate does not generate files or
-add a compiler dependency to startup, UI reload, or runtime path preparation.
-Their tests run directly with the bundled Node, including before a workspace build:
-
-```bash
-apps/shell/runtime/bin/node --test apps/shell/test/interface.test.ts apps/shell/test/runtime-environment.test.ts
+```sh
+# Compiles the pre-DSH packages and runs their remaining historical tests:
+apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run test:legacy
 ```
+
+`test:legacy` preserves the old Shell/package assertions rather than deleting
+them. It is not a passing replacement for current tests: fixtures that start
+removed `apps/eva/eva.mjs` or import its deleted atomic helper are known obsolete.
+The AppImage rollback tests test an intentionally retired distribution model.
+No current DSH bundle invokes those entrypoints. `verify:legacy` retains the old
+self-update build/UI gate only for historical source work; the default `verify`
+now checks the DSH product. No CI workflow builds or publishes standalone desktop
+packages, even via manual dispatch. Release/tag/organization-fork operations are
+separate and are not part of source validation.
+
+[DSH handoff](../DSH-HANDOFF.md) distinguishes fixture regression, a real native
+DSH integration, installation, model/tool calls and user-visible GUI acceptance.
+Report exact revision, test counts and environmental failures separately. For
+example, a sandbox that refuses creation of a temporary Unix socket has not
+executed the socket-refusal assertion; it must not be reported as a pass.

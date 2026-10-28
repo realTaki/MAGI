@@ -1,12 +1,11 @@
-name: macOS lifecycle validation (no release)
+name: macOS DSH validation (no release)
 on:
   push:
     branches: ["main"]
   pull_request:
     branches: ["main"]
   workflow_dispatch:
-# Desktop packaging embeds GitHub Actions' built-in GITHUB_REPOSITORY.
-# Fork builds therefore clone and check releases in their own repository.
+# DSH source validation only; the Desktop is supplied by DSH.
 permissions:
   contents: read
 concurrency:
@@ -14,20 +13,23 @@ concurrency:
   cancel-in-progress: true
 jobs:
   macos:
-    name: Native Darwin process ownership and profile bootstrap
+    name: DSH plugin lifecycle and contracts (macOS)
     runs-on: macos-14
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
       - name: Bootstrap MAGI-owned runtime
         run: |
           npm ci
           npm_execpath="$(npm root -g)/npm/bin/npm-cli.js" node_modules/node/bin/node apps/shell/scripts/prepare-runtime.mjs
-      - name: Build runtime and exercise native lifecycle and Git bootstrap
+      - name: DSH source, resources and complete plugin regression suite
         run: |
           export PATH="$PWD/apps/shell/runtime/bin:$PATH"
-          apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run build
-          apps/shell/runtime/bin/node --test apps/shell/test/repository-origin.test.mjs apps/shell/test/process-table.test.mjs apps/shell/test/shutdown.test.mjs apps/shell/test/profile-layout.test.mjs
+          apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js test

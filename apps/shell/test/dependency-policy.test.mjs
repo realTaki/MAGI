@@ -11,14 +11,16 @@ const require = createRequire(import.meta.url);
 const lock = JSON.parse(readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
 const semver = require('semver');
 
-test('the workspace has one authoritative install lock and release cache key', () => {
+test('the workspace has one authoritative install lock and validation cache key', () => {
   for (const app of ['asp', 'shell']) {
     assert.equal(existsSync(path.join(root, `apps/${app}/package-lock.json`)), false);
   }
-  for (const platform of ['macos', 'windows']) {
-    const workflow = readFileSync(path.join(root, `.github/workflows/${platform}-client-release.yml`), 'utf8');
+  for (const platform of ['linux', 'macos', 'windows']) {
+    const workflow = readFileSync(path.join(root, `.github/workflows/${platform}-validation.yml`), 'utf8');
     assert.doesNotMatch(workflow, /apps\/(?:asp|shell)\/package-lock\.json/);
-    assert.match(workflow, /hashFiles\('package-lock\.json'/);
+    assert.match(workflow, /cache-dependency-path: package-lock\.json/);
+    assert.equal(existsSync(path.join(root, `.github/workflows/${platform}-client-release.yml`)), false);
+    assert.doesNotMatch(workflow, /electron-builder|upload-artifact|build:ui/);
   }
 });
 
@@ -46,4 +48,26 @@ test('the legacy Drizzle TypeScript loader works with its scoped esbuild overrid
   const esm = await transform(source, path.join(root, 'dependency-policy-fixture.mts'));
   const loaded = await import(`data:text/javascript;base64,${Buffer.from(esm.code).toString('base64')}`);
   assert.equal(loaded.answer, 42);
+});
+
+// GHSA-jr5w-w6x2-84p9 is the same advisory reported for the manifest and root
+// lock. These checks validate package integration, not Electron native TLS/GUI.
+test('the Electron dependency, packaging pin and authoritative lock stay synchronized', () => {
+  const shell = JSON.parse(readFileSync(path.join(root, 'apps/shell/package.json'), 'utf8'));
+  const workspace = lock.packages['apps/shell'];
+  const electron = lock.packages['node_modules/electron'];
+  assert.equal(shell.devDependencies.electron, workspace.devDependencies.electron);
+  assert.equal(shell.build.electronVersion, shell.devDependencies.electron);
+  assert.equal(electron.version, shell.devDependencies.electron);
+  assert.equal(electron.resolved, `https://registry.npmjs.org/electron/-/electron-${electron.version}.tgz`);
+});
+
+test('the frozen Electron wrapper excludes the affected 44.x range and supports the owned Node', () => {
+  const electron = lock.packages['node_modules/electron'];
+  const installed = require('electron/package.json'); // Do not load/download the native binary.
+  assert.equal(semver.satisfies(electron.version, '>=44.0.0-alpha.1 <44.9.1'), false);
+  assert.equal(installed.version, electron.version);
+  assert.deepEqual(installed.dependencies, electron.dependencies);
+  assert.deepEqual(installed.engines, electron.engines);
+  assert.equal(semver.satisfies(process.versions.node, installed.engines.node), true);
 });

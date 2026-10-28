@@ -6,6 +6,8 @@
 
 [中文](README_zh.md) · [Get started](docs/running.md) · [Architecture](docs/architecture.md) · [Documentation](docs/README.md)
 
+> **DSH migration in progress.** `apps/eva` is now a DSH Host plugin, not the previous EVA launcher. The desktop/Shell and revision-switching flows described here and in the linked docs belong to the pre-migration implementation; their integration with the new plugin is not yet complete. Read the [current scope and verification boundaries](DSH-HANDOFF.md) before following those instructions.
+
 **Fork it. Grow your own MAGI.**
 
 MAGI is an experiment in software that agents can reshape for the people using it.

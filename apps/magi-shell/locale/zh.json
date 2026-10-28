@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "MAGI Shell",
+    "description": "在原生 DSH 与 MAGI Bot 界面之间切换，使用固定主机器人会话，并可接入独立的 EVA 节点。"
+  }
+}

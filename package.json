@@ -3,16 +3,19 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "The MAGI workspace: independent EVA runtimes, direct peer channels, and the Electron shell.",
+  "description": "MAGI DSH plugins: independent EVA nodes and native Desktop session navigation.",
   "workspaces": [
     "packages/*",
     "apps/*"
   ],
   "scripts": {
     "build": "tsc -b",
-    "test": "tsc -b && npm run check:bootstrap --workspace @magi/shell && node scripts/test.mjs",
-    "verify": "node scripts/verify.mjs",
-    "db:generate": "npm run db:generate --workspace @magi/bus"
+    "test": "node scripts/check-dsh.mjs && node scripts/test.mjs",
+    "verify": "npm test",
+    "db:generate": "npm run db:generate --workspace @magi/bus",
+    "test:portable": "node scripts/check-dsh.mjs && node scripts/test.mjs --portable",
+    "test:legacy": "tsc -b && npm run check:bootstrap --workspace @magi/shell && node scripts/test-legacy.mjs",
+    "verify:legacy": "node scripts/verify.mjs"
   },
   "allowScripts": {
     "dugite": true,

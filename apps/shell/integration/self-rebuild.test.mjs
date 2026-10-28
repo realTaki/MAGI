@@ -101,6 +101,133 @@ setInterval(() => {}, 1000);
   assert.fail(`new revision did not run (${proc.exitCode}): ${stderr()}`);
 });
 
+// These fixtures record only processes spawned by their own launcher. A
+// regression must fail promptly even when the launcher exits before its child.
+function shutdownFixture(t, home) {
+  const spawns = path.join(home, "spawns.jsonl");
+  const preload = path.join(home, "record-spawns.mjs");
+  writeFileSync(preload, `import cp from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
+import { appendFileSync } from "node:fs";
+const spawn = cp.spawn;
+cp.spawn = (...args) => {
+  const child = spawn(...args);
+  appendFileSync(${JSON.stringify(spawns)}, JSON.stringify({ pid: child.pid, args: args[1] }) + "\\n");
+  return child;
+};
+syncBuiltinESMExports();
+`);
+  const proc = spawn(process.execPath, ["--import", preload, launcher, "--role", "agent", EVA_MAGI_HANDLE], {
+    env: { ...process.env, MAGI_HOME: home, MAGI_NODE: process.execPath,
+      MAGI_REVISION_DIR: path.join(home, node, "revisions", "a"), MAGI_REVISION: "a" },
+    stdio: ["ignore", "pipe", "pipe", "ipc"],
+    detached: true,
+  });
+  let stderr = "";
+  proc.stdout.resume();
+  proc.stderr.on("data", (chunk) => { stderr += String(chunk); });
+  const closed = new Promise((resolve) => proc.once("close", (code, signal) => resolve({ code, signal })));
+  const recorded = () => {
+    try { return readFileSync(spawns, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line)); }
+    catch (error) { if (error.code === "ENOENT") return []; throw error; }
+  };
+  t.after(async () => {
+    try {
+      // All are private detached groups created by this fixture, never matched
+      // by a name or signalled through the test runner's shared process group.
+      for (const pid of [proc.pid, ...recorded().map((item) => item.pid)]) {
+        try { process.kill(-pid, "SIGKILL"); }
+        catch (error) { if (error.code !== "ESRCH") throw error; }
+      }
+      await within(closed, `fixture pipes did not close: ${stderr}`);
+    } finally { rmSync(home, { recursive: true, force: true }); }
+  });
+  return { home, proc, closed, recorded, stderr: () => stderr };
+}
+
+async function within(promise, error) {
+  let timer;
+  try {
+    return await Promise.race([promise, new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(error)), 2000);
+    })]);
+  } finally { clearTimeout(timer); }
+}
+
+async function waitFile(file) {
+  const deadline = Date.now() + 5000;
+  for (;;) {
+    try { return readFileSync(file, "utf8"); }
+    catch (error) { if (error.code !== "ENOENT") throw error; }
+    assert.ok(Date.now() < deadline, `fixture did not write ${file}`);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+test("shutdown before initial readiness owns and reaps the live child", { skip: process.platform === "win32" }, async (t) => {
+  const home = mkdtempSync(path.join(tmpdir(), "magi-startup-stop-"));
+  const booted = path.join(home, "booted");
+  childAt(home, node, "a", `process.on("message", (message) => {
+  if (message?.type === "shutdown") process.exit(0);
+});
+require("node:fs").writeFileSync(${JSON.stringify(booted)}, String(process.pid));
+process.send({ v: 1, type: "hello" });
+// Deliberately never ready: shutdown must not depend on startup completing.
+setInterval(() => {}, 1000);
+`);
+  const fixture = shutdownFixture(t, home);
+  const pid = Number(await waitFile(booted));
+  fixture.proc.kill("SIGTERM");
+  assert.deepEqual(await within(fixture.closed, "startup shutdown left inherited pipes open"), { code: 0, signal: null });
+  assert.throws(() => process.kill(pid, 0), /ESRCH/);
+  assert.equal(fixture.recorded().length, 1);
+});
+
+test("shutdown while a switch drains the old child never spawns a replacement", { skip: process.platform === "win32" }, async (t) => {
+  const home = mkdtempSync(path.join(tmpdir(), "magi-switch-stop-"));
+  const begin = path.join(home, "begin-switch");
+  const draining = path.join(home, "draining");
+  const dirB = path.join(home, node, "revisions", "b");
+  const childB = path.join(dirB, "packages", "launcher", "dist", "composition", "child.js");
+  childAt(home, node, "a", `const { existsSync, mkdirSync, writeFileSync } = require("node:fs");
+process.on("message", (message) => {
+  if (message?.type === "shutdown") {
+    writeFileSync(${JSON.stringify(draining)}, String(process.pid));
+    setTimeout(() => process.exit(0), 200);
+  }
+});
+process.send({ v: 1, type: "hello" });
+process.send({ v: 1, type: "ready" });
+const timer = setInterval(() => {
+  if (!existsSync(${JSON.stringify(begin)})) return;
+  clearInterval(timer);
+  const file = ${JSON.stringify(childB)};
+  mkdirSync(require("node:path").dirname(file), { recursive: true });
+  writeFileSync(file, ${JSON.stringify(`process.send({ v: 1, type: "hello" });
+process.send({ v: 1, type: "ready" });
+process.on("message", (message) => { if (message?.type === "shutdown") process.exit(0); });
+setInterval(() => {}, 1000);
+`)});
+  process.send({ v: 1, type: "switch", revision: "b", dir: ${JSON.stringify(dirB)}, job: 3 });
+}, 10);
+setInterval(() => {}, 1000);
+`);
+  const fixture = shutdownFixture(t, home);
+  await within(new Promise((resolve) => fixture.proc.on("message", (message) => {
+    if (message?.type === "ready") resolve();
+  })), `launcher did not become ready: ${fixture.stderr()}`);
+  writeFileSync(begin, "go");
+  const pid = Number(await waitFile(draining));
+  fixture.proc.kill("SIGTERM");
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  fixture.proc.kill("SIGTERM"); // Repeated shutdown must not discard ownership.
+  assert.deepEqual(await within(fixture.closed, "switch shutdown left inherited pipes open"), { code: 0, signal: null });
+  assert.throws(() => process.kill(pid, 0), /ESRCH/);
+  // Recorded synchronously by spawn in the launcher, before it can exit. This
+  // catches a detached replacement even if that process has not booted yet.
+  assert.equal(fixture.recorded().length, 1, "replacement spawned after shutdown began");
+});
+
 test("a crashing child is restarted with backoff and then reported", async (t) => {
   const home = mkdtempSync(path.join(tmpdir(), "magi-crash-"));
   const log = path.join(home, "starts");

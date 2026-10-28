@@ -1,0 +1,4 @@
+- insert:
+    - id: magi-shell
+      name: '@local/magi-shell'
+      config: {}
