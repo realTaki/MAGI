@@ -2,6 +2,28 @@
 
 These instructions apply to the entire repository.
 
+## Experimental product and compatibility
+
+MAGI is experimental. There are no backwards-compatibility guarantees or
+obligations to provide migration tooling. Breaking changes are acceptable; prefer
+a direct implementation for the current version over legacy branches, fallback
+layers, or speculative compatibility scaffolding.
+
+As an agentic product, MAGI assumes affected Bots/operators can adapt their own
+local installation or code to breaking upgrades. This is a design assumption,
+not a guarantee of autonomous repair or permission to alter others' installations.
+It does not relax data/credential safety or user-authorization requirements:
+never implicitly delete or migrate user data or credentials, or make changes
+outside the user's authorized scope.
+
+## Proportionate engineering and validation
+
+Avoid overdefensive code and large speculative compatibility test matrices.
+Validate changed behavior with minimal, targeted checks. Do not run full suites
+by default for minor or documentation-only changes; use broader tests only when
+proportionate to actual impact/risk or explicitly requested. This is not a reason
+to remove existing tests or refactor unrelated runtime code.
+
 ## Use MAGI-owned runtimes
 
 MAGI must be developed, tested, built, and run with the runtimes owned by the
@@ -48,9 +70,10 @@ portable archive: plain npm packing can omit a hoisted bundled workspace symlink
 A source-linked EVA requires its workspace dependencies installed from the root
 lockfile before native installation; do not run dependency installation in a profile.
 Root `npm test` checks their source syntax/manifests and runs every DSH plugin
-regression plus shared dependency-policy checks. Linux/macOS run this complete
-suite. `npm run test:portable` is the explicitly narrower Windows Client/auth/
-bundle-contract gate; it does not certify Host lifecycle or POSIX persistence.
+regression plus shared dependency-policy checks. When full-suite validation is
+warranted, use this suite on Linux/macOS. `npm run test:portable` is the explicitly
+narrower Windows Client/auth/bundle-contract gate; it does not certify Host
+lifecycle or POSIX persistence.
 
 The old Electron Shell, provider module, BUS launcher, centralized BUS skills,
 BUS MCP, channel-a2a and channel-tasks have been deleted. MCP belongs to native
