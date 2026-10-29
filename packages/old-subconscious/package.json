@@ -1,9 +1,9 @@
 {
-  "name": "@magi/subconscious",
+  "name": "@magi/old-subconscious",
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "MAGI private subconscious conversation, observation and onboarding.",
+  "description": "Archived pre-DSH MAGI subconscious conversation, observation and onboarding; not an active runtime package.",
   "exports": {
     ".": {
       "types": "./dist/worker.d.ts",

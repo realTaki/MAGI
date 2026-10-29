@@ -315,7 +315,8 @@ header; existing contact IDs, including a peer already at ID 3, are not overwrit
 
 ### Independent internal modules
 
-`@magi/subconscious` owns its persistent self-only conversation, bounded private
+The archived [`@magi/old-subconscious`](<../packages/old-subconscious/package.json>)
+(formerly `@magi/subconscious`) owned its persistent self-only conversation, bounded private
 continuations, rolling summary, observation/handoff tools, and deterministic
 onboarding/action/task presets. It does not instantiate or depend on AgentWorker
 or its Chat class. AgentWorker only consumes foreground conversations. Both use
