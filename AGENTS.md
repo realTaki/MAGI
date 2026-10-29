@@ -43,8 +43,8 @@ regression plus shared dependency-policy checks. Linux/macOS run this complete
 suite. `npm run test:portable` is the explicitly narrower Windows Client/auth/
 bundle-contract gate; it does not certify Host lifecycle or POSIX persistence.
 
-The old Electron Shell, provider module, channel-a2a and channel-tasks have been
-deleted. Timed instructions use native DSH Schedule; do not restore the old task
+The old Electron Shell, provider module, BUS launcher, channel-a2a and channel-tasks
+have been deleted. Timed instructions use native DSH Schedule; do not restore the old task
 worker or implicitly migrate old task databases. Local
 Bot-to-Bot DM and Bot-to-user notifications belong to the independent DM plugin;
 remote DM is out of scope. Other pre-DSH

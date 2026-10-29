@@ -1,7 +1,9 @@
 # Architecture
 
-> **Archived pre-DSH architecture.** The Electron Shell and provider module
-> described below were removed. Remaining TypeScript packages are inert source,
+> **Archived pre-DSH architecture.** The Electron Shell, provider module and BUS
+> launcher described below were removed. Launcher source is available only in Git
+> history; none of its entrypoints or update protocols below is supported.
+> Remaining TypeScript packages are inert source,
 > excluded from the root install graph; their old cross-package contracts are
 > not working current APIs. See [current DSH scope](<../DSH-HANDOFF.md>).
 
@@ -35,8 +37,8 @@ that settings have disappeared, or that autonomous improvement is proven.
 
 `apps/eva/eva.mjs` is a launcher process without a BUS. It starts one
 `packages/launcher/dist/composition/child.js` process with a BUS, `LauncherWorker` and role workers.
-[Role composition](../packages/launcher/composition/roles.ts) shares the agent, provider, tool,
-contact, skill and memory workers; roles add their interfaces:
+The retired role composition shared the agent, provider, tool,
+contact, skill and memory workers; roles added their interfaces:
 
 | Role | Handle | Additional responsibility |
 | --- | --- | --- |
@@ -50,7 +52,7 @@ the BUS and project into Shell UI. Headless EVAs do not generate unseen Feeds.
 The human speaks as `@user.magi`; there is no separate User node. Package entry
 files under `apps/eva` export classes; the launcher is the executable entry.
 
-The [launcher package](../packages/launcher/README.md) contains database-free
+The deleted launcher package contained database-free
 `runtime/` utilities, root lifecycle workers and `composition/` process assembly.
 Separate TypeScript projects keep BUS → runtime independent of lifecycle → BUS.
 The desktop/Web owner adapter remains the local user entry; no terminal chat
@@ -144,8 +146,8 @@ The model sees configuration status rather than a secret field's value.
 
 Provider bootstrap/configuration requires an authenticated local owner channel.
 Remote chat does not expose provider secret forms or local process controls. There is no global operator-settings broadcast. See the
-[provider catalog](provider-catalog.md), [configuration worker](../packages/launcher/config.ts)
-and [security limits](../SECURITY.md).
+[provider catalog](provider-catalog.md), the deleted launcher's configuration worker
+(in Git history) and [security limits](../SECURITY.md).
 
 ## Source edits and activation
 
@@ -182,10 +184,9 @@ UI and notifies Electron to load that UI. Electron main/preload/native startup
 code is outside that child replacement: it requires a complete Electron restart,
 and a packaged installation requires an updated package for packaged files.
 
-Implementation: [source authority](../packages/built-in-tools/source.ts),
-[replace worker](../packages/launcher/replace.ts),
-[revision builder](../packages/launcher/runtime/revise.ts),
-[launcher](../apps/eva/eva.mjs), [interface activation](../apps/shell/interface.mjs).
+Historical implementation: [source authority](../packages/built-in-tools/source.ts),
+the deleted launcher's replace worker and revision builder (in Git history),
+the retired `eva.mjs` executable and Electron interface activation.
 Controlled self-edit tests establish mechanics, not measured recursive improvement
 or complete desktop-demo acceptance; see [Verification](verification.md).
 

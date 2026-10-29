@@ -35,17 +35,9 @@ test('resolved build dependencies exclude the patched advisory ranges', () => {
   }
 });
 
-for (const retired of ['channel-a2a', 'channel-tasks']) {
-  test(`retired ${retired} is absent and has no dependency or project declaration`, () => {
+for (const retired of ['channel-a2a', 'channel-tasks', 'launcher']) {
+  test(`retired ${retired} is absent and has no current product dependency`, () => {
     assert.equal(existsSync(path.join(root, 'packages', retired)), false);
-    const launcher = JSON.parse(readFileSync(path.join(root, 'packages/launcher/package.json'), 'utf8'));
-    assert.equal(launcher.dependencies[`@magi/${retired}`], undefined);
-    const composition = JSON.parse(readFileSync(path.join(root, 'packages/launcher/composition/tsconfig.json'), 'utf8'));
-    assert.ok(!composition.references.some(ref => ref.path === `../../${retired}`));
-    if (retired === 'channel-tasks') {
-      const roles = readFileSync(path.join(root, 'packages/launcher/composition/roles.ts'), 'utf8');
-      assert.doesNotMatch(roles, /TaskWorker|@magi\/channel-tasks|"task"/);
-    }
     for (const location of ['apps/eva', 'apps/magi-shell', 'packages/dm', 'packages/memory']) {
       const manifest = JSON.parse(readFileSync(path.join(root, location, 'package.json'), 'utf8'));
       for (const key of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
@@ -78,7 +70,7 @@ test('only current product workspaces and owned tooling are installable', () => 
   assert.equal(lock.packages['node_modules/semver'].version, manifest.devDependencies.semver);
   for (const location of Object.keys(lock.packages)) {
     if (location.startsWith('apps/') || location.startsWith('packages/')) assert.ok(workspaces.includes(location), location);
-    assert.doesNotMatch(location, /(?:@magi\/(?:providers|shell|channel-a2a|channel-tasks)|@earendil-works\/pi-ai|electron|@esbuild-kit)/, location);
+    assert.doesNotMatch(location, /(?:@magi\/(?:providers|shell|launcher|channel-a2a|channel-tasks)|@earendil-works\/pi-ai|electron|@esbuild-kit)/, location);
   }
   for (const location of workspaces) assert.equal(existsSync(path.join(root, location, 'package-lock.json')), false);
   for (const name of ['build', 'db:generate', 'test:legacy', 'verify:legacy']) assert.equal(manifest.scripts[name], undefined, name);

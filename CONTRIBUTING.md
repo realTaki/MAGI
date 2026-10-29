@@ -107,9 +107,10 @@ from saving a source change.
 | Other `packages/` | Archived pre-DSH source; not installable workspaces |
 | `docs/` | Current guides and clearly marked historical rationale |
 
-Archived launcher composition still imports the removed provider module, and
-archived webapp/runtime code still names the removed Electron Shell. These
-contracts are intentionally not advertised as working builds or active APIs.
+The pre-DSH BUS launcher, provider module and Electron Shell have been deleted.
+Remaining archived BUS, tool and webapp source may still name those historical
+contracts; it is not a working build or an active API. Do not recreate the deleted
+launcher to make archived packages compile. Current node lifecycle belongs to EVA.
 
 Security reports belong in [SECURITY.md](SECURITY.md), not public issue bodies.
 

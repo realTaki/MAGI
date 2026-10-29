@@ -2,6 +2,14 @@
 
 ## 当前补充：MAGI Shell
 
+### 最新：删除旧 BUS launcher（仅源码）
+
+- 按用户要求删除 `packages/launcher` 整个旧模块（runtime、composition、worker、manifest、TypeScript 配置和说明）。当前 EVA 的 DSH 节点管理保持不变；旧 launcher 不在四个当前 workspace、根 lock 或打包/运行闭包中，无需改 lock 或安装依赖。
+- [依赖策略回归](<scripts/test/dependency-policy.test.mjs>)新增 launcher 目录/当前插件依赖/lock 禁止恢复约束；旧 channel 与 [memory 删除回归](<scripts/test/memory-archive.test.mjs>)不再读取已经删除的 launcher 文件。更新贡献指南、归档架构链接及仓库范围说明。
+- 其他归档 BUS、工具和 webapp 源码中对旧 launcher 的引用仅作为历史保留，不承诺可编译或运行，不伪造替代接口。下方此前“仍保留 launcher”的记录描述当时状态，已被本节删除结果取代；源码可从 Git 历史恢复。
+- 保留前一步 DM 插件自带 skill 及其生命周期/分发测试改动。本次不继续 EVA/memory skill 迁移，也不提前删除旧集中 skills；没有修改用户 profile、数据库、会话或凭据，没有安装/重载插件、重启/停止 Bot。
+- 删除后使用 MAGI 自带 Node 完整回归 **582/582**、portable **130/130**、源码/resources **29 模块**通过，0 失败/0 skipped；在当前 macOS 执行，不代表 Windows 实机验收。只读独立复核确认删除范围及当前依赖闭包无遗漏。
+
 ### 最新：原生 Bot memory 第一版（当前父 Host 已启用；运行中子 Bot 尚未更新）
 
 - 用户随后授权删除旧 memory 模块及提交 GitHub：已删除旧 BUS memory 源码和过时文档，清理归档 launcher 的依赖、project reference、worker 注册与 hosted-worker 名单。历史源码可从 Git 历史恢复；旧数据库不删除、不读取、不迁移。
