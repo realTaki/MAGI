@@ -1,13 +1,11 @@
-# EVA's independently maintained snapshot of dsh-web-app/presets/cordis.patch.yml.
-# Keep Creator's initial capabilities, expressions and isolation unchanged.
-# This is an entry list for cordis:include, not a profile patch or inheritance.
-# Skill assets resolve through the profile install anchor, not this copied YAML.
-- id: preset-eva
+# Package-owned Bot capabilities; native declaration, not preset inheritance.
+# Preserve native expressions and service isolation when editing this list.
+- id: preset-bot-mode
   name: '@deepseek-ai/dsh-agent-preset'
   config:
-    id: eva
-    name: EVA
-    description: EVA agent mode, initially matching Creator; independently configurable.
+    id: bot-mode
+    name: Bot
+    description: Reusable Bot agent mode, initially matching Creator.
     order: 5
     plugins:
       - id: persona

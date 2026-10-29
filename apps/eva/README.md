@@ -6,11 +6,11 @@ DSH Host + Web Client 插件，提供模型工具 `eva`、节点清单与会话�
 
 本目录已用 DSH Host 插件替换 MAGI 旧的 EVA launcher，作为逐步改造成 DSH 版本的起点。其他旧模块和根级构建流程尚未改造，不能据此认为整个 MAGI 已兼容 DSH。背景、验证边界和后续工作见 [交接文档](<../../DSH-HANDOFF.md>)。
 
-## bot-mode 第一增量（源码，尚未应用）
+## 共享 bot-mode（源码完成，尚未部署）
 
-EVA 安装并捆绑独立 [@magi/bot-mode](<../../packages/bot-mode/README.md>)。子 overlay v5 通过已安装包的绝对入口挂载 `magi-bot-mode-child`；选中的 Shell/独立 bot-mode 父根禁用，避免重复身份 provider。固定主会话的保留、恢复、持久化、workspace 附着和子 Bot 标题归 bot-mode；EVA 保留节点进程、home/profile/端口、IPC、凭据/Codex/预设检查与嵌入。检查通过后才显式初始化身份。
+EVA 安装并捆绑独立 [@magi/bot-mode](<../../packages/bot-mode/README.md>)。子 overlay v6 通过已安装包的绝对入口挂载固定身份能力，并包含包拥有的 `bot-mode` 原生 Agent 声明及同源 `eva` 兼容声明；选中 Shell/独立 bundle 的父身份和预设根都禁用。bot-mode 拥有固定会话恢复、持久化、workspace 附着、子 Bot 标题及通用工具/上下文/隔离配置；EVA 只保留进程、home/profile/端口、IPC、凭据、原生 Codex 路由、启动检查与嵌入。
 
-本步不迁移 Agent preset，不改已保存默认值、历史 Session ID 或状态路径。旧 v1 子 workspace 升级仍保留同一 Session；父身份仍执行原严格 v2 策略。Shell 消费同一父身份服务，DM/memory 仍独立。未重载、重启或部署运行实例。
+子端仅将部署默认候选改为 `bot-mode`，不改已保存默认值或现有会话选择；保留 `eva` ID 以恢复已有会话。旧 v1 子 workspace 升级仍保留同一 Session；父身份仍执行严格 v2 策略。Shell 消费同一父身份和通用预设，但不改父默认值。DM/memory 仍独立；状态路径、历史与权限不迁移。未重载、重启或部署运行实例。
 
 ## 安装与更新
 
@@ -225,15 +225,15 @@ DeepSeek 父子账号 provider 必须使用同一 `platformOrigin` / 授权签�
 
 子端默认不加载 `@local/magi-shell` 或父节点 `@local/eva` 管理器。已有子 profile 若选择了这两个已知 bundle，启动 overlay 只禁用相应管理入口，不卸载包、不改写 manifest 或用户 patch；其他自定义插件保持用户所有。此约束不充当任意插件过滤器或 OS 沙箱，角色标记仍作为防嵌套后备。
 
-独立的 [eva 声明](<eva-preset.yml>)以当前官方 Creator（`cordis`）插件配置为初始快照，而不是动态继承或别名：保留同样的工具、persona、技能、规划模式、压缩和委托隔离。技能目录通过 profile 的安装锚点定位官方资源，不相对私有 YAML 副本解析。之后可独立修改并重新应用这份 EVA 声明，不会修改桌面的 Creator；当前快照仅引用安装附带的官方插件，不承诺缓存目录能解析任意 profile 私有包。
+通用 [Bot 声明](<../../packages/bot-mode/presets/bot-preset.yml>)归 bot-mode 所有，以官方 Creator（`cordis`）插件配置为初始快照，而不是动态继承：保留同样的工具、persona、技能、规划模式、压缩和委托隔离。技能目录通过 profile 的安装锚点定位官方资源，不相对私有 YAML 副本解析。EVA 通过[包内读取器](<../../packages/bot-mode/presets.js>)生成同插件正文的 `bot-mode` 与兼容 `eva` 两个原生声明，不再维护第二份能力清单，不承诺缓存目录能解析任意 profile 私有包。
 
-启动 overlay 将子实例 `agent-preset-registry` 的部署默认设为 `eva`，不修改主实例 profile。首次固定主会话及之后新建会话使用有效默认预设；用户已保存的默认选择、会话显式选择仍优先。已有主会话、DM 会话及其他会话不迁移、不强行重新组合为 `eva`，已有 `cordis` 会话继续使用原预设。
+启动 overlay 只将子实例 `agent-preset-registry` 的部署默认候选设为 `bot-mode`，不修改父实例默认值。首次固定主会话及之后新建会话使用有效默认；用户已保存的默认选择、会话显式选择仍优先。保留旧 `eva` ID 供历史会话恢复，不迁移 Session 或强行重组；重启时原生 DSH 按记录的 preset ID 恢复当前声明，不代表历史 revision 永久固定。
 
-`eva` 初始保留 Creator 的 `plugin_manager` 能力，**不是自动提权**：原生权限与单次审批规则不变；拒绝或没有审批通道时不会执行。启动探针仍从 `agentPresets.resolve()` 核验有效默认，结果中的 `defaultAgentPreset` 是实际值，不强行改回 `eva`。
+Bot 预设保留 Creator 的 `plugin_manager` 能力，**不是自动提权**：原生权限与单次审批规则不变；拒绝或没有审批通道时不会执行。启动探针仍从 `agentPresets.resolve()` 核验有效默认，结果中的 `defaultAgentPreset` 是实际值，不强行改回部署候选。
 
 每次启动将声明保存为私有、内容寻址的不可变 YAML；声明内容 hash、Host 装配版本及已知桌面入口禁用列表共同进入新的启动 patch hash。旧 patch、旧声明和已有 profile 保留原字节，篡改同名运行文件时拒绝覆盖。已经运行的节点直接复用，不因查询或重复 start 在线切换装配。
 
-初次实现仅做离线回归；现已在用户批准的窗口随 `@user` 更新应用并正常恢复原节点。实际状态确认默认预设为 `eva`，原主会话、workspace UUID 与历史保持；既有会话没有强制切换预设。真实 DM 模型转发已验证，但预设菜单与用户手动切换路径未单独验收。刷新页面本身不会应用 Host 更新。
+历史 `eva` 实现曾在用户批准的窗口随 `@user` 更新应用并正常恢复原节点；当时确认默认为 `eva`，原主会话、workspace UUID 与历史保持，真实 DM 模型转发通过，预设菜单及手动切换未单独验收。这不代表本次 bot-mode 源码已部署；本次没有改运行 profile 或重启节点，刷新页面也不会应用 Host 更新。
 
 ## 旧目录迁移
 

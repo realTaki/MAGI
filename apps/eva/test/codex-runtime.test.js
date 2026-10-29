@@ -68,7 +68,7 @@ test('provider defaults version creates a distinct overlay and preserves the pre
   assert.equal(all.length, 2);
   assert.equal(all.find(({ name }) => name === previousName).text, previousText);
   const preset = await readEvaPreset();
-  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'eva', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 5, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
+  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 6, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
   assert.notEqual(nextName, previousName);
   assert.ok(all.some(({ name }) => name === nextName), 'provider-default version is part of the immutable startup filename');
 });
@@ -86,7 +86,7 @@ test('DM protocol version selects a new immutable overlay without replacing the 
   assert.equal(all.length, 2);
   assert.equal(all.find(patch => patch.name === previousName).text, previousText);
   const preset = await readEvaPreset();
-  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'eva', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 5, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
+  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 6, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
   assert.notEqual(nextName, previousName);
   const next = all.find(patch => patch.name === nextName);
   assert.ok(next, 'DM protocol version is part of the immutable startup filename');
@@ -99,7 +99,7 @@ test('DM protocol version selects a new immutable overlay without replacing the 
   assert.equal(next.data[0].insert.some(row => row.id === 'eva-dm-child'), false);
 });
 
-for (const previousVersion of [1, 2, 3, 4]) test(`independent child composition preserves immutable child overlay v${previousVersion}`, async t => {
+for (const previousVersion of [1, 2, 3, 4, 5]) test(`independent child composition preserves immutable child overlay v${previousVersion}`, async t => {
   const { manager } = await fixture(t);
   const paths = manager.paths('eva-000');
   const preset = await readEvaPreset();
@@ -118,7 +118,7 @@ for (const previousVersion of [1, 2, 3, 4]) test(`independent child composition 
   const all = await patches(paths.state);
   assert.equal(all.length, 2);
   assert.equal(all.find(patch => patch.name === previousName).text, previousText, 'existing split-entry patch is immutable');
-  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'eva', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 5, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
+  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 6, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
   assert.notEqual(nextName, previousName);
   const next = all.find(patch => patch.name === nextName);
   assert.ok(next, 'composite version chooses a new immutable startup filename');

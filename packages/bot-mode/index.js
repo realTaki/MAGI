@@ -1,4 +1,5 @@
-// One Host owner for fixed Bot identity. No process launcher or Agent preset here.
+// One Host owner for fixed Bot identity. Agent capabilities are declared separately
+// by this package's preset resource; no process launcher or global tool providers.
 import { realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { initializeParentMain, isEvaChildHome } from './parent.js';

@@ -2,7 +2,16 @@
 
 ## 当前补充：MAGI Shell
 
-### 最新：bot-mode 第一增量（仅源码，未部署）
+### 最新：bot-mode 完整职责拆分（仅源码，未部署）
+
+- 在首个身份提取提交 `45983847` 上继续完成通用 Agent 预设所有权：唯一能力清单移到 [bot-mode 原生声明](<packages/bot-mode/presets/bot-preset.yml>)，插件正文与此前 EVA 快照保持相同；EVA 仅通过[包内 helper](<packages/bot-mode/presets.js>)生成 `bot-mode` + 旧 `eva` 两个原生声明，不做 YAML 普通反序列化、不丢 `!!js` 与隔离配置。不是别名/继承，两声明由原生 registry 分别管理。
+- bot-mode 管固定主身份和通用能力；EVA 保留进程、home/profile/端口、IPC、原生 Codex/凭据部署与启动检查；Shell 管导航，只添加父 roster 不改父默认。子 overlay v6 只将部署 fallback 改为 `bot-mode`；保存默认值、会话明确选择及历史 preset ID 不迁移。兼容 `eva` 长期保留，重启由原生按记录 ID 恢复当前声明，不声称历史 revision 永久固定。
+- 独立 bundle 与 Shell 使用共同身份/预设根 ID；原生 Loader 同 ID last-wins。子 overlay 禁用选中父根后挂自己的声明，避免重复注册。包内 loader 通过自身模块 URL 定位 YAML，通过原生 installation anchor 加载 Include，避免扁平 patch 的 Host baseUrl 或依赖提升假设。Include 和声明包登记 optional native peers，兼容原生 source-linked resolver。
+- 最终 MAGI 自带 Node 验证：完整 **612/612**、portable **152/152**，0 失败/0 skipped；manifest/resources 与 **36 个源码模块**通过；真实独立 bot-mode、EVA、Shell tarball 解包/入口 apply/资源闭包通过。独立只读复核未发现 must-fix。EVA 工具说明只纠正共享预设名称，字符 **1169 → 1169**；未实测实际完整首轮 prompt tokenizer，不把字符数当 tokens。
+- MAGI Electron Node-mode [隔离原生 probe](<apps/eva/test/preset-native.js>) 通过：原生 schema 两文档解析、Creator 初始 23 顶层/30 模块 parity/import、技能目录、源码链接目录解析、真实 package loader → Include → declaration 注册、父重复 ID 去重、子禁用父预设根。真实 registry 用空 synthetic 能力正文验证未保存默认 → `bot-mode`、保存 `eva`/其他默认保持，以及记录 `eva` projection 的 native scope 绑定。
+- probe 无 Host 启动、无文件/profile 写入；**未验证完整真实能力 eager mount 或持久 Session reopen**，不冒充模型调用、GUI 验收或线上部署。既有生命周期/身份恢复仍由完整 fixture 回归覆盖。未安装、重载、推送或重启运行 Bot。
+
+### 前次：bot-mode 第一增量（仅源码，未部署）
 
 - 新增独立 [@magi/bot-mode](<packages/bot-mode/README.md>)，抽出父/子固定主会话身份；Shell 和 EVA child 消费同一个 Host 能力，EVA 父启动器不挂父身份根。固定 Session ID、父 profile 状态 namespace、子 home 状态路径均不改；严格父 v2 策略与子 v1 同 ID 升级保持分离，持久化 helper 与原实现逐字一致。
 - `magiBotMode.initialize()` 只在明确启动调用时变更状态，single-flight，成功后缓存；`magiMainSession.current()` 保留只读 ABI。Shell 在 appReady 调用，EVA 在 home/cwd/profile、凭据、Codex 和 preset 检查后调用。GET 不触发恢复，卸载不再发布身份；新增并发、失败重试、卸载中 flush、配置与重复 owner 回归。
@@ -128,7 +137,7 @@
 ### 前次：桌面 / EVA Host 分工与独立 eva 预设（源码已实现，未重载）
 
 - 桌面继续由 MAGI Shell 统一 Bot 导航；新增[子端专用装配](<apps/eva/child-host.js>)承接既有生命周期、DM、Codex 与凭据配置，不继承桌面 profile。新子 profile 仍由官方 CLI 的 web 模板初始化；已有子 profile 仅对已选择的 `@local/magi-shell` / `@local/eva` 管理入口添加禁用 overlay，不改 manifest、不卸载包、不剥离其他自定义插件，也不是任意插件安全过滤器。
-- 新增独立 [eva 声明](<apps/eva/eva-preset.yml>)，不是 cordis 别名或动态继承。原生解析后与当前 Creator 的 23 个顶层插件配置深度一致，只将技能资源查找锚点改为 profileContext.installAnchor；保留全部工具、表达式和 planning / compaction / delegation 隔离。之后可独立维护该声明，不改桌面 Creator。
+- 当时新增独立 eva 声明（现已归入 [bot-mode 原生声明](<packages/bot-mode/presets/bot-preset.yml>)），不是 cordis 别名或动态继承。原生解析后与当前 Creator 的 23 个顶层插件配置深度一致，只将技能资源查找锚点改为 profileContext.installAnchor；保留全部工具、表达式和 planning / compaction / delegation 隔离。之后可独立维护该声明，不改桌面 Creator。
 - [启动运行时](<apps/eva/runtime.js>)将原生 registry 部署默认设为 eva；用户已保存默认和会话显式选择仍优先。已有主会话、DM 会话、普通会话不迁移或强行换 preset，权限和审批调用不变。工具说明 1114 → 1169 字符，字符数 / 4 粗估增加约 14 tokens，未实测实际首轮完整 prompt tokenizer。
 - 声明保存于子 home 的 `profiles/.eva-assets/<profile>/`，使用私有目录、内容 hash 和不可变写入保护；Host 版本、声明 hash、已知桌面角色排除列表进入新的启动 patch hash，旧文件保持原字节。**不能放在 profiles 树外**：预设子插件在那里没有原生 bare-import fallback；也不能预写实际 profile 内，因为首次 `--from-default-profile` 会整目录替换。Sibling cache 仅保证当前官方安装包解析，未承诺任意子 profile 私有包能从该缓存解析，也不承诺较早 profile patch 可以直接覆盖稍后 include 内的行。
 - 新增[原生只读探针](<apps/eva/test/preset-native.js>)，使用 MAGI Electron Node-mode：原生 YAML 解码、Creator 初始快照对比、同类 synthetic profiles cache 锚点的全部 **30 个模块导入**及官方技能目录求值均通过，退出 0。探针不启动 Host、不写磁盘或 profile，不等于完整 Agent 激活、实际模型调用或 GUI 验收。

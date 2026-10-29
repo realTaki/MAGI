@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
+import { DEFAULT_BOT_PRESET, readEvaPresets } from '@magi/bot-mode/presets';
 import { isAbsolute, join } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -8,8 +8,10 @@ import { fileURLToPath } from 'node:url';
 // The official web profile supplies Sessions, persistence, permissions and UI;
 // this overlay composes EVA lifecycle, independent DM/memory/bot-mode, preset
 // and model/auth route; native persistence and Sessions remain Host-owned.
-export const DEFAULT_EVA_PRESET = 'eva';
-export const CHILD_HOST_VERSION = 5;
+// Retain the exported name for integrations; only new-session deployment fallback
+// changes. Saved defaults and recorded legacy `eva` Session identities still win.
+export const DEFAULT_EVA_PRESET = DEFAULT_BOT_PRESET;
+export const CHILD_HOST_VERSION = 6;
 
 export function resolveDmEntry() {
   return createRequire(import.meta.url).resolve('@magi/dm');
@@ -23,10 +25,8 @@ export function resolveBotModeEntry() {
   return createRequire(import.meta.url).resolve('@magi/bot-mode');
 }
 
-export async function readEvaPreset() {
-  const text = await readFile(new URL('./eva-preset.yml', import.meta.url), 'utf8');
-  return { text, digest: createHash('sha256').update(text).digest('hex').slice(0, 16) };
-}
+// Compatibility export: EVA owns caching/composition, not the capability source.
+export const readEvaPreset = readEvaPresets;
 
 const desktopRoles = [
   { id: 'magi-shell', name: '@local/magi-shell', disabled: true },
@@ -95,5 +95,9 @@ export function createChildHostPatch({ workspace, profile, presetPath, credentia
     // Shell bundles now supply a parent identity root. Older versions may lack it;
     // id-only disabling safely warns/skips rather than asserting a package rename.
     ...(selectedShell && !selectedBotMode ? [{ id: 'magi-bot-mode', disabled: true }] : []),
+    // A selected parent bundle may contribute the canonical preset too. Its
+    // common root ID is last-wins in native EntryGroup, just like identity rows;
+    // disable it before mounting our authoritative copied two-ID declaration.
+    ...(selectedShell || selectedBotMode ? [{ id: 'magi-bot-mode-preset', disabled: true }] : []),
     ...desktopExclusions];
 }

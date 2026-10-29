@@ -3,6 +3,9 @@
       name: '@magi/bot-mode'
       config:
         role: parent
+    - id: magi-bot-mode-preset
+      name: '@magi/bot-mode/preset-loader'
+      config: {}
     - id: magi-shell
       name: '@local/magi-shell'
       config: {}

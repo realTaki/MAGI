@@ -11,7 +11,7 @@ export const portableTests = {
   'magi-shell': ['layout', 'main-client', 'package', 'workbench-client'],
   dm: ['dm-user-client', 'package'],
   memory: ['package', 'tools', 'plugin'],
-  'bot-mode': ['package'],
+  'bot-mode': ['package', 'presets'],
 };
 export function collectTests({ portable = false } = {}) {
   const files = [];

@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "MAGI Bot Mode",
-    "description": "Shared parent and child Bot composition with persistent main conversations."
+    "description": "Reusable fixed-main Bot lifecycle and generic Agent preset."
   }
 }

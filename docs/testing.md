@@ -47,6 +47,33 @@ creating another identity. Existing persistence-barrier, competing Host,
 credential/auth and descendant-cleanup assertions remain enabled in the complete
 suite. A failed meaningful safety assertion is not deleted or silently skipped.
 
+## Bot preset native probe
+
+[Canonical Bot contracts](<../packages/bot-mode/test/presets.test.js>) cover unchanged
+capability rows, native expression spelling, platform guards, group isolation,
+installation-anchored skills, generated legacy body equality and content hashes.
+These contracts run in both gates. Packaging also executes each extracted
+package-owned loader against a synthetic unrelated native installation anchor;
+this detects source-path/hoisting assumptions without touching a live profile.
+
+The optional [native probe](<../apps/eva/test/preset-native.js>) uses MAGI Electron
+in Node mode and the installed DSH YAML schema, Include, Loader and registry:
+
+```sh
+ELECTRON_RUN_AS_NODE=1 /Applications/MAGI.app/Contents/MacOS/MAGI --expose-internals \
+  apps/eva/test/preset-native.js \
+  '/Applications/DeepSeek Harness.app/Contents/Resources/app.asar/dsh/package.json'
+```
+
+This verifies actual package loader → native Include → declaration registration,
+source-linked directory resolution, parent duplicate-root collapse and child
+disable rows. Real registry selection/binding uses empty synthetic plugin bodies
+and an in-memory session projection: unset default becomes `bot-mode`, saved
+`eva`/other choices remain, recorded `eva` binds without resetting the default.
+No Host starts and no files are written. Full capability eager mount and persisted
+Session reopening are explicitly untested; neither native imports nor empty-body
+binding certify them, paid calls, deployment or live GUI acceptance.
+
 ## Retired pre-DSH code
 
 The old Electron Shell and provider module have been removed. Remaining old

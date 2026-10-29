@@ -23,7 +23,16 @@ test('standalone bundle ships all runtime exports, original icon and localized m
   assert.equal(pkg.name, '@magi/bot-mode');
   assert.equal(pkg.dsh.bundle.patch, './cordis.patch.yml');
   assert.ok(pkg.files.includes('*.js'));
-  for (const key of ['.', './parent', './main-session', './parent-main-session']) {
+  assert.equal(pkg.exports['./preset'], './presets/bot-preset.yml');
+  assert.equal(pkg.exports['./presets'], './presets.js');
+  assert.equal(pkg.exports['./preset-loader'], './preset-loader.js');
+  assert.equal(pkg.peerDependencies['@deepseek-ai/cordis-plugin-include'], '*');
+  assert.equal(pkg.peerDependenciesMeta['@deepseek-ai/cordis-plugin-include'].optional, true);
+  assert.equal(pkg.peerDependencies['@deepseek-ai/dsh-agent-preset'], '*');
+  assert.equal(pkg.peerDependenciesMeta['@deepseek-ai/dsh-agent-preset'].optional, true);
+  assert.ok(pkg.files.includes('presets/bot-preset.yml'));
+  assert.match(await read('presets/bot-preset.yml'), /id: bot-mode/);
+  for (const key of ['.', './parent', './main-session', './parent-main-session', './presets']) {
     assert.ok(Object.keys(await import(new URL(`../${pkg.exports[key]}`, import.meta.url))).length);
   }
   assert.match(await read('cordis.patch.yml'), /id: magi-bot-mode/);

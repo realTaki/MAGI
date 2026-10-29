@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -287,7 +288,7 @@ for (const app of ['bot-mode', 'eva', 'magi-shell']) {
     const { archive, report } = packDsh({ app, outputDir: path.join(root, 'output'), npmCli });
     const standalone = app === 'bot-mode';
     const prefix = standalone ? '' : 'node_modules/@magi/bot-mode/';
-    const resources = ['package.json', 'index.js', 'parent.js', 'main-session.js', 'parent-main-session.js', 'README.md', 'cordis.patch.yml', 'locale/en.json', 'locale/zh.json', 'icon.svg'];
+    const resources = ['package.json', 'index.js', 'parent.js', 'main-session.js', 'parent-main-session.js', 'presets.js', 'preset-loader.js', 'presets/bot-preset.yml', 'README.md', 'cordis.patch.yml', 'locale/en.json', 'locale/zh.json', 'icon.svg'];
     for (const file of resources) assert.ok(report.files.some(item => item.path === prefix + file), app + ': ' + file);
     if (standalone) {
       assert.equal(report.name, '@magi/bot-mode');
@@ -310,17 +311,93 @@ for (const app of ['bot-mode', 'eva', 'magi-shell']) {
     }
     assert.match(readFileSync(path.join(packageRoot, 'icon.svg'), 'utf8'), /^<svg[\s\S]*<\/svg>\s*$/);
     const fromPackage = createRequire(path.join(packageRoot, 'package.json'));
-    for (const subpath of ['', '/parent', '/main-session', '/parent-main-session']) {
+    for (const subpath of ['', '/parent', '/main-session', '/parent-main-session', '/presets']) {
       const entry = fromPackage.resolve('@magi/bot-mode' + subpath);
       assert.ok(entry.startsWith(packageRoot + path.sep), entry);
       await import(pathToFileURL(entry));
     }
-    for (const specifier of ['/locale/en.json', '/locale/zh.json', '/icon']) {
+    for (const specifier of ['/preset', '/preset-loader', '/locale/en.json', '/locale/zh.json', '/icon']) {
       assert.ok(fromPackage.resolve('@magi/bot-mode' + specifier).startsWith(packageRoot + path.sep));
+    }
+    assert.equal(manifest.exports['./preset'], './presets/bot-preset.yml');
+    assert.equal(manifest.exports['./presets'], './presets.js');
+    assert.equal(manifest.exports['./preset-loader'], './preset-loader.js');
+    assert.equal(manifest.peerDependencies['@deepseek-ai/cordis-plugin-include'], '*');
+    assert.equal(manifest.peerDependenciesMeta['@deepseek-ai/cordis-plugin-include'].optional, true);
+    assert.equal(manifest.peerDependencies['@deepseek-ai/dsh-agent-preset'], '*');
+    assert.equal(manifest.peerDependenciesMeta['@deepseek-ai/dsh-agent-preset'].optional, true);
+    const presetPath = fromPackage.resolve('@magi/bot-mode/preset');
+    assert.equal(presetPath, path.join(packageRoot, 'presets/bot-preset.yml'));
+    const helperPath = fromPackage.resolve('@magi/bot-mode/presets');
+    const helperSource = readFileSync(helperPath, 'utf8');
+    assert.ok(!helperSource.includes(repository));
+    assert.doesNotMatch(helperSource, /(?:from\s*|import\s*\()['"]\.\.\//);
+    const { DEFAULT_BOT_PRESET, LEGACY_EVA_PRESET, readBotPreset, readEvaPresets } = await import(pathToFileURL(helperPath));
+    assert.equal(DEFAULT_BOT_PRESET, 'bot-mode');
+    assert.equal(LEGACY_EVA_PRESET, 'eva');
+    const canonical = await readBotPreset(), compatibility = await readEvaPresets();
+    assert.equal(canonical.text, readFileSync(presetPath, 'utf8'));
+    assert.equal(canonical.text, readFileSync(path.join(repository, 'packages/bot-mode/presets/bot-preset.yml'), 'utf8'));
+    for (const preset of [canonical, compatibility]) {
+      assert.equal(preset.digest, createHash('sha256').update(preset.text).digest('hex').slice(0, 16));
+      assert.ok(!preset.text.includes(repository));
+      assert.doesNotMatch(preset.text, /(?:name|path):\s*['"]?\.\.\//);
+    }
+    const declarations = compatibility.text.split(/^- id: /m).slice(1);
+    assert.equal(declarations.length, 2);
+    assert.match(declarations[0], /\n    id: bot-mode\r?\n/);
+    assert.match(declarations[1], /\n    id: eva\r?\n/);
+    const pluginBody = declaration => declaration.match(/\n    plugins:\r?\n([\s\S]*)/)[1].replace(/^#[^\n]*(?:\n|$)/gm, '').trimEnd();
+    assert.equal(pluginBody(declarations[0]), pluginBody(canonical.text));
+    assert.equal(pluginBody(declarations[1]), pluginBody(canonical.text));
+    const loaderPath = fromPackage.resolve('@magi/bot-mode/preset-loader');
+    assert.equal(loaderPath, path.join(packageRoot, 'preset-loader.js'));
+    const loaderSource = readFileSync(loaderPath, 'utf8');
+    assert.doesNotMatch(loaderSource, /(?:from\s*|import\s*\()['"]\.\.\//);
+    const loader = await import(pathToFileURL(loaderPath));
+    assert.equal(loader.name, 'magi-bot-mode-preset');
+    assert.deepEqual(loader.inject, ['profileContext']);
+    for (const format of ['commonjs', 'default']) {
+      // The native Host dependency belongs to its own installation, not to the
+      // extracted bundle, current directory, or a checkout workspace symlink.
+      const nativeRoot = path.join(root, 'native-host-' + format);
+      const anchor = path.join(nativeRoot, 'package.json');
+      put(nativeRoot, 'package.json', { name: 'synthetic-native-host', private: true });
+      put(nativeRoot, 'node_modules/@deepseek-ai/cordis-plugin-include/package.json', {
+        name: '@deepseek-ai/cordis-plugin-include', main: 'index.cjs',
+      });
+      put(nativeRoot, 'node_modules/@deepseek-ai/cordis-plugin-include/index.cjs',
+        format === 'commonjs' ? 'module.exports = function Include() {};\n' : 'module.exports = { default: function Include() {} };\n');
+      const include = createRequire(anchor)('@deepseek-ai/cordis-plugin-include');
+      const mounts = [];
+      await loader.apply({ profileContext: { installAnchor: anchor }, plugin(plugin, config) { mounts.push({ plugin, config }); } });
+      assert.equal(mounts.length, 1);
+      assert.equal(mounts[0].plugin, include.default ?? include);
+      assert.deepEqual(mounts[0].config, { path: presetPath });
+      assert.equal(readFileSync(mounts[0].config.path, 'utf8'), canonical.text);
     }
     if (!standalone) {
       const fromApp = createRequire(path.join(extracted, 'package/package.json'));
       assert.equal(fromApp.resolve('@magi/bot-mode'), path.join(packageRoot, 'index.js'));
+      assert.equal(fromApp.resolve('@magi/bot-mode/preset'), presetPath);
+      assert.equal(fromApp.resolve('@magi/bot-mode/presets'), helperPath);
+    }
+    if (app === 'eva') {
+      assert.ok(!report.files.some(file => file.path === 'eva-preset.yml'));
+      const childPath = path.join(extracted, 'package/child-host.js');
+      const childSource = readFileSync(childPath, 'utf8');
+      assert.match(childSource, /@magi\/bot-mode\/presets/);
+      assert.doesNotMatch(childSource, /\.\/eva-preset\.yml/);
+      const child = await import(pathToFileURL(childPath));
+      assert.equal(child.CHILD_HOST_VERSION, 6);
+      assert.deepEqual(await child.readEvaPreset(), compatibility);
+    } else {
+      const patchRoot = standalone ? packageRoot : path.join(extracted, 'package');
+      const patch = readFileSync(path.join(patchRoot, 'cordis.patch.yml'), 'utf8');
+      assert.match(patch, /id: magi-bot-mode-preset\s+name: ['"]@magi\/bot-mode\/preset-loader['"]/);
+      const fromPatch = createRequire(path.join(patchRoot, 'package.json'));
+      assert.equal(fromPatch.resolve('@magi/bot-mode/preset-loader'), loaderPath);
+      assert.doesNotMatch(patch, /defaultAgentPreset|defaultPreset|default-agent-preset/);
     }
   });
 }

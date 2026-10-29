@@ -36,8 +36,13 @@ The current product is the directly executed DSH Host/Client bundles in
 [@magi/bot-mode](<packages/bot-mode/README.md>) consumed by Shell/EVA children; none
 needs a TypeScript or Electron build. EVA mounts DM, memory and child bot-mode as
 separate Loader roots, not copied source. Shell bundles the parent bot-mode root.
-EVA retains process management and startup prerequisites; bot-mode owns fixed-main
-identity. Agent presets remain unchanged in this first extraction increment.
+EVA retains process/model/auth deployment and startup prerequisites; bot-mode owns
+fixed-main identity and the reusable native `bot-mode` Agent capability declaration.
+EVA children register a generated `eva` compatibility declaration from the same
+plugin body, use `bot-mode` only as deployment fallback and never reset saved
+choices or recorded Session preset IDs. Shell/standalone add the Bot roster entry
+without changing the parent default. Native Include and installed YAML resolve
+through a package-owned loader, never flattened patch `baseUrl` or hoisting.
 Use `npm run pack:dsh -- --app eva --out dist` with the MAGI-owned runtime for a
 portable archive: plain npm packing can omit a hoisted bundled workspace symlink.
 A source-linked EVA requires its workspace dependencies installed from the root

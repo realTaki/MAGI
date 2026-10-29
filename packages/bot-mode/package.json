@@ -3,17 +3,22 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Shared parent and child Bot composition and persistent main-session lifecycle.",
+  "description": "Reusable fixed-main Bot lifecycle and generic Agent preset.",
   "exports": {
     ".": "./index.js",
     "./parent": "./parent.js",
     "./main-session": "./main-session.js",
     "./parent-main-session": "./parent-main-session.js",
+    "./preset": "./presets/bot-preset.yml",
+    "./presets": "./presets.js",
+    "./preset-loader": "./preset-loader.js",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg"
   },
-  "files": ["*.js", "README.md", "cordis.patch.yml", "locale/*.json", "icon.svg"],
+  "files": ["*.js", "README.md", "presets/bot-preset.yml", "cordis.patch.yml", "locale/*.json", "icon.svg"],
   "scripts": { "test": "node --test test/*.test.js" },
   "engines": { "node": ">=24.0.0" },
+  "peerDependencies": { "@deepseek-ai/cordis-plugin-include": "*", "@deepseek-ai/dsh-agent-preset": "*" },
+  "peerDependenciesMeta": { "@deepseek-ai/cordis-plugin-include": { "optional": true }, "@deepseek-ai/dsh-agent-preset": { "optional": true } },
   "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
 }
