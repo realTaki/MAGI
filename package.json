@@ -5,35 +5,26 @@
   "type": "module",
   "description": "MAGI DSH plugins: independent EVA nodes and native Desktop session navigation.",
   "workspaces": [
-    "packages/*",
-    "apps/*"
+    "apps/eva",
+    "apps/magi-shell",
+    "packages/dm",
+    "packages/memory"
   ],
   "scripts": {
-    "build": "tsc -b",
     "test": "node scripts/check-dsh.mjs && node scripts/test.mjs",
     "verify": "npm test",
-    "db:generate": "npm run db:generate --workspace @magi/bus",
-    "test:portable": "node scripts/check-dsh.mjs && node scripts/test.mjs --portable",
-    "test:legacy": "tsc -b && npm run check:bootstrap --workspace @magi/shell && node scripts/test-legacy.mjs",
-    "verify:legacy": "node scripts/verify.mjs"
+    "pack:dsh": "node scripts/pack-dsh.mjs",
+    "prepare:runtime": "node scripts/prepare-runtime.mjs",
+    "test:portable": "node scripts/check-dsh.mjs && node scripts/test.mjs --portable"
   },
   "allowScripts": {
-    "dugite": true,
-    "electron-winstaller": true,
-    "esbuild": true,
-    "node": true,
-    "protobufjs": true
+    "node": true
   },
   "engines": {
     "node": ">=24.0.0"
   },
   "devDependencies": {
-    "@types/node": "24.13.6",
-    "typescript": "7.0.2"
-  },
-  "overrides": {
-    "@esbuild-kit/core-utils": {
-      "esbuild": "0.25.12"
-    }
+    "node": "24.21.0",
+    "semver": "7.8.5"
   }
 }

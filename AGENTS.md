@@ -11,7 +11,7 @@ to a system-installed Node.js.
 Preferred runtime order:
 
 1. For repository JavaScript tooling, use MAGI's bundled Node.js. In a prepared
-   source build this is `apps/shell/runtime/bin/node`; in the installed macOS app
+   source build this is `runtime/bin/node`; in the installed macOS app
    it is `/Applications/MAGI.app/Contents/Resources/runtime/bin/node`.
 2. On Windows or Linux, use the equivalent binaries inside the MAGI packaged
    runtime. Do not replace them with globally installed tools merely because
@@ -24,23 +24,39 @@ paths needed for that command and must not be persisted.
 Examples:
 
 ```bash
-apps/shell/runtime/bin/node --test packages/channel-a2a/dist/test/*.test.js
-/Applications/MAGI.app/Contents/Resources/runtime/bin/node --test apps/shell/test/*.test.ts
-apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js test
+runtime/bin/node --test packages/dm/test/*.test.js
+/Applications/MAGI.app/Contents/Resources/runtime/bin/node --test scripts/test/*.test.mjs
+runtime/bin/node runtime/npm/node_modules/npm/bin/npm-cli.js test
 ```
 
 The current product is the directly executed DSH Host/Client bundles in
-`apps/eva` and `apps/magi-shell`; neither needs a TypeScript or Electron build.
+`apps/eva` and `apps/magi-shell`, plus the independent `@magi/dm` plugin in
+[packages/dm](<packages/dm/README.md>) and standalone `@magi/memory` bundle in
+[packages/memory](<packages/memory/README.md>) consumed by EVA; none needs a TypeScript or
+Electron build. EVA mounts DM and memory as separate Loader roots, not copied source.
+Use `npm run pack:dsh -- --app eva --out dist` with the MAGI-owned runtime for a
+portable archive: plain npm packing can omit a hoisted bundled workspace symlink.
+A source-linked EVA requires its workspace dependencies installed from the root
+lockfile before native installation; do not run dependency installation in a profile.
 Root `npm test` checks their source syntax/manifests and runs every DSH plugin
 regression plus shared dependency-policy checks. Linux/macOS run this complete
 suite. `npm run test:portable` is the explicitly narrower Windows Client/auth/
 bundle-contract gate; it does not certify Host lifecycle or POSIX persistence.
 
-`apps/shell` and `packages/*` remain pre-DSH source, not dependencies of these
-bundles. Their TypeScript build and old acceptance remain explicitly available
-as `npm run test:legacy` / `npm run verify:legacy`, with known removed-launcher
-fixtures. Do not restore the retired EVA launcher to make them pass. There is no
-standalone Electron/AppImage/installer/release pipeline. See `DSH-HANDOFF.md`.
+The old Electron Shell, provider module, channel-a2a and channel-tasks have been
+deleted. Timed instructions use native DSH Schedule; do not restore the old task
+worker or implicitly migrate old task databases. Local
+Bot-to-Bot DM and Bot-to-user notifications belong to the independent DM plugin;
+remote DM is out of scope. Other pre-DSH
+packages remain archived source, excluded from the explicit four-workspace
+install graph. They are not supported build/runtime dependencies; their dangling
+legacy launcher/provider contracts are historical, not migration TODOs. Root
+TypeScript build, database-generation and legacy acceptance scripts are retired.
+Do not restore the old EVA launcher or provider implementation to make archived
+code compile. Shared runtime provisioning lives in `scripts/prepare-runtime.mjs`;
+Node is pinned at the root and the prepared runtime lives in `runtime/`.
+There is no standalone Electron/AppImage/installer/release pipeline. See
+`DSH-HANDOFF.md`.
 
 Do not install alternate JavaScript runtimes globally or substitute a
 system-installed Node.js for MAGI's bundled Node 24.

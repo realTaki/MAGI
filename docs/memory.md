@@ -1,47 +1,52 @@
-# Shared memory maintenance
+# Bot-local native memory
 
-`MemoryWorker` owns the memory tool catalog, live prompt context, and execution
-of memory `RunToolJob` calls. Both foreground conversations and the private
-subconscious use this same BUS path and the same `MemoryBook`. The subconscious
-can use `list_memory`, `save_memory`, and `complete_memory`, but not permanent
-`delete_memory`. Stopping MemoryWorker removes its tools and context, prevents
-new claims, and drains calls it has already accepted.
+The current implementation is the independent **`@magi/memory`** Host bundle.
+See the [plugin contract and limits](<../packages/memory/README.md>) for its
+storage, automatic context and management tools.
 
-Memory stores supported facts, preferences, and reusable context. Open commitments
-belong in action items, and timed work belongs in tasks. Before creating a memory,
-read existing entries, including archived entries when reconciling, and update a
-matching fact instead of duplicating it. Put relevant sources and uncertainty in
-the detail. A remembered quotation or observation is evidence, not fresh authority
-to act. Archive obsolete facts; do not revive them without current evidence.
-Credentials and secrets do not belong in memory.
+- Facts are persistent and isolated by Bot `DSH_HOME`, shared across that Bot's
+  conversations and profiles, not across Bots.
+- All Agent scopes inherit a required literal runtime context. Complete custom
+  prompts and suppression of optional context do not drop the memory snapshot.
+- The management tools are `list_memory`, `get_memory`, `save_memory`,
+  `archive_memory`, and `delete_memory`. Updates use expected-version checks.
+- Storage is a new SQLite database in `DSH_HOME/memory/memories.sqlite`, not the
+  former BUS database. Installing or unloading does not migrate/delete old data.
+- Archiving/deleting affects future snapshots, not prior conversation logs.
+- No automatic extraction, TTL, vector search or subconscious scheduler.
 
-## Versioned tool contract
+The retired BUS memory package and its obsolete documentation have been deleted,
+including launcher dependencies and worker registration. Existing BUS databases
+and historical records are not deleted or migrated. Historical source remains in
+Git history; the new plugin does not load it.
 
-- `list_memory({ include_archived?: boolean })` returns `{ memories }`. Each
-  memory includes `id`, `topic`, `detail`, `kind`, `archived`, `created_at`, and
-  its positive integer `version`.
-- `save_memory` without `memory_id` creates a memory and requires nonempty
-  `topic` and `detail`. Optional fields are `kind` (`temporary`, `short_term`,
-  or `long_term`) and `archived`. Creation must not supply `expected_version`.
-- Updating with `save_memory` requires `memory_id` and `expected_version`,
-  followed by the fields to change. Omitted fields stay unchanged.
-- `complete_memory({ memory_id, expected_version })` archives the memory.
-- Successful updates and archives return `{ memory }` with an incremented
-  version. A stale version fails without changing the record. Read the new
-  state and reconcile the evidence before retrying.
+## Live verification, 2026-10-28
 
-Migration `0020_memory_versions` preserves existing rows, IDs, timestamps and
-archive state, and initializes their version to 1. New entries also start at 1.
-The migration makes IDs non-recycling, so deleting a fact and creating another
-cannot cause a stale ID/version pair to refer to the new fact.
-Creation remains compatible with the previous tool contract. Existing callers
-that update or archive must now supply the version from `list_memory` (or
-`MemoryBook.get/list`); the book API uses `expectedVersion`. Omitting the version
-fails explicitly rather than falling back to last-write-wins. Invalid supplied
-IDs, kinds, or field types fail rather than becoming omitted values or creates.
-The legacy foreground-only permanent-delete contract is unchanged.
+The native Plugin Manager installed and activated `@magi/memory@0.1.0` in the
+current parent Host. A disposable verification bundle created two independent
+Sessions and made three real Agent requests through `openai-codex/gpt-6.1-sol`:
 
-Live module guidance and versioned active entries appear in each new turn's
-context even when its agent prompt was customized. The implementation does not
-overwrite customized prompt files, introduce another scheduler, or change the
-private conversation's external-communication boundary.
+1. A normal fresh conversation received the saved synthetic fact automatically.
+2. A fresh conversation with a complete custom prompt and optional-context
+   suppression still received the required memory snapshot.
+3. The first conversation's next request received the committed updated fact.
+
+Questions contained neither answer. All five tool schemas were visible; model
+execution was guarded and no model tool calls occurred. Native tools were also
+exercised for create/update/get/archive/delete; a disallowed write failed the
+Agent guard. Archived facts disappeared from the next assembled memory context.
+The synthetic record was then removed, both Agent handles disposed, and the
+verification bundle uninstalled; the real memory plugin remains enabled.
+
+The [verification receipt](<../../magi-maintenance/native-memory-verification/receipt.json>)
+records actual request-boundary observations and durable Session evidence. The two
+persisted test Session logs remain; cleanup did not erase their history. An updated
+snapshot coexists with older snapshots in history, as expected.
+
+This does not certify GUI visual rendering, live compaction, forks, Schedule or
+Host restart end-to-end; those paths rely on the native context mechanism and
+separate persistence/unit coverage. The running `eva-000` was not restarted or
+modified. Its current process has not loaded this new plugin. EVA source and
+portable package wiring are prepared; after the parent EVA manager is safely
+reloaded, subsequently started Bots use the new composition. Neither that parent
+reload nor deployment to running Bots has been performed.

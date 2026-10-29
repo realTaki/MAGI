@@ -102,8 +102,11 @@ test('restoration consumes the real safe persisted inventory, not mere directory
   assert.ok(starts.every(args => args[0] === undefined && args[1] !== undefined));
 });
 
-async function hostFixture({ child = false, restore = restoreConfiguredNodes } = {}) {
-  const cleanups = [], calls = [], warnings = [];
+async function hostFixture({ child = false, restore = restoreConfiguredNodes, dmAvailable = true } = {}) {
+  const cleanups = [], calls = [], warnings = [], services = new Map();
+  if (dmAvailable) services.set('magiDm', { attach(channel, handle) {
+    calls.push(['dm-attach', channel, handle]); return () => { calls.push(['dm-detach', handle]); };
+  } });
   let ready, cancelled = false, tool, runtimeOptions;
   const manager = { status: async () => ({ nodes: [offline('eva-000')] }),
     homeRoot: '/parent', paths: handle => ({ home: `/bots/${handle}`, workspace: `/bots/${handle}` }),
@@ -111,6 +114,8 @@ async function hostFixture({ child = false, restore = restoreConfiguredNodes } =
     async stop(...args) { calls.push(['stop', ...args]); }, dispose() { calls.push(['dispose']); } };
   const ctx = {
     profileContext: { home: '/parent', installAnchor: '/installed' },
+    provide(key, value) { assert.equal(services.has(key), false); services.set(key, value); calls.push(['provide', key]); },
+    get(key) { return services.get(key); },
     effect(callback) { const cleanup = callback(); if (cleanup) cleanups.push(cleanup); },
     appReady: { onReady(callback) { ready = callback; calls.push(['subscribe']); return () => { cancelled = true; calls.push(['cancel-ready']); }; } },
     tools: { register(value) { tool = value; calls.push(['tool']); } },
@@ -119,14 +124,9 @@ async function hostFixture({ child = false, restore = restoreConfiguredNodes } =
   };
   const source = (await readFile(new URL('../index.js', import.meta.url), 'utf8')).replace(/^import .*;$/gm, '').replace(/^export /gm, '');
   runInNewContext(`${source}\napply(ctx);`, {
-    ctx, AbortController, validateName, defineTool: value => value,
+    ctx, AbortController, join, validateName, defineTool: value => value,
     isEvaChild: () => child, desktopRuntime: () => ({}), credentialStorePath: async () => '/shared/store',
     EvaRuntime: function (_runtime, options) { calls.push(['manager']); runtimeOptions = options; return manager; },
-    installParentDm(_ctx, installedManager, factory) {
-      assert.equal(installedManager, manager); assert.equal(typeof factory, 'function');
-      calls.push(['dm-install']);
-      return { attach(channel, handle) { calls.push(['dm-attach', channel, handle]); return () => { calls.push(['dm-detach', handle]); }; } };
-    },
     restoreConfiguredNodes: restore, registerParentView() { calls.push(['routes']); },
     console: { warn: value => warnings.push(value) },
   });
@@ -137,7 +137,15 @@ async function hostFixture({ child = false, restore = restoreConfiguredNodes } =
 test('parent activation wires runtime process-derived channels to the DM broker', async () => {
   const host = await hostFixture();
   try {
-    assert.equal(host.calls.filter(([kind]) => kind === 'dm-install').length, 1);
+    const transport = host.ctx.get('magiDmTransport');
+    assert.equal(transport.kind, 'broker');
+    assert.equal(transport.workspace, '/parent/workspace');
+    assert.deepEqual(JSON.parse(JSON.stringify(await transport.peers())), [{ handle: 'eva-000', status: 'offline' }]);
+    host.manager.status = async () => ({ nodes: [{ handle: 'eva-000', status: 'running' }, { handle: 'eva-001', status: 'stopping' }] });
+    assert.deepEqual(JSON.parse(JSON.stringify(await transport.peers())), [
+      { handle: 'eva-000', status: 'online' }, { handle: 'eva-001', status: 'offline' },
+    ]);
+    assert.equal(host.calls.filter(([kind, key]) => kind === 'provide' && key === 'magiDmTransport').length, 1);
     assert.equal(typeof host.runtimeOptions.dmAttach, 'function');
     const channel = {};
     const detach = host.runtimeOptions.dmAttach(channel, 'eva-000');
@@ -148,6 +156,14 @@ test('parent activation wires runtime process-derived channels to the DM broker'
     detach();
     assert.ok(host.calls.some(([kind, handle]) => kind === 'dm-detach' && handle === 'eva-000'));
     assert.ok(!host.calls.some(([kind]) => kind === 'start'), 'installing DM does not auto-start a process');
+  } finally { host.dispose(); }
+});
+
+test('parent cannot attach a process before the standalone DM service is available', async () => {
+  const host = await hostFixture({ dmAvailable: false });
+  try {
+    assert.throws(() => host.runtimeOptions.dmAttach({}, 'eva-000'), /DM|magiDm/);
+    assert.ok(!host.calls.some(([kind]) => kind === 'dm-attach'));
   } finally { host.dispose(); }
 });
 

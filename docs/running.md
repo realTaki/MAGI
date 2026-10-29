@@ -1,5 +1,21 @@
 # Running MAGI
 
+> **Current product: native DSH plugins.** Only EVA, MAGI Shell navigation and
+> the independent DM plugin are installed from this checkout. The Electron Shell,
+> old provider module and launcher entrypoints below are retired. Do not run the
+> historical commands; they describe archived revisions, not a supported launch.
+
+Use [Contributing](<../CONTRIBUTING.md>) to prepare the owned Node runtime and
+root lockfile, then run `npm test`. Produce portable bundles with
+`npm run pack:dsh -- --app eva --out dist` (DM is included) or
+`npm run pack:dsh -- --app magi-shell --out dist`. Install a bundle through the
+DSH plugin manager only with an explicit authorized activation window; source
+cleanup does not install, reload or restart a running Host. Provider credentials
+and model selection belong to the native DSH configuration, not the deleted
+provider module. See the [current handoff](<../DSH-HANDOFF.md>).
+
+## Archived pre-DSH running guide (not executable)
+
 Use a prepared checkout with its MAGI-owned Node 24 runtime and root-lockfile
 dependencies; see [Contributing](../CONTRIBUTING.md). Commands below run from the
 repository root on Linux/macOS. Windows uses `runtime/bin/node.exe` and the same
@@ -69,9 +85,10 @@ traffic, never owner/provider configuration. The server command above is not an
 interactive terminal-chat command. The terminal chat channel has been removed;
 use the desktop/Web owner interface for local conversations.
 
-See the [peer channel contract](../packages/channel-a2a/README.md) and
-[group synchronization boundaries](architecture/peer-group-sync.md). This MAGI
-peer subset is inspired by A2A 1.0, not a standards-compliant A2A implementation.
+The old peer-channel implementation has been deleted. The historical
+[group synchronization boundaries](architecture/peer-group-sync.md) describe
+that retired protocol, not the current [local DM plugin](<../packages/dm/README.md>).
+The old peer subset was inspired by A2A 1.0, not standards-compliant A2A.
 Only Shell and independent agent launcher roles are supported; the central ASP runtime has been removed.
 
 ## Roles and state

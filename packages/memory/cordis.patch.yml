@@ -1,0 +1,4 @@
+- insert:
+    - id: magi-memory
+      name: '@magi/memory'
+      config: {}

@@ -9,13 +9,11 @@ import { AgentWorker } from "@magi/agent/worker.js";
 import { ToolsWorker, type Tool } from "@magi/built-in-tools/worker.js";
 import { ContactsWorker } from "@magi/contacts/worker.js";
 import { ActionItemsWorker } from "@magi/action-items/worker.js";
-import { MemoryWorker } from "@magi/memory/worker.js";
 import { ProvidersWorker } from "@magi/providers/worker.js";
 import type { LLMClient } from "@magi/providers/client.js";
 import { SkillWorker } from "@magi/skills/worker.js";
 import { PeerWorker, type PeerOptions } from "@magi/channel-a2a";
 import { TelegramWorker } from "@magi/channel-telegram/worker.js";
-import { TaskWorker } from "@magi/channel-tasks/worker.js";
 import { McpWorker, type McpConnector } from "@magi/mcp/worker.js";
 import type { BaseWorker } from "@magi/bus";
 
@@ -26,10 +24,8 @@ function shared(bus: Bus, client?: LLMClient, tools?: Tool[]): BaseWorker[] {
     new AgentWorker(bus),
     new SubconsciousWorker(bus),
     new ToolsWorker(bus, tools),
-    new MemoryWorker(bus),
     new ActionItemsWorker(bus),
     new ProvidersWorker(bus, client),
-    new TaskWorker(bus, { isReady: () => Boolean(client || (bus.settings.get("provider.name") && (bus.secrets.get("provider.api_key") || bus.secrets.get(bus.settings.get("provider.oauth_ref") ?? "")))) }),
   ];
 }
 
@@ -62,4 +58,4 @@ export function shellWorkers(bus: Bus, webapp: BaseWorker, peer: BaseWorker, cli
 }
 
 /** Pause a hosted MAGI without taking down its UI or peer listener. */
-export const HOSTED_NODE_WORKERS = ["contacts", "skills", "agent", "subconscious", "tools", "memory", "action-items", "feed", "providers", "task", "mcp", "tg"];
+export const HOSTED_NODE_WORKERS = ["contacts", "skills", "agent", "subconscious", "tools", "action-items", "feed", "providers", "mcp", "tg"];

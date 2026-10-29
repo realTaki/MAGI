@@ -8,15 +8,18 @@ import path from 'node:path';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const lock = JSON.parse(readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
 let checked = 0;
-for (const app of ['eva', 'magi-shell']) {
-  const dir = path.join(root, 'apps', app);
+for (const [location, expectedName] of [['apps/eva', '@local/eva'], ['apps/magi-shell', '@local/magi-shell'], ['packages/dm', '@magi/dm'], ['packages/memory', '@magi/memory']]) {
+  const dir = path.join(root, location);
+  const app = location;
   const pkg = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'));
   assert.equal(pkg.type, 'module');
-  assert.equal(pkg.name, `@local/${app}`);
-  assert.equal(lock.packages[`apps/${app}`].name, pkg.name);
-  assert.equal(lock.packages[`apps/${app}`].version, pkg.version);
-  assert.equal(pkg.dsh.bundle.patch, './cordis.patch.yml');
-  assert.ok(readFileSync(path.join(dir, 'cordis.patch.yml'), 'utf8').includes(pkg.name));
+  assert.equal(pkg.name, expectedName);
+  assert.equal(lock.packages[location].name, pkg.name);
+  assert.equal(lock.packages[location].version, pkg.version);
+  if (location.startsWith('apps/') || location === 'packages/memory') {
+    assert.equal(pkg.dsh.bundle.patch, './cordis.patch.yml');
+    assert.ok(readFileSync(path.join(dir, 'cordis.patch.yml'), 'utf8').includes(pkg.name));
+  } else assert.equal(pkg.dsh.bundle, undefined, 'Integrating bundles mount the reusable DM plugin.');
   for (const entry of pkg.files) {
     assert.ok(!path.isAbsolute(entry) && !entry.split(/[\\/]/).includes('..'), `Unsafe bundle resource: ${entry}`);
     if (entry === 'locale/*.json') {

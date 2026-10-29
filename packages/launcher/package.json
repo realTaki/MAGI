@@ -36,13 +36,10 @@
     "@magi/providers": "*",
     "@magi/built-in-tools": "*",
     "@magi/contacts": "*",
-    "@magi/memory": "*",
     "@magi/mcp": "*",
     "@magi/skills": "*",
-    "@magi/channel-tasks": "*",
     "@magi/channel-telegram": "*",
     "@magi/webapp": "*",
-    "@magi/channel-a2a": "*",
     "@magi/subconscious": "*",
     "@magi/action-items": "*",
     "@magi/feed": "*"

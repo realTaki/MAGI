@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EvaRuntime, validateName, redact } from '../runtime.js';
-import { readEvaPreset } from '../child-host.js';
+import { readEvaPreset, resolveDmEntry, resolveMemoryEntry } from '../child-host.js';
 
 const fake = fileURLToPath(new URL('./fake-cli.js', import.meta.url));
 const runtime = { executable: process.execPath, cli: fake, runtimeDir: '/unused', supportDir: '/unused' };
@@ -26,6 +26,36 @@ test('node names cannot escape the runtime root', () => {
   for (const name of [undefined, null, 123, {}, '../other', '/tmp/other', '', 'ABC', 'a/b', 'a'.repeat(33)]) assert.throws(() => validateName(name));
   assert.equal(validateName('melchior'), 'melchior');
   assert.equal(validateName('eva-000'), 'eva-000');
+});
+
+test('reserved user handle fails before runtime or filesystem mutation', async t => {
+  const { base, manager } = await fixture(t);
+  const before = await readdir(base);
+  assert.throws(() => validateName('user'), /reserved/);
+  assert.throws(() => manager.paths('user'), /reserved/);
+  assert.equal(manager.nodes.size, 0);
+  assert.equal(manager.pending.size, 0);
+  assert.deepEqual(await readdir(base), before);
+});
+
+test('DM binding reattaches existing processes and cleanly detaches across independent reload', async t => {
+  const { manager } = await fixture(t);
+  await manager.start(undefined, 'eva-000');
+  const owned = [...manager.nodes.values()][0];
+  const calls = [], closed = [];
+  const attach = (channel, handle) => { calls.push({ channel, handle }); return () => closed.push(handle); };
+  const release = manager.bindDm(attach);
+  assert.deepEqual(calls, [{ channel: owned.child, handle: 'eva-000' }]);
+  assert.throws(() => manager.bindDm(attach), /Duplicate/);
+  release(); release();
+  assert.deepEqual(closed, ['eva-000']);
+  assert.equal(owned.child.connected, true, 'DM unload does not stop the Bot');
+  const next = manager.bindDm(attach);
+  assert.equal(calls.length, 2);
+  await manager.stop(undefined, 'eva-000');
+  assert.deepEqual(closed, ['eva-000', 'eva-000']);
+  next();
+  assert.equal(closed.length, 2, 'finished process attachment is not disposed twice');
 });
 
 test('diagnostics do not expose Web login URLs', () => {
@@ -83,13 +113,15 @@ test('managed child DM attachment owns the spawned IPC lifetime and startup over
   assert.equal(attachments[0].channel.pid, first.pid);
   const args = attachments[0].channel.spawnargs;
   const patch = JSON.parse(await readFile(args[args.indexOf('--patch') + 1], 'utf8'));
-  assert.equal(patch[0].insert.length, 2);
+  assert.equal(patch[0].insert.length, 4);
+  assert.deepEqual(patch[0].insert[2], { id: 'magi-memory-child', name: resolveMemoryEntry(), config: {} });
+  assert.deepEqual(patch[0].insert[1], { id: 'magi-dm-child', name: resolveDmEntry(), config: {} });
   assert.equal(patch[0].insert[0].id, 'eva-child');
-  assert.equal(patch[0].insert[0].name, fileURLToPath(new URL('../child-entry.js', import.meta.url)));
+  assert.equal(patch[0].insert[0].name, fileURLToPath(new URL('../child.js', import.meta.url)));
   assert.equal(patch[0].insert[0].config.profile, 'eva-000');
   assert.equal(patch[0].insert.some(row => row.id === 'eva-dm-child'), false);
   const preset = await readEvaPreset();
-  assert.deepEqual(patch[0].insert[1], { id: 'eva-agent-preset', name: 'cordis:include',
+  assert.deepEqual(patch[0].insert[3], { id: 'eva-agent-preset', name: 'cordis:include',
     config: { path: join(first.home, 'profiles', '.eva-assets', first.profile, `preset-eva-${preset.digest}.yml`) } });
   await manager.stop(base, 'eva-000');
   assert.equal(attachments[0].closed, 1, 'process exit releases DM listener ownership exactly once');
@@ -475,7 +507,7 @@ test('EVA startup patch preserves older installation-only, workspace and Creator
   assert.equal(patches.length, 4);
   assert.equal(await readFile(creatorPatch, 'utf8'), creatorContent);
   const preset = await readEvaPreset();
-  const workspaceId = createHash('sha256').update(JSON.stringify({ workspace: paths.workspace, profile: 'eva-000', defaultAgentPreset: 'eva', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 2, evaPresetHash: preset.digest, desktopExclusions: [] })).digest('hex').slice(0, 16);
+  const workspaceId = createHash('sha256').update(JSON.stringify({ workspace: paths.workspace, profile: 'eva-000', defaultAgentPreset: 'eva', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 4, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), evaPresetHash: preset.digest, desktopExclusions: [] })).digest('hex').slice(0, 16);
   assert.ok(patches.includes(`startup-${installationId}-${workspaceId}.patch.yml`));
   const overlay = JSON.parse(await readFile(join(paths.state, `startup-${installationId}-${workspaceId}.patch.yml`), 'utf8'));
   assert.deepEqual(overlay[1], { id: 'agent-preset-registry', name: '@deepseek-ai/dsh-agent-preset-registry', config: { default: 'eva' } });
@@ -581,13 +613,18 @@ test('desktop role selections select a new immutable overlay without rewriting e
   const preset = await readEvaPreset();
   const installationId = createHash('sha256').update(dirname(fileURLToPath(new URL('../runtime.js', import.meta.url)))).digest('hex').slice(0, 16);
   const configId = createHash('sha256').update(JSON.stringify({ workspace: paths.workspace, profile: paths.profile,
-    defaultAgentPreset: 'eva', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 2,
+    defaultAgentPreset: 'eva', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 4, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(),
     evaPresetHash: preset.digest, desktopExclusions, credentialsPath, credentialSharingVersion: 1 })).digest('hex').slice(0, 16);
   const nextName = `startup-${installationId}-${configId}.patch.yml`;
   assert.notEqual(nextName, previousName);
   assert.deepEqual((await readdir(paths.state)).filter(name => name.endsWith('.patch.yml')).sort(), [previousName, nextName].sort());
   const overlay = JSON.parse(await readFile(join(paths.state, nextName), 'utf8'));
-  assert.deepEqual(overlay.slice(4), desktopExclusions);
+  assert.deepEqual(overlay[4], { id: 'magi-dm', disabled: true });
+  assert.deepEqual(overlay[0].insert[1], { id: 'magi-dm-child', name: resolveDmEntry(), config: {} });
+  assert.equal(overlay[0].insert.filter(row => row.id === 'magi-dm-child').length, 1, 'one active installed DM root, independent of selected EVA version');
+  assert.deepEqual(overlay[5], { id: 'magi-memory', disabled: true });
+  assert.deepEqual(overlay.slice(6), desktopExclusions);
+  assert.deepEqual(overlay[0].insert[2], { id: 'magi-memory-child', name: resolveMemoryEntry(), config: {} });
   assert.equal(overlay[3].id, 'credentials');
   assert.ok(!JSON.stringify(overlay).includes('@local/unknown'), 'unrelated bundles are not patched or disabled');
   assert.equal(await readFile(manifestPath, 'utf8'), manifest);

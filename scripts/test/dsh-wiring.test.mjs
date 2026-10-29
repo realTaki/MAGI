@@ -19,43 +19,46 @@ test('import closure scan ignores quoted protocol keys such as from', () => {
 
 test('default discovery includes every current DSH regression without retired launcher acceptance', () => {
   const actual = collectTests();
-  for (const app of ['eva', 'magi-shell']) {
-    for (const name of readdirSync(new URL(`apps/${app}/test/`, root)).filter(name => name.endsWith('.test.js'))) {
-      assert.ok(actual.includes(`apps/${app}/test/${name}`), name);
+  for (const [app, location] of [['eva', 'apps/eva'], ['magi-shell', 'apps/magi-shell'], ['dm', 'packages/dm'], ['memory', 'packages/memory']]) {
+    for (const name of readdirSync(new URL(`${location}/test/`, root)).filter(name => name.endsWith('.test.js'))) {
+      assert.ok(actual.includes(`${location}/test/${name}`), name);
     }
-    for (const name of portableTests[app]) assert.ok(collectTests({ portable: true }).includes(`apps/${app}/test/${name}.test.js`));
+    for (const name of portableTests[app]) assert.ok(collectTests({ portable: true }).includes(`${location}/test/${name}.test.js`));
   }
   assert.equal(new Set(actual).size, actual.length);
-  assert.ok(actual.includes('apps/shell/test/dependency-policy.test.mjs'), 'keep authoritative lock/advisory checks');
+  assert.ok(actual.includes('scripts/test/dependency-policy.test.mjs'), 'keep authoritative lock/advisory checks');
   assert.ok(actual.every(file => !file.includes('/dist/') && !file.includes('/integration/')));
   const pkg = JSON.parse(read('package.json'));
   assert.equal(pkg.scripts.test, 'node scripts/check-dsh.mjs && node scripts/test.mjs');
-  assert.match(pkg.scripts['test:legacy'], /test-legacy\.mjs/);
+  assert.deepEqual(pkg.workspaces, ['apps/eva', 'apps/magi-shell', 'packages/dm', 'packages/memory']);
+  assert.equal(pkg.scripts['test:legacy'], undefined);
+  assert.equal(pkg.scripts['verify:legacy'], undefined);
 });
 
 test('active bundle import closures cannot depend on retired Shell or legacy workspace packages', () => {
-  for (const app of ['eva', 'magi-shell']) {
-    const dir = new URL(`apps/${app}/`, root);
-    const pkg = JSON.parse(read(`apps/${app}/package.json`));
-    assert.equal(pkg.dsh.bundle.patch, './cordis.patch.yml');
+  for (const app of ['apps/eva', 'apps/magi-shell', 'packages/dm', 'packages/memory']) {
+    const dir = new URL(`${app}/`, root);
+    const pkg = JSON.parse(read(`${app}/package.json`));
+    if (app.startsWith('apps/') || app === 'packages/memory') assert.equal(pkg.dsh.bundle.patch, './cordis.patch.yml');
     for (const name of readdirSync(dir).filter(name => name.endsWith('.js'))) {
-      const source = read(`apps/${app}/${name}`);
+      const source = read(`${app}/${name}`);
       // Static ESM imports, re-exports, literal dynamic imports and injected require.
       const imports = importSpecifiers(source);
       for (const specifier of imports) {
-        assert.ok(specifier.startsWith('node:') || specifier.startsWith('./') || specifier.startsWith('@deepseek-ai/') || specifier === 'react', `${app}/${name}: ${specifier}`);
+        assert.ok(specifier.startsWith('node:') || specifier.startsWith('./') || specifier.startsWith('@deepseek-ai/') || specifier === 'react' || ['@magi/dm', '@magi/memory'].includes(specifier), `${app}/${name}: ${specifier}`);
         if (specifier.startsWith('./')) assert.ok(existsSync(new URL(specifier, dir)), `${app}/${name}: missing ${specifier}`);
       }
-      assert.doesNotMatch(source, /apps\/shell|@magi\/|\.\.\/(?:shell|packages)\//, `${app}/${name}`);
+      assert.doesNotMatch(source, /apps\/shell|@magi\/(?!(?:dm|memory)(?:['"/\s]|$))|\.\.\/(?:shell|packages)\//, `${app}/${name}`);
     }
-    for (const dependency of Object.keys({ ...pkg.dependencies, ...pkg.peerDependencies })) assert.ok(dependency.startsWith('@deepseek-ai/'), dependency);
+    for (const dependency of Object.keys({ ...pkg.dependencies, ...pkg.peerDependencies })) assert.ok(dependency.startsWith('@deepseek-ai/') || (app === 'apps/eva' && ['@magi/dm', '@magi/memory'].includes(dependency)), dependency);
   }
 });
 
 test('CI validates DSH source and has no standalone packaging, UI build or old EVA IPC step', () => {
   for (const platform of ['linux', 'windows', 'macos']) {
     const workflow = read(`.github/workflows/${platform}-validation.yml`);
-    assert.match(workflow, /ELECTRON_SKIP_BINARY_DOWNLOAD: ['"]?1/);
+    assert.match(workflow, /scripts\/prepare-runtime\.mjs/);
+    assert.doesNotMatch(workflow, /apps\/shell/);
     assert.doesNotMatch(workflow, /build:ui|lint:i18n|self-rebuild\.test|electron-builder|AppImage|upload-artifact|client-release/);
     assert.match(workflow, platform === 'windows' ? /run test:portable/ : /npm-cli\.js test/);
   }

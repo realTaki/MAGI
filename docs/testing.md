@@ -1,24 +1,25 @@
 # Testing MAGI's DSH plugins
 
 Use the MAGI-owned Node 24 and npm required by [AGENTS.md](../AGENTS.md), not a
-system runtime. The existing repository-local toolchain path is retained only
-for tooling; using it does not build or launch the old Electron application.
+system runtime. The repository-local runtime is prepared by `scripts/prepare-runtime.mjs`;
+using it does not build or launch an Electron application.
 
 ```sh
-apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js test
+runtime/bin/node runtime/npm/node_modules/npm/bin/npm-cli.js test
 # Explicitly narrower portable gate (also used by Windows CI):
-apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run test:portable
+runtime/bin/node runtime/npm/node_modules/npm/bin/npm-cli.js run test:portable
 ```
 
 `npm test` checks the two DSH package manifests, lock metadata, distributed
 resources and all top-level plugin JavaScript syntax, then runs **every**
-`apps/eva/test/*.test.js` and `apps/magi-shell/test/*.test.js` regression. No
+`apps/eva/test/*.test.js`, `apps/magi-shell/test/*.test.js` and
+`packages/dm/test/*.test.js` regression. No
 TypeScript output, old EVA launcher, Electron UI build, installer or AppImage is
 needed. Test discovery also includes its own wiring/bundle-boundary regression
 and the authoritative root-lock/dependency-advisory policy. Literal relative
 imports in active bundles must stay inside their bundle; official DSH services
-are supplied by the Host. Neither active bundle depends on `apps/shell` or the
-pre-DSH `packages/*` implementations.
+are supplied by the Host. EVA bundles the independent `@magi/dm` workspace. The deleted Electron Shell
+and providers, and remaining archived pre-DSH packages, are not dependencies.
 
 ## CI scope and meaningful coverage
 
@@ -43,22 +44,19 @@ creating another identity. Existing persistence-barrier, competing Host,
 credential/auth and descendant-cleanup assertions remain enabled in the complete
 suite. A failed meaningful safety assertion is not deleted or silently skipped.
 
-## Retained pre-DSH code, not current acceptance
+## Retired pre-DSH code
 
-```sh
-# Compiles the pre-DSH packages and runs their remaining historical tests:
-apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run test:legacy
-```
+The old Electron Shell and provider module have been removed. Remaining old
+packages are archived source, excluded from the root workspace allowlist and
+lockfile. Their provider-bearing launcher composition and Shell-dependent
+webapp APIs are intentionally nonfunctional historical code. Root `build`,
+`db:generate`, `test:legacy` and `verify:legacy` entries and old acceptance
+runners/TypeScript solution are retired; no current command promises to compile
+that archive. Do not restore removed modules to make it pass.
 
-`test:legacy` preserves the old Shell/package assertions rather than deleting
-them. It is not a passing replacement for current tests: fixtures that start
-removed `apps/eva/eva.mjs` or import its deleted atomic helper are known obsolete.
-The AppImage rollback tests test an intentionally retired distribution model.
-No current DSH bundle invokes those entrypoints. `verify:legacy` retains the old
-self-update build/UI gate only for historical source work; the default `verify`
-now checks the DSH product. No CI workflow builds or publishes standalone desktop
-packages, even via manual dispatch. Release/tag/organization-fork operations are
-separate and are not part of source validation.
+The relocated shared dependency policy remains enabled, including all
+advisory-range checks. Only the Drizzle-specific transform smoke test retired
+with that excluded dependency. No CI workflow publishes standalone packages.
 
 [DSH handoff](../DSH-HANDOFF.md) distinguishes fixture regression, a real native
 DSH integration, installation, model/tool calls and user-visible GUI acceptance.

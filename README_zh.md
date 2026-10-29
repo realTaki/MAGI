@@ -8,6 +8,10 @@
 
 > **正在迁移至 DSH。** `apps/eva` 现为 DSH Host 插件，不再是原来的 EVA launcher。本文及关联文档中的桌面／Shell 与修订切换流程属于迁移前实现，尚未完成与新插件的集成。操作前请先阅读[当前范围与验收边界](DSH-HANDOFF.md)。
 
+当前 DSH 功能边界是 **EVA + 桌面导航**；可靠消息由独立 **[@magi/dm 插件](<packages/dm/README.md>)**负责，EVA 依赖并挂载它，不再内嵌 DM 实现。分发 EVA 使用[专用打包脚本](<scripts/pack-dsh.mjs>)，由 MAGI 自带 Node 执行 `scripts/pack-dsh.mjs --app eva --out dist`。其他 packages 仍属 legacy，不是当前插件运行时依赖。
+
+旧 Electron Shell 和 provider 模块已删除。可安装 workspace 仅为 EVA、MAGI Shell 导航和 DM；其他迁移前 packages 仅保留为不参与安装的归档源码，根目录不再提供 legacy 构建／验收入口。下方历史架构与修订切换说明不是当前启动指南。
+
 **Fork 一份，养出你自己的 MAGI。**
 
 MAGI 探索的是一种新的软件形态：Agent 不只是替你使用软件，也能修改软件，让它逐渐长成你需要的样子。

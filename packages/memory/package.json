@@ -1,24 +1,12 @@
 {
   "name": "@magi/memory",
-  "version": "0.2.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "MAGI runtime package: the long-term memory tools and the worker that runs them.",
-  "exports": {
-    ".": {
-      "types": "./dist/worker.d.ts",
-      "default": "./dist/worker.js"
-    },
-    "./*": {
-      "types": "./dist/*",
-      "default": "./dist/*"
-    },
-    "./package.json": "./package.json"
-  },
-  "scripts": {
-    "build": "tsc -b"
-  },
-  "dependencies": {
-    "@magi/bus": "*"
-  }
+  "description": "Bot-local durable memory, automatic conversation context, and versioned management tools.",
+  "exports": { ".": "./index.js", "./locale/*.json": "./locale/*.json", "./icon": "./icon.svg" },
+  "files": ["index.js", "tools.js", "store.js", "cordis.patch.yml", "locale/*.json", "icon.svg", "README.md"],
+  "scripts": { "test": "node --test test/*.test.js" },
+  "engines": { "node": ">=24.0.0" },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
 }

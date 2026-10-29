@@ -8,6 +8,10 @@
 
 > **DSH migration in progress.** `apps/eva` is now a DSH Host plugin, not the previous EVA launcher. The desktop/Shell and revision-switching flows described here and in the linked docs belong to the pre-migration implementation; their integration with the new plugin is not yet complete. Read the [current scope and verification boundaries](DSH-HANDOFF.md) before following those instructions.
 
+The current DSH feature boundary is **EVA + Desktop navigation**, with reliable messaging in the independent **[@magi/dm plugin](<packages/dm/README.md>)**. EVA depends on and mounts that plugin; messaging is not an EVA-internal implementation. Use the [DSH pack helper](<scripts/pack-dsh.mjs>) for portable EVA archives (`npm run pack:dsh -- --app eva --out dist` with the MAGI-owned runtime). The independent **[@magi/memory bundle](<packages/memory/README.md>)** provides Bot-wide durable facts, mounts automatically with EVA, and can be packed separately with `npm run pack:dsh -- --app memory --out dist`. Its facts belong to each Bot's DSH_HOME, not individual conversations or profiles. Other packages are legacy, not runtime dependencies of these plugins.
+
+The old Electron Shell and provider module have been deleted. Only EVA, MAGI Shell navigation, DM and native memory are installable workspaces; other pre-DSH packages are inert archived source, with no supported root legacy build/test gate. The historical architecture and revision-switching discussion below is not a current launch guide.
+
 **Fork it. Grow your own MAGI.**
 
 MAGI is an experiment in software that agents can reshape for the people using it.

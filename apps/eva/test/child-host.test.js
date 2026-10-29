@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
-import { DEFAULT_EVA_PRESET, CHILD_HOST_VERSION, readEvaPreset, desktopRoleExclusions, createChildHostPatch } from '../child-host.js';
+import { DEFAULT_EVA_PRESET, CHILD_HOST_VERSION, resolveDmEntry, resolveMemoryEntry, readEvaPreset, desktopRoleExclusions, createChildHostPatch } from '../child-host.js';
 
 const modulePath = name => fileURLToPath(new URL(`../${name}.js`, import.meta.url));
 const options = Object.freeze({ workspace: '/synthetic/eva-home', profile: 'eva-000', presetPath: '/synthetic/profiles/.eva-assets/eva-000/preset.yml' });
@@ -28,9 +28,11 @@ async function fixture(t) {
 
 test('child Host has a separate EVA default and versioned composition', () => {
   assert.equal(DEFAULT_EVA_PRESET, 'eva');
-  assert.equal(CHILD_HOST_VERSION, 2);
+  assert.equal(CHILD_HOST_VERSION, 4);
   assert.deepEqual(createChildHostPatch(options), [{ insert: [
-    { id: 'eva-child', name: modulePath('child-entry'), config: { workspace: options.workspace, profile: options.profile } },
+    { id: 'eva-child', name: modulePath('child'), config: { workspace: options.workspace, profile: options.profile } },
+    { id: 'magi-dm-child', name: resolveDmEntry(), config: {} },
+    { id: 'magi-memory-child', name: resolveMemoryEntry(), config: {} },
     { id: 'eva-agent-preset', name: 'cordis:include', config: { path: options.presetPath } },
   ] }, {
     id: 'agent-preset-registry', name: '@deepseek-ai/dsh-agent-preset-registry', config: { default: 'eva' },
@@ -46,14 +48,18 @@ test('sharing preserves child flags and appends credentials before desktop role 
   assert.deepEqual(overlay[0].insert[0].config, {
     workspace: options.workspace, profile: options.profile, credentialsPath, credentialSharingVersion: 1,
   });
-  assert.deepEqual(overlay[0].insert[1], { id: 'eva-agent-preset', name: 'cordis:include', config: { path: options.presetPath } });
-  assert.equal(overlay[0].insert.length, 2, 'one package entry owns both child lifecycle and DM');
+  assert.deepEqual(overlay[0].insert[1], { id: 'magi-dm-child', name: resolveDmEntry(), config: {} });
+  assert.deepEqual(overlay[0].insert[2], { id: 'magi-memory-child', name: resolveMemoryEntry(), config: {} });
+  assert.deepEqual(overlay[0].insert[3], { id: 'eva-agent-preset', name: 'cordis:include', config: { path: options.presetPath } });
+  assert.equal(overlay[0].insert.length, 4, 'explicit installed root works even with older selected EVA bundles');
   assert.equal(overlay[0].insert.some(row => row.id === 'eva-dm-child'), false);
   assert.deepEqual(overlay[3], { id: 'credentials', name: '@deepseek-ai/dsh-credentials-local', disabled: false,
     config: { path: credentialsPath, watch: true } });
-  assert.deepEqual(overlay.slice(4), desktopRows);
+  assert.deepEqual(overlay[4], { id: 'magi-dm', disabled: true }, 'disable an existing optional bundle row without asserting or renaming its package');
+  assert.deepEqual(overlay[5], { id: 'magi-memory', disabled: true });
+  assert.deepEqual(overlay.slice(6), desktopRows);
   assert.deepEqual(exclusions, desktopRows, 'caller-owned role selections are not mutated');
-  assert.deepEqual(createChildHostPatch({ ...options, desktopExclusions: exclusions }).slice(3), desktopRows);
+  assert.deepEqual(createChildHostPatch({ ...options, desktopExclusions: exclusions }).slice(5), desktopRows);
 });
 
 test('child Host inserts no desktop management or permission/default-model overrides', () => {
@@ -89,6 +95,21 @@ for (const [bundles, expected] of [
     assert.equal(await readFile(manifest, 'utf8'), text);
   });
 }
+
+test('standalone memory and EVA bundle selections keep exactly one active child memory root', async t => {
+  const { profile, manifest } = await fixture(t);
+  for (const bundles of [['@magi/memory'], ['@local/eva'], ['@local/eva', '@magi/memory']]) {
+    await writeFile(manifest, JSON.stringify({ dsh: { profile: { bundles } } }));
+    const desktopExclusions = await desktopRoleExclusions(profile);
+    const memoryEntry = '/synthetic/installed/node_modules/@magi/memory/index.js';
+    const patch = createChildHostPatch({ ...options, desktopExclusions, memoryEntry });
+    assert.deepEqual(patch[0].insert.filter(row => row.id === 'magi-memory-child'), [
+      { id: 'magi-memory-child', name: memoryEntry, config: {} },
+    ]);
+    assert.equal(patch.filter(row => row.id === 'magi-memory' && row.disabled).length, 1);
+  }
+  assert.throws(() => createChildHostPatch({ ...options, memoryEntry: './relative.js' }), /absolute package entry/);
+});
 
 test('role exclusions return independent override objects', async t => {
   const { profile, manifest } = await fixture(t);

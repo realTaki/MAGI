@@ -18,7 +18,7 @@ The authenticated, read-only `GET /api/eva/parent-main` reports the fixed identi
 
 ## Local Bot DM
 
-The separate EVA Host bundle now implements a `dm` tool for explicit parent↔EVA and sibling↔sibling messages over existing process IPC. MAGI Shell adds no DM UI, route, transcript forwarding, model loop, or tool registration. Stable profile handles, mutable DM display names, separate per-pair native Sessions, durable receipt/retry semantics, and the fail-closed restart boundary are documented in [EVA DM](<../eva/README.md#本地-bot-dm源码已实现待安全应用>). These source changes have not been applied to the running Hosts; an EVA reload can interrupt managed nodes and needs a safe update window.
+The independent [@magi/dm plugin](<../../packages/dm/README.md>) owns the `dm` tool for explicit parent↔EVA and sibling↔sibling messages. EVA depends on, bundles and mounts that package, and supplies transport over existing process IPC; DM is not implemented inside EVA. MAGI Shell adds no DM UI, route, transcript forwarding, model loop, or tool registration. Stable profile handles, mutable DM display names, separate per-pair native Sessions, durable receipt/retry semantics, and the fail-closed restart boundary are documented in [EVA DM](<../eva/README.md#本地-bot-dm源码已实现待安全应用>). These source changes have not been applied to the running Hosts; an EVA reload can interrupt managed nodes and needs a safe update window.
 
 ## UI behavior
 

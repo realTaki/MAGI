@@ -19,8 +19,6 @@ jobs:
   windows:
     name: DSH portable Client and bundle contracts (Windows)
     runs-on: windows-latest
-    env:
-      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     timeout-minutes: 45
     defaults:
       run:
@@ -41,10 +39,10 @@ jobs:
           # shims cannot be passed to execFileSync (EINVAL).
           $env:npm_execpath = Join-Path (Split-Path (Get-Command npm.cmd).Source) "node_modules/npm/bin/npm-cli.js"
           if (!(Test-Path $env:npm_execpath)) { throw "Bootstrap npm CLI is missing" }
-          & ./node_modules/node/bin/node.exe apps/shell/scripts/prepare-runtime.mjs
+          & ./node_modules/node/bin/node.exe scripts/prepare-runtime.mjs
           if ($LASTEXITCODE -ne 0) { throw "Runtime preparation failed" }
       - name: DSH source and portable contracts (not POSIX Host lifecycle)
         run: |
-          $env:PATH = "$PWD/apps/shell/runtime/bin;$env:PATH"
-          & ./apps/shell/runtime/bin/node.exe ./apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run test:portable
+          $env:PATH = "$PWD/runtime/bin;$env:PATH"
+          & ./runtime/bin/node.exe ./runtime/npm/node_modules/npm/bin/npm-cli.js run test:portable
           if ($LASTEXITCODE -ne 0) { throw "DSH portable acceptance failed" }

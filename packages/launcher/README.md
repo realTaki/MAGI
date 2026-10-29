@@ -1,4 +1,13 @@
-# Launcher
+# Launcher (archived pre-DSH source)
+
+This package is excluded from the current install/build/runtime graph. Its old
+composition imports describe the retired BUS runtime and are not executable
+entrypoints: the provider, peer-channel and task-channel implementations have
+been deleted. The old TaskWorker and MemoryWorker registrations and hosted-worker
+list entries are also removed. Current timed instructions use native DSH Schedule;
+current memory is the independent [native memory plugin](<../memory/README.md>).
+Do not restore those implementations or treat this archive as a supported build.
+Current local Bot communication is owned by the [DM plugin](<../dm/README.md>).
 
 `@magi/launcher` owns bootstrapping, process composition and worker lifecycle.
 It is one npm workspace with separate TypeScript projects so database-free
@@ -19,7 +28,8 @@ references its role workers). `tsc -b` at the repository root builds the graph;
 
 The package/class rename does not change persisted worker identity `manager`,
 `ManageWorkerNotify`, replacement state, launcher IPC or peer wire payloads.
-Likewise `@magi/channel-a2a` keeps existing `peer` settings and worker identity.
+The retired peer channel used `peer` settings and worker identity; this is
+historical behavior, not a contract implemented by the current DM plugin.
 There is no terminal-chat worker or production `Magi.chat()` API. Desktop/Web
 uses the existing owner adapter, while standalone EVAs remain peer listeners.
 Management and build command-line entry points remain available.

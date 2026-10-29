@@ -12,9 +12,10 @@ plugins. Use the owned runtime below with `npm test` (complete plugin acceptance
 or `npm run test:portable` (portable contracts only). No Electron UI compilation,
 AppImage, installer or standalone release is required. See [Testing](docs/testing.md)
 and [DSH handoff](DSH-HANDOFF.md) for exact coverage and real-DSH/GUI limitations.
-The older architecture/build/source-map sections below describe retained
-pre-DSH modules; their optional gate is `npm run test:legacy`, not current product
-acceptance. In particular `apps/eva/eva.mjs` no longer exists. Do not recreate it.
+The old Electron Shell and provider module are deleted. Other pre-DSH packages
+remain archive-only source, excluded from installation and current acceptance.
+Root TypeScript/build/database-generation/legacy gates are retired; do not
+restore deleted launchers or providers to make that archived source compile.
 
 ## Your fork is not a temporary copy
 
@@ -35,40 +36,44 @@ agent-readable does not mean context-free.
 
 ## Prepare the toolchain
 
-The checkout is one npm workspace (`packages/*`, `apps/*`) with a committed
+The checkout explicitly installs only `apps/eva`, `apps/magi-shell` and
+`packages/dm`, with a committed
 root `package-lock.json`. Install against that lockfile with `npm ci`.
 Use MAGI's own Node 24 and npm, as required by [AGENTS.md](AGENTS.md).
 A prepared source build has:
 
 ```text
-apps/shell/runtime/bin/node
-apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js
+runtime/bin/node
+runtime/npm/node_modules/npm/bin/npm-cli.js
 ```
 
 Windows uses `bin/node.exe`. A packaged MAGI installation also supplies its
 runtime. If neither is available, prepare the pinned runtime using the
 [platform workflow bootstrap](.github/workflows/linux-validation.yml) and
-[`prepare-runtime.mjs`](apps/shell/scripts/prepare-runtime.mjs); do not silently
+[`prepare-runtime.mjs`](scripts/prepare-runtime.mjs); do not silently
 fall back to an arbitrary system Node. CI has a separate initial Node 24
 bootstrap stage before it switches to the MAGI-owned runtime. No global tool
 installation, persistent PATH change or shell-startup edit is needed.
+The checkout installer accepts an explicit absolute `MAGI_NODE` +
+`MAGI_NPM_CLI` pair, an already prepared runtime, or the installed MAGI macOS
+runtime; it never falls back to PATH Node/npm or nvm. If the runtime needing
+replacement supplies the current bootstrap executable or npm CLI, provisioning
+fails before deleting anything: invoke an external MAGI-owned runtime instead.
 
 From a prepared checkout on Linux/macOS:
 
 ```sh
-PATH="$PWD/apps/shell/runtime/bin:$PATH" apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js ci
-PATH="$PWD/apps/shell/runtime/bin:$PATH" apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run build
-PATH="$PWD/apps/shell/runtime/bin:$PATH" apps/shell/runtime/bin/node apps/shell/runtime/npm/node_modules/npm/bin/npm-cli.js run build:ui --workspace @magi/shell
+PATH="$PWD/runtime/bin:$PATH" runtime/bin/node runtime/npm/node_modules/npm/bin/npm-cli.js ci
+PATH="$PWD/runtime/bin:$PATH" runtime/bin/node runtime/npm/node_modules/npm/bin/npm-cli.js test
 ```
 
 Dependencies stay inside the workspace. Cache overrides, when needed, belong to
-individual commands. See [Running MAGI](docs/running.md) for the EVA/Electron
-startup order and [Testing MAGI](docs/testing.md) for commands and
+individual commands. See [Running MAGI](docs/running.md) for native DSH bundle preparation and [Testing MAGI](docs/testing.md) for commands and
 [Verification](docs/verification.md) for acceptance boundaries.
 
 ## Code and review
 
-Use TypeScript for runtime packages and follow neighboring code conventions.
+Active plugins are directly executed JavaScript; follow neighboring conventions.
 Prefer small, clear changes over extra abstractions. Workers coordinate through
 BUS jobs rather than direct calls into peer workers. Before changing a process,
 source or credential boundary, read [Architecture](docs/architecture.md).
@@ -95,44 +100,30 @@ from saving a source change.
 
 | Path | Responsibility |
 | --- | --- |
-| `apps/shell/` | Electron window, process ownership, startup/profile helpers and React UI |
-| `apps/eva/eva.mjs` | Launcher for Shell or an independent EVA |
-| `packages/launcher/runtime/` | Database-free bootstrap, paths, toolchain and revision utilities |
-| `packages/launcher/composition/` | Role composition and launcher child entry |
-| `packages/bus/` | Books, durable jobs and shared contracts |
-| `packages/launcher/` | Worker lifecycle, configuration and self-replacement |
-| `packages/channel-a2a/` | Trusted-network direct EVA messaging and group synchronization |
-| `packages/webapp/` | Shell's desktop backend and source/runtime actions |
-| `packages/agent/`, `packages/providers/`, other worker packages | Agent turns, model execution and tools/channels |
+| `apps/eva/` | DSH node lifecycle and independent child Hosts |
+| `apps/magi-shell/` | Native Desktop session navigation |
+| `packages/dm/` | Independent reliable local DM plugin, bundled by EVA |
+| `scripts/` | Source checks, tests, portable packaging and owned runtime provisioning |
+| Other `packages/` | Archived pre-DSH source; not installable workspaces |
 | `docs/` | Current guides and clearly marked historical rationale |
 
-Package names come from the manifests: the launcher workspace is `eva`, the
-desktop is `@magi/shell`, and libraries use `@magi/*`.
-`@user.magi` is operator speech, not an npm workspace or separate process.
+Archived launcher composition still imports the removed provider module, and
+archived webapp/runtime code still names the removed Electron Shell. These
+contracts are intentionally not advertised as working builds or active APIs.
 
 Security reports belong in [SECURITY.md](SECURITY.md), not public issue bodies.
 
 ## Dependency security maintenance
 
-The root workspace lock is the only install lock. Do not regenerate separate
-per-app locks: npm workspace installation and Electron's
-production dependency collection resolve from the workspace root. Release
-runtime and packaging caches must also use the root lock hash.
+The root workspace lock is the only install lock. Do not regenerate per-app
+locks. CI caches use the root lock hash. Node 24.21.0 and semver are explicit
+root development dependencies; the runtime preparer pins npm 12.0.2.
 
-The scoped `@esbuild-kit/core-utils` override uses esbuild 0.25.12 to remove
-[GHSA-67mh-4wv8-2f99](https://github.com/advisories/GHSA-67mh-4wv8-2f99)
-from Drizzle's deprecated loader dependency. Its synchronous
-and asynchronous TypeScript transforms are covered by the dependency policy
-test. Remove the override when Drizzle removes or updates that dependency.
-
-As of 2026-10-19, two advisories remain in electron-builder's development-only
-chain through app-builder-lib 26.15.3 and @electron/get 3.1.0:
-
-- http-cache-semantics 4.2.0, [GHSA-ch52-4w7c-c8xp](https://github.com/advisories/GHSA-ch52-4w7c-c8xp): no patched version is listed
-  by GitHub. The report is disputed upstream; 4.3.0 is not a verified fix.
-- sprintf-js 1.1.3, [GHSA-hp3w-g68c-fv3c](https://github.com/advisories/GHSA-hp3w-g68c-fv3c): no patched release is available.
-
-Keep these alerts visible. Do not override @electron/get to v5 just to remove
-its old dependencies: its fetch-based downloader does not preserve the Got
-agent and timeout options passed by the current electron-builder. A supported
-upstream migration or a separately tested downloader change is required.
+The shared [dependency policy](<scripts/test/dependency-policy.test.mjs>) remains
+in both complete and portable acceptance. It checks authoritative lock/cache
+policy and resolved advisory ranges, plus the active-only install graph. The
+old Drizzle loader transform smoke test and its scoped esbuild override retired
+with the excluded Drizzle dependency; no advisory-range check was suppressed.
+Electron-builder and the old provider SDK are no longer in the root install
+graph. Historical advisory reports describe those archived revisions, not the
+current lock.

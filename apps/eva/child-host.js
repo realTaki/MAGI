@@ -1,13 +1,22 @@
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 // Host composition and Agent capabilities are intentionally separate layers.
 // The official web profile supplies Sessions, persistence, permissions and UI;
 // this overlay owns only EVA's child lifecycle, DM, preset and model/auth route.
 export const DEFAULT_EVA_PRESET = 'eva';
-export const CHILD_HOST_VERSION = 2;
+export const CHILD_HOST_VERSION = 4;
+
+export function resolveDmEntry() {
+  return createRequire(import.meta.url).resolve('@magi/dm');
+}
+
+export function resolveMemoryEntry() {
+  return createRequire(import.meta.url).resolve('@magi/memory');
+}
 
 export async function readEvaPreset() {
   const text = await readFile(new URL('./eva-preset.yml', import.meta.url), 'utf8');
@@ -17,6 +26,9 @@ export async function readEvaPreset() {
 const desktopRoles = [
   { id: 'magi-shell', name: '@local/magi-shell', disabled: true },
   { id: 'eva', name: '@local/eva', disabled: true },
+  // A selected standalone memory bundle also contributes a root; replace it
+  // with the explicit installed child entry below, without editing the profile.
+  { id: 'magi-memory', name: '@magi/memory', disabled: true },
 ];
 
 // Existing child profiles remain user-owned. Exclude known desktop roles only
@@ -31,11 +43,23 @@ export async function desktopRoleExclusions(profileDir) {
   return desktopRoles.filter(row => bundles.includes(row.name)).map(row => ({ ...row }));
 }
 
-export function createChildHostPatch({ workspace, profile, presetPath, credentialsPath, desktopExclusions = [] }) {
+export function createChildHostPatch({ workspace, profile, presetPath, credentialsPath, desktopExclusions = [], dmEntry = resolveDmEntry(), memoryEntry = resolveMemoryEntry() }) {
+  if (typeof dmEntry !== 'string' || !isAbsolute(dmEntry)) throw new Error('DM child entry must resolve to an installed absolute package entry.');
+  if (typeof memoryEntry !== 'string' || !isAbsolute(memoryEntry)) throw new Error('Memory child entry must resolve to an installed absolute package entry.');
+  // Existing profiles can select either an older EVA bundle (without a DM row)
+  // or the new one. Always mount the installed DM root explicitly. Disable the
+  // bundle's optional DM row by id only: Loader names assert, never rename.
+  // Older bundles warn/skip the absent target while the explicit root still runs.
+  const selectedEva = desktopExclusions.some(row => row.id === 'eva');
+  const dmRow = { id: 'magi-dm-child', name: dmEntry, config: {} };
   const sharing = credentialsPath === undefined ? {} : { credentialsPath, credentialSharingVersion: 1 };
   const overlay = [{ insert: [{
-    id: 'eva-child', name: fileURLToPath(new URL('./child-entry.js', import.meta.url)),
+    id: 'eva-child', name: fileURLToPath(new URL('./child.js', import.meta.url)),
     config: { workspace, profile, ...sharing },
+  }, dmRow, {
+    // child.js asserts workspace === profileContext.home === cwd. Memory derives
+    // its Bot home from that native service, never from a Session workspace.
+    id: 'magi-memory-child', name: memoryEntry, config: {},
   }, {
     id: 'eva-agent-preset', name: 'cordis:include', config: { path: presetPath },
   }] }, {
@@ -52,5 +76,9 @@ export function createChildHostPatch({ workspace, profile, presetPath, credentia
     id: 'credentials', name: '@deepseek-ai/dsh-credentials-local', disabled: false,
     config: { path: credentialsPath, watch: true },
   });
-  return [...overlay, ...desktopExclusions];
+  const selectedMemory = desktopExclusions.some(row => row.id === 'magi-memory');
+  return [...overlay,
+    ...(selectedEva ? [{ id: 'magi-dm', disabled: true }] : []),
+    ...(selectedEva && !selectedMemory ? [{ id: 'magi-memory', disabled: true }] : []),
+    ...desktopExclusions];
 }

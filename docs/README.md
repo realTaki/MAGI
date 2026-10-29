@@ -13,9 +13,10 @@ actually does. The technical guides are currently in English.
 3. [Provider recovery](provider-validation.md): verification failures, deadlines
    and safe retry evidence.
 
-The desktop starts one Shell EVA. Additional local EVAs and remote contacts are
-added through owner chat, not a mandatory central registry. Before connecting
-machines, read the [trusted-network boundary](../SECURITY.md).
+The current DSH desktop manages local EVA Hosts. Local Bot-to-Bot messages and
+Bot-to-user notifications use the [independent DM plugin](<../packages/dm/README.md>).
+Remote DM is out of scope. Older desktop/BUS/peer guides below are historical,
+not instructions to restore the deleted peer channel or Electron Shell.
 
 ## I want to make it mine
 
@@ -33,14 +34,14 @@ running update; a running update is not evidence that the change helped.
 
 | Question | Guide |
 | --- | --- |
-| How do direct endpoints, hello and contact routing work? | [MAGI peer channel](../packages/channel-a2a/README.md) |
+| How do local Bot DMs and Bot-to-user notifications work? | [Independent DM plugin](<../packages/dm/README.md>) |
 | How do shared conversations recover and converge? | [Peer group synchronization](architecture/peer-group-sync.md) |
 | Which checks should I run? | [Testing MAGI](testing.md) |
 | What does a passing check actually establish? | [Verification](verification.md) |
 | What are the trust boundaries and reporting process? | [Security](../SECURITY.md) |
 | Which claims are still goals? | [Research and unfinished work](future.md) |
 
-The peer subset is inspired by A2A 1.0; it does not claim standards compliance.
+The deleted peer subset was inspired by A2A 1.0; it did not claim standards compliance.
 Implementation, fixture tests, a platform package and an interactive desktop
 acceptance are different kinds of evidence. Do not substitute one for another.
 

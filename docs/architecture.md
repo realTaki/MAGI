@@ -1,6 +1,11 @@
 # Architecture
 
-This describes the current TypeScript runtime. [Running MAGI](running.md) contains
+> **Archived pre-DSH architecture.** The Electron Shell and provider module
+> described below were removed. Remaining TypeScript packages are inert source,
+> excluded from the root install graph; their old cross-package contracts are
+> not working current APIs. See [current DSH scope](<../DSH-HANDOFF.md>).
+
+This describes the historical TypeScript runtime. [Running MAGI](running.md) contains
 commands; [future work](future.md) separates research goals from implementation.
 
 ## Read the design from the outside in
@@ -115,8 +120,10 @@ deterministic after convergence. This provides eventual history convergence,
 not consensus, authenticated authorship or exactly-once external side effects.
 Removal cannot revoke data already shared with a participant.
 
-The [MAGI peer subset](../packages/channel-a2a/README.md) is inspired by A2A 1.0,
-but is not a standards-compliant A2A implementation. See the
+The retired MAGI peer subset was inspired by A2A 1.0,
+but was not a standards-compliant A2A implementation. Its implementation has
+been deleted; current local communication uses the [DM plugin](<../packages/dm/README.md>).
+See the historical
 [group synchronization design](architecture/peer-group-sync.md) for history
 reconciliation and offline recovery.
 

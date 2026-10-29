@@ -1,4 +1,4 @@
-// Current product acceptance: the two DSH bundles, without the retired desktop.
+// Current product acceptance: DSH bundles and independent DM/memory plugins.
 import { readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -9,22 +9,23 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 export const portableTests = {
   eva: ['client-embed', 'client-frame-readiness', 'client-wake', 'client', 'embed-login', 'navigation', 'view'],
   'magi-shell': ['layout', 'main-client', 'package', 'workbench-client'],
+  dm: ['dm-user-client', 'package'],
+  memory: ['package', 'tools', 'plugin'],
 };
 export function collectTests({ portable = false } = {}) {
   const files = [];
-  for (const app of ['eva', 'magi-shell']) {
-    const names = readdirSync(new URL(`../apps/${app}/test/`, import.meta.url))
+  for (const [app, location] of [['eva', 'apps/eva'], ['magi-shell', 'apps/magi-shell'], ['dm', 'packages/dm'], ['memory', 'packages/memory']]) {
+    const names = readdirSync(new URL(`../${location}/test/`, import.meta.url))
       .filter(name => name.endsWith('.test.js')).sort();
     if (!names.length) throw new Error(`No DSH tests discovered for ${app}`);
     for (const name of names) {
-      if (!portable || portableTests[app].includes(name.slice(0, -'.test.js'.length))) files.push(`apps/${app}/test/${name}`);
+      if (!portable || portableTests[app].includes(name.slice(0, -'.test.js'.length))) files.push(`${location}/test/${name}`);
     }
     if (portable && portableTests[app].some(name => !names.includes(`${name}.test.js`))) throw new Error(`Missing portable test for ${app}`);
   }
   for (const name of readdirSync(new URL('./test/', import.meta.url)).sort()) {
     if (name.endsWith('.test.mjs')) files.push(`scripts/test/${name}`);
   }
-  files.push('apps/shell/test/dependency-policy.test.mjs');
   return files;
 }
 

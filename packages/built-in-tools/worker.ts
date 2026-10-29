@@ -11,13 +11,14 @@ import { abortable, MUTATION_SETTLE_MS, settleWithin } from "@magi/bus/abort.js"
  *
  * `load_skill` is not here: it reads the SKILL.md files that `@magi/skills`
  * owns, so that package's worker registers the tool itself. The contact tools
- * live in `@magi/contacts` and the memory tools in `@magi/memory`, the same way.
+ * live in `@magi/contacts`, the same way. The retired BUS memory worker and its
+ * tools have been deleted; current memory is the independent native DSH plugin.
  *
  * `mcp_server` is not here: it accepts an `McpServerConfig` and talks to
  * `McpWorker`, so it lives in `@magi/mcp` and is registered by that worker.
  *
- * `schedule_task` is not here either: `@magi/channel-tasks` stores the task it
- * describes, scans for it, and fires it, so that worker carries the tool.
+ * The old `schedule_task` worker has been retired and deleted. This archived
+ * BUS package does not supply scheduling; current DSH presets use native Schedule.
  */
 
 import { BaseWorker } from "@magi/bus";

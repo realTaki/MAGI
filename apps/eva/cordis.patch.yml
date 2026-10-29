@@ -2,3 +2,9 @@
     - id: eva
       name: '@local/eva'
       config: {}
+    - id: magi-dm
+      name: '@magi/dm'
+      config: {}
+    - id: magi-memory
+      name: '@magi/memory'
+      config: {}

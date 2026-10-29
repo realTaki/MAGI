@@ -2,16 +2,84 @@
 
 ## 当前补充：MAGI Shell
 
-### 最新：同 Bot 跨 Session `@user` 通知（已应用，真实链路与页面验收通过）
+### 最新：原生 Bot memory 第一版（当前父 Host 已启用；运行中子 Bot 尚未更新）
+
+- 用户随后授权删除旧 memory 模块及提交 GitHub：已删除旧 BUS memory 源码和过时文档，清理归档 launcher 的依赖、project reference、worker 注册与 hosted-worker 名单。历史源码可从 Git 历史恢复；旧数据库不删除、不读取、不迁移。
+- 单文件下一版仅完成[Markdown 存储底座](<packages/memory/document-store.js>)与针对性测试，每 Bot 一个文档、不分长中短；尚未接入插件入口/工具，也未打包部署。现有运行插件仍使用下述 SQLite 与 runtime-context 机制。固定 system 后、history 前的位置需要先解决现有会话插入及所有压缩入口的保护，不能声称已上线。
+- 删除旧 memory 后，MAGI 自带 Node 完整回归 **577/577**、portable **127/127**、源码/resources **29 模块**通过，0 失败/0 skipped；均在当前 macOS 执行，不代表 Windows 实机验收。未重启或重载运行中 Host/Bot。
+- 新 [@magi/memory](<packages/memory/README.md>) 是独立原生 Host 根，不加载 BUS。每 Bot 使用固定 `profileContext.home/memory/memories.sqlite`，跨该 Bot 的 Session/profile 共享、不同 Bot 隔离；不受 Session cwd 改动影响。SQLite 事务、CAS 版本、私有权限和路径检查、总条数及完整活动快照字节预算均有回归。
+- [插件入口](<packages/memory/index.js>)注册 `required:true, interpolate:false` 的 `magi:memory` 动态上下文，不重写 Persona、preset 或模型请求，不使用旧验证的 `agent.inject()`。同 Host 的所有 Agent scope 在下次请求接纳时通过原生机制获得当前事实；完整自定义 system prompt 和 optional-context suppression 也保留必需记忆。旧快照可能仍留在会话历史，归档/删除并不抹除日志。
+- 五个管理工具 `list_memory/get_memory/save_memory/archive_memory/delete_memory` 原生注册并接受 Agent 及原生 guard/cancellation；更新/归档/删除需当前版本。删除工具要求 `confirm:true` 并提示必须有明确人类授权，但布尔值本身不是身份或授权证明，不能声称插件机械验证了对话中的人类许可。没有自动抽取、向量检索、TTL、潜意识、后台维护或管理 UI。
+- 原生 Plugin Manager 已启用 `@magi/memory@0.1.0` 于当前 desktop Host，既有主会话也自动出现记忆上下文。新[真实验收回执](<../magi-maintenance/native-memory-verification/receipt.json>)（2026-10-28T19:50:38.365Z）：两个全新独立 Session、无父会话/继承/先前聊天；三次 `openai-codex/gpt-6.1-sol/medium` 真 Agent 请求。普通新会话与 complete prompt+suppression 新会话都答对仅存于记忆的暗号，首会话下轮答出更新后的新暗号；每次五个工具 schema 均可见，但无模型工具调用。原生工具路径覆盖创建、更新、get、归档、删除，Agent guard 拒绝未获允许的写入，归档后活动 context 不含测试暗号。
+- 此验证无请求改写/人工注入；只读 `llm/stream` 观察 native runtime-context，同时冷读持久事件确认记忆。只删除本次生成的 synthetic UUID，测试后当前记忆库为空；两个 handle 已释放、验证 bundle 已原生卸载，保留测试 Session 日志与回执，正式插件继续启用。此处永久清理仅针对测试夹具，不代表可以删除用户生产事实。
+- EVA 源码/打包已接入第四 workspace：依赖并打包独立 memory，子 Host 通过绝对已安装入口挂独立根，对选择 standalone/EVA 两种 bundle 的既有 profile 避免重复挂载；child-host version 4 且启动 artifact hash 包括 memoryEntry。独立 memory 和 EVA 压缩包均通过脱离源码的离线安装/import 验收。**尚未重新加载父 EVA 管理器，也未重启/修改 eva-000；更新父 EVA 后再启动的子 Bot 才走新装配。不能声称当前运行的 eva-000 已有新记忆工具。**
+- MAGI 自带 Node：插件 18 项、整套 **570/570 通过，0 失败/0 skipped**，portable gate **127/127 通过**（在 macOS 执行，不代表 Windows 实机）；源码/resources **28 模块通过**。测试清理顺序显式保证关闭 SQLite 后再删除临时目录。独立审阅未发现阻塞原生契约问题。真实模型验收不覆盖 GUI 视觉、fork、Schedule、live compaction 或 Host 真重启；这些只依赖原生上下文机制/持久化单测，不夸大为端到端验收。下一小步应先约定父 EVA/运行 Bot 的安全更新窗口。
+
+### 前次：最小跨 Session 记忆注入验证（通过，临时插件已卸载）
+
+- 用户仅授权验证，不是实现完整 memory。仓库外的一次性 Host fixture 读取[固定测试记忆](<../magi-maintenance/memory-probe/memory.md>)，在 `agent/created` 中仅对预先登记的测试 ID 调用原生 `agent.inject()`；未修改 Persona、全局/项目指令或已有会话，没有接入旧 BUS、创建数据库、提取事实或后台维护。一次性 fixture 故意省略 locale/icon，不是可分发的产品插件。
+- 最终真实[验收回执](<../magi-maintenance/memory-probe/receipt.json>)（2026-10-28T19:34:30.018Z）：同一 Host/Bot 中两个 `ctx.agents.create` 独立全新 Session，无父会话/继承事件，提问前 user/assistant 历史均为 0；同一 177-byte 记忆各注入一次，SHA-256 一致。问题不含答案，两次均使用当前默认 `openai-codex / gpt-6.1-sol / medium`，没有修改默认模型配置。
+- 两个真实 Agent 请求都在只读 `llm/stream` 观察点确认含测试暗号 `MAGI-MEM-7c29e14b6f03`；两次回答均精确等于该暗号，turn/end 为 completed，无工具调用。虽然基础组合呈现了 4 个工具，测试 scope 的单调 guard 禁止任何工具执行，不能声称测试 Agent 完全没有工具 schema。
+- 两个 handle dispose 后再经原生 `sessionQuery.readSession` 冷读：注入 inbox splice 与消费后的 user/message 均持久存在；Agent 和 live Session 均已释放。证明的是“选定记忆进入下一次真实模型输入，并能被本次模型回答使用”，不是模型永远遵从、自动学习或任意轮次/压缩后永久保留。
+- 调试记录保留：[首次接口字段错误](<../magi-maintenance/memory-probe/attempt-1.json>)、[消息缺少身份](<../magi-maintenance/memory-probe/attempt-2.json>)、[观察器误计辅助请求](<../magi-maintenance/memory-probe/attempt-3.json>)。原生 Agent 输入必须有唯一 id、role/content/source；README 的简写不能直接当完整 durable message 使用。`readSession` 返回值不能假定含 `.header`，Session header 从 live Session 读取。原生标题生成也会引用问题发起独立 LLM 请求；最终观察器按注入消息的 source 区分对话请求，避免误把标题请求视为记忆漏注入。
+- 每次调试版本均先通过 Plugin Manager 移除，使用不同模块入口避免 ESM 缓存复用；最终 v4 也已原生 remove，复查 bundle 列表恢复 22 项，所有 probe 包均不存在。共保留 6 个显式测试 Session 的原生日志供审计（前两次未驱动模型，后两轮各两个），没有删除历史；无活跃测试 Agent、常驻加载器、新服务端或 Bot 重启。
+- 边界：只验证这两个原生新建会话，没有验收 GUI 的默认 preset 装配、已有会话恢复、清空/压缩、Host 重启、增量注入、内容筛选或并发竞争；没有创建正式每 Bot `memory/` 目录。下一步仍须单独授权并保持小步实施。
+
+### 前次：记忆工作准备：上下文入口与旧 memory 差距（仅调研，尚未实现）
+
+- 用户要求后续记忆工作记住四个入口：`$DSH_HOME/AGENTS.md`（默认 `~/.dsh/AGENTS.md`，Host 级约定）、`$DSH_AGENTS_HOME/AGENTS.md`（默认 `~/.agents/AGENTS.md`，共享约定）、项目适用的 AGENTS.md 链、Agent preset 中的 Persona 配置。前三者由 agent-instructions 按适用范围/预算加载，Persona 在 system prompt 组装时应用；不是四个自动同步的记忆副本，也不是自动从聊天学习。
+- 普通笔记/交接文档不自动注入。本节用于持久保存调研结果，不把它当成已部署的新记忆加载器。当前未创建全局 AGENTS.md、未更改 Persona/preset 或运行中 profile。
+- 当时调查的旧 MemoryWorker 与其工具后来已按用户授权删除；[MemoryBook](<packages/bus/books/memoryBook.ts>)数据模型保留，当前 DSH 插件闭包未接入。旧存储为每 Bot workspace 的 `memories/books.db` 中 `books_memories` 表，同 Bot 跨聊天共享，不跨 Bot 自动共享；本次源码删除不删除旧数据。
+- 旧版专属能力：结构化事实/偏好持久条目；list/save/archive/delete 工具；更新/归档 expected_version 乐观并发检查；每轮注入全部未归档条目；前台与潜意识共用同一本记忆。DSH 的会话历史/压缩、AGENTS.md 与 Persona 只分别覆盖历史续接、文件约定与身份设定，不能直接声称已替代该闭环。
+- 旧潜意识通过周期任务驱动私有会话，按工具观察前台消息增量、读取各聊天摘要/近期消息，再由模型决定合并/保存/归档；允许 list/save/complete_memory，不允许永久删除或直接外部通信。不是每条消息后确定性提取；增量游标也是模型维护的私有笔记。原生 Schedule 能承接触发器，但隔离会话、观察范围/游标、维护策略与权限仍未迁移，旧 preset 源码本身不代表仍有可运行调度器。
+- 旧实现也不是向量 RAG：没有相关度检索、自动 TTL 或算法去重；kind 仅为标签；来源/不确定性通过 detail 文字记录；去重、事实修正及归档由模型执行工具完成。没有发现现存专用 memory 管理 UI；当前回归入口不覆盖归档 memory/BUS/潜意识实现。本轮只做源码调研与文档记录，不声称执行过旧模块验收。
+
+### 最新：删除旧 task channel，定时指令统一原生 Schedule
+
+- 删除旧 channel-tasks 模块（worker、工具、manifest、TypeScript 配置），清理归档 launcher 的依赖/project 声明与旧工具注释。根安装图原本不包含该包，不改 lock、不安装依赖。
+- 当前定时指令使用 DSH 原生 Schedule，绑定原 Session，到点恢复/驱动该会话。用户已在本会话完成真实一次性 60 秒暗号测试，按期收到 `test 1 2 3 4`；这是原生调度验收，不是旧任务数据迁移或所有周期规则的完整验收。
+- 不删除旧数据库、BUS task 数据模型或历史记录，不自动迁移旧任务；需要保留的旧任务须在 DSH 显式重建。旧潜意识唤醒与启停语义不承诺等价迁移。同时移除归档 composition 的 TaskWorker 导入、实例注册及 hosted worker 名单项；不恢复旧 BUS launcher。
+- 新增删除边界回归；未修改原生调度插件、EVA/DM 实现、运行中 profile、会话或凭据，未重启 Bot，也未再创建验收任务。
+- MAGI 自带 Node 最终复验：源码/resources **25 模块通过**，完整入口 **547/547 通过**、portable **117/117 通过**，均 **0 失败、0 skipped**；`git diff --check` 通过。旧任务模块/注册无残留 TypeScript 导入；本次未执行旧归档构建或 Windows 实机验收。
+
+### 最新：删除旧 peer channel，本地通信统一 DM
+
+- 用户确认暂不考虑远程通信后，已删除旧 channel-a2a 整个目录（实现、README、配置和测试），清理归档 launcher 的依赖/project 声明及失效文档链接；根 lock 原本就不包含该包，无需重建。
+- 当前只保留本地 Bot ↔ Bot DM 与 Bot → 人的 `@user` 通知，由 [DM 插件](<packages/dm/README.md>)承担。EVA 的 Host Web 地址不是远程 DM 传输，当前启动仍绑定 loopback，消息使用受管进程 IPC；不声称跨机器 DM 已完成。
+- 归档 launcher 中的旧 composition 源码保留历史导入，README 明确其不可执行；不伪造替代 PeerWorker、不恢复已退役 BUS launcher。该源码不在三个当前 workspace 的安装/构建/运行闭包中。
+- 增加依赖策略回归，约束旧模块确实不存在、依赖及 project 声明已移除、当前三个插件均不依赖旧 channel。未修改 DM 实现、运行中 profile、凭据或会话，未重启 Bot。
+- MAGI 自带 Node 最终复验：源码/resources **25 模块通过**，完整入口 **546/546 通过**、portable **116/116 通过**，均 **0 失败、0 skipped**，`git diff --check` 通过。验证包含本地父子/兄弟 DM、离线恢复、`@user` 通知及独立包离线安装；没有重复发送真实验收消息，也不声称新增 live/Windows 验收。
+
+### 最新：删除旧 Shell / provider，收敛当前安装图（仅源码）
+
+- 已删除旧 Electron Shell 与 provider 模块；只安装 `apps/eva`、`apps/magi-shell`、`packages/dm` 三个 workspace。其他旧 packages 保留为归档源码，不承诺其 launcher/provider/webapp 旧契约能编译运行，也不为迁就历史代码重建 provider。
+- 根目录旧 TypeScript build、db:generate、test:legacy、verify:legacy 及旧 runner/solution 已退役。共享 runtime preparer 移至 [scripts](<scripts/prepare-runtime.mjs>)，输出根 `runtime/`；Node 24.21.0 与 semver 7.8.5 由根显式锁定，npm 仍固定 12.0.2。CI/bootstrap 不再依赖已删 Shell。
+- [共享依赖策略](<scripts/test/dependency-policy.test.mjs>)迁至当前测试目录，完整与 portable 入口均保留 authoritative lock/cache 与全部 advisory-range 检查，并增加仅当前 workspace 的安装图约束。Drizzle 专属 transform smoke test/override 随不再安装的 Drizzle 一同退役，不是跳过安全范围检查。
+- 保留此前独立 DM 提取、EVA 捆绑与 pack helper 改动；本次源码清理没有安装/重载真实插件、修改 profile/凭据、启动/停止任何 Bot。下方旧验证数字是对应历史版本证据，不覆盖本次源码清理。
+- 自带 Node/npm 离线重建根 lock 并 `ci --ignore-scripts --offline` 成功（6 个包）；没有全局安装或 profile 依赖安装。源码/manifest 检查 **25 模块**通过；最终定向 tooling **15/15 通过、0 skipped**，包含独立 EVA archive 离线 consumer、runtime 自删除拒绝与缺失 npm 不回退 PATH 的真实隔离进程测试。shell 语法与 diff whitespace 检查通过。未实际下载/重新准备 runtime，Windows 仅为 CI 合约，不能声称 Windows 实机通过。
+- 父 Agent 最终独立复验：源码/resources **25 模块通过**，完整入口 **545/545 通过**、portable **115/115 通过**，均 **0 失败、0 skipped**；`git diff --check` 通过。真实原生 ClientModuleRegistry / ModuleLoader / composeEntries 只读探针 **12 项标记全部 true**；完整入口含真实 EVA archive 与离线 consumer 测试，另以 pack helper 实际生成 MAGI Shell archive 成功。portable 在 macOS 上执行，不替代 Windows 实机验收；没有声称 live 页面视觉验收。
+- 与源码清理独立，主 Agent 报告一次性 `@local/magi-main-title-repair` 已经原生 `magiMainSession.current → sessions.get → sessionTitle.rename('主 Bot') → sessionPersistence.flush` 修复固定父会话 `session-899d4db2-b59b-491a-80b7-00473082fb15`，folded snapshot source 为 user。回执位于仓库外[原生重命名回执](<../magi-maintenance/main-title/receipt.json>)（2026-10-28T17:56:21.264Z）；维护 bundle 随后立即移除，无常驻插件、不重启 EVA/节点。此标题修复**不代表**独立 DM 源码提取已经部署。
+
+### 最新：独立 `@magi/dm` 包，由 EVA 安装（源码完成，尚未应用）
+
+- 用户确认 DM 应是 packages 内独立插件。新增 [@magi/dm 0.1.0](<packages/dm/README.md>)，抽走原 EVA 的 DM Host、工具、可靠投递/存储、`@user` 和 Client 投影；[EVA manifest](<apps/eva/package.json>)升级源码版本为 0.7.0，依赖并捆绑该包，[bundle patch](<apps/eva/cordis.patch.yml>)挂载独立根行。桌面继续经 EVA bundle 使用同一 DM，不增加第三份实现。DM 本身不是 bundle。
+- EVA 只提供进程派生的 `magiDmTransport`，DM 通过 `magiDm` 发布安装实例。原固定主会话仍由 Shell/子启动器提供。DM 独立重载使用 effect-owned `bindBroker` 为已有进程重新挂接/握手，绝不偷偷重启 Bot。原始 hello 与主动 hello 并发安全；初始 hello 与 broker 重载竞态不会永久停掉 durable pump，且不提前启动、不晚于卸载启动、不制造模型唤醒。
+- 子 overlay 版本 **3**：EVA child 与已安装 DM 的绝对根入口分开加载。总是插入独立 `magi-dm-child`；若已有 profile 选中 EVA，只对可能的原 bundle `magi-dm` 行作无 name 的禁用覆盖。原生 Loader 的 name 是断言，不能拿绝对路径重命名原 bare 名称。旧 bundle 无该行时仅 warning/skip，显式新 DM 根仍加载；新 bundle 的原行禁用后不触发同包重复 Client 来源。
+- [真实原生只读探针](<apps/eva/test/client-modules-native.js>)使用官方 composeEntries / Context / ModuleLoader / ClientModuleRegistry 验证上项新旧 profile 情况，且两行同时活动的正控制确实报重复。startup hash 包含版本和解析后的 DM 入口；v1/v2 patch、profile manifest、身份、`magi-dm` 数据、wire/source ID、主/pair Session 均不迁移、不清理。
+- 原生链接安装不会安装源码包依赖。本仓库已用 MAGI 自带 Node/npm 从锁文件执行 `ci --workspace @local/eva --ignore-scripts --offline --omit=dev`，只添加两个 workspace 链接，不修改 profile/全局工具配置。分发使用 [pack helper](<scripts/pack-dsh.mjs>)，以临时 staging 实体化捆绑依赖，避免普通 npm pack 漏掉 hoisted symlink。fixture 与实际 EVA archive 均在源码树外由 pnpm 离线安装，验证 DM Host/Client/locale/icon 导出可用。
+- 工具 schema/描述和通知正文保持不变；逐字节对比基线确认 dm-host / rpc / store / tool / user 五个模块完全一致。最终 MAGI 自带 Node 检查 **25 模块/resources 通过**；完整入口 **540 项：539 通过、1 失败、0 skipped**，portable 入口 **110 项：109 通过、1 失败**。唯一失败均为既有[依赖策略检查](<scripts/test/dependency-policy.test.mjs>)缺少本地 `semver`（MODULE_NOT_FOUND）；不安装无关依赖、不删改/跳过完整入口中的检查，也不声称完整入口全绿。另显式排除这一已知环境检查的当前插件套件 **539/539 通过**，包含真实进程夹具、DM reload/admission 竞态、v1/v2 不可变 overlay、独立分发/离线安装与 Client 投影。原生元数据探针所有标记为 true。portable 仅在当前 macOS 上执行，不声称 Windows 实测。
+- **未安装/重载运行插件，未 start/stop/wake 节点，未执行真实模型或新通知测试；没有修改凭据或模型配置。** 下方真实通知/页面验收属于重构前版本，不能复用为本次 live 证明。应用新包需用户新的明确安全窗口确认；父 EVA 重载会停止管理中的节点。旧 `test 12345` 通知不得为验收重复发送。
+
+### 前次：同 Bot 跨 Session `@user` 通知（已应用，真实链路与页面验收通过）
 
 - `dm.send` 的 `@user` / `user` 只向当前 Bot 已有、就绪的固定主会话发送，不走父 IPC、不建立 pair、不回退桌面主会话；调用源取可信 `exec.agent.id`，主会话内直接正常回复。保留地址冲突、固定主会话身份 / workspace / lineage、稳定 ID 与调用源、投递前所有者重新校验均失败关闭。
-- 桌面与子 Host 启动所有者提供可选只读 `magiMainSession.current()`；仅初始化和持久化完成后发布，卸载立即不可用。主会话写入使用原生不唤醒 `Agent.inject`；[Chat 投影](<apps/eva/client.js>)显示纯正文在 Agent 侧，不带 DM 头，拼接与后续消费只出现一条。两份预览 reader 同步只显示正文，不泄露内部来源说明。不会伪造原生助手消息。
+- 桌面与子 Host 启动所有者提供可选只读 `magiMainSession.current()`；仅初始化和持久化完成后发布，卸载立即不可用。主会话写入使用原生不唤醒 `Agent.inject`；[Chat 投影（现属独立 DM 包）](<packages/dm/client.js>)显示纯正文在 Agent 侧，不带 DM 头，拼接与后续消费只出现一条。两份预览 reader 同步只显示正文，不泄露内部来源说明。不会伪造原生助手消息。
 - **边界**：`inject` 是 next-step 背景输入，主 Agent 后续步骤可能看到明确标记的非人类来源说明与引用正文；不是零模型上下文影响的日志侧信道，不传递人类授权，也不要求再次回复。已核查但不使用原生 `appendPluginRecord`：插件开发指南明确保留给 DSH experimental 包，不能将其当作 MAGI 的公开稳定通知接口。
 - 私有 outbox 固定目标，原生 flush 后才 accepted；稳定重试、崩溃恢复和原生已 claim / consume / cancel 不重复注入。Bot 间原协议、父进程身份绑定、独立 pair 与不自动礼貌回声不变。
-- 最终验证：25 源模块与 manifest 检查通过；完整入口 **518 项，517 通过、1 失败**，唯一失败仍是既有[依赖策略检查](<apps/shell/test/dependency-policy.test.mjs#L12>)缺少本地 `semver`。首次高并发全跑出现三个 fake-child 启动超时，独立重跑 21/21 通过，完整入口显式 `--test-concurrency=1` 后三项均通过；没有放宽产品超时或安装依赖。新增通知 Host 回归 41/41；Client/预览联合 47/47，通过原生 Session 验证 / JSON restore / 真 Conversation assembler 的精确正文测试；单入口相关回归 90/90，原生 Creator 初始声明与 30 模块导入探针也通过。离线证明与下述真实验收分开记录。
+- 最终验证：25 源模块与 manifest 检查通过；完整入口 **518 项，517 通过、1 失败**，唯一失败仍是既有[依赖策略检查](<scripts/test/dependency-policy.test.mjs#L12>)缺少本地 `semver`。首次高并发全跑出现三个 fake-child 启动超时，独立重跑 21/21 通过，完整入口显式 `--test-concurrency=1` 后三项均通过；没有放宽产品超时或安装依赖。新增通知 Host 回归 41/41；Client/预览联合 47/47，通过原生 Session 验证 / JSON restore / 真 Conversation assembler 的精确正文测试；单入口相关回归 90/90，原生 Creator 初始声明与 30 模块导入探针也通过。离线证明与下述真实验收分开记录。
 - DM 工具描述 + schema：2052 → 2398 字符（+346）；字符 / 4 粗估增加约 87 tokens，**未测实际首轮完整 prompt tokens**。
 - 用户明确批准现在应用并测试后，通过 Plugin Manager 对 `include:eva` 禁用 / 启用完成重组；不卸载包、不安装依赖。父链接包改动与子端独立 eva 预设一起加载，既有 Session 没有迁移 preset。真实发送 `desktop-user-test-20261027-2025` 至 `eva-000`，子 Agent 在其独立 DM Session 自己调用工具发送 `eva-user-test-20261027-2025` 至 `@user`；子 outbox 的正文精确为 `test 12345`，目标为原固定主会话，状态 accepted、attempts 1；真实主会话预览也精确返回该正文。
-- 部署核查发现原生 ClientModuleRegistry 会拒绝同包两个独立 Loader 来源。新增[单一子端装配入口](<apps/eva/child-entry.js>)，合并 lifecycle + DM 注入依赖与 apply，升级 child Host overlay 为 2；保留旧不可变启动文件。[原生只读探针](<apps/eva/test/client-modules-native.js>)使用真实 Context / Registry 证实重复来源拒绝、单入口发现包 Client 与 Conversation / Chat 依赖。只替换 Loader 清单、不执行 Host 生命周期，不冒充 live DOM 证明。
+- 部署核查发现原生 ClientModuleRegistry 会拒绝同包两个独立 Loader 来源。新增单一子端装配入口（历史 v2 包装器，本次已删除），合并 lifecycle + DM 注入依赖与 apply，升级 child Host overlay 为 2；保留旧不可变启动文件。[原生只读探针](<apps/eva/test/client-modules-native.js>)使用真实 Context / Registry 证实重复来源拒绝、单入口发现包 Client 与 Conversation / Chat 依赖。只替换 Loader 清单、不执行 Host 生命周期，不冒充 live DOM 证明。
 - 再次安全应用后，核验真实已生成启动 patch 只含单一 `child-entry.js` 来源，`eva-000` 在线，固定 workspace UUID `a2a8bde2-134b-470b-9b85-958ea039b846` 与主会话 `session-955a2fee-7c8e-4a5e-9cc9-406ca72e2a7e` 均未变；测试通知重启后仍在，outbox 仍为原 accepted / attempts 1，没有为验收另发第二条相同正文。20:35 快照 PID 92752 / origin `http://127.0.0.1:58427` 仅供排查，不当作稳定配置。
 - **页面验收**：2026-10-27 22:24 America/Edmonton，用户在当前 EVA-000 主会话明确确认“是，左侧显示正确且只有一条”，问题明确包含 Agent 左侧、正文仅 `test 12345`、无 `[MAGI-DM]` 前缀。视觉验收是用户确认；Agent 没有截图 / DOM 自动化能力，不伪称自行观测。实现、安全应用、真实模型转发、持久投递与实际页面验收均已完成，未提交或推送。
 
@@ -22,7 +90,7 @@
 - [启动运行时](<apps/eva/runtime.js>)将原生 registry 部署默认设为 eva；用户已保存默认和会话显式选择仍优先。已有主会话、DM 会话、普通会话不迁移或强行换 preset，权限和审批调用不变。工具说明 1114 → 1169 字符，字符数 / 4 粗估增加约 14 tokens，未实测实际首轮完整 prompt tokenizer。
 - 声明保存于子 home 的 `profiles/.eva-assets/<profile>/`，使用私有目录、内容 hash 和不可变写入保护；Host 版本、声明 hash、已知桌面角色排除列表进入新的启动 patch hash，旧文件保持原字节。**不能放在 profiles 树外**：预设子插件在那里没有原生 bare-import fallback；也不能预写实际 profile 内，因为首次 `--from-default-profile` 会整目录替换。Sibling cache 仅保证当前官方安装包解析，未承诺任意子 profile 私有包能从该缓存解析，也不承诺较早 profile patch 可以直接覆盖稍后 include 内的行。
 - 新增[原生只读探针](<apps/eva/test/preset-native.js>)，使用 MAGI Electron Node-mode：原生 YAML 解码、Creator 初始快照对比、同类 synthetic profiles cache 锚点的全部 **30 个模块导入**及官方技能目录求值均通过，退出 0。探针不启动 Host、不写磁盘或 profile，不等于完整 Agent 激活、实际模型调用或 GUI 验收。
-- 当前验证：MAGI 自带 Node v24.21.0，资源 / manifest / **23 个源码模块**检查通过；定向装配 / 生命周期 / Session 回归 **130/130** 通过；完整入口 **456 项，455 通过、1 失败**。唯一失败是既有[依赖策略检查](<apps/shell/test/dependency-policy.test.mjs#L12>)加载时缺少本地 `semver`，单独重跑确认 `MODULE_NOT_FOUND`，与此前相同；没有跳过此检查、安装依赖或声称完整入口全绿。
+- 当前验证：MAGI 自带 Node v24.21.0，资源 / manifest / **23 个源码模块**检查通过；定向装配 / 生命周期 / Session 回归 **130/130** 通过；完整入口 **456 项，455 通过、1 失败**。唯一失败是既有[依赖策略检查](<scripts/test/dependency-policy.test.mjs#L12>)加载时缺少本地 `semver`，单独重跑确认 `MODULE_NOT_FOUND`，与此前相同；没有跳过此检查、安装依赖或声称完整入口全绿。
 - 本次没有安装 / set_bundle / reload / start / wake / stop，也没有新建真实测试 Host。现有进程不会因源码变化而自动切换；需用户确认安全更新窗口后应用父 EVA 并正常重启子节点，再验证实际预设菜单和新会话。只刷新页面不会应用 Host 改动。
 
 ### 前次：整合远程清理后的历史与 CI 修复（2026-10-27）
@@ -30,14 +98,14 @@
 - 已 fetch 并整合 origin/main 的 ff1c6686。本地原已提交 tree 与远程已清理的 ffa43d68 完全一致，不做会重新引入旧邮箱祖先的普通 merge；先保留私有完整 bundle 与 39 文件 binary patch，三方应用远程增量后将 main 对齐清理后的 origin/main，再恢复原本未暂存状态。原 39 文件补丁完整保留，除本文合并双方内容外逐文件补丁一致；无新增备份分支、提交或推送。本地私有备份与 reflog 仍保留回滚资料，不声称已清除本机历史对象。
 - 仓库级 user.email 固定为 taki.wang@ualberta.ca，实际 Git author/committer identity 均已验证。当前 main 与 origin/main 相同，当前可达提交作者、提交者和提交消息均不含先前邮箱；工作树搜索也无匹配。没有修改全局 Git 身份。
 - 保留远程 [仓库约束](<AGENTS.md>)、[源码检查](<scripts/check-dsh.mjs>)、[验收入口](<scripts/test.mjs>)、CI 与两个原子主会话初始化器的故障清理修复。[新增 import-closure 检查](<scripts/test/dsh-wiring.test.mjs>) 原正则会把 DM 数组中的 quoted from 字段误判为 import，已收紧并增加独立回归，不改 DM 协议迁就测试。
-- MAGI 自带 Node 的源码/manifest 检查通过（22 模块）；完整入口执行 **430 项：429 通过，1 失败**。失败仅为 [共享依赖策略检查](<apps/shell/test/dependency-policy.test.mjs>) 加载本地缺失的 semver 时 MODULE_NOT_FOUND；没有跳过该检查、安装替代全局依赖或声称完整 npm test 全绿。425 项当前 EVA/Shell 回归与 4 项 wiring 回归通过。未安装或重载真实插件、未重启现有 EVA，DM 仍未上线。
+- MAGI 自带 Node 的源码/manifest 检查通过（22 模块）；完整入口执行 **430 项：429 通过，1 失败**。失败仅为 [共享依赖策略检查](<scripts/test/dependency-policy.test.mjs>) 加载本地缺失的 semver 时 MODULE_NOT_FOUND；没有跳过该检查、安装替代全局依赖或声称完整 npm test 全绿。425 项当前 EVA/Shell 回归与 4 项 wiring 回归通过。未安装或重载真实插件、未重启现有 EVA，DM 仍未上线。
 
 ### 前次：本地 Bot DM（已实现，未应用到运行中的 Host）
 
-- 用户确认实现 DM；保留原有未提交改动，不创建提交。范围仅固定 Bot 对的显式 DM，不做群组或新 UI。新增 [DM 工具](<apps/eva/dm-tool.js>) 的 contacts/send/history/status/identity；profile 初次初始化固定 handle，显示名单独可改，子节点改名立即经重新 hello 刷新父/兄弟 contacts。
-- [EVA 入口](<apps/eva/index.js>) 注册父 DM 域；[运行时](<apps/eva/runtime.js>) 把真实生成的 child IPC channel 与启动 handle 绑定到 broker，终止/失败/卸载时清理。启动 overlay 插入独立 [子 DM 插件](<apps/eva/dm-child.js>)，hash 增加 dmProtocolVersion:1，保留以前的不可变 overlay。子角色标记和原主会话不变，不启动第二套 Agent loop 或网络端口，不用凭证授权 DM。注意绝对路径 overlay 入口不在 profile linkedRoots，不获 bare DSH import fallback；子入口必须通过 profileContext.installAnchor + createRequire.resolve 动态加载原生 defineTool。已用隔离官方 Electron Node 验证真实 native import 后到达 IPC guard；不启动 Host。
-- [私有存储](<apps/eva/dm-store.js>) 在每端 profile 的 magi-dm 保存稳定身份、pair、inbox/outbox，私有权限、原子写/fsync、严格 JSON、拒绝 symlink/hardlink。每对 Bot 双方各有固定原生 Session；缺失/损坏或创建中断保留原保留 ID、失败关闭，不造替代 Session。[有界 IPC](<apps/eva/dm-rpc.js>) 仅 hello/contacts/deliver，48 KiB 包、32 并发、超时与断线清理，无远程 Session/工具控制。
-- [本地域](<apps/eva/dm-host.js>) 仅显式 text 跨 Host，不自动转发模型、工具或 Session 结束输出。发送方用原生 inject 将显式发件正文放入其 DM Session 的 next-step 队列，保持后续回复上下文且不唤醒本方模型；发件前 flush，包括同进程失败重试时已有内存插入的分支。收件方 complete frozen UserMessage + followup，原生 inbox flush 成功后才写 accepted/回执。同一发送方等 ID 的并发发送与接收合并，异内容拒绝；入站存储、in-flight、恢复与 reply_to 使用 sender-scoped 哈希键，不同 peer 可用相同 wire ID；重试/回执不产生额外模型输入。待发送自动重试但不启动离线 Bot。
+- 用户确认实现 DM；保留原有未提交改动，不创建提交。范围仅固定 Bot 对的显式 DM，不做群组或新 UI。新增 [DM 工具（现独立包）](<packages/dm/dm-tool.js>) 的 contacts/send/history/status/identity；profile 初次初始化固定 handle，显示名单独可改，子节点改名立即经重新 hello 刷新父/兄弟 contacts。
+- [EVA 入口](<apps/eva/index.js>) 注册父 DM 域；[运行时](<apps/eva/runtime.js>) 把真实生成的 child IPC channel 与启动 handle 绑定到 broker，终止/失败/卸载时清理。启动 overlay 插入独立 子 DM 插件（历史入口已移除，现为[独立根](<packages/dm/index.js>)），hash 增加 dmProtocolVersion:1，保留以前的不可变 overlay。子角色标记和原主会话不变，不启动第二套 Agent loop 或网络端口，不用凭证授权 DM。注意绝对路径 overlay 入口不在 profile linkedRoots，不获 bare DSH import fallback；子入口必须通过 profileContext.installAnchor + createRequire.resolve 动态加载原生 defineTool。已用隔离官方 Electron Node 验证真实 native import 后到达 IPC guard；不启动 Host。
+- [私有存储](<packages/dm/dm-store.js>) 在每端 profile 的 magi-dm 保存稳定身份、pair、inbox/outbox，私有权限、原子写/fsync、严格 JSON、拒绝 symlink/hardlink。每对 Bot 双方各有固定原生 Session；缺失/损坏或创建中断保留原保留 ID、失败关闭，不造替代 Session。[有界 IPC](<packages/dm/dm-rpc.js>) 仅 hello/contacts/deliver，48 KiB 包、32 并发、超时与断线清理，无远程 Session/工具控制。
+- [本地域](<packages/dm/dm-host.js>) 仅显式 text 跨 Host，不自动转发模型、工具或 Session 结束输出。发送方用原生 inject 将显式发件正文放入其 DM Session 的 next-step 队列，保持后续回复上下文且不唤醒本方模型；发件前 flush，包括同进程失败重试时已有内存插入的分支。收件方 complete frozen UserMessage + followup，原生 inbox flush 成功后才写 accepted/回执。同一发送方等 ID 的并发发送与接收合并，异内容拒绝；入站存储、in-flight、恢复与 reply_to 使用 sender-scoped 哈希键，不同 peer 可用相同 wire ID；重试/回执不产生额外模型输入。待发送自动重试但不启动离线 Bot。
 - 关键边界：accepted 是持久原生 inbox 接纳，不是模型执行/完成/回复。原生公开 API 没有安全的 wake-only；重启后只检查 inspect 的原始 splice/user-message 日志并标 attention，不激活 Agent、不使用已弃用 snapshotEvents、不取消重插、不合成控制消息或撤销用户停止。已 pending 等真正新输入自然唤醒；claimed 未提交可能是取消/失败，不盲目重放。attention 是当次恢复审计，可能落后后续执行。礼貌回声规则仅工具说明，不写人格/技能/重复提示；peer 输入不授予人类权限。
 - 使用 MAGI 自带 Node 联合回归 **419/419 通过**；含 DM 域 23、RPC 20、存储 15、插件集成 10、子入口解析 2，以及启动 overlay / 进程 channel 生命周期 / 入口桥接。Session/Agent 为窄范围 API 夹具，进程启动使用 fake CLI；没有调用模型或声称真实跨 Host 端到端验收。完整约定与调用示例见 [EVA DM](<apps/eva/README.md#本地-bot-dm源码已实现待安全应用>)。
 - **没有 set_bundle/reload/start/wake/stop 或新测试 Host。** 再查现有 eva-000 仍 running、PID 72612，workspace UUID 与固定主 Session ID 保持不变。源码尚未应用到父 Host/旧子节点，需用户确认安全更新窗口；重新应用父 EVA 可能中断托管节点，不能把离线测试等同已上线能力。
@@ -115,7 +183,7 @@
 
 ## 当前 CI / 验收入口（2026-10-27）
 
-- 当前生产入口是 `@local/eva` 与 `@local/magi-shell` 的 Host / Client exports 及各自 `cordis.patch.yml`。逐模块核验仅依赖同 bundle、Node 和官方 DSH 服务；不再调用旧 `apps/shell` 或 `packages/*`。
+- 当前生产入口是 `@local/eva`、`@local/magi-shell` 及独立 `@magi/dm` 的 Host / Client exports。EVA 的 bundle 显式挂载 DM；仅依赖这些包、Node 和官方 DSH 服务，不调用旧 Shell 或其他 legacy packages。
 - 根 `npm test` 现直接检查两个插件的源模块语法、分发资源与锁元数据，运行全部当前插件回归和依赖安全策略。Linux/macOS 执行完整套件；Windows 明确仅执行 portable Client/认证/导航/包契约，不冒称 POSIX Host 生命周期已通过。
 - CI 不再编译旧 Electron UI、运行旧 EVA self-rebuild IPC 或构建/上传 AppImage、安装器；手动运行也没有打包步骤。保留旧源码与断言于显式 `test:legacy`，不是删掉有意义的断言来凑绿，也不是声称旧 Shell 已迁移。
 - 当前 DSH 原子身份持久化新增对两个真实 public initializer 的 partial-write / rename 故障回归；写失败清理仅限本次私有临时文件，原 mapping 与 Session identity 保持。真实子进程归属、并发启动、readiness、auth/凭据与持久化断言继续由当前插件测试覆盖。
@@ -175,7 +243,7 @@
 准备好源码自带 runtime 后，也可使用仓库自身运行时：
 
 ```sh
-apps/shell/runtime/bin/node --test apps/eva/test/*.test.js
+runtime/bin/node --test apps/eva/test/*.test.js
 ```
 
 本次检查时，仓库自身 runtime 尚不存在，因此使用已安装 MAGI 的 runtime。遵循 [仓库运行时要求](<AGENTS.md>)；缺少运行时应报告或修复，不要静默改用系统 Node。

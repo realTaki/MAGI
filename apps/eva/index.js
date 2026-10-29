@@ -3,10 +3,10 @@ import { EvaRuntime, desktopRuntime, validateName, isEvaChild } from './runtime.
 import { registerParentView } from './view.js';
 import { credentialStorePath } from './credentials.js';
 import { restoreConfiguredNodes } from './autostart.js';
-import { installParentDm } from './dm-plugin.js';
+import { join } from 'node:path';
 
 export const name = 'eva';
-export const inject = ['tools', 'workingDirectory', 'profileContext', 'approval', 'connection', 'credentials', 'appReady', 'sessionController', 'sessionPersistence'];
+export const inject = ['tools', 'workingDirectory', 'profileContext', 'approval', 'connection', 'credentials', 'appReady'];
 
 export function apply(ctx) {
   // Child Hosts retain their native features, but cannot expose another EVA launcher.
@@ -17,9 +17,21 @@ export function apply(ctx) {
   sharedStore.catch(() => {});
   const manager = new EvaRuntime(desktopRuntime(ctx.profileContext.installAnchor), {
     credentialsPath: () => sharedStore,
-    dmAttach: (channel, handle) => dm.attach(channel, handle),
+    dmAttach: (channel, handle) => {
+      const dm = ctx.get('magiDm');
+      if (!dm) throw new Error('The independent DM plugin is not ready.');
+      return dm.attach(channel, handle);
+    },
   });
-  const dm = installParentDm(ctx, manager, defineTool);
+  // Cordis mounts @magi/dm separately. EVA supplies only process admission and
+  // inventory, never DM tool registration, persistence or message rendering.
+  ctx.provide('magiDmTransport', {
+    kind: 'broker', workspace: join(ctx.profileContext.home, 'workspace'),
+    bindBroker: attach => manager.bindDm(attach),
+    peers: async () => (await manager.status()).nodes.map(node => ({
+      handle: node.handle, status: node.status === 'running' ? 'online' : 'offline',
+    })),
+  });
   const startup = new AbortController();
   let restored = false;
   ctx.effect(() => () => { startup.abort(); return manager.dispose(); });

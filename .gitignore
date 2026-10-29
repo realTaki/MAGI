@@ -226,8 +226,7 @@ node_modules/
 apps/app/dist/
 apps/app/build/
 apps/app/release/
-apps/shell/release/
-apps/shell/runtime/
+/runtime/
 .vite/
 apps/app/.vite/
 apps/app/coverage/
@@ -292,5 +291,4 @@ deploy/k8s/secrets/*.yaml
 # Shell profile caches and generated packaging outputs (never source).
 /cache/
 
-# Generated per build from the repository that owns the build.
-apps/shell/build-origin.json
+# Standalone Shell packaging was retired; no build-origin output is generated.

@@ -1,12 +1,16 @@
 # EVA
 
-DSH Host + Web Client 插件，提供模型工具 `eva`、节点清单与会话嵌入支持，管理额外的无桌面窗口 DSH 进程。节点入口统一放在 MAGI 工作台，不再向原生侧栏插入 EVA-NNN 条目。目标环境为 DeepSeek Harness Desktop 0.2.1-rc.3 / macOS。当前插件版本 0.6.15。
+DSH Host + Web Client 插件，提供模型工具 `eva`、节点清单与会话嵌入支持，管理额外的无桌面窗口 DSH 进程。节点入口统一放在 MAGI 工作台，不再向原生侧栏插入 EVA-NNN 条目。目标环境为 DeepSeek Harness Desktop 0.2.1-rc.3 / macOS。当前源码插件版本 0.7.0；本次独立 DM 重构尚未应用到运行实例。
 
 ## MAGI 重构起点
 
 本目录已用 DSH Host 插件替换 MAGI 旧的 EVA launcher，作为逐步改造成 DSH 版本的起点。其他旧模块和根级构建流程尚未改造，不能据此认为整个 MAGI 已兼容 DSH。背景、验证边界和后续工作见 [交接文档](<../../DSH-HANDOFF.md>)。
 
 ## 安装与更新
+
+源码目录链接安装前，先在仓库根用 MAGI 自带 Node/npm 执行 `npm ci --workspace @local/eva --ignore-scripts --offline --omit=dev`，只安装锁文件中的本地 EVA/DM workspace 依赖，不在运行 profile 中执行包管理器。原生目录链接本身不会代装依赖。
+
+分发到没有仓库源码的机器时，使用[专用打包脚本](<../../scripts/pack-dsh.mjs>)（MAGI 自带 Node 执行 `scripts/pack-dsh.mjs --app eva --out dist`）。它把独立 DM 包实体纳入 EVA 归档；普通 `npm pack` 可能静默漏掉被 workspace 提升的符号链接依赖。安装归档仍使用原生 Plugin Manager。
 
 1. 左侧「插件」→「添加插件」。
 2. 输入本插件目录的绝对路径：`/Users/shichuan/.dsh/workspace/MAGI/apps/eva`。
@@ -46,7 +50,17 @@ DSH Host + Web Client 插件，提供模型工具 `eva`、节点清单与会话�
 - `start` / `stop` 通过 DSH 原生 approval 请求单次批准；拒绝、取消或无审批通道均不执行。自动编号也在批准之后才分配目录。
 - 成功启动返回 handle、PID、profile、workspace、独立数据根、实际 cwd、新对话有效默认预设、workspace ID 和不带认证信息的 origin。
 
-## 同 Bot 跨会话通知：`@user`（真实投递及页面验收通过）
+## 独立 DM 插件（本次源码重构，尚未重载）
+
+DM 工具、持久投递、去重、原生 Session 通知和 Client 渲染统一归属 [@magi/dm](<../../packages/dm/README.md>)，EVA 通过依赖安装它，并由 [bundle patch](<cordis.patch.yml>)挂载独立根插件。桌面经同一 EVA bundle 复用 DM，不再保留第二份实现。
+
+EVA 只提供可信 `magiDmTransport`：固定 handle、工作目录、进程 IPC 与在线清单；桌面 Shell / 子 Host 启动器继续负责 `magiMainSession.current()`。DM 可独立重载并重新接入仍在运行的子进程；重载 EVA 本身仍会停止子节点。工具 schema/说明、`magi-dm` 数据目录、身份、wire/source ID 和 Session ID 均保持兼容，不迁移或清理历史。
+
+子 Host overlay 版本为 **3**，分别挂载 [EVA 生命周期](<child.js>)与从已安装依赖解析的 DM **绝对根入口**，不引用仓库相对路径。已选择旧/新 EVA bundle 的子 profile 会继续保留其 manifest；仅禁用其中可能存在的 DM 根行，避免同包双 Client 来源。旧版本没有该行时，原生 Loader 只警告并跳过该禁用目标，显式 DM 子入口仍加载。版本与解析入口路径进入不可变 patch hash，旧启动文件保留原字节。
+
+下面的真实投递与页面验收记录属于重构前已应用实现；不能据此声称本次包拆分已在当前运行实例验收。应用本次更新仍需新的用户确认和安全窗口。
+
+## 同 Bot 跨会话通知：`@user`（重构前真实投递及页面验收通过）
 
 在任意非主 Agent Session 中调用：
 
@@ -55,13 +69,13 @@ DSH Host + Web Client 插件，提供模型工具 `eva`、节点清单与会话�
 ```
 
 - `@user` / `user` 是保留地址，表示**当前 Bot 自己的用户 / 固定主会话**。EVA 不会将其转给桌面主会话，也不经过父 IPC；父连接暂时不可用仍可本地发送。普通 Bot 地址也接受一个可选 `@` 前缀。`contacts` 包含此用户地址；Bot 固定 handle 不得为 `user`，已有冲突需要人工处理，不偷偷改名。
-- [通知域](<dm-user.js>)从启动所有者提供的可选 `magiMainSession.current()` 获取已经就绪、固定的 Session ID，并冷检查身份 / workspace / 非分支非 seed。缺失、未就绪、被替换或卸载均失败关闭，绝不创建替代主会话。当前已经在主会话时直接回复用户，工具拒绝自发 `@user`；调用源只取原生执行上下文，不接受模型自报 Session。
-- [Client 投影](<client.js>)通过原生 Conversation Definition 与独立 Chat 节点显示 Agent 侧正文，**不加 `[MAGI-DM]` 或发送方格式头**，不伪造原生模型 `assistant/message`。正文作为纯文本安全渲染。通知直接由持久化原生 inbox splice 显示，不等待模型生成、不会额外唤醒主 Agent。UI 插件 / 页面必须加载更新后才有此显示。
+- [通知域](<../../packages/dm/dm-user.js>)从启动所有者提供的可选 `magiMainSession.current()` 获取已经就绪、固定的 Session ID，并冷检查身份 / workspace / 非分支非 seed。缺失、未就绪、被替换或卸载均失败关闭，绝不创建替代主会话。当前已经在主会话时直接回复用户，工具拒绝自发 `@user`；调用源只取原生执行上下文，不接受模型自报 Session。
+- [DM Client 投影](<../../packages/dm/client.js>)通过原生 Conversation Definition 与独立 Chat 节点显示 Agent 侧正文，**不加 `[MAGI-DM]` 或发送方格式头**，不伪造原生模型 `assistant/message`。正文作为纯文本安全渲染。通知直接由持久化原生 inbox splice 显示，不等待模型生成、不会额外唤醒主 Agent。UI 插件 / 页面必须加载更新后才有此显示。
 - 原生 `inject` 是不唤醒的 next-step 输入，不是原生助手消息 API。其后续模型上下文包含单独的内部来源说明与 JSON 引用正文，明确“已经展示 / 非人类指令与授权 / 不要重复回复”，**这些内部说明不显示在通知正文或 Bot 预览中**。若主 Agent 正在执行，通知可在其下一原生步骤被纳入背景上下文；不承诺对运行中的上下文零影响，不绕过权限 / 审批。
 - 本地 outbox 保留显式通知和固定主会话目标，原生持久化 flush 后才返回 `accepted`；稳定 ID 重试及崩溃恢复复用已有原生通知，不重复显示。通知的 `message_id` 还绑定调用 Session，其他 Session 不得抢用；`history` 可查 `@user`，不支持对此地址使用 `reply_to`。`accepted` 只表示通知持久接收，不表示人已读或 Agent 已执行。
 - 这是既有 Bot 间 DM 的本地分支；下面的 Bot 间身份绑定、独立 pair Session、显式正文、可靠投递和不自动礼貌回声规则不变。用户确认更新窗口后，已通过 Plugin Manager 重新应用父入口并正常恢复 `eva-000`；原 workspace UUID 与固定主会话 `session-955a2fee-7c8e-4a5e-9cc9-406ca72e2a7e` 保持不变。
 - 已真实执行 `desktop → eva-000 → @user`：桌面发送 `desktop-user-test-20261027-2025`，子 Bot 自己的工具发出 `eva-user-test-20261027-2025`；子 outbox 核验 `from:eva-000` / `to:user` / 精确正文 `test 12345` / 原固定主会话 / `accepted` / `attempts:1`，来源是其独立 DM Session。原生 Session Query 驱动的实际主会话预览也返回精确 `test 12345`，子端再重启后仍保留且没有重投。用户已在实际页面明确确认：**Agent 左侧、正文仅 `test 12345`、无 `[MAGI-DM]` 前缀、只有一条**。视觉验收来自用户确认，不是 Agent 自行截图或 DOM 检查。
-- 子端通过单一[装配入口](<child-entry.js>)同时提供生命周期与 DM，避免原生 ClientModuleRegistry 对同一包的两个独立 Loader 来源报错；启动 overlay 版本升级为 2，旧不可变文件保留。[原生元数据探针](<test/client-modules-native.js>)实际执行官方 Context / Registry，验证重复来源拒绝及单入口 Client / Conversation / Chat 依赖发现；Loader 清单是夹具，不执行 Host 生命周期。
+- 历史 v2 曾用 EVA 单一合并入口避免同包双 Loader 来源；本次已移除该包装器，改用两个独立包根与 v3 overlay。[原生元数据探针](<test/client-modules-native.js>)使用官方 Context / Loader / ClientModuleRegistry，验证独立 Client 发现、已选 DM 行禁用、旧行不存在时仅警告，以及两行同时启用时确实拒绝重复来源；不执行 Host 生命周期，不等同于运行页面验收。
 - 25 个源码模块 / manifest 检查通过；最终完整回归 **518 项中 517 通过**，唯一失败为既有依赖策略检查缺少本地 `semver`；未安装或跳过该依赖。新增通知 Host 41 项及 Client/预览联合 47 项通过，包含真实原生 Session 验证与 restore 后的 Conversation assembler 正文检查；单入口相关定向回归 90/90，通过原生预设探针的 30 个模块导入与 Creator 初始声明对比。
 
 ## 本地 Bot DM（已应用，真实链路通过）
@@ -97,7 +111,7 @@ DSH Host + Web Client 插件，提供模型工具 `eva`、节点清单与会话�
 
 最终使用 MAGI 自带 Node 执行 EVA + MAGI Shell 联合回归 **419/419 通过**，其中 DM 领域 23、IPC 20、私有存储 15、插件路由/工具/生命周期集成 10、子入口依赖解析 2 项；另覆盖真实 fake-CLI 进程 attachment 生命周期、启动 overlay 版本保留和父入口桥接。模型/Session 部分使用窄范围原生接口夹具，未调用付费模型，不等同于真实跨 Host 模型或浏览器验收。
 
-实现分为 [本地领域与原生会话](<dm-host.js>)、[私有持久化](<dm-store.js>)、[有界 IPC](<dm-rpc.js>)、[Host 生命周期与路由](<dm-plugin.js>)、[工具定义](<dm-tool.js>) 和 [子 Host 入口](<dm-child.js>)。
+实现集中在独立包：[本地领域与原生会话](<../../packages/dm/dm-host.js>)、[私有持久化](<../../packages/dm/dm-store.js>)、[有界 IPC](<../../packages/dm/dm-rpc.js>)、[Host 生命周期与路由](<../../packages/dm/dm-plugin.js>)、[工具定义](<../../packages/dm/dm-tool.js>) 和 [插件根入口](<../../packages/dm/index.js>)。
 
 ## 防止 EVA 嵌套
 

@@ -8,7 +8,7 @@ import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { randomUUID, createHash } from 'node:crypto';
 import { safePreview } from './message-preview.js';
-import { CHILD_HOST_VERSION, DEFAULT_EVA_PRESET, readEvaPreset, desktopRoleExclusions, createChildHostPatch } from './child-host.js';
+import { CHILD_HOST_VERSION, DEFAULT_EVA_PRESET, resolveDmEntry, resolveMemoryEntry, readEvaPreset, desktopRoleExclusions, createChildHostPatch } from './child-host.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const installationId = createHash('sha256').update(here).digest('hex').slice(0, 16);
@@ -134,6 +134,34 @@ export class EvaRuntime {
     this.nodes = new Map();
     this.pending = new Map();
     this.disposed = false;
+  }
+
+  // Rebind a separately reloadable DM plugin without restarting owned Hosts.
+  // The process object remains the authority for each peer's fixed identity.
+  bindDm(attach) {
+    if (this.disposed || this.dmBinding || typeof attach !== 'function') throw new Error('Duplicate, invalid or disposed DM broker binding.');
+    const previous = this.dmAttach;
+    const binding = Symbol('dm-broker');
+    this.dmBinding = binding;
+    this.dmAttach = attach;
+    const release = () => {
+      if (this.dmBinding !== binding) return;
+      this.dmBinding = undefined;
+      this.dmAttach = previous;
+      for (const node of this.nodes.values()) {
+        node.dmClose?.();
+        node.dmClose = undefined;
+      }
+    };
+    try {
+      for (const node of this.nodes.values()) {
+        if (node.finished || !node.child?.connected) continue;
+        node.dmClose?.();
+        node.dmClose = undefined;
+        node.dmClose = attach(node.child, node.name);
+      }
+    } catch (error) { release(); throw error; }
+    return release;
   }
 
   paths(handle) {
@@ -276,9 +304,11 @@ export class EvaRuntime {
       const desktopExclusions = await desktopRoleExclusions(profileDir);
       const defaultAgentPreset = DEFAULT_EVA_PRESET; // Not a permission mode.
       const sharing = credentialsPath === undefined ? {} : { credentialsPath, credentialSharingVersion: 1 };
-      const startupConfigId = createHash('sha256').update(JSON.stringify({ workspace, profile, defaultAgentPreset, providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: CHILD_HOST_VERSION, evaPresetHash: preset.digest, desktopExclusions, ...sharing })).digest('hex').slice(0, 16);
+      const dmEntry = this.runtime.dmEntry ?? resolveDmEntry();
+      const memoryEntry = this.runtime.memoryEntry ?? resolveMemoryEntry();
+      const startupConfigId = createHash('sha256').update(JSON.stringify({ workspace, profile, defaultAgentPreset, providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: CHILD_HOST_VERSION, dmEntry, memoryEntry, evaPresetHash: preset.digest, desktopExclusions, ...sharing })).digest('hex').slice(0, 16);
       const patch = join(state, `startup-${installationId}-${startupConfigId}.patch.yml`);
-      const overlay = createChildHostPatch({ workspace, profile, presetPath, credentialsPath, desktopExclusions });
+      const overlay = createChildHostPatch({ workspace, profile, presetPath, credentialsPath, desktopExclusions, dmEntry, memoryEntry });
       await exclusiveContent(patch, JSON.stringify(overlay, null, 2) + '\n');
       const args = ['--profile', profile];
       // Initialize through the official CLI, and never reset a pre-existing profile.
@@ -318,6 +348,7 @@ export class EvaRuntime {
         if (node.finished) return;
         node.finished = true;
         node.dmClose?.();
+        node.dmClose = undefined;
         node.exitCode = code; node.exitSignal = exitSignal;
         node.status = code === 0 || node.stopping ? 'stopped' : 'failed';
         this.signalNode(node, 'SIGKILL');

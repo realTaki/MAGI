@@ -16,6 +16,9 @@ export function apply(ctx, config) {
   // Optional Host-local identity: no lookup/create fallback; unavailable until
   // startup is durable and after unload. Cordis owns provider removal/collisions.
   ctx.provide('magiMainSession', { current: () => disposed ? undefined : mainSession });
+  ctx.provide('magiDmTransport', {
+    kind: 'child', workspace: config.workspace, handle: config.profile, channel: process,
+  });
   registerChildView(ctx, () => mainSessionId);
   registerEmbeddedLogin(ctx);
   const readPreview = createMessagePreviewReader(ctx);

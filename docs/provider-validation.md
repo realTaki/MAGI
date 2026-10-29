@@ -1,5 +1,9 @@
 # Provider configuration and recovery
 
+> **Historical evidence only.** The old provider module and Electron Shell
+> tests referenced here have been deleted. Native DSH owns current provider
+> configuration; these results are not validation of its credentials or forms.
+
 This guide retains historical provider recovery findings and their verification
 boundaries. References to the former relay describe those recorded revisions;
 current forms and receipts use local owner IPC and durable BUS delivery.
