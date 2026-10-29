@@ -4,9 +4,10 @@ import { realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { initializeParentMain, isEvaChildHome } from './parent.js';
 import { ensureMainSession, attachMainSessionWorkspace, ensureMainSessionTitle } from './main-session.js';
+import { registerMainCoordinator } from './coordinator.js';
 
 export const name = 'magi-bot-mode';
-export const inject = ['profileContext', 'workspaceRegistry', 'sessionController', 'sessionPersistence', 'sessionQuery', 'workingDirectory'];
+export const inject = ['profileContext', 'workspaceRegistry', 'sessionController', 'sessionPersistence', 'sessionQuery', 'workingDirectory', 'systemPrompt'];
 
 export async function apply(ctx, config = {}) {
   if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('Invalid Bot mode identity configuration.');
@@ -60,4 +61,5 @@ export async function apply(ctx, config = {}) {
   // Preserve DM's optional read-only ABI; startup mutation is a separate service.
   ctx.provide('magiMainSession', Object.freeze({ current: () => disposed ? undefined : current }));
   ctx.provide('magiBotMode', Object.freeze({ initialize }));
+  registerMainCoordinator(ctx, () => disposed ? undefined : current);
 }

@@ -354,7 +354,7 @@ for (const app of ['bot-mode', 'eva', 'magi-shell']) {
     const { archive, report } = packDsh({ app, outputDir: path.join(root, 'output'), npmCli });
     const standalone = app === 'bot-mode';
     const prefix = standalone ? '' : 'node_modules/@magi/bot-mode/';
-    const resources = ['package.json', 'index.js', 'parent.js', 'main-session.js', 'parent-main-session.js', 'presets.js', 'preset-loader.js', 'presets/bot-preset.yml', 'README.md', 'cordis.patch.yml', 'locale/en.json', 'locale/zh.json', 'icon.svg'];
+    const resources = ['package.json', 'index.js', 'coordinator.js', 'parent.js', 'main-session.js', 'parent-main-session.js', 'presets.js', 'preset-loader.js', 'presets/bot-preset.yml', 'README.md', 'cordis.patch.yml', 'locale/en.json', 'locale/zh.json', 'icon.svg'];
     for (const file of resources) assert.ok(report.files.some(item => item.path === prefix + file), app + ': ' + file);
     if (standalone) {
       assert.equal(report.name, '@magi/bot-mode');
@@ -385,6 +385,16 @@ for (const app of ['bot-mode', 'eva', 'magi-shell']) {
     for (const specifier of ['/preset', '/preset-loader', '/locale/en.json', '/locale/zh.json', '/icon']) {
       assert.ok(fromPackage.resolve('@magi/bot-mode' + specifier).startsWith(packageRoot + path.sep));
     }
+    const { MAIN_COORDINATOR_POLICY, registerMainCoordinator } = await import(pathToFileURL(path.join(packageRoot, 'coordinator.js')));
+    let coordinatorSection;
+    const off = registerMainCoordinator({ systemPrompt: { section(value) {
+      coordinatorSection = value;
+      return () => { coordinatorSection = undefined; };
+    } } }, () => ({ sessionId: 'archive-main' }));
+    assert.equal(coordinatorSection.text({ agent: { id: 'archive-main' } }), MAIN_COORDINATOR_POLICY);
+    assert.equal(coordinatorSection.text({ agent: { id: 'archive-worker' } }), '');
+    off();
+    assert.equal(coordinatorSection, undefined);
     assert.equal(manifest.exports['./preset'], './presets/bot-preset.yml');
     assert.equal(manifest.exports['./presets'], './presets.js');
     assert.equal(manifest.exports['./preset-loader'], './preset-loader.js');

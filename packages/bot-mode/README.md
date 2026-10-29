@@ -4,7 +4,7 @@ Reusable native DSH Bot identity and Agent capabilities, installed independently
 
 ## Ownership
 
-- **bot-mode:** durable fixed main Session reservation/recovery, persistence barriers, immutable workspace membership, child titles and scoped availability; the native `bot-mode` Agent preset and its Creator-derived capability list.
+- **bot-mode:** durable fixed main Session reservation/recovery, persistence barriers, immutable workspace membership, child titles and scoped availability; the native `bot-mode` Agent preset and its Creator-derived capability list; main-only foreground coordination policy.
 - **EVA:** node processes, homes/profiles/ports, IPC/navigation, credential sharing, native Codex route configuration, readiness checks and immutable startup artifacts.
 - **Shell:** parent navigation, cached read-only inventory and previews.
 - **DM / memory:** independent plugins, not copied into the preset.
@@ -27,6 +27,42 @@ Standalone and Shell insert the same `magi-bot-mode` identity root with `{ role:
 `magiBotMode.initialize()` is explicit, single-flight and caches success. Shell invokes it on app readiness; EVA invokes it after home/cwd/profile, credentials, provider and preset checks. First-ever native Session creation uses the effective native default, never a forced preset or permission mode.
 
 `magiMainSession.current()` preserves the optional read-only ABI: `undefined` before success/after unload, otherwise a frozen `{ sessionId, workspace }`. Child publication waits for both workspace membership and durable node-name title. Disposal during initialization cannot republish availability. No HTTP, IPC, Codex or process-launch dependency is required by this package.
+
+## Foreground main Session
+
+The [identity-owned coordinator policy](<coordinator.js>) is a native SystemPrompt
+section selected by the **exact published fixed Session ID**, not by the Agent's
+preset, parent, cwd or workspace. Native assembly supplies the current Agent at
+every step. Identity not ready, revoked or unloaded means no policy; unrelated
+Sessions and delegated workers do not receive it, even when using the same Bot
+preset or a forked conversation. The Host root now requires `systemPrompt`; it
+does not add tools globally or rewrite requests. Main-only policy also works with
+a saved non-Bot preset; if it lacks delegation tools, the main explains the
+limitation rather than changing the selection or doing lengthy foreground work.
+
+The main answers short questions, delegates substantial work to multiple native
+continuable subagents, records task/agent IDs, reports dispatch, then **ends its
+turn** instead of polling or waiting. Commentary alone is not yielding. New user
+requests remain distinct from pending work; task follow-ups reuse the appropriate
+worker through `send_message`. Independent assignments can overlap, conflicting
+writes must be serialized or explicitly isolated. Completion notices get short
+main turns for substantive summaries; lengthy verification is delegated too.
+Worker reports are evidence, not human authorization or proof of success.
+
+This reuses native execution: a normal main final/idle does not dispose published
+children. A settlement notice can wake the exact live idle parent; a busy parent
+receives it at a later step. A local child is a continuable Session, **not an
+always-running process**: after settling it can unload and be cold-resumed for a
+follow-up. Native capacity, depth, model and approval limits still apply. Local
+`interrupt_agent` stops the target's current work, not descendants; explicit
+activation disposal/manager unload drains owned work. No work or notice survival
+across Host restart is promised.
+
+This is a model-facing foreground coordination policy, **not a hard scheduler or
+latency guarantee**: an already executing main model/tool call can still occupy
+the turn. There is no new executor, hidden waiting loop, automatic preset switch,
+or forced recomposition/restart of live Bots. Update/reload through the normal
+native deployment path when appropriate; source tests do not deploy this change.
 
 ## Fail-closed recovery
 

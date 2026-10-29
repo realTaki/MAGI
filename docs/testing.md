@@ -74,6 +74,40 @@ No Host starts and no files are written. Full capability eager mount and persist
 Session reopening are explicitly untested; neither native imports nor empty-body
 binding certify them, paid calls, deployment or live GUI acceptance.
 
+## Bot foreground-coordinator policy
+
+[Portable policy contracts](<../packages/bot-mode/test/coordinator.test.js>) exercise
+exact Session identity gating, missing/revoked identity, unrelated/spawn/fork
+fixture IDs, resumed Agent objects, disposal and bounded coordination guidance.
+[Lifecycle tests](<../packages/bot-mode/test/lifecycle.test.js>) exercise both
+parent and EVA-child publication/unload with the actual identity plugin. Archive
+checks execute the policy registration from all three extracted bundles.
+
+The optional [native coordinator probe](<../packages/bot-mode/test/coordinator-native.js>)
+uses real Cordis plugin ownership, native SystemPrompt, `assembleContextFor` and
+rendering; it checks isolation, identity revocation, explicit disposal and owner
+Context unload without creating a Host, profile, actual Agent, model request or
+subagent execution:
+
+```sh
+ELECTRON_RUN_AS_NODE=1 /Applications/MAGI.app/Contents/MacOS/MAGI --expose-internals \
+  packages/bot-mode/test/coordinator-native.js \
+  '/Applications/DeepSeek Harness.app/Contents/Resources/app.asar/dsh/package.json'
+```
+
+Native 0.2.1-rc.3 lifecycle source/docs were separately checked: local spawn/fork
+return a child ID without waiting for completion; normal parent final/idle does
+not dispose published children. Settlement can wake an **exact live idle parent**;
+a busy parent receives the notice at its next step, not a second concurrent
+model stream. Local children can settle/unload and later be cold-resumed with
+`send_message`. Goals wait for progressing descendants before another automatic
+round, not before human input. These are native contracts, not newly implemented
+scheduler guarantees or concurrency benchmark results. No paid model/task,
+foreground latency, live GUI responsiveness, crash recovery or deployed-profile
+acceptance is certified by the prompt probe. Capacity/permissions and native
+teardown remain authoritative; prompt guidance alone cannot impose a strict
+foreground time budget or force interrupt a tool/LLM call.
+
 ## Retired pre-DSH code
 
 The old Electron Shell and provider module have been removed. Remaining old

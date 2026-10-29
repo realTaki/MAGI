@@ -41,6 +41,7 @@ async function fixture(t) {
     appReady: { onReady(callback) { onReady = callback; return () => {}; } },
     appExit(code) { finish({ exit: code }); },
     profileContext: { home, name: 'eva-000', dir: profileDir },
+    systemPrompt: { section() { return () => {}; } },
     agentPresets: { async resolve() { return { id: 'eva' }; } },
     llm: {
       listProviders() { calls.push(['provider-check']); return [{ id: 'openai-codex', name: 'OpenAI Codex' }]; },

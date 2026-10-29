@@ -13,6 +13,7 @@ function fixture() {
       cleanups.push(() => services.delete(key));
     },
     effect(callback) { cleanups.push(callback()); },
+    systemPrompt: { section() { return () => {}; } },
   };
   return { ctx, services, dispose() { for (const cleanup of cleanups.reverse()) cleanup?.(); } };
 }
@@ -44,6 +45,7 @@ test('standalone bundle ships all runtime exports, original icon and localized m
   assert.match(await read('icon.svg'), /<svg/);
   assert.equal(pkg.dependencies, undefined);
   assert.equal(name, 'magi-bot-mode');
+  assert.ok(inject.includes('systemPrompt'), 'native Cordis requires declaring the prompt service dependency');
   for (const integration of ['credentials', 'llm', 'appReady', 'appExit', 'connection', 'tools', 'agentPresets']) assert.ok(!inject.includes(integration));
 });
 

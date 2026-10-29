@@ -5,18 +5,25 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { apply } from '../index.js';
 
-async function fixture(t) {
+async function fixture(t, role = 'eva-child') {
   const root = await realpath(tmpdir()), home = await mkdtemp(join(root, 'bot-mode-lifecycle-'));
   const dir = join(home, 'profiles', 'eva-000');
   await mkdir(dir, { recursive: true });
   await mkdir(join(home, 'eva'), { mode: 0o700 });
-  const services = new Map(), cleanups = [], calls = [], stored = new Map();
+  const services = new Map(), cleanups = [], calls = [], stored = new Map(), sections = new Map();
   const workspace = { sessionIds: [], async attachSession(id) { calls.push('attach'); this.sessionIds.push(id); } };
   const ctx = {
     profileContext: { home, dir, name: 'eva-000' },
     get: key => services.get(key),
     provide(key, value) { assert.ok(!services.has(key)); services.set(key, value); cleanups.push(() => services.delete(key)); },
     effect(callback) { cleanups.push(callback()); },
+    systemPrompt: { section(section) {
+      assert.ok(!sections.has(section.name));
+      sections.set(section.name, section);
+      const off = () => sections.delete(section.name);
+      cleanups.push(off);
+      return off;
+    } },
     workspaceRegistry: { async create() { return workspace; } },
     sessionController: {
       async create({ sessionId, cwd }) { calls.push('create'); stored.set(sessionId, { meta: { id: sessionId, cwd, isSeeded: false }, events: [] }); return { sessionId }; },
@@ -33,8 +40,8 @@ async function fixture(t) {
     assert.ok(home.startsWith(join(root, 'bot-mode-lifecycle-')));
     await rm(home, { recursive: true });
   });
-  await apply(ctx, { role: 'eva-child', workspace: home, profile: 'eva-000' });
-  return { ctx, home, calls, workspace, stored, dispose, startup: services.get('magiBotMode'), main: services.get('magiMainSession') };
+  await apply(ctx, role === 'parent' ? { role } : { role, workspace: home, profile: 'eva-000' });
+  return { ctx, home, calls, workspace, stored, sections, dispose, startup: services.get('magiBotMode'), main: services.get('magiMainSession') };
 }
 
 test('concurrent startup attaches and pins exactly once; successful initialization is cached', async t => {
@@ -86,3 +93,18 @@ test('child identity mismatch is rejected before creating or attaching a Session
   assert.equal(f.main.current(), undefined);
   assert.deepEqual(f.calls, []);
 });
+
+for (const role of ['parent', 'eva-child']) {
+  test(`${role} publishes coordinator policy only with durable fixed identity and removes it on unload`, async t => {
+    const f = await fixture(t, role);
+    const section = f.sections.get('magi:main-coordinator');
+    assert.equal(f.sections.size, 1);
+    assert.equal(section.text({ agent: { id: 'not-ready' } }), '');
+    const current = await f.startup.initialize();
+    assert.match(section.text({ agent: { id: current.sessionId } }), /foreground coordinator/);
+    assert.equal(section.text({ agent: { id: 'worker', parentSession: current.sessionId } }), '');
+    f.dispose();
+    assert.equal(f.sections.size, 0);
+    assert.equal(section.text({ agent: { id: current.sessionId } }), '');
+  });
+}

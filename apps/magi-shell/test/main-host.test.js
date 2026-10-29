@@ -47,6 +47,7 @@ function mock(paths, stored = new Map()) {
       return cleanup;
     },
     profileContext: { home: paths.home, dir: paths.profile, name: 'User Profile.With Spaces' },
+    systemPrompt: { section() { return () => {}; } },
     appReady: { onReady(callback) { ready.add(callback); return () => ready.delete(callback); } },
     effect(callback) { const cleanup = callback(); if (cleanup) cleanups.push(cleanup); },
     connection: { fetch: { register(route) {
