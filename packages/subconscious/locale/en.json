@@ -1,0 +1,14 @@
+{
+  "$description": "Bounded, sequential background reflection. Paused by default; enabling requires a human-chosen run ID.",
+  "recurring": { "$description": "Explicitly authorize continued cheap checks and UTC daily allowance resets; default false." },
+  "dailyTurnLimit": { "$description": "Maximum delivered inputs per UTC day under the opted-in recurring policy." },
+  "dailyStepLimit": { "$description": "Maximum admitted model steps per UTC day; not a monetary spending cap." },
+  "enabled": { "$description": "Opt into one finite run. Never enabled by the agent." },
+  "runId": { "$description": "Choose a new value to authorize a fresh bounded budget; reusing it never replenishes budget." },
+  "heartbeatMinutes": { "$description": "Cheap local MAIN check interval while a run waits for substantive unseen input. Not a model-request schedule." },
+  "maxTurns": { "$description": "Maximum deliveries in one explicit run, at most three." },
+  "maxSteps": { "$description": "Maximum admitted model steps in the entire run." },
+  "maxTokens": { "$description": "Native per-response output cap; not a monetary guarantee." },
+  "cooldownMs": { "$description": "Minimum idle delay between useful reflection turns." },
+  "maxRunMs": { "$description": "Maximum elapsed run time; zero disables this timer, not the turn/step caps." }
+}

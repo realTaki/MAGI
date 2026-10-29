@@ -1,0 +1,14 @@
+{
+  "$description": "低流量、串行、有限预算的后台反思。默认暂停，仅人类可通过新运行标识启用。",
+  "recurring": { "$description": "显式授权持续本地检查和 UTC 每日预算重置；默认关闭。" },
+  "dailyTurnLimit": { "$description": "循环模式下每 UTC 日最多交付输入次数。" },
+  "dailyStepLimit": { "$description": "每 UTC 日最多准入模型步数；不是金额上限。" },
+  "enabled": { "$description": "启用一次有限运行；模型不能自行开启。" },
+  "runId": { "$description": "人为填写新值以授权新预算；重复值不补充预算。" },
+  "heartbeatMinutes": { "$description": "等待新前台内容时的本地检查间隔；不是模型请求计划。" },
+  "maxTurns": { "$description": "本次运行最多交付次数，上限三次。" },
+  "maxSteps": { "$description": "整个运行最多准入模型步数。" },
+  "maxTokens": { "$description": "每次回复的原生输出上限；不承诺账单金额。" },
+  "cooldownMs": { "$description": "有意义的连续反思之间的最短空闲间隔。" },
+  "maxRunMs": { "$description": "运行耗时上限；零仅关闭耗时限制，不关闭轮数及步数限制。" }
+}

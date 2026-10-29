@@ -1,0 +1,13 @@
+{
+  "name": "@magi/subconscious",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Paused-by-default, bounded native background reflection for one MAGI Bot.",
+  "exports": { ".": "./index.js", "./locale/*.json": "./locale/*.json", "./icon": "./icon.svg" },
+  "files": ["index.js", "controller.js", "policy.js", "cordis.patch.yml", "locale/*.json", "icon.svg", "README.md"],
+  "scripts": { "test": "node --test test/*.test.js" },
+  "engines": { "node": ">=24.0.0" },
+  "dependencies": { "zod": "^4.3.6" },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+}
