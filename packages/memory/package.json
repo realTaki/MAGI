@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Bot-local durable memory, automatic conversation context, and versioned management tools.",
   "exports": { ".": "./index.js", "./locale/*.json": "./locale/*.json", "./icon": "./icon.svg" },
-  "files": ["index.js", "tools.js", "store.js", "cordis.patch.yml", "locale/*.json", "icon.svg", "README.md"],
+  "files": ["index.js", "tools.js", "store.js", "skills/", "cordis.patch.yml", "locale/*.json", "icon.svg", "README.md"],
   "scripts": { "test": "node --test test/*.test.js" },
   "engines": { "node": ">=24.0.0" },
   "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }

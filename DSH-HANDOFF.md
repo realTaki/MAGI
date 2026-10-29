@@ -7,7 +7,9 @@
 - EVA 新增原生 `magi-eva-nodes` [操作指引](<apps/eva/skills/eva-nodes/SKILL.md>)，覆盖节点选择/复用/新建、审批、共享凭据边界、状态语义与安全失败恢复。仅父 Host 注册；有 child 角色标记时在注册前返回。
 - 通过可选 `skills` 注入注册，资源锚定安装模块，随服务 scope 注销/恢复；不增加核心硬依赖，不改工具 schema 或审批。manifest 包含完整资源；回归覆盖服务缺席/卸载/恢复、child 边界以及真实归档在离线独立 consumer 中读取并注册 skill。
 - EVA 增量使用 MAGI 自带 Node：完整回归 **586/586**、portable **134/134**、源码/resources **30 模块**通过，0 失败/0 skipped；当前 macOS 结果不代表 Windows 实机验收。
-- 本增量先完成 EVA；memory 操作 skill 接续下一增量，下方旧“只有 DM”的说明是当时状态。未恢复集中式 BUS skills；不改原生/用户 skill、preset、profile 或凭据，不安装/重载插件，不重启 Bot。源码更新不代表运行实例已生效。
+- memory 接续新增原生 `magi-bot-memory` [操作指引](<packages/memory/skills/bot-memory/SKILL.md>)：先查重、包含归档项核对、按版本更新、冲突/不确定写入后重读、归档恢复与明确授权删除。同样使用可选 scope 注册，缺席/重载不影响工具和已有 memory context，卸载不删除记忆；独立 memory 归档及 EVA 内嵌 memory 均验证安装后的实际入口 apply、资源内容与注销。
+- memory 增量使用 MAGI 自带 Node：完整回归 **588/588**、portable **136/136**、源码/resources **30 模块**通过，0 失败/0 skipped；均在当前 macOS 执行，不代表 Windows 实机验收。
+- memory skill 描述当前 SQLite 工具，不激活单 Markdown 后端、不改变分类/容量/上下文布局，不导入历史数据库。两个增量分别提交，下方旧“只有 DM”的说明是当时状态。未恢复集中式 BUS skills；不改原生/用户 skill、preset、profile 或凭据，不安装/重载插件，不重启 Bot。源码更新不代表运行实例已生效。
 
 ### 前次：删除旧 BUS MCP（仅源码）
 

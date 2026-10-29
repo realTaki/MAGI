@@ -14,6 +14,10 @@ test('independent memory bundle ships its runtime and localized original display
   for (const file of ['index.js', 'tools.js', 'store.js', 'README.md', 'cordis.patch.yml', 'icon.svg']) {
     assert.ok(pkg.files.includes(file)); assert.ok(existsSync(new URL(file, root)));
   }
+  assert.ok(pkg.files.includes('skills/'));
+  const skill = read('skills/bot-memory/SKILL.md');
+  assert.match(skill, /^name: magi-bot-memory\r?$/m);
+  for (const phrase of ['expected_version', 'Include archived records', 'explicit user authorization', 'conversation logs or backups', 'not activated', 'not authorization']) assert.ok(skill.includes(phrase), phrase);
   assert.equal(pkg.exports['./icon'], './icon.svg');
   assert.equal(pkg.exports['./locale/*.json'], './locale/*.json');
   for (const lang of ['en', 'zh']) {

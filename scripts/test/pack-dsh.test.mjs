@@ -26,6 +26,35 @@ function put(root, relative, contents) {
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, typeof contents === 'string' ? contents : JSON.stringify(contents, null, 2));
 }
+async function probePackedMemorySkill(entry, home) {
+  mkdirSync(home, { mode: 0o700 });
+  const root = path.dirname(entry), registrations = [], cleanups = [], services = new Map();
+  const ctx = {
+    profileContext: { home: realpathSync(home) },
+    get: key => services.get(key),
+    provide(key, value) { services.set(key, value); },
+    systemPrompt: { context() {} }, tools: { register() {} },
+    effect(callback) { cleanups.push(callback()); },
+    inject(dependencies, callback) {
+      assert.deepEqual(dependencies, ['skills']);
+      callback({ effect: ctx.effect, skills: { register(skill) {
+        registrations.push(skill); return () => registrations.splice(0);
+      } } });
+    },
+  };
+  const memory = await import(pathToFileURL(entry));
+  try {
+    memory.apply(ctx);
+    assert.equal(registrations.length, 1);
+    const skill = registrations[0];
+    assert.equal(skill.name, 'magi-bot-memory');
+    assert.equal(skill.path, path.join(root, 'skills/bot-memory/SKILL.md'));
+    assert.equal(skill.resourceBase.path, path.join(root, 'skills/bot-memory') + path.sep);
+    assert.equal(skill.content, readFileSync(skill.path, 'utf8'));
+  } finally { for (const off of cleanups.reverse()) off(); }
+  assert.equal(registrations.length, 0);
+}
+
 function fixture(root) {
   put(root, 'apps/eva/package.json', {
     name: '@local/eva', version: '0.0.1', type: 'module',
@@ -146,7 +175,7 @@ test('real memory archive is a dependency-free standalone bundle', async t => {
   const root = temporary(t);
   const { archive, report } = packDsh({ app: 'memory', outputDir: path.join(root, 'output'), npmCli });
   assert.equal(report.name, '@magi/memory');
-  for (const file of ['index.js', 'store.js', 'tools.js', 'cordis.patch.yml']) assert.ok(report.files.some(item => item.path === file), file);
+  for (const file of ['index.js', 'store.js', 'tools.js', 'cordis.patch.yml', 'skills/bot-memory/SKILL.md']) assert.ok(report.files.some(item => item.path === file), file);
   assert.ok(!report.files.some(file => file.path.startsWith('node_modules/')));
   if (!hasPnpm) { t.diagnostic('Offline install probe needs MAGI_PNPM_CLI; archive checks passed.'); return; }
   const require = install(root, archive);
@@ -155,6 +184,7 @@ test('real memory archive is a dependency-free standalone bundle', async t => {
   assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml');
   assert.deepEqual(manifest.dependencies ?? {}, {});
   await import(pathToFileURL(entry));
+  await probePackedMemorySkill(entry, path.join(root, 'standalone-memory-home'));
 });
 
 test('real EVA archive retains independent DM exports and imports in isolated offline consumer', {
@@ -198,7 +228,9 @@ test('real EVA archive retains independent DM exports and imports in isolated of
   assert.equal(memoryManifest.version, '0.1.0');
   assert.equal(memoryManifest.dsh.bundle.patch, './cordis.patch.yml');
   for (const file of memoryManifest.files.filter(file => file.endsWith('.js'))) assert.ok(existsSync(path.join(memoryRoot, file)), file);
+  assert.ok(report.files.some(file => file.path === 'node_modules/@magi/memory/skills/bot-memory/SKILL.md'));
   await import(pathToFileURL(memoryEntry)); // Loading must not create a store before plugin apply.
+  await probePackedMemorySkill(memoryEntry, path.join(root, 'bundled-memory-home'));
   const dmRoot = path.dirname(dmEntry);
   const manifest = JSON.parse(readFileSync(path.join(dmRoot, 'package.json')));
   assert.equal(manifest.name, '@magi/dm');

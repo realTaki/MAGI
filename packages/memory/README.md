@@ -65,6 +65,10 @@ append new history. Archiving/deleting a fact excludes it from future snapshots,
 **not from existing conversation history or backups**. Compaction is native DSH
 behavior, not an independent memory-maintenance process.
 
+## Plugin-owned skill
+
+The plugin optionally registers native `magi-bot-memory`, with [operational guidance](<skills/bot-memory/SKILL.md>) for fact selection, duplicate reconciliation, version conflicts, archive/restore and authorized deletion. Its resources ship inside this package and resolve from the installed module, not the working directory. The injected skill scope owns teardown and re-registration; absence or reload of `skills` does not interrupt the memory context or tools. This guidance describes the **active SQLite tools**, not activation of the Markdown backend. It changes no tool permission and does not update an already running Bot.
+
 ## Management tools
 
 - `list_memory({query?,include_archived?,offset?,limit?})`: paginated literal search,

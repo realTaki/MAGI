@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { openMemoryStore } from './store.js';
 import { memoryTools } from './tools.js';
 
@@ -22,4 +24,17 @@ export function apply(ctx, config = {}) {
     text: () => store.render(),
   });
   for (const tool of memoryTools(store)) ctx.tools.register(tool);
+  // Discovery is optional; service reload must not interrupt memory or its tools.
+  ctx.inject(['skills'], scoped => {
+    const directory = new URL('./skills/bot-memory/', import.meta.url);
+    const document = new URL('SKILL.md', directory);
+    scoped.effect(() => scoped.skills.register({
+      name: 'magi-bot-memory',
+      description: "Remember, reconcile, archive, or remove this Bot's reusable facts and preferences without duplicates or stale writes.",
+      source: 'runtime',
+      path: fileURLToPath(document),
+      resourceBase: { kind: 'directory', path: fileURLToPath(directory) },
+      content: readFileSync(document, 'utf8'),
+    }));
+  });
 }
