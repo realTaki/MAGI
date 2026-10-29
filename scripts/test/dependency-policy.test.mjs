@@ -35,7 +35,7 @@ test('resolved build dependencies exclude the patched advisory ranges', () => {
   }
 });
 
-for (const retired of ['channel-a2a', 'channel-tasks', 'launcher', 'skills']) {
+for (const retired of ['channel-a2a', 'channel-tasks', 'launcher', 'skills', 'mcp']) {
   test(`retired ${retired} is absent and has no current product dependency`, () => {
     assert.equal(existsSync(path.join(root, 'packages', retired)), false);
     for (const location of ['apps/eva', 'apps/magi-shell', 'packages/dm', 'packages/memory']) {
@@ -70,7 +70,7 @@ test('only current product workspaces and owned tooling are installable', () => 
   assert.equal(lock.packages['node_modules/semver'].version, manifest.devDependencies.semver);
   for (const location of Object.keys(lock.packages)) {
     if (location.startsWith('apps/') || location.startsWith('packages/')) assert.ok(workspaces.includes(location), location);
-    assert.doesNotMatch(location, /(?:@magi\/(?:providers|shell|launcher|skills|channel-a2a|channel-tasks)|@earendil-works\/pi-ai|electron|@esbuild-kit)/, location);
+    assert.doesNotMatch(location, /(?:@magi\/(?:providers|shell|launcher|skills|mcp|channel-a2a|channel-tasks)|@earendil-works\/pi-ai|electron|@esbuild-kit)/, location);
   }
   for (const location of workspaces) assert.equal(existsSync(path.join(root, location, 'package-lock.json')), false);
   for (const name of ['build', 'db:generate', 'test:legacy', 'verify:legacy']) assert.equal(manifest.scripts[name], undefined, name);

@@ -44,8 +44,10 @@ suite. `npm run test:portable` is the explicitly narrower Windows Client/auth/
 bundle-contract gate; it does not certify Host lifecycle or POSIX persistence.
 
 The old Electron Shell, provider module, BUS launcher, centralized BUS skills,
-channel-a2a and channel-tasks have been deleted. Skills belong to their native
-plugins, not a restored BUS worker; deleting old source must not delete users'
+BUS MCP, channel-a2a and channel-tasks have been deleted. MCP belongs to native
+DSH; do not delete or implicitly migrate existing MCP server data or credentials.
+Skills belong to their native plugins, not a restored BUS worker; deleting old
+source must not delete users'
 workspace skills or native DSH skill assets. Timed instructions use native DSH
 Schedule; do not restore the old task
 worker or implicitly migrate old task databases. Local

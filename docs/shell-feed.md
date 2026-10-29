@@ -1,5 +1,10 @@
 # Shell interest Feed
 
+> **Archived pre-DSH design, not a current runtime contract.** The BUS MCP,
+> task and provider implementations described below have been deleted. This
+> Feed pipeline is not mounted by the current native plugins; native DSH MCP
+> does not automatically recreate it or migrate its configuration.
+
 ## Product boundary
 
 Every EVA retains its own subconscious module. Only the **Shell EVA** installs

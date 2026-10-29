@@ -2,7 +2,14 @@
 
 ## 当前补充：MAGI Shell
 
-### 最新：删除旧集中式 BUS skills（仅源码）
+### 最新：删除旧 BUS MCP（仅源码）
+
+- 按用户要求删除 `packages/mcp` 的 worker、`mcp_server` 控制工具、manifest 和 TypeScript 配置，共 4 个源码文件。该模块不在当前四个 workspace、根 lock、打包或运行闭包中；无需安装依赖或改锁，历史源码保留在 Git 历史。
+- MCP 能力归属原生 DSH；本次不增加、删除、连接、断开或修改任何原生 MCP 服务器，不修改 preset 或活跃工具 schema，不读写服务器凭据、不重载插件或重启 Bot。旧 BUS 的 MCP 表结构与 Drizzle 历史作为归档保留，用户既有数据库及配置不删除、不读取、不迁移。
+- [依赖策略回归](<scripts/test/dependency-policy.test.mjs>)新增 MCP 旧目录/当前插件依赖/lock 禁止恢复约束，修正归档工具所有权注释并更新仓库边界；[旧 Feed 设计](<docs/shell-feed.md>)补归档提示，避免将已删除的 MCP worker 管线当成当前功能。当前原生插件实现保持不变；不把源码回归测试描述为真实 MCP 连接验收。
+- 使用 MAGI 自带 Node 验证：完整回归 **584/584**、portable **132/132**、源码/resources **29 模块**通过，0 失败/0 skipped；在当前 macOS 执行，不代表 Windows 实机验收。
+
+### 前次：删除旧集中式 BUS skills（仅源码）
 
 - 按用户要求删除 `packages/skills`：旧 worker、`load_skill` 工具、manifest、TypeScript 配置及六份历史 builtin skill，共 10 个源码文件。该模块已不在当前四个 workspace、依赖锁、打包与原生运行闭包中，无需迁移配置或安装依赖；历史源码可从 Git 历史恢复。
 - 原生 DSH skill-filesystem / skill 工具及官方 preset skill 资产不变，DM 插件自带 skill 保留；不删除用户工作区曾由旧 worker 复制或编辑的技能文件。当前仓库只有 DM 已有自带 `SKILL.md`；EVA 和 memory 的专用操作 skill 尚未补齐，Shell 是 UI-only，不能把本次删除描述成所有插件的 skill 迁移已经完成。

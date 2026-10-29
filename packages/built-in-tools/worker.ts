@@ -14,8 +14,8 @@ import { abortable, MUTATION_SETTLE_MS, settleWithin } from "@magi/bus/abort.js"
  * nor loader. Contact tools live in `@magi/contacts`. The retired BUS memory
  * worker and its tools are also deleted; current memory is a native DSH plugin.
  *
- * `mcp_server` is not here: it accepts an `McpServerConfig` and talks to
- * `McpWorker`, so it lives in `@magi/mcp` and is registered by that worker.
+ * The retired BUS MCP worker and its `mcp_server` control tool are deleted.
+ * Current MCP support belongs to native DSH, not this archived tools package.
  *
  * The old `schedule_task` worker has been retired and deleted. This archived
  * BUS package does not supply scheduling; current DSH presets use native Schedule.
