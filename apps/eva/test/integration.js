@@ -31,6 +31,7 @@ const ctx = {
   workingDirectory: { async ensure() { return resolve(base); } },
   approval: { async request() { return 'allowed-once'; } },
   effect(effect) { cleanup.push(effect()); },
+  inject(dependencies) { assert.deepEqual(dependencies, ['skills']); /* Optional service absent in this fixture. */ },
 };
 apply(ctx);
 assert.equal(tool.name, 'eva');

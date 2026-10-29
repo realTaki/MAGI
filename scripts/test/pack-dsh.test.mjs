@@ -167,9 +167,27 @@ test('real EVA archive retains independent DM exports and imports in isolated of
   for (const file of ['package.json', 'index.js', 'cordis.patch.yml']) assert.ok(report.files.some(item => item.path === `node_modules/@magi/memory/${file}`));
   assert.ok(report.files.some(file => file.path === 'node_modules/@magi/dm/icon.svg'));
   assert.ok(report.files.some(file => file.path === 'node_modules/@magi/dm/skills/local-dm/SKILL.md'));
+  for (const file of ['skill.js', 'skills/eva-nodes/SKILL.md']) assert.ok(report.files.some(item => item.path === file), file);
   if (!hasPnpm) { t.diagnostic('Offline install probe needs MAGI_PNPM_CLI; real archive checks passed.'); return; }
   const require = install(root, archive);
   const evaEntry = require.resolve('@local/eva');
+  const evaRoot = path.dirname(evaEntry);
+  const { registerEvaSkill } = await import(pathToFileURL(path.join(evaRoot, 'skill.js')));
+  const evaSkills = [], evaCleanups = [];
+  registerEvaSkill({ inject(dependencies, callback) {
+    assert.deepEqual(dependencies, ['skills']);
+    callback({ effect(effect) { evaCleanups.push(effect()); }, skills: { register(skill) {
+      evaSkills.push(skill); return () => evaSkills.splice(0);
+    } } });
+  } });
+  try {
+    assert.equal(evaSkills.length, 1);
+    assert.equal(evaSkills[0].name, 'magi-eva-nodes');
+    assert.equal(evaSkills[0].path, path.join(evaRoot, 'skills/eva-nodes/SKILL.md'));
+    assert.equal(evaSkills[0].content, readFileSync(evaSkills[0].path, 'utf8'));
+    assert.equal(evaSkills[0].resourceBase.path, path.join(evaRoot, 'skills/eva-nodes') + path.sep);
+  } finally { for (const off of evaCleanups.reverse()) off(); }
+  assert.equal(evaSkills.length, 0);
   const fromEva = createRequire(evaEntry);
   const dmEntry = fromEva.resolve('@magi/dm');
   const memoryEntry = fromEva.resolve('@magi/memory');

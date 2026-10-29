@@ -23,6 +23,7 @@ try {
     tools: { register(tool) { tools.push(tool); } },
     connection: { fetch: { register(route) { routes.push(route); return () => {}; } } },
     effect(callback) { cleanup.push(callback()); },
+    inject(dependencies) { assert.deepEqual(dependencies, ['skills']); /* Optional service absent. */ },
   };
   apply(ctx);
   assert.deepEqual(tools.map((tool) => tool.name), ['eva'], 'ordinary Hosts retain EVA');

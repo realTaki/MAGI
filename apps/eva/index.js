@@ -4,6 +4,7 @@ import { registerParentView } from './view.js';
 import { credentialStorePath } from './credentials.js';
 import { restoreConfiguredNodes } from './autostart.js';
 import { join } from 'node:path';
+import { registerEvaSkill } from './skill.js';
 
 export const name = 'eva';
 export const inject = ['tools', 'workingDirectory', 'profileContext', 'approval', 'connection', 'credentials', 'appReady'];
@@ -11,6 +12,7 @@ export const inject = ['tools', 'workingDirectory', 'profileContext', 'approval'
 export function apply(ctx) {
   // Child Hosts retain their native features, but cannot expose another EVA launcher.
   if (isEvaChild(ctx.profileContext.home)) return;
+  registerEvaSkill(ctx);
   // Capture the provider's location at activation, before later node starts.
   // Keep inventory/stop available if unsupported; start reports the exact error.
   const sharedStore = credentialStorePath(ctx);

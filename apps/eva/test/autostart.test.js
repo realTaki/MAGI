@@ -128,6 +128,7 @@ async function hostFixture({ child = false, restore = restoreConfiguredNodes, dm
     isEvaChild: () => child, desktopRuntime: () => ({}), credentialStorePath: async () => '/shared/store',
     EvaRuntime: function (_runtime, options) { calls.push(['manager']); runtimeOptions = options; return manager; },
     restoreConfiguredNodes: restore, registerParentView() { calls.push(['routes']); },
+    registerEvaSkill() { calls.push(['skill']); },
     console: { warn: value => warnings.push(value) },
   });
   return { manager, calls, warnings, tool, ctx, runtimeOptions, ready() { if (!cancelled) return ready?.(); },

@@ -7,7 +7,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 // Windows currently exercises portable Client/auth/manifest contracts, not the
 // POSIX home permissions, Unix sockets or native DSH Desktop lifecycle.
 export const portableTests = {
-  eva: ['client-embed', 'client-frame-readiness', 'client-wake', 'client', 'embed-login', 'navigation', 'view'],
+  eva: ['client-embed', 'client-frame-readiness', 'client-wake', 'client', 'embed-login', 'navigation', 'skills', 'view'],
   'magi-shell': ['layout', 'main-client', 'package', 'workbench-client'],
   dm: ['dm-user-client', 'package'],
   memory: ['package', 'tools', 'plugin'],
