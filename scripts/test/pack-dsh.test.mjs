@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -27,7 +27,7 @@ function put(root, relative, contents) {
   writeFileSync(file, typeof contents === 'string' ? contents : JSON.stringify(contents, null, 2));
 }
 async function resolverFixture(t) {
-  const root = temporary(t);
+  const root = realpathSync(temporary(t));
   const script = path.join(root, 'scripts/pack-dsh.mjs');
   put(root, 'scripts/pack-dsh.mjs', readFileSync(path.join(repository, 'scripts/pack-dsh.mjs'), 'utf8'));
   const { resolveNpmCli } = await import(pathToFileURL(script));
