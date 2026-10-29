@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 // Retain the exported name for integrations; only new-session deployment fallback
 // changes. Saved defaults and recorded legacy `eva` Session identities still win.
 export const DEFAULT_EVA_PRESET = DEFAULT_BOT_PRESET;
-export const CHILD_HOST_VERSION = 6;
+export const CHILD_HOST_VERSION = 7;
 
 export function resolveDmEntry() {
   return createRequire(import.meta.url).resolve('@magi/dm');
@@ -19,6 +19,10 @@ export function resolveDmEntry() {
 
 export function resolveMemoryEntry() {
   return createRequire(import.meta.url).resolve('@magi/memory');
+}
+
+export function resolveSubconsciousEntry() {
+  return createRequire(import.meta.url).resolve('@magi/subconscious');
 }
 
 export function resolveBotModeEntry() {
@@ -34,6 +38,7 @@ const desktopRoles = [
   // A selected standalone memory bundle also contributes a root; replace it
   // with the explicit installed child entry below, without editing the profile.
   { id: 'magi-memory', name: '@magi/memory', disabled: true },
+  { id: 'magi-subconscious', name: '@magi/subconscious', disabled: true },
   // A standalone bot-mode bundle defaults to parent; replace it with child role.
   { id: 'magi-bot-mode', name: '@magi/bot-mode', disabled: true },
 ];
@@ -50,7 +55,7 @@ export async function desktopRoleExclusions(profileDir) {
   return desktopRoles.filter(row => bundles.includes(row.name)).map(row => ({ ...row }));
 }
 
-export function createChildHostPatch({ workspace, profile, presetPath, credentialsPath, desktopExclusions = [], dmEntry = resolveDmEntry(), memoryEntry = resolveMemoryEntry(), botModeEntry = resolveBotModeEntry() }) {
+export function createChildHostPatch({ workspace, profile, presetPath, credentialsPath, desktopExclusions = [], dmEntry = resolveDmEntry(), memoryEntry = resolveMemoryEntry(), botModeEntry = resolveBotModeEntry(), subconsciousEntry = resolveSubconsciousEntry() }) {
   if (typeof dmEntry !== 'string' || !isAbsolute(dmEntry)) throw new Error('DM child entry must resolve to an installed absolute package entry.');
   if (typeof memoryEntry !== 'string' || !isAbsolute(memoryEntry)) throw new Error('Memory child entry must resolve to an installed absolute package entry.');
   // Existing profiles can select either an older EVA bundle (without a DM row)
@@ -58,6 +63,7 @@ export function createChildHostPatch({ workspace, profile, presetPath, credentia
   // bundle's optional DM row by id only: Loader names assert, never rename.
   // Older bundles warn/skip the absent target while the explicit root still runs.
   if (typeof botModeEntry !== 'string' || !isAbsolute(botModeEntry)) throw new Error('Bot mode child entry must resolve to an installed absolute package entry.');
+  if (typeof subconsciousEntry !== 'string' || !isAbsolute(subconsciousEntry)) throw new Error('Subconscious child entry must resolve to an installed absolute package entry.');
   const selectedEva = desktopExclusions.some(row => row.id === 'eva');
   const selectedShell = desktopExclusions.some(row => row.id === 'magi-shell');
   const selectedBotMode = desktopExclusions.some(row => row.id === 'magi-bot-mode');
@@ -74,6 +80,9 @@ export function createChildHostPatch({ workspace, profile, presetPath, credentia
     id: 'magi-bot-mode-child', name: botModeEntry, config: { role: 'eva-child', workspace, profile },
   }, {
     id: 'eva-agent-preset', name: 'cordis:include', config: { path: presetPath },
+  }, {
+    // Availability only: the independent plugin defaults to paused.
+    id: 'magi-subconscious-child', name: subconsciousEntry, config: {},
   }] }, {
     id: 'agent-preset-registry', name: '@deepseek-ai/dsh-agent-preset-registry',
     // Saved user defaults still take precedence in the native registry.
@@ -88,6 +97,7 @@ export function createChildHostPatch({ workspace, profile, presetPath, credentia
     id: 'credentials', name: '@deepseek-ai/dsh-credentials-local', disabled: false,
     config: { path: credentialsPath, watch: true },
   });
+  const selectedSubconscious = desktopExclusions.some(row => row.id === 'magi-subconscious');
   const selectedMemory = desktopExclusions.some(row => row.id === 'magi-memory');
   return [...overlay,
     ...(selectedEva ? [{ id: 'magi-dm', disabled: true }] : []),
@@ -99,5 +109,6 @@ export function createChildHostPatch({ workspace, profile, presetPath, credentia
     // common root ID is last-wins in native EntryGroup, just like identity rows;
     // disable it before mounting our authoritative copied two-ID declaration.
     ...(selectedShell || selectedBotMode ? [{ id: 'magi-bot-mode-preset', disabled: true }] : []),
+    ...(selectedEva && !selectedSubconscious ? [{ id: 'magi-subconscious', disabled: true }] : []),
     ...desktopExclusions];
 }

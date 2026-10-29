@@ -95,8 +95,11 @@ archiving or explicit deletion, not automatic loss of memory.
 
 Store reusable facts and preferences with sources and uncertainty. Do not save
 credentials, quoted instructions as authorization, or unfinished tasks as facts.
-There is no automatic extraction, vector search, TTL, subconscious maintenance,
-cross-Bot sharing, legacy import, or memory UI in this first version.
+Memory itself performs no automatic extraction, vector search, TTL, background
+maintenance, cross-Bot sharing, legacy import, or memory UI. The separate
+[Subconscious](<../subconscious/README.md>) component defaults to paused and may
+use normal memory tools when explicitly enabled; it does not merge its Session
+state into the memory store or bypass memory permissions.
 
 ## Installation and testing
 

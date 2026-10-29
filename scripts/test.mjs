@@ -12,10 +12,11 @@ export const portableTests = {
   dm: ['dm-user-client', 'package'],
   memory: ['package', 'tools', 'plugin'],
   'bot-mode': ['coordinator', 'package', 'presets'],
+  subconscious: ['package'],
 };
 export function collectTests({ portable = false } = {}) {
   const files = [];
-  for (const [app, location] of [['eva', 'apps/eva'], ['magi-shell', 'apps/magi-shell'], ['dm', 'packages/dm'], ['memory', 'packages/memory'], ['bot-mode', 'packages/bot-mode']]) {
+  for (const [app, location] of [['eva', 'apps/eva'], ['magi-shell', 'apps/magi-shell'], ['dm', 'packages/dm'], ['memory', 'packages/memory'], ['bot-mode', 'packages/bot-mode'], ['subconscious', 'packages/subconscious']]) {
     const names = readdirSync(new URL(`../${location}/test/`, import.meta.url))
       .filter(name => name.endsWith('.test.js')).sort();
     if (!names.length) throw new Error(`No DSH tests discovered for ${app}`);

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EvaRuntime, validateName, redact } from '../runtime.js';
-import { readEvaPreset, resolveDmEntry, resolveMemoryEntry, resolveBotModeEntry } from '../child-host.js';
+import { readEvaPreset, resolveDmEntry, resolveMemoryEntry, resolveBotModeEntry, resolveSubconsciousEntry } from '../child-host.js';
 
 const fake = fileURLToPath(new URL('./fake-cli.js', import.meta.url));
 const runtime = { executable: process.execPath, cli: fake, runtimeDir: '/unused', supportDir: '/unused' };
@@ -113,7 +113,7 @@ test('managed child DM attachment owns the spawned IPC lifetime and startup over
   assert.equal(attachments[0].channel.pid, first.pid);
   const args = attachments[0].channel.spawnargs;
   const patch = JSON.parse(await readFile(args[args.indexOf('--patch') + 1], 'utf8'));
-  assert.equal(patch[0].insert.length, 5);
+  assert.equal(patch[0].insert.length, 6);
   assert.deepEqual(patch[0].insert[2], { id: 'magi-memory-child', name: resolveMemoryEntry(), config: {} });
   assert.deepEqual(patch[0].insert[1], { id: 'magi-dm-child', name: resolveDmEntry(), config: {} });
   assert.equal(patch[0].insert[0].id, 'eva-child');
@@ -507,7 +507,7 @@ test('EVA startup patch preserves older installation-only, workspace and Creator
   assert.equal(patches.length, 4);
   assert.equal(await readFile(creatorPatch, 'utf8'), creatorContent);
   const preset = await readEvaPreset();
-  const workspaceId = createHash('sha256').update(JSON.stringify({ workspace: paths.workspace, profile: 'eva-000', defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 6, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), evaPresetHash: preset.digest, desktopExclusions: [] })).digest('hex').slice(0, 16);
+  const workspaceId = createHash('sha256').update(JSON.stringify({ workspace: paths.workspace, profile: 'eva-000', defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 7, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), subconsciousEntry: resolveSubconsciousEntry(), evaPresetHash: preset.digest, desktopExclusions: [] })).digest('hex').slice(0, 16);
   assert.ok(patches.includes(`startup-${installationId}-${workspaceId}.patch.yml`));
   const overlay = JSON.parse(await readFile(join(paths.state, `startup-${installationId}-${workspaceId}.patch.yml`), 'utf8'));
   assert.deepEqual(overlay[1], { id: 'agent-preset-registry', name: '@deepseek-ai/dsh-agent-preset-registry', config: { default: 'bot-mode' } });
@@ -613,7 +613,7 @@ test('desktop role selections select a new immutable overlay without rewriting e
   const preset = await readEvaPreset();
   const installationId = createHash('sha256').update(dirname(fileURLToPath(new URL('../runtime.js', import.meta.url)))).digest('hex').slice(0, 16);
   const configId = createHash('sha256').update(JSON.stringify({ workspace: paths.workspace, profile: paths.profile,
-    defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 6, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(),
+    defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 7, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), subconsciousEntry: resolveSubconsciousEntry(),
     evaPresetHash: preset.digest, desktopExclusions, credentialsPath, credentialSharingVersion: 1 })).digest('hex').slice(0, 16);
   const nextName = `startup-${installationId}-${configId}.patch.yml`;
   assert.notEqual(nextName, previousName);
@@ -625,7 +625,7 @@ test('desktop role selections select a new immutable overlay without rewriting e
   assert.deepEqual(overlay[5], { id: 'magi-memory', disabled: true });
   assert.deepEqual(overlay[6], { id: 'magi-bot-mode', disabled: true });
   assert.deepEqual(overlay[7], { id: 'magi-bot-mode-preset', disabled: true });
-  assert.deepEqual(overlay.slice(8), desktopExclusions);
+  assert.deepEqual(overlay.slice(9), desktopExclusions);
   assert.deepEqual(overlay[0].insert[2], { id: 'magi-memory-child', name: resolveMemoryEntry(), config: {} });
   assert.equal(overlay[3].id, 'credentials');
   assert.ok(!JSON.stringify(overlay).includes('@local/unknown'), 'unrelated bundles are not patched or disabled');

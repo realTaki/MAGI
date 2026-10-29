@@ -7,8 +7,8 @@
   "exports": { ".": "./index.js", "./client": "./client.js", "./locale/*.json": "./locale/*.json", "./icon": "./icon.svg" },
   "files": ["index.js", "skill.js", "skills/", "autostart.js", "child-host.js", "runtime.js", "runner.js", "child.js", "credentials.js", "client.js", "view.js", "message-preview.js", "main-session.js", "relocate-workspace.js", "migrate-layout.js", "cordis.patch.yml", "locale/*.json", "icon.svg", "README.md"],
   "scripts": { "test": "node --test test/*.test.js" },
-  "dependencies": { "@magi/dm": "file:../../packages/dm", "@magi/memory": "file:../../packages/memory", "@magi/bot-mode": "file:../../packages/bot-mode" },
-  "bundledDependencies": ["@magi/dm", "@magi/memory", "@magi/bot-mode"],
+  "dependencies": { "@magi/dm": "file:../../packages/dm", "@magi/memory": "file:../../packages/memory", "@magi/bot-mode": "file:../../packages/bot-mode", "@magi/subconscious": "file:../../packages/subconscious" },
+  "bundledDependencies": ["@magi/dm", "@magi/memory", "@magi/bot-mode", "@magi/subconscious"],
   "peerDependencies": { "@deepseek-ai/dsh-tools": "*" },
   "peerDependenciesMeta": { "@deepseek-ai/dsh-tools": { "optional": true } },
   "dsh": { "bundle": { "patch": "./cordis.patch.yml" }, "client": { "platform": "web", "immediately": true, "inject": ["@deepseek-ai/dsh-client-ui-sidebar", "@deepseek-ai/dsh-client-ui-workspace"] } }

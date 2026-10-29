@@ -70,7 +70,12 @@ The current product is the directly executed DSH Host/Client bundles in
 [packages/dm](<packages/dm/README.md>) and standalone `@magi/memory` bundle in
 [packages/memory](<packages/memory/README.md>) consumed by EVA, and shared
 [@magi/bot-mode](<packages/bot-mode/README.md>) consumed by Shell/EVA children; none
-needs a TypeScript or Electron build. EVA mounts DM, memory and child bot-mode as
+needs a TypeScript or Electron build. EVA also bundles independent [@magi/subconscious](<packages/subconscious/README.md>),
+which defaults to paused (`config: {}` never enables reflection). Its separate
+root Session is not fixed MAIN or a delegated subagent; native DSH owns context,
+permissions, history and persistence. Keep memory, DM and bot-mode independent.
+No runtime installation, activation or model requests follow from source wiring.
+EVA mounts DM, memory, subconscious and child bot-mode as
 separate Loader roots, not copied source. Shell bundles the parent bot-mode root.
 EVA retains process/model/auth deployment and startup prerequisites; bot-mode owns
 fixed-main identity and the reusable native `bot-mode` Agent capability declaration.
@@ -99,7 +104,7 @@ Schedule; do not restore the old task
 worker or implicitly migrate old task databases. Local
 Bot-to-Bot DM and Bot-to-user notifications belong to the independent DM plugin;
 remote DM is out of scope. Other pre-DSH
-packages remain archived source, excluded from the explicit five-workspace
+packages remain archived source, excluded from the explicit six-workspace
 install graph. They are not supported build/runtime dependencies; their dangling
 legacy launcher/provider contracts are historical, not migration TODOs. Root
 TypeScript build, database-generation and legacy acceptance scripts are retired.

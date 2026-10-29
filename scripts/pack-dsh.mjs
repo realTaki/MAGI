@@ -96,7 +96,7 @@ export function resolveNpmCli(execPath = process.execPath, explicit) {
 
 /** outputDir is mandatory for library callers; only the CLI defaults to repo/dist. */
 export function packDsh({ root = repository, app = 'eva', outputDir, npmCli, execPath = process.execPath } = {}) {
-  const locations = { eva: 'apps/eva', 'magi-shell': 'apps/magi-shell', memory: 'packages/memory', 'bot-mode': 'packages/bot-mode' };
+  const locations = { eva: 'apps/eva', 'magi-shell': 'apps/magi-shell', memory: 'packages/memory', 'bot-mode': 'packages/bot-mode', subconscious: 'packages/subconscious' };
   if (!Object.hasOwn(locations, app)) throw new Error(`Unsupported DSH app: ${app}`);
   if (!outputDir) throw new Error('An explicit outputDir is required');
   const npm = resolveNpmCli(execPath, npmCli);
@@ -137,7 +137,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const args = process.argv.slice(2);
   for (let i = 0; i < args.length; i++) {
     const key = { '--app': 'app', '--out': 'outputDir', '--npm': 'npmCli' }[args[i]];
-    if (!key || !args[i + 1] || args[i + 1].startsWith('--')) throw new Error('Usage: pack-dsh.mjs [--app eva|magi-shell|memory|bot-mode] [--out directory] [--npm npm-cli.js]');
+    if (!key || !args[i + 1] || args[i + 1].startsWith('--')) throw new Error('Usage: pack-dsh.mjs [--app eva|magi-shell|memory|bot-mode|subconscious] [--out directory] [--npm npm-cli.js]');
     options[key] = args[++i];
   }
   console.log(packDsh(options).archive);

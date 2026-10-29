@@ -2,7 +2,14 @@
 
 ## 当前补充：MAGI Shell
 
-### 最新：bot-mode 完整职责拆分（仅源码，未部署）
+### 最新：独立潜意识接线（仅源码，默认暂停，未部署）
+
+- 新的 [@magi/subconscious](<packages/subconscious/README.md>) 为第六 workspace；旧 BUS 实现仅保留在 [old-subconscious](<packages/old-subconscious/package.json>) 归档，不是运行依赖。新组件内部通过公开 `agentPresets.register` 注册原生 `subconscious` 预设，使用独立根 Session，不是 fixed MAIN 或 delegated subagent；原生 DSH 持有历史、上下文、压缩与权限。
+- EVA 单独捆绑并挂父端 `magi-subconscious`；子 overlay v7 通过已安装绝对入口挂 `magi-subconscious-child` 并排除所选 standalone/EVA 父根。入口进入 immutable startup hash；不改既有 overlay/profile/运行进程。Shell 不增依赖或重复挂载，memory/DM 仍独立。
+- 所有集成配置为 `config: {}`，不设置 `enabled:true` 或 runId，不触发反思或模型请求。显式启用后的目标是单条慢速串行对话、小轮次/工具预算、冷却和无新输入跳过；不是 24/7 模型烧耗或子 Agent 并发。配置和 Schedule 仅提案，不建立原生自唤醒任务，不恢复旧 BUS 调度器。
+- 独立 `subconscious` 打包目标保留普通 `zod` 依赖声明，安装时由原生包管理解析；归档元数据检查不是离线依赖闭包或 live GUI 验收。本次没有安装、重载、启用、模型调用或节点启停。
+
+### 前次：bot-mode 完整职责拆分（仅源码，未部署）
 
 - 在首个身份提取提交 `45983847` 上继续完成通用 Agent 预设所有权：唯一能力清单移到 [bot-mode 原生声明](<packages/bot-mode/presets/bot-preset.yml>)，插件正文与此前 EVA 快照保持相同；EVA 仅通过[包内 helper](<packages/bot-mode/presets.js>)生成 `bot-mode` + 旧 `eva` 两个原生声明，不做 YAML 普通反序列化、不丢 `!!js` 与隔离配置。不是别名/继承，两声明由原生 registry 分别管理。
 - bot-mode 管固定主身份和通用能力；EVA 保留进程、home/profile/端口、IPC、原生 Codex/凭据部署与启动检查；Shell 管导航，只添加父 roster 不改父默认。子 overlay v6 只将部署 fallback 改为 `bot-mode`；保存默认值、会话明确选择及历史 preset ID 不迁移。兼容 `eva` 长期保留，重启由原生按记录 ID 恢复当前声明，不声称历史 revision 永久固定。

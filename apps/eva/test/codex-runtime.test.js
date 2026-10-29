@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EvaRuntime } from '../runtime.js';
-import { readEvaPreset, resolveDmEntry, resolveMemoryEntry, resolveBotModeEntry } from '../child-host.js';
+import { readEvaPreset, resolveDmEntry, resolveMemoryEntry, resolveBotModeEntry, resolveSubconsciousEntry } from '../child-host.js';
 
 const runtime = { executable: process.execPath, cli: fileURLToPath(new URL('./fake-cli.js', import.meta.url)),
   runtimeDir: '/unused', supportDir: '/unused' };
@@ -68,7 +68,7 @@ test('provider defaults version creates a distinct overlay and preserves the pre
   assert.equal(all.length, 2);
   assert.equal(all.find(({ name }) => name === previousName).text, previousText);
   const preset = await readEvaPreset();
-  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 6, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
+  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 7, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), subconsciousEntry: resolveSubconsciousEntry(), evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
   assert.notEqual(nextName, previousName);
   assert.ok(all.some(({ name }) => name === nextName), 'provider-default version is part of the immutable startup filename');
 });
@@ -86,11 +86,11 @@ test('DM protocol version selects a new immutable overlay without replacing the 
   assert.equal(all.length, 2);
   assert.equal(all.find(patch => patch.name === previousName).text, previousText);
   const preset = await readEvaPreset();
-  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 6, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
+  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 7, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), subconsciousEntry: resolveSubconsciousEntry(), evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
   assert.notEqual(nextName, previousName);
   const next = all.find(patch => patch.name === nextName);
   assert.ok(next, 'DM protocol version is part of the immutable startup filename');
-  assert.equal(next.data[0].insert.length, 5);
+  assert.equal(next.data[0].insert.length, 6);
   assert.deepEqual(next.data[0].insert[2], { id: 'magi-memory-child', name: resolveMemoryEntry(), config: {} });
   assert.deepEqual(next.data[0].insert[1], { id: 'magi-dm-child', name: resolveDmEntry(), config: {} });
   assert.equal(next.data[0].insert[0].id, 'eva-child');
@@ -118,7 +118,7 @@ for (const previousVersion of [1, 2, 3, 4, 5]) test(`independent child compositi
   const all = await patches(paths.state);
   assert.equal(all.length, 2);
   assert.equal(all.find(patch => patch.name === previousName).text, previousText, 'existing split-entry patch is immutable');
-  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 6, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
+  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 7, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), subconsciousEntry: resolveSubconsciousEntry(), evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
   assert.notEqual(nextName, previousName);
   const next = all.find(patch => patch.name === nextName);
   assert.ok(next, 'composite version chooses a new immutable startup filename');
@@ -175,6 +175,23 @@ test('installed bot-mode entry changes select a new immutable overlay without re
   const next = all.find(row => row.name !== before.name);
   assert.equal(next.data[0].insert[3].name, manager.runtime.botModeEntry);
   assert.equal(before.data[0].insert[3].name, '/synthetic/installed-a/node_modules/@magi/bot-mode/index.js');
+});
+
+test('installed subconscious entry selects a new paused overlay without rewriting its predecessor', async t => {
+  const { manager } = await fixture(t);
+  manager.runtime = { ...runtime, subconsciousEntry: '/synthetic/installed-a/node_modules/@magi/subconscious/index.js' };
+  await manager.start(undefined, 'eva-000');
+  const paths = manager.paths('eva-000');
+  const [before] = await patches(paths.state);
+  await manager.stop(undefined, 'eva-000');
+  manager.runtime = { ...runtime, subconsciousEntry: '/synthetic/installed-b/node_modules/@magi/subconscious/index.js' };
+  await manager.start(undefined, 'eva-000');
+  const all = await patches(paths.state);
+  assert.equal(all.length, 2);
+  assert.equal(all.find(row => row.name === before.name).text, before.text);
+  const next = all.find(row => row.name !== before.name);
+  assert.deepEqual(next.data[0].insert[5], { id: 'magi-subconscious-child', name: manager.runtime.subconsciousEntry, config: {} });
+  assert.equal(before.data[0].insert[5].name, '/synthetic/installed-a/node_modules/@magi/subconscious/index.js');
 });
 
 test('readiness refuses missing native Codex confirmation and releases child ownership', async (t) => {

@@ -5,6 +5,9 @@
     - id: magi-dm
       name: '@magi/dm'
       config: {}
+    - id: magi-subconscious
+      name: '@magi/subconscious'
+      config: {}
     - id: magi-memory
       name: '@magi/memory'
       config: {}

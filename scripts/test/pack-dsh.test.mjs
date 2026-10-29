@@ -254,21 +254,52 @@ test('real memory archive is a dependency-free standalone bundle', async t => {
   await probePackedMemorySkill(entry, path.join(root, 'standalone-memory-home'));
 });
 
-test('real EVA archive retains independent DM exports and imports in isolated offline consumer', {
+test('real subconscious archive preserves a standalone paused plugin with declared schema dependency', t => {
+  const root = temporary(t);
+  const { archive, report } = packDsh({ app: 'subconscious', outputDir: path.join(root, 'output'), npmCli });
+  assert.equal(report.name, '@magi/subconscious');
+  for (const file of ['package.json', 'index.js', 'cordis.patch.yml', 'locale/en.json', 'locale/zh.json']) {
+    assert.ok(report.files.some(item => item.path === file), file);
+  }
+  const extracted = path.join(root, 'extracted');
+  mkdirSync(extracted);
+  const tar = createRequire(resolveNpmCli(process.execPath, npmCli))('tar');
+  tar.x({ file: archive, cwd: extracted, sync: true, strict: true });
+  const packageRoot = path.join(extracted, 'package');
+  const manifest = JSON.parse(readFileSync(path.join(packageRoot, 'package.json')));
+  assert.equal(manifest.dependencies.zod, '^4.3.6');
+  const patch = readFileSync(path.join(packageRoot, 'cordis.patch.yml'), 'utf8');
+  assert.match(patch, /id: magi-subconscious/);
+  assert.doesNotMatch(patch, /enabled?:\s*true/);
+});
+
+test('real EVA archive retains independent resources and declared dependencies after extraction', {
   skip: !existsSync(path.join(repository, 'packages/dm/package.json')),
 }, async t => {
   const root = temporary(t);
   const { archive, report } = packDsh({ outputDir: path.join(root, 'output'), npmCli });
   assert.ok(report.bundled.includes('@magi/dm'));
   assert.ok(report.bundled.includes('@magi/memory'));
+  assert.ok(report.bundled.includes('@magi/subconscious'));
+  for (const file of ['package.json', 'index.js', 'cordis.patch.yml']) assert.ok(report.files.some(item => item.path === `node_modules/@magi/subconscious/${file}`));
   for (const file of ['package.json', 'index.js', 'cordis.patch.yml']) assert.ok(report.files.some(item => item.path === `node_modules/@magi/memory/${file}`));
   assert.ok(report.files.some(file => file.path === 'node_modules/@magi/dm/icon.svg'));
   assert.ok(report.files.some(file => file.path === 'node_modules/@magi/dm/skills/local-dm/SKILL.md'));
   for (const file of ['skill.js', 'skills/eva-nodes/SKILL.md']) assert.ok(report.files.some(item => item.path === file), file);
-  if (!hasPnpm) { t.diagnostic('Offline install probe needs MAGI_PNPM_CLI; real archive checks passed.'); return; }
-  const require = install(root, archive);
-  const evaEntry = require.resolve('@local/eva');
-  const evaRoot = path.dirname(evaEntry);
+  // Ordinary registry dependencies (zod) are intentionally not vendored. Inspect
+  // the real archive without pretending a fresh empty offline store can install it.
+  const extracted = path.join(root, 'extracted');
+  mkdirSync(extracted);
+  const tar = createRequire(resolveNpmCli(process.execPath, npmCli))('tar');
+  tar.x({ file: archive, cwd: extracted, sync: true, strict: true });
+  const evaRoot = realpathSync(path.join(extracted, 'package'));
+  const evaEntry = path.join(evaRoot, 'index.js');
+  const fromArchive = createRequire(evaEntry);
+  const subconsciousEntry = fromArchive.resolve('@magi/subconscious');
+  assert.ok(subconsciousEntry.startsWith(evaRoot + path.sep));
+  const subconsciousManifest = JSON.parse(readFileSync(path.join(path.dirname(subconsciousEntry), 'package.json')));
+  assert.equal(subconsciousManifest.name, '@magi/subconscious');
+  assert.equal(subconsciousManifest.dependencies.zod, '^4.3.6');
   const { registerEvaSkill } = await import(pathToFileURL(path.join(evaRoot, 'skill.js')));
   const evaSkills = [], evaCleanups = [];
   registerEvaSkill({ inject(dependencies, callback) {

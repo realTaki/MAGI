@@ -9,7 +9,8 @@
     "apps/magi-shell",
     "packages/dm",
     "packages/memory",
-    "packages/bot-mode"
+    "packages/bot-mode",
+    "packages/subconscious"
   ],
   "scripts": {
     "test": "node scripts/check-dsh.mjs && node scripts/test.mjs",

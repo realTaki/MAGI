@@ -8,15 +8,19 @@ DSH Host + Web Client 插件，提供模型工具 `eva`、节点清单与会话�
 
 ## 共享 bot-mode（源码完成，尚未部署）
 
-EVA 安装并捆绑独立 [@magi/bot-mode](<../../packages/bot-mode/README.md>)。子 overlay v6 通过已安装包的绝对入口挂载固定身份能力，并包含包拥有的 `bot-mode` 原生 Agent 声明及同源 `eva` 兼容声明；选中 Shell/独立 bundle 的父身份和预设根都禁用。bot-mode 拥有固定会话恢复、持久化、workspace 附着、子 Bot 标题及通用工具/上下文/隔离配置；EVA 只保留进程、home/profile/端口、IPC、凭据、原生 Codex 路由、启动检查与嵌入。
+EVA 安装并捆绑独立 [@magi/bot-mode](<../../packages/bot-mode/README.md>)。子 overlay v7 通过已安装包的绝对入口挂载固定身份能力，并包含包拥有的 `bot-mode` 原生 Agent 声明及同源 `eva` 兼容声明；选中 Shell/独立 bundle 的父身份和预设根都禁用。bot-mode 拥有固定会话恢复、持久化、workspace 附着、子 Bot 标题及通用工具/上下文/隔离配置；EVA 只保留进程、home/profile/端口、IPC、凭据、原生 Codex 路由、启动检查与嵌入。
 
 子端仅将部署默认候选改为 `bot-mode`，不改已保存默认值或现有会话选择；保留 `eva` ID 以恢复已有会话。旧 v1 子 workspace 升级仍保留同一 Session；父身份仍执行严格 v2 策略。Shell 消费同一父身份和通用预设，但不改父默认值。DM/memory 仍独立；状态路径、历史与权限不迁移。未重载、重启或部署运行实例。
 
+## 潜意识源码接线（默认暂停，尚未部署）
+
+EVA 独立捆绑 [@magi/subconscious](<../../packages/subconscious/README.md>)；父端 `magi-subconscious` 与子端 `magi-subconscious-child` 均为 `config: {}`，不设置启用开关。子端通过安装包绝对入口挂权威根并排除所选 bundle 的父根；v7 启动 hash 纳入入口，旧 immutable overlay、profile 和运行进程不重写。该组件有独立根 Session，不复用 MAIN/subagent，不合并 memory/DM，不归 Shell 所有。显式启用后的目标是低流量单条串行反思，小预算、冷却及无新输入跳过，不是 24/7 模型消耗。此改动未安装、重载、启用或发送模型请求。
+
 ## 安装与更新
 
-源码目录链接安装前，先在仓库根用 MAGI 自带 Node/npm 执行 `npm ci --workspace @local/eva --ignore-scripts --offline --omit=dev`，只安装锁文件中的本地 EVA/DM/memory/bot-mode workspace 依赖，不在运行 profile 中执行包管理器。原生目录链接本身不会代装依赖。
+源码目录链接安装前，先在仓库根用 MAGI 自带 Node/npm 从根锁文件安装 EVA/DM/memory/bot-mode/subconscious workspace 及其普通依赖（包括 zod），保留 `--ignore-scripts`；例如 `npm ci --workspace @local/eva --ignore-scripts --omit=dev`。只有缓存已备齐时再加 `--offline`。不在运行 profile 中执行包管理器。原生目录链接本身不会代装依赖。
 
-分发到没有仓库源码的机器时，使用[专用打包脚本](<../../scripts/pack-dsh.mjs>)（MAGI 自带 Node 执行 `scripts/pack-dsh.mjs --app eva --out dist`）。它把独立 DM、memory 和 bot-mode 包实体纳入 EVA 归档；普通 `npm pack` 可能静默漏掉被 workspace 提升的符号链接依赖。安装归档仍使用原生 Plugin Manager。
+分发到没有仓库源码的机器时，使用[专用打包脚本](<../../scripts/pack-dsh.mjs>)（MAGI 自带 Node 执行 `scripts/pack-dsh.mjs --app eva --out dist`）。它把独立 DM、memory、bot-mode 和 subconscious 包实体纳入 EVA 归档；普通 `npm pack` 可能静默漏掉被 workspace 提升的符号链接依赖。安装归档仍使用原生 Plugin Manager。
 
 1. 左侧「插件」→「添加插件」。
 2. 输入本插件目录的绝对路径：`/Users/shichuan/.dsh/workspace/MAGI/apps/eva`。

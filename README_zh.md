@@ -8,9 +8,9 @@
 
 > **正在迁移至 DSH。** `apps/eva` 现为 DSH Host 插件，不再是原来的 EVA launcher。本文及关联文档中的桌面／Shell 与修订切换流程属于迁移前实现，尚未完成与新插件的集成。操作前请先阅读[当前范围与验收边界](DSH-HANDOFF.md)。
 
-当前 DSH 功能分为两个产品包与共享组件：**MAGI 工作台**负责桌面导航，附带 **Bot 主会话 / Bot 能力预设**（[@magi/bot-mode](<packages/bot-mode/README.md>)）；**EVA 节点管理**负责独立节点生命周期，附带 **Bot 私信**（[@magi/dm](<packages/dm/README.md>)）和 **Bot 记忆**（[@magi/memory](<packages/memory/README.md>)），子节点复用 Bot mode。实现保持独立，包名与数据归属不变。安装包卡片不等于运行实例；EVA 与独立记忆包不必重复选择，具体见[插件分层与更新边界](<docs/plugin-layout.md>)。
+当前 DSH 功能分为两个产品包与共享组件：**MAGI 工作台**负责桌面导航，附带 **Bot 主会话 / Bot 能力预设**（[@magi/bot-mode](<packages/bot-mode/README.md>)）；**EVA 节点管理**负责独立节点生命周期，附带 **Bot 私信**（[@magi/dm](<packages/dm/README.md>)）和 **Bot 记忆**（[@magi/memory](<packages/memory/README.md>)），子节点复用 Bot mode。EVA 另附独立[潜意识](<packages/subconscious/README.md>)，默认暂停；启用后是低流量、有预算的慢速串行反思，不是全天模型消耗或子 Agent 并发。源码接线不启用反思，也不更新运行节点。实现保持独立，包名与数据归属不变。安装包卡片不等于运行实例；EVA 与独立记忆包不必重复选择，具体见[插件分层与更新边界](<docs/plugin-layout.md>)。
 
-分发插件使用[专用打包脚本](<scripts/pack-dsh.mjs>)，由 MAGI 自带 Node 执行 `scripts/pack-dsh.mjs --app eva --out dist`（也支持 `magi-shell`、`memory`、`bot-mode`）。旧 Electron Shell 和 provider 模块已删除。当前安装图仅包含上述五个 workspace；其他迁移前 packages 仅为不参与安装的归档源码，根目录不再提供 legacy 构建／验收入口。下方历史架构与修订切换说明不是当前启动指南。
+分发插件使用[专用打包脚本](<scripts/pack-dsh.mjs>)，由 MAGI 自带 Node 执行 `scripts/pack-dsh.mjs --app eva --out dist`（也支持 `magi-shell`、`memory`、`bot-mode`、`subconscious`）。旧 Electron Shell 和 provider 模块已删除。当前安装图仅包含上述六个 workspace；其他迁移前 packages 仅为不参与安装的归档源码，根目录不再提供 legacy 构建／验收入口。下方历史架构与修订切换说明不是当前启动指南。
 
 **Fork 一份，养出你自己的 MAGI。**
 
