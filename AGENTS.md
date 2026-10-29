@@ -16,6 +16,20 @@ It does not relax data/credential safety or user-authorization requirements:
 never implicitly delete or migrate user data or credentials, or make changes
 outside the user's authorized scope.
 
+## Non-invasive DSH integration
+
+For MAGI repository work, minimize invasiveness and stay within DSH's official
+plugin architecture to reduce repository maintenance and upgrade costs. Configure
+native DSH plugins through officially supported configuration, composition,
+service, and extension APIs; implement MAGI-owned plugins through official
+extension points.
+
+Do not make MAGI depend on directly editing or patching native DSH plugin
+implementations, Harness core, or installed official artifacts, or on private
+internals, monkey-patching, or forks. If public APIs are insufficient, clearly
+report the limitation and propose an upstream request or an alternative supported
+approach; do not silently modify DSH to make MAGI work.
+
 ## Proportionate engineering and validation
 
 Avoid overdefensive code and large speculative compatibility test matrices.
