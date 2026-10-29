@@ -1,5 +1,5 @@
 // Pack native DSH packages without mutating a checkout's node_modules.
-import { cpSync, existsSync, globSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, globSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -83,9 +83,15 @@ export function stagePackage(source, destination, { root = repository, expectedN
 }
 
 export function resolveNpmCli(execPath = process.execPath, explicit) {
-  const candidate = explicit ?? path.resolve(path.dirname(execPath), '../npm/node_modules/npm/bin/npm-cli.js');
-  if (!existsSync(candidate)) throw new Error('MAGI-owned npm CLI not found; pass --npm /absolute/path/to/npm-cli.js');
-  return path.resolve(candidate);
+  // npm scripts prepend node_modules/.bin, so the owned Node may not be next
+  // to npm. Prefer this checkout's prepared runtime; retain the bundled layout.
+  const candidates = explicit == null ? [
+    path.join(repository, 'runtime/npm/node_modules/npm/bin/npm-cli.js'),
+    path.resolve(path.dirname(execPath), '../npm/node_modules/npm/bin/npm-cli.js'),
+  ] : [path.resolve(explicit)];
+  const candidate = candidates.find(file => existsSync(file) && statSync(file).isFile());
+  if (!candidate) throw new Error('MAGI-owned npm CLI not found; pass --npm /absolute/path/to/npm-cli.js');
+  return candidate;
 }
 
 /** outputDir is mandatory for library callers; only the CLI defaults to repo/dist. */

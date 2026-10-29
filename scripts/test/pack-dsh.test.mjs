@@ -56,6 +56,13 @@ async function probePackedMemorySkill(entry, home) {
   assert.equal(registrations.length, 0);
 }
 
+async function resolverFixture(t) {
+  const root = realpathSync(temporary(t));
+  const script = path.join(root, 'scripts/pack-dsh.mjs');
+  put(root, 'scripts/pack-dsh.mjs', readFileSync(path.join(repository, 'scripts/pack-dsh.mjs'), 'utf8'));
+  const { resolveNpmCli } = await import(pathToFileURL(script));
+  return { root, script, resolveNpmCli };
+}
 function fixture(root) {
   put(root, 'apps/eva/package.json', {
     name: '@local/eva', version: '0.0.1', type: 'module',
@@ -98,6 +105,65 @@ function install(root, archive) {
   assert.equal(result.status, 0, result.stderr || result.stdout);
   return createRequire(path.join(consumer, 'package.json'));
 }
+
+test('npm discovery prefers repository runtime when npm scripts select the owned node package', async t => {
+  const { root, resolveNpmCli } = await resolverFixture(t);
+  const relative = 'runtime/npm/node_modules/npm/bin/npm-cli.js';
+  put(root, relative, '// repository-owned npm');
+  put(root, 'bundled/npm/node_modules/npm/bin/npm-cli.js', '// bundled npm');
+  for (const binary of ['node', 'node.exe']) {
+    assert.equal(resolveNpmCli(path.join(root, 'node_modules/node/bin', binary)), path.join(root, relative));
+    assert.equal(resolveNpmCli(path.join(root, 'node_modules/node/bin', binary), null), path.join(root, relative));
+    assert.equal(resolveNpmCli(path.join(root, 'bundled/bin', binary)), path.join(root, relative));
+  }
+});
+
+test('npm discovery preserves explicit precedence and fails closed for invalid overrides', async t => {
+  const { root, resolveNpmCli } = await resolverFixture(t);
+  put(root, 'runtime/npm/node_modules/npm/bin/npm-cli.js', '// repository npm');
+  put(root, 'explicit npm/bin/npm-cli.js', '// explicitly selected owned npm');
+  const explicit = path.join(root, 'explicit npm/bin/npm-cli.js');
+  assert.equal(resolveNpmCli(process.execPath, explicit), explicit);
+  assert.equal(resolveNpmCli(process.execPath, path.relative(process.cwd(), explicit)), explicit);
+  for (const invalid of [path.join(root, 'missing/npm-cli.js'), '', root]) {
+    assert.throws(() => resolveNpmCli(process.execPath, invalid), /MAGI-owned npm CLI not found/);
+  }
+});
+
+test('npm discovery retains the bundled runtime layout without a prepared checkout runtime', async t => {
+  const { root, resolveNpmCli } = await resolverFixture(t);
+  const relative = 'packaged runtime/npm/node_modules/npm/bin/npm-cli.js';
+  put(root, relative, '// bundled npm');
+  for (const binary of ['node', 'node.exe']) {
+    assert.equal(resolveNpmCli(path.join(root, 'packaged runtime/bin', binary)), path.join(root, relative));
+  }
+});
+
+test('missing owned npm never falls back to PATH or ambient npm_execpath', async t => {
+  const { root, script } = await resolverFixture(t);
+  put(root, 'untrusted/bin/npm-cli.js', 'throw new Error("ambient npm must not execute");');
+  const ambient = path.join(root, 'untrusted/bin/npm-cli.js');
+  const result = spawnSync(process.execPath, ['--input-type=module', '--eval', `
+    import { resolveNpmCli } from ${JSON.stringify(pathToFileURL(script).href)};
+    resolveNpmCli(${JSON.stringify(path.join(root, 'missing/bin/node'))});
+  `], {
+    encoding: 'utf8', env: { ...process.env, PATH: path.dirname(ambient), npm_execpath: ambient, MAGI_NPM_CLI: ambient },
+  });
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /MAGI-owned npm CLI not found/);
+  assert.doesNotMatch(result.stderr, /ambient npm must not execute/);
+});
+
+test('npm run pack:dsh works without MAGI_NPM_CLI when project Node shadows runtime/bin', t => {
+  const root = temporary(t);
+  const env = { ...process.env, npm_config_cache: path.join(root, 'cache'), npm_config_update_notifier: 'false' };
+  delete env.MAGI_NPM_CLI;
+  const result = spawnSync(process.execPath, [resolveNpmCli(), 'run', 'pack:dsh', '--', '--app', 'memory', '--out', path.join(root, 'output')], {
+    cwd: repository, encoding: 'utf8', env,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.ok(existsSync(path.join(root, 'output/magi-memory-0.1.0.tgz')));
+});
 
 test('staging materializes independent allowlisted DM without touching source node_modules', t => {
   const root = temporary(t);
