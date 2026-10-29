@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "MAGI Bot Mode",
-    "description": "Reusable fixed-main Bot lifecycle and generic Agent preset."
+    "title": "Bot Main Session",
+    "description": "Shared Bot identity, fixed main conversation and foreground coordination policy. Initialized by workbench or node startup, not a separate running Bot."
   }
 }

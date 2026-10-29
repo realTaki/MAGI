@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { apply, name, inject } from '../index.js';
 
 const read = file => readFile(new URL(`../${file}`, import.meta.url), 'utf8');
@@ -47,6 +49,46 @@ test('standalone bundle ships all runtime exports, original icon and localized m
   assert.equal(name, 'magi-bot-mode');
   assert.ok(inject.includes('systemPrompt'), 'native Cordis requires declaring the prompt service dependency');
   for (const integration of ['credentials', 'llm', 'appReady', 'appExit', 'connection', 'tools', 'agentPresets']) assert.ok(!inject.includes(integration));
+});
+
+test('preset-loader has its own passive, exported display resources', async () => {
+  const pkg = JSON.parse(await read('package.json'));
+  const resolve = createRequire(new URL('../package.json', import.meta.url)).resolve;
+  assert.equal(pkg.exports['./preset-loader/locale/*.json'], './locale/preset-loader/*.json');
+  assert.equal(pkg.exports['./preset-loader/icon'], './icon.svg');
+  assert.ok(pkg.files.includes('locale/preset-loader/*.json'));
+  for (const language of ['en', 'zh']) {
+    const root = JSON.parse(await read(`locale/${language}.json`)).meta;
+    const resource = resolve(`@magi/bot-mode/preset-loader/locale/${language}.json`);
+    assert.equal(resource, fileURLToPath(new URL(`../locale/preset-loader/${language}.json`, import.meta.url)));
+    const { meta } = JSON.parse(await readFile(resource, 'utf8'));
+    assert.ok(meta.title && meta.description);
+    assert.notEqual(meta.title, root.title, 'identity and capability declaration are different components');
+    assert.match(meta.description, /bot-mode/);
+  }
+  assert.equal(resolve('@magi/bot-mode/preset-loader/icon'), fileURLToPath(new URL('../icon.svg', import.meta.url)));
+});
+
+test('inventory names distinguish two products from four shared components in both locales', async () => {
+  const components = [
+    ['apps/eva', 'EVA 节点管理', 'EVA Node Manager'],
+    ['apps/magi-shell', 'MAGI 工作台', 'MAGI Workbench'],
+    ['packages/bot-mode', 'Bot 主会话', 'Bot Main Session'],
+    ['packages/bot-mode', 'Bot 能力预设', 'Bot Agent Preset', 'preset-loader/'],
+    ['packages/dm', 'Bot 私信', 'Bot Direct Messages'],
+    ['packages/memory', 'Bot 记忆', 'Bot Memory'],
+  ];
+  for (const [language, index] of [['zh', 1], ['en', 2]]) {
+    const titles = new Set();
+    for (const component of components) {
+      const dictionary = new URL(`../../../${component[0]}/locale/${component[3] ?? ''}${language}.json`, import.meta.url);
+      const { meta } = JSON.parse(await readFile(dictionary, 'utf8'));
+      assert.equal(meta.title, component[index]);
+      assert.ok(meta.description);
+      titles.add(meta.title);
+    }
+    assert.equal(titles.size, components.length);
+  }
 });
 
 test('activation/current are mutation-free; startup and optional read-only identity are independent services', async () => {

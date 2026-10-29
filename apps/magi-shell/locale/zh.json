@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "MAGI Shell",
-    "description": "在原生 DSH 与 MAGI Bot 界面之间切换，使用固定主机器人会话，并可接入独立的 EVA 节点。"
+    "title": "MAGI 工作台",
+    "description": "桌面 Bot 导航与原生 DSH/MAGI 界面切换；附带 Bot 主会话与能力预设组件，可选接入 EVA 节点。"
   }
 }

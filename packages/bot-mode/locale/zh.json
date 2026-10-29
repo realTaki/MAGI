@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "MAGI Bot 模式",
-    "description": "可复用的固定主会话 Bot 生命周期与通用 Agent 预设。"
+    "title": "Bot 主会话",
+    "description": "共享 Bot 身份、固定主会话与前台协调策略；由工作台或节点启动流程初始化，不是独立运行的机器人。"
   }
 }

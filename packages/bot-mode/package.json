@@ -13,9 +13,11 @@
     "./presets": "./presets.js",
     "./preset-loader": "./preset-loader.js",
     "./locale/*.json": "./locale/*.json",
-    "./icon": "./icon.svg"
+    "./icon": "./icon.svg",
+    "./preset-loader/locale/*.json": "./locale/preset-loader/*.json",
+    "./preset-loader/icon": "./icon.svg"
   },
-  "files": ["*.js", "README.md", "presets/bot-preset.yml", "cordis.patch.yml", "locale/*.json", "icon.svg"],
+  "files": ["*.js", "README.md", "presets/bot-preset.yml", "cordis.patch.yml", "locale/*.json", "locale/preset-loader/*.json", "icon.svg"],
   "scripts": { "test": "node --test test/*.test.js" },
   "engines": { "node": ">=24.0.0" },
   "peerDependencies": { "@deepseek-ai/cordis-plugin-include": "*", "@deepseek-ai/dsh-agent-preset": "*" },

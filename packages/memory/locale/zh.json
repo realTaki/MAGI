@@ -1,1 +1,1 @@
-{"meta":{"title":"Bot 记忆","description":"在本 Bot 的所有对话中自动加载持久记忆，提供带版本校验的记忆管理工具。"}}
+{"meta":{"title":"Bot 记忆","description":"本 Bot 各会话共享的持久记忆、自动上下文与版本校验工具；可独立安装，EVA 已附带同一组件。"}}

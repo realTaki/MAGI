@@ -1,1 +1,1 @@
-{"meta":{"title":"EVA","description":"通过 eva 工具管理无桌面的独立 DSH 节点，从侧边栏 EVA 面板打开每个节点的固定主会话，保留原生多会话功能。"}}
+{"meta":{"title":"EVA 节点管理","description":"启动、恢复和停止独立 DSH Bot 节点；附带 Bot 私信与记忆组件，可配合 MAGI 工作台使用。"}}

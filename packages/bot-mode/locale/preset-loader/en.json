@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Bot Agent Preset",
+    "description": "Register the bot-mode capabilities and tools in the native preset roster without changing saved defaults, existing Sessions or approval permissions."
+  }
+}

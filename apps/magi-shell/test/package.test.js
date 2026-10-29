@@ -30,7 +30,7 @@ test('single MAGI Shell package exports and distributes all runtime and localize
   assert.ok(pkg.files.includes('locale/*.json'));
   for (const language of ['en', 'zh']) {
     const dictionary = JSON.parse(await resource(`locale/${language}.json`));
-    assert.equal(dictionary.meta.title, 'MAGI Shell');
+    assert.equal(dictionary.meta.title, language === 'zh' ? 'MAGI 工作台' : 'MAGI Workbench');
     assert.ok(dictionary.meta.description);
   }
   const icon = await resource('icon.svg');

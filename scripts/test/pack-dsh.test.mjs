@@ -354,7 +354,7 @@ for (const app of ['bot-mode', 'eva', 'magi-shell']) {
     const { archive, report } = packDsh({ app, outputDir: path.join(root, 'output'), npmCli });
     const standalone = app === 'bot-mode';
     const prefix = standalone ? '' : 'node_modules/@magi/bot-mode/';
-    const resources = ['package.json', 'index.js', 'coordinator.js', 'parent.js', 'main-session.js', 'parent-main-session.js', 'presets.js', 'preset-loader.js', 'presets/bot-preset.yml', 'README.md', 'cordis.patch.yml', 'locale/en.json', 'locale/zh.json', 'icon.svg'];
+    const resources = ['package.json', 'index.js', 'coordinator.js', 'parent.js', 'main-session.js', 'parent-main-session.js', 'presets.js', 'preset-loader.js', 'presets/bot-preset.yml', 'README.md', 'cordis.patch.yml', 'locale/en.json', 'locale/zh.json', 'locale/preset-loader/en.json', 'locale/preset-loader/zh.json', 'icon.svg'];
     for (const file of resources) assert.ok(report.files.some(item => item.path === prefix + file), app + ': ' + file);
     if (standalone) {
       assert.equal(report.name, '@magi/bot-mode');
@@ -382,9 +382,17 @@ for (const app of ['bot-mode', 'eva', 'magi-shell']) {
       assert.ok(entry.startsWith(packageRoot + path.sep), entry);
       await import(pathToFileURL(entry));
     }
-    for (const specifier of ['/preset', '/preset-loader', '/locale/en.json', '/locale/zh.json', '/icon']) {
+    for (const specifier of ['/preset', '/preset-loader', '/locale/en.json', '/locale/zh.json', '/icon', '/preset-loader/locale/en.json', '/preset-loader/locale/zh.json', '/preset-loader/icon']) {
       assert.ok(fromPackage.resolve('@magi/bot-mode' + specifier).startsWith(packageRoot + path.sep));
     }
+    for (const language of ['en', 'zh']) {
+      const rootMeta = JSON.parse(readFileSync(fromPackage.resolve('@magi/bot-mode/locale/' + language + '.json'), 'utf8')).meta;
+      const presetMeta = JSON.parse(readFileSync(fromPackage.resolve('@magi/bot-mode/preset-loader/locale/' + language + '.json'), 'utf8')).meta;
+      assert.ok(presetMeta.title && presetMeta.description);
+      assert.notEqual(presetMeta.title, rootMeta.title);
+      assert.match(presetMeta.description, /bot-mode/);
+    }
+    assert.equal(fromPackage.resolve('@magi/bot-mode/preset-loader/icon'), fromPackage.resolve('@magi/bot-mode/icon'));
     const { MAIN_COORDINATOR_POLICY, registerMainCoordinator } = await import(pathToFileURL(path.join(packageRoot, 'coordinator.js')));
     let coordinatorSection;
     const off = registerMainCoordinator({ systemPrompt: { section(value) {
