@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -166,6 +166,7 @@ test('real EVA archive retains independent DM exports and imports in isolated of
   assert.ok(report.bundled.includes('@magi/memory'));
   for (const file of ['package.json', 'index.js', 'cordis.patch.yml']) assert.ok(report.files.some(item => item.path === `node_modules/@magi/memory/${file}`));
   assert.ok(report.files.some(file => file.path === 'node_modules/@magi/dm/icon.svg'));
+  assert.ok(report.files.some(file => file.path === 'node_modules/@magi/dm/skills/local-dm/SKILL.md'));
   if (!hasPnpm) { t.diagnostic('Offline install probe needs MAGI_PNPM_CLI; real archive checks passed.'); return; }
   const require = install(root, archive);
   const evaEntry = require.resolve('@local/eva');
@@ -187,6 +188,43 @@ test('real EVA archive retains independent DM exports and imports in isolated of
   assert.equal(manifest.dsh.client.platform, 'web');
   assert.ok(fromEva.resolve('@magi/dm/client').startsWith(dmRoot + path.sep));
   assert.ok(report.files.some(file => file.path === 'node_modules/@magi/dm/icon.svg'));
-  await import(pathToFileURL(dmEntry)); // Do not import EVA: its native DSH peer is intentionally absent.
+  const dm = await import(pathToFileURL(dmEntry)); // Do not import EVA: its native DSH peer is intentionally absent.
+  assert.match(readFileSync(path.join(dmRoot, 'skills/local-dm/SKILL.md'), 'utf8'), /^name: magi-local-dm\r?$/m);
+  assert.ok(!existsSync(path.join(root, 'consumer/packages/dm')));
+  if (process.platform === 'win32') {
+    t.diagnostic('Packed skill/import checks passed; POSIX Host-state probe is outside the Windows portable gate.');
+    return;
+  }
+  // Run the packed entry with an inert transport (no Host/node startup). This
+  // catches resource paths accidentally anchored to the checkout or cwd.
+  const cleanups = [], registrations = [];
+  const profilePath = path.join(root, 'packed-dm-profile');
+  mkdirSync(profilePath, { mode: 0o700 });
+  const profile = realpathSync(profilePath), workspace = realpathSync(root);
+  let installation;
+  const toolsRoot = path.join(path.dirname(evaEntry), 'node_modules/@deepseek-ai/dsh-tools');
+  put(toolsRoot, 'package.json', { name: '@deepseek-ai/dsh-tools', type: 'module', exports: './index.js' });
+  put(toolsRoot, 'index.js', 'export const defineTool = value => value;\n');
+  const ctx = {
+    profileContext: { dir: profile, home: workspace, name: 'magi', installAnchor: path.join(path.dirname(evaEntry), 'package.json') },
+    magiDmTransport: { kind: 'broker', workspace, peers: async () => [] },
+    tools: { register: () => () => {} },
+    appReady: { onReady: () => () => {} },
+    effect(effect) { const off = effect(); if (off) cleanups.push(off); },
+    provide(key, value) { assert.equal(key, 'magiDm'); installation = value; },
+    inject(dependencies, callback) {
+      assert.deepEqual(dependencies, ['skills']);
+      callback({ effect: ctx.effect, skills: { register(skill) { registrations.push(skill); return () => registrations.splice(0); } } });
+    },
+  };
+  try {
+    await dm.apply(ctx);
+    await installation.host;
+    assert.equal(registrations.length, 1);
+    assert.equal(registrations[0].name, 'magi-local-dm');
+    assert.ok(registrations[0].path.startsWith(dmRoot + path.sep));
+    assert.equal(registrations[0].content, readFileSync(path.join(dmRoot, 'skills/local-dm/SKILL.md'), 'utf8'));
+  } finally { for (const off of cleanups.reverse()) await off(); }
+  assert.equal(registrations.length, 0);
   assert.ok(!existsSync(path.join(root, 'consumer/packages/dm')));
 });

@@ -21,6 +21,21 @@ DM. Linked development installs require workspace dependencies installed from th
 root lockfile first (`npm ci --workspace @local/eva --ignore-scripts` using the
 MAGI-owned npm). Native directory linking does not install those dependencies.
 
+## Agent tools and skill
+
+The package owns both the `dm` tool and the native `magi-local-dm` skill. The
+skill is registered through an optional `skills` service dependency, follows the
+plugin's scope/lifecycle, and disappears on unload. Without that service DM tools
+still work; when it becomes available the skill is registered automatically.
+Agents discover a short summary and load the detailed send/retry/notification
+workflow through the native `skill` tool. No legacy `load_skill` worker or separate
+MAGI skills package is required. The skill resource ships in this package and in
+EVA's portable archive. Critical permission and delivery constraints remain in the
+`dm` tool description rather than depending on loading the skill.
+
+The Host transport and fixed handle are integration data, not agent-editable
+configuration. The existing `identity` action changes only the display name.
+
 ## Host adapter contract
 
 The caller provides the Host-local Cordis service `magiDmTransport` before this

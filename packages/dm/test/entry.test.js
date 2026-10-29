@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, realpath, writeFile, rm, readdir } from 'node:fs/promises';
+import { mkdtemp, mkdir, realpath, readFile, writeFile, rm, readdir } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { apply, inject } from '../index.js';
@@ -27,6 +28,7 @@ async function fixture(t) {
     provide() { assert.fail('invalid transport must not publish a DM installation'); },
     tools: { register() { registrations++; assert.fail('invalid child must not register a tool'); } },
     effect() { assert.fail('invalid child must not install lifecycle effects'); },
+    inject(dependencies) { assert.deepEqual(dependencies, ['skills']); /* Optional service absent. */ },
   };
   return { root, ctx, registrations: () => registrations };
 }
@@ -51,7 +53,7 @@ for (const channel of [undefined, null, {}, { connected: true }]) {
   });
 }
 
-test('broker binds after publishing its service and owns unbinding on plugin disposal', async t => {
+async function brokerFixture(t) {
   const { root, ctx } = await fixture(t), cleanups = [], services = new Map(), calls = [];
   const tools = join(root, 'node_modules', '@deepseek-ai', 'dsh-tools');
   await mkdir(tools, { recursive: true, mode: 0o700 });
@@ -66,6 +68,12 @@ test('broker binds after publishing its service and owns unbinding on plugin dis
     assert.equal(attach, services.get('magiDm').attach);
     calls.push('bind'); return () => calls.push('unbind');
   } };
+  return { ctx, cleanups, services, calls };
+}
+
+test('broker binds and owns unbinding without an optional skills service', async t => {
+  const { ctx, cleanups, services, calls } = await brokerFixture(t);
+  assert.ok(!inject.includes('skills'), 'optional discovery must not gate DM activation');
   try {
     await apply(ctx);
     await services.get('magiDm').host;
@@ -73,6 +81,66 @@ test('broker binds after publishing its service and owns unbinding on plugin dis
   } finally { for (const off of cleanups.reverse()) await off(); }
   assert.deepEqual(calls, ['provide', 'bind', 'unbind']);
 });
+
+for (const initiallyAvailable of [false, true]) {
+  test(`DM registers its scoped skill and cleans up independently of its tool (initial skills=${initiallyAvailable})`, async t => {
+    const { ctx, cleanups, services } = await brokerFixture(t);
+    const catalog = new Map(), scope = Symbol('viewing scope');
+    let activate, deactivate = () => {}, registrations = 0, tool;
+    ctx.tools.register = definition => { registrations++; tool = definition; return () => { tool = undefined; }; };
+    // Model Cordis's optional-injection boundary, not the native skill tool.
+    // Registrations must use the injected context rather than the outer context.
+    ctx.skills = { register() { assert.fail('must register in injected scope'); } };
+    ctx.inject = (dependencies, callback) => {
+      assert.deepEqual(dependencies, ['skills']);
+      activate = () => {
+        const scopedCleanups = [];
+        callback({
+          scope,
+          skills: { register(skill) {
+            assert.equal(catalog.has(skill.name), false);
+            catalog.set(skill.name, skill);
+            return () => { catalog.delete(skill.name); };
+          } },
+          effect(effect) { scopedCleanups.push(effect()); },
+        });
+        deactivate = () => { for (const off of scopedCleanups.splice(0).reverse()) off(); };
+      };
+      cleanups.push(() => deactivate());
+      if (initiallyAvailable) activate();
+    };
+    try {
+      await apply(ctx);
+      await services.get('magiDm').host;
+      assert.equal(registrations, 1);
+      const originalTool = tool;
+      assert.equal(catalog.size, initiallyAvailable ? 1 : 0);
+      if (!initiallyAvailable) activate();
+      const skill = catalog.get('magi-local-dm');
+      assert.equal(skill.source, 'runtime');
+      assert.equal(skill.path, fileURLToPath(new URL('../skills/local-dm/SKILL.md', import.meta.url)));
+      assert.deepEqual(skill.resourceBase, { kind: 'directory', path: fileURLToPath(new URL('../skills/local-dm/', import.meta.url)) });
+      const raw = await readFile(skill.path, 'utf8');
+      assert.equal(skill.content, raw);
+      const lines = raw.split(/\r?\n/);
+      assert.ok(lines.includes(`name: ${skill.name}`));
+      assert.ok(lines.includes(`description: ${skill.description}`));
+      assert.match(raw, /`pending`.*queued/);
+      assert.match(raw, /`accepted` means durable native acceptance/);
+      assert.match(raw, /not human authorization/);
+      assert.match(raw, /does not wake main's Agent/);
+      assert.doesNotMatch(raw, /load_skill|request_replace|schedule_task/);
+      deactivate();
+      assert.equal(catalog.size, 0);
+      assert.equal(tool, originalTool, 'skill service loss must not remove or recreate DM');
+      activate();
+      assert.equal(catalog.size, 1);
+      assert.equal(registrations, 1);
+    } finally { for (const off of cleanups.reverse()) await off(); }
+    assert.equal(catalog.size, 0, 'plugin unload must remove the skill');
+    assert.equal(tool, undefined, 'plugin unload must also remove its tool');
+  });
+}
 
 test('absolute child entry resolves DSH tools from the profile install anchor before checking managed IPC', async t => {
   const { root, ctx, registrations } = await fixture(t);

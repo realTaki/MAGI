@@ -1,7 +1,8 @@
 // Reusable Host plugin. Integrations own Bot identity, transport admission and
 // the fixed main Session; this package owns DM tools, durability and delivery.
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dmInject, installParentDm, installChildDm } from './dm-plugin.js';
 
 export const name = 'magi-dm';
@@ -26,4 +27,18 @@ export async function apply(ctx) {
   if (transport.kind === 'broker' && typeof transport.bindBroker === 'function') {
     ctx.effect(() => transport.bindBroker(installation.attach));
   }
+  // Optional: losing the skills service must not remove the DM tool/transport.
+  // The injected context retains the plugin's scope and owns skill teardown.
+  ctx.inject(['skills'], scoped => {
+    const directory = new URL('./skills/local-dm/', import.meta.url);
+    const document = new URL('SKILL.md', directory);
+    scoped.effect(() => scoped.skills.register({
+      name: 'magi-local-dm',
+      description: "Coordinate local MAGI Bots, report back to this Bot's main conversation, or diagnose pending DM delivery.",
+      source: 'runtime',
+      path: fileURLToPath(document),
+      resourceBase: { kind: 'directory', path: fileURLToPath(directory) },
+      content: readFileSync(document, 'utf8'),
+    }));
+  });
 }

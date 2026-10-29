@@ -15,7 +15,7 @@ test('DM is an independent native Host/Client plugin, not an EVA bundle', async 
   assert.equal(manifest.dsh.client.immediately, true);
   assert.ok(inject.includes('magiDmTransport'));
   assert.ok(!Object.keys(manifest.dependencies ?? {}).some(key => key.includes('eva')));
-  for (const resource of ['index.js', 'client.js', 'dm-host.js', 'dm-plugin.js', 'dm-user.js', 'dm-rpc.js', 'dm-store.js', 'dm-tool.js', 'icon.svg', 'README.md', 'locale/en.json', 'locale/zh.json']) {
+  for (const resource of ['index.js', 'client.js', 'dm-host.js', 'dm-plugin.js', 'dm-user.js', 'dm-rpc.js', 'dm-store.js', 'dm-tool.js', 'skills/local-dm/SKILL.md', 'icon.svg', 'README.md', 'locale/en.json', 'locale/zh.json']) {
     await access(new URL(`../${resource}`, import.meta.url));
   }
 });
