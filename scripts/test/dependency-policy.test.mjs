@@ -38,7 +38,7 @@ test('resolved build dependencies exclude the patched advisory ranges', () => {
 for (const retired of ['channel-a2a', 'channel-tasks', 'launcher', 'skills', 'mcp']) {
   test(`retired ${retired} is absent and has no current product dependency`, () => {
     assert.equal(existsSync(path.join(root, 'packages', retired)), false);
-    for (const location of ['apps/eva', 'apps/magi-shell', 'packages/dm', 'packages/memory']) {
+    for (const location of ['apps/eva', 'apps/magi-shell', 'packages/dm', 'packages/memory', 'packages/bot-mode']) {
       const manifest = JSON.parse(readFileSync(path.join(root, location, 'package.json'), 'utf8'));
       for (const key of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
         assert.equal(manifest[key]?.[`@magi/${retired}`], undefined, `${location} ${key}`);
@@ -62,7 +62,7 @@ test('retired Electron advisory surface is not restored by dependency updates', 
 
 test('only current product workspaces and owned tooling are installable', () => {
   const manifest = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
-  const workspaces = ['apps/eva', 'apps/magi-shell', 'packages/dm', 'packages/memory'];
+  const workspaces = ['apps/eva', 'apps/magi-shell', 'packages/dm', 'packages/memory', 'packages/bot-mode'];
   assert.deepEqual(manifest.workspaces, workspaces);
   assert.deepEqual(lock.packages[''].workspaces, workspaces);
   assert.equal(manifest.devDependencies.node, '24.21.0');

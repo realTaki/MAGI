@@ -11,6 +11,8 @@
     "./icon": "./icon.svg"
   },
   "files": ["index.js", "main-session.js", "message-preview.js", "client.js", "cordis.patch.yml", "locale/*.json", "icon.svg", "README.md"],
+  "dependencies": { "@magi/bot-mode": "file:../../packages/bot-mode" },
+  "bundledDependencies": ["@magi/bot-mode"],
   "dsh": {
     "bundle": { "patch": "./cordis.patch.yml" },
     "client": {

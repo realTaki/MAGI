@@ -1,4 +1,8 @@
 - insert:
+    - id: magi-bot-mode
+      name: '@magi/bot-mode'
+      config:
+        role: parent
     - id: magi-shell
       name: '@local/magi-shell'
       config: {}

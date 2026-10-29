@@ -2,7 +2,16 @@
 
 ## 当前补充：MAGI Shell
 
-### 最新：补齐插件自带操作 skills（分步，仅源码）
+### 最新：bot-mode 第一增量（仅源码，未部署）
+
+- 新增独立 [@magi/bot-mode](<packages/bot-mode/README.md>)，抽出父/子固定主会话身份；Shell 和 EVA child 消费同一个 Host 能力，EVA 父启动器不挂父身份根。固定 Session ID、父 profile 状态 namespace、子 home 状态路径均不改；严格父 v2 策略与子 v1 同 ID 升级保持分离，持久化 helper 与原实现逐字一致。
+- `magiBotMode.initialize()` 只在明确启动调用时变更状态，single-flight，成功后缓存；`magiMainSession.current()` 保留只读 ABI。Shell 在 appReady 调用，EVA 在 home/cwd/profile、凭据、Codex 和 preset 检查后调用。GET 不触发恢复，卸载不再发布身份；新增并发、失败重试、卸载中 flush、配置与重复 owner 回归。
+- EVA 仍管进程、home/profile/端口、IPC 和嵌入；Shell 管导航和只读清单，DM/memory 独立。本步**未搬 Agent preset**，不改权限、工具集、保存默认值或历史会话；下一增量再逐项权衡通用 Bot 配置与 EVA 专属配置。
+- 子 overlay v5 用已安装 bot-mode 绝对入口，并禁用选中 Shell/独立 bundle 的父根；入口纳入不可变 startup hash，旧 patch 不重写。第五 workspace、锁文件、两应用 bundled dependency、资源检查/collector/打包均接好；真实独立包和两应用内嵌包经过解包、资源/exports/import 闭包回归。
+- MAGI 自带 Node：完整 **608/608**、portable **148/148**、源码/resources **34 模块**通过，0 失败/0 skipped；独立只读复核未发现新增 must-fix。均为当前 macOS fixture/源码验证，不代表 Windows Host 或真实 GUI 验收。
+- 未安装/重载运行 profile，未启动、停止或重启 Bot，未部署或推送；源码完成不等于当前运行实例已更新。
+
+### 前次：补齐插件自带操作 skills（分步，仅源码）
 
 - EVA 新增原生 `magi-eva-nodes` [操作指引](<apps/eva/skills/eva-nodes/SKILL.md>)，覆盖节点选择/复用/新建、审批、共享凭据边界、状态语义与安全失败恢复。仅父 Host 注册；有 child 角色标记时在注册前返回。
 - 通过可选 `skills` 注入注册，资源锚定安装模块，随服务 scope 注销/恢复；不增加核心硬依赖，不改工具 schema 或审批。manifest 包含完整资源；回归覆盖服务缺席/卸载/恢复、child 边界以及真实归档在离线独立 consumer 中读取并注册 skill。

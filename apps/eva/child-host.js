@@ -6,9 +6,10 @@ import { fileURLToPath } from 'node:url';
 
 // Host composition and Agent capabilities are intentionally separate layers.
 // The official web profile supplies Sessions, persistence, permissions and UI;
-// this overlay owns only EVA's child lifecycle, DM, preset and model/auth route.
+// this overlay composes EVA lifecycle, independent DM/memory/bot-mode, preset
+// and model/auth route; native persistence and Sessions remain Host-owned.
 export const DEFAULT_EVA_PRESET = 'eva';
-export const CHILD_HOST_VERSION = 4;
+export const CHILD_HOST_VERSION = 5;
 
 export function resolveDmEntry() {
   return createRequire(import.meta.url).resolve('@magi/dm');
@@ -16,6 +17,10 @@ export function resolveDmEntry() {
 
 export function resolveMemoryEntry() {
   return createRequire(import.meta.url).resolve('@magi/memory');
+}
+
+export function resolveBotModeEntry() {
+  return createRequire(import.meta.url).resolve('@magi/bot-mode');
 }
 
 export async function readEvaPreset() {
@@ -29,6 +34,8 @@ const desktopRoles = [
   // A selected standalone memory bundle also contributes a root; replace it
   // with the explicit installed child entry below, without editing the profile.
   { id: 'magi-memory', name: '@magi/memory', disabled: true },
+  // A standalone bot-mode bundle defaults to parent; replace it with child role.
+  { id: 'magi-bot-mode', name: '@magi/bot-mode', disabled: true },
 ];
 
 // Existing child profiles remain user-owned. Exclude known desktop roles only
@@ -43,14 +50,17 @@ export async function desktopRoleExclusions(profileDir) {
   return desktopRoles.filter(row => bundles.includes(row.name)).map(row => ({ ...row }));
 }
 
-export function createChildHostPatch({ workspace, profile, presetPath, credentialsPath, desktopExclusions = [], dmEntry = resolveDmEntry(), memoryEntry = resolveMemoryEntry() }) {
+export function createChildHostPatch({ workspace, profile, presetPath, credentialsPath, desktopExclusions = [], dmEntry = resolveDmEntry(), memoryEntry = resolveMemoryEntry(), botModeEntry = resolveBotModeEntry() }) {
   if (typeof dmEntry !== 'string' || !isAbsolute(dmEntry)) throw new Error('DM child entry must resolve to an installed absolute package entry.');
   if (typeof memoryEntry !== 'string' || !isAbsolute(memoryEntry)) throw new Error('Memory child entry must resolve to an installed absolute package entry.');
   // Existing profiles can select either an older EVA bundle (without a DM row)
   // or the new one. Always mount the installed DM root explicitly. Disable the
   // bundle's optional DM row by id only: Loader names assert, never rename.
   // Older bundles warn/skip the absent target while the explicit root still runs.
+  if (typeof botModeEntry !== 'string' || !isAbsolute(botModeEntry)) throw new Error('Bot mode child entry must resolve to an installed absolute package entry.');
   const selectedEva = desktopExclusions.some(row => row.id === 'eva');
+  const selectedShell = desktopExclusions.some(row => row.id === 'magi-shell');
+  const selectedBotMode = desktopExclusions.some(row => row.id === 'magi-bot-mode');
   const dmRow = { id: 'magi-dm-child', name: dmEntry, config: {} };
   const sharing = credentialsPath === undefined ? {} : { credentialsPath, credentialSharingVersion: 1 };
   const overlay = [{ insert: [{
@@ -60,6 +70,8 @@ export function createChildHostPatch({ workspace, profile, presetPath, credentia
     // child.js asserts workspace === profileContext.home === cwd. Memory derives
     // its Bot home from that native service, never from a Session workspace.
     id: 'magi-memory-child', name: memoryEntry, config: {},
+  }, {
+    id: 'magi-bot-mode-child', name: botModeEntry, config: { role: 'eva-child', workspace, profile },
   }, {
     id: 'eva-agent-preset', name: 'cordis:include', config: { path: presetPath },
   }] }, {
@@ -80,5 +92,8 @@ export function createChildHostPatch({ workspace, profile, presetPath, credentia
   return [...overlay,
     ...(selectedEva ? [{ id: 'magi-dm', disabled: true }] : []),
     ...(selectedEva && !selectedMemory ? [{ id: 'magi-memory', disabled: true }] : []),
+    // Shell bundles now supply a parent identity root. Older versions may lack it;
+    // id-only disabling safely warns/skips rather than asserting a package rename.
+    ...(selectedShell && !selectedBotMode ? [{ id: 'magi-bot-mode', disabled: true }] : []),
     ...desktopExclusions];
 }

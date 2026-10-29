@@ -19,7 +19,7 @@ test('import closure scan ignores quoted protocol keys such as from', () => {
 
 test('default discovery includes every current DSH regression without retired launcher acceptance', () => {
   const actual = collectTests();
-  for (const [app, location] of [['eva', 'apps/eva'], ['magi-shell', 'apps/magi-shell'], ['dm', 'packages/dm'], ['memory', 'packages/memory']]) {
+  for (const [app, location] of [['eva', 'apps/eva'], ['magi-shell', 'apps/magi-shell'], ['dm', 'packages/dm'], ['memory', 'packages/memory'], ['bot-mode', 'packages/bot-mode']]) {
     for (const name of readdirSync(new URL(`${location}/test/`, root)).filter(name => name.endsWith('.test.js'))) {
       assert.ok(actual.includes(`${location}/test/${name}`), name);
     }
@@ -30,27 +30,27 @@ test('default discovery includes every current DSH regression without retired la
   assert.ok(actual.every(file => !file.includes('/dist/') && !file.includes('/integration/')));
   const pkg = JSON.parse(read('package.json'));
   assert.equal(pkg.scripts.test, 'node scripts/check-dsh.mjs && node scripts/test.mjs');
-  assert.deepEqual(pkg.workspaces, ['apps/eva', 'apps/magi-shell', 'packages/dm', 'packages/memory']);
+  assert.deepEqual(pkg.workspaces, ['apps/eva', 'apps/magi-shell', 'packages/dm', 'packages/memory', 'packages/bot-mode']);
   assert.equal(pkg.scripts['test:legacy'], undefined);
   assert.equal(pkg.scripts['verify:legacy'], undefined);
 });
 
 test('active bundle import closures cannot depend on retired Shell or legacy workspace packages', () => {
-  for (const app of ['apps/eva', 'apps/magi-shell', 'packages/dm', 'packages/memory']) {
+  for (const app of ['apps/eva', 'apps/magi-shell', 'packages/dm', 'packages/memory', 'packages/bot-mode']) {
     const dir = new URL(`${app}/`, root);
     const pkg = JSON.parse(read(`${app}/package.json`));
-    if (app.startsWith('apps/') || app === 'packages/memory') assert.equal(pkg.dsh.bundle.patch, './cordis.patch.yml');
+    if (app.startsWith('apps/') || ['packages/memory', 'packages/bot-mode'].includes(app)) assert.equal(pkg.dsh.bundle.patch, './cordis.patch.yml');
     for (const name of readdirSync(dir).filter(name => name.endsWith('.js'))) {
       const source = read(`${app}/${name}`);
       // Static ESM imports, re-exports, literal dynamic imports and injected require.
       const imports = importSpecifiers(source);
       for (const specifier of imports) {
-        assert.ok(specifier.startsWith('node:') || specifier.startsWith('./') || specifier.startsWith('@deepseek-ai/') || specifier === 'react' || ['@magi/dm', '@magi/memory'].includes(specifier), `${app}/${name}: ${specifier}`);
+        assert.ok(specifier.startsWith('node:') || specifier.startsWith('./') || specifier.startsWith('@deepseek-ai/') || specifier === 'react' || ['@magi/dm', '@magi/memory', '@magi/bot-mode'].some(name => specifier === name || specifier.startsWith(name + '/')), `${app}/${name}: ${specifier}`);
         if (specifier.startsWith('./')) assert.ok(existsSync(new URL(specifier, dir)), `${app}/${name}: missing ${specifier}`);
       }
-      assert.doesNotMatch(source, /apps\/shell|@magi\/(?!(?:dm|memory)(?:['"/\s]|$))|\.\.\/(?:shell|packages)\//, `${app}/${name}`);
+      assert.doesNotMatch(source, /apps\/shell|@magi\/(?!(?:dm|memory|bot-mode)(?:['"/\s]|$))|\.\.\/(?:shell|packages)\//, `${app}/${name}`);
     }
-    for (const dependency of Object.keys({ ...pkg.dependencies, ...pkg.peerDependencies })) assert.ok(dependency.startsWith('@deepseek-ai/') || (app === 'apps/eva' && ['@magi/dm', '@magi/memory'].includes(dependency)), dependency);
+    for (const dependency of Object.keys({ ...pkg.dependencies, ...pkg.peerDependencies })) assert.ok(dependency.startsWith('@deepseek-ai/') || (app === 'apps/eva' && ['@magi/dm', '@magi/memory', '@magi/bot-mode'].includes(dependency)) || (app === 'apps/magi-shell' && dependency === '@magi/bot-mode'), dependency);
   }
 });
 

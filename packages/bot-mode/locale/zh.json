@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "MAGI Bot 模式",
+    "description": "统一父子 Bot 组合与持久主会话生命周期。"
+  }
+}

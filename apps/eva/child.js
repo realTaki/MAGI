@@ -1,21 +1,16 @@
 // Small startup probe mounted only in the additional Host, never in the desktop.
 import { realpath } from 'node:fs/promises';
-import { join } from 'node:path';
-import { ensureMainSession, attachMainSessionWorkspace, ensureMainSessionTitle } from './main-session.js';
 import { registerChildView, registerEmbeddedLogin } from './view.js';
 import { credentialStorePath } from './credentials.js';
 import { createMessagePreviewReader } from './message-preview.js';
 
 export const name = 'eva-child';
-export const inject = ['appReady', 'appExit', 'workspaceRegistry', 'webServer', 'profileContext', 'agentPresets', 'connection', 'sessionController', 'sessionPersistence', 'sessionQuery', 'workingDirectory', 'credentials', 'llm'];
+export const inject = ['appReady', 'appExit', 'workspaceRegistry', 'webServer', 'profileContext', 'agentPresets', 'connection', 'magiBotMode', 'sessionQuery', 'credentials', 'llm'];
 
 export function apply(ctx, config) {
   let disposed = false;
   let mainSessionId;
-  let mainSession;
-  // Optional Host-local identity: no lookup/create fallback; unavailable until
-  // startup is durable and after unload. Cordis owns provider removal/collisions.
-  ctx.provide('magiMainSession', { current: () => disposed ? undefined : mainSession });
+  // bot-mode owns fixed identity; EVA supplies process transport and startup probes.
   ctx.provide('magiDmTransport', {
     kind: 'child', workspace: config.workspace, handle: config.profile, channel: process,
   });
@@ -54,16 +49,15 @@ export function apply(ctx, config) {
         const codexAvailable = ctx.llm.listProviders().some(({ id }) => id === 'openai-codex')
           && (await ctx.llm.listModels('openai-codex')).length > 0;
         if (!codexAvailable) throw new Error('eva child native Codex provider is unavailable.');
-        const project = await ctx.workspaceRegistry.create(workspace, `EVA · ${config.profile}`);
         const preset = await ctx.agentPresets.resolve();
         if (preset.broken) throw new Error('eva child default agent preset is unavailable.');
-        const main = await ensureMainSession(ctx, { workspace, profile: config.profile, stateDir: join(home, 'eva') });
-        await attachMainSessionWorkspace(ctx, main.sessionId);
-        await ensureMainSessionTitle(ctx, main.sessionId, config.profile);
-        // Publish only an attached main whose node-name title is durable.
+        const main = await ctx.magiBotMode.initialize();
+        // Bot identity is published only after durable attachment and title.
+        if (disposed || !main) return;
+        if (main.workspace !== workspace) throw new Error('eva child Bot mode workspace mismatch.');
+        const project = await ctx.workspaceRegistry.create(workspace, `EVA · ${config.profile}`);
         if (disposed) return;
         mainSessionId = main.sessionId;
-        mainSession = Object.freeze({ sessionId: mainSessionId, workspace });
         const launchUrl = new URL(ctx.connection.authenticatedUrl(ctx.webServer.getOrigin()));
         launchUrl.hash = 'eva-main';
         if (!disposed && process.connected) process.send({

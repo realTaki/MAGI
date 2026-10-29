@@ -3,7 +3,14 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, realpath, readFile, writeFile, lstat, symlink, link, chmod, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { name, inject, apply, initializeParentMain, PARENT_MAIN_PATH } from '../index.js';
+import { name, inject, apply as applyShell, initializeParentMain, PARENT_MAIN_PATH } from '../index.js';
+import { apply as applyBotMode } from '@magi/bot-mode';
+
+async function apply(ctx) {
+  await applyBotMode(ctx, { role: 'parent' });
+  ctx.magiBotMode = ctx.get('magiBotMode');
+  await applyShell(ctx);
+}
 
 async function fixture(t) {
   const root = await realpath(tmpdir());
@@ -104,7 +111,7 @@ async function seed(paths, extra = {}) {
 
 test('consolidated Host export has only the native dependencies needed for initialization', () => {
   assert.equal(name, 'magi-shell');
-  assert.deepEqual(inject, ['appReady', 'profileContext', 'connection', 'workspaceRegistry', 'sessionController', 'sessionPersistence', 'sessionQuery']);
+  assert.deepEqual(inject, ['appReady', 'profileContext', 'connection', 'magiBotMode', 'sessionQuery']);
   assert.equal(PARENT_MAIN_PATH, '/api/eva/parent-main');
 });
 

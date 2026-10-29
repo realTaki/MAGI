@@ -1,4 +1,4 @@
-// Current product acceptance: DSH bundles and independent DM/memory plugins.
+// Current product acceptance: DSH apps and independent DM/memory/Bot mode packages.
 import { readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -11,10 +11,11 @@ export const portableTests = {
   'magi-shell': ['layout', 'main-client', 'package', 'workbench-client'],
   dm: ['dm-user-client', 'package'],
   memory: ['package', 'tools', 'plugin'],
+  'bot-mode': ['package'],
 };
 export function collectTests({ portable = false } = {}) {
   const files = [];
-  for (const [app, location] of [['eva', 'apps/eva'], ['magi-shell', 'apps/magi-shell'], ['dm', 'packages/dm'], ['memory', 'packages/memory']]) {
+  for (const [app, location] of [['eva', 'apps/eva'], ['magi-shell', 'apps/magi-shell'], ['dm', 'packages/dm'], ['memory', 'packages/memory'], ['bot-mode', 'packages/bot-mode']]) {
     const names = readdirSync(new URL(`../${location}/test/`, import.meta.url))
       .filter(name => name.endsWith('.test.js')).sort();
     if (!names.length) throw new Error(`No DSH tests discovered for ${app}`);

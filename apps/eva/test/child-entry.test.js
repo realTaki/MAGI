@@ -44,7 +44,8 @@ test('child activation provides exact configured identity, workspace and process
   assert.equal(transport.channel, fixture.channel, 'identity is admitted only through the actual parent process channel');
   assert.deepEqual(Object.keys(transport).sort(), ['channel', 'handle', 'kind', 'workspace']);
   assert.equal(fixture.services.has('magiDm'), false, 'standalone plugin, not EVA, owns the installation');
-  assert.equal(fixture.services.get('magiMainSession').current(), undefined, 'transport cannot invent a main Session');
+  assert.equal(fixture.services.has('magiMainSession'), false, 'EVA transport no longer owns main identity');
+  assert.ok(lifecycle.inject.includes('magiBotMode'), 'startup consumes independent bot-mode');
   assert.equal(fixture.calls.filter(([name]) => name === 'view').length, 1);
   assert.equal(config.profile, 'eva-000');
 });

@@ -11,7 +11,8 @@ test('single MAGI Shell package exports and distributes all runtime and localize
   assert.equal(pkg.name, '@local/magi-shell');
   assert.equal(pkg.type, 'module');
   assert.equal(pkg.private, true);
-  assert.equal(pkg.dependencies, undefined);
+  assert.deepEqual(pkg.dependencies, { '@magi/bot-mode': 'file:../../packages/bot-mode' });
+  assert.deepEqual(pkg.bundledDependencies, ['@magi/bot-mode']);
   assert.equal(pkg.scripts, undefined);
   assert.equal(pkg.exports['.'], './index.js');
   assert.equal(pkg.exports['./client'], './client.js');
@@ -41,6 +42,7 @@ test('single MAGI Shell package exports and distributes all runtime and localize
   assert.match(icon, /M39 22H50L46 18M50 22L46 26M50 40H39L43 36M39 40L43 44/, 'preserve the original switch arrows');
   const patch = await resource('cordis.patch.yml');
   assert.match(patch, /@local\/magi-shell/);
+  assert.match(patch, /id: magi-bot-mode[\s\S]*name: '@magi\/bot-mode'[\s\S]*role: parent[\s\S]*id: magi-shell/);
   assert.doesNotMatch(patch, /@local\/(?:magi-workbench|eva-main-bot|eva)(?![a-z-])/);
 });
 

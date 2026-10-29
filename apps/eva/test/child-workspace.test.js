@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { ensureMainSession, attachMainSessionWorkspace, ensureMainSessionTitle } from '../main-session.js';
+import { apply as applyBotMode } from '@magi/bot-mode';
 import { registerChildView, registerEmbeddedLogin } from '../view.js';
 import { createMessagePreviewReader } from '../message-preview.js';
 
@@ -93,6 +94,8 @@ async function fixture(t) {
     holdAttachment() { let release; attachGate = new Promise((done) => { release = done; }); return release; },
     rejectAttachment() { rejectAttach = true; },
     async start(sharing = {}, resolvedStore = sharing.credentialsPath) {
+      await applyBotMode(ctx, { role: 'eva-child', workspace: home, profile: 'eva-000' });
+      ctx.magiBotMode = ctx.get('magiBotMode');
       // Run the actual bootstrap body with only its platform boundary injected.
       // This is not a browser/visual test; owner helpers and view routes are real.
       const source = (await readFile(new URL('../child.js', import.meta.url), 'utf8'))

@@ -32,8 +32,12 @@ runtime/bin/node runtime/npm/node_modules/npm/bin/npm-cli.js test
 The current product is the directly executed DSH Host/Client bundles in
 `apps/eva` and `apps/magi-shell`, plus the independent `@magi/dm` plugin in
 [packages/dm](<packages/dm/README.md>) and standalone `@magi/memory` bundle in
-[packages/memory](<packages/memory/README.md>) consumed by EVA; none needs a TypeScript or
-Electron build. EVA mounts DM and memory as separate Loader roots, not copied source.
+[packages/memory](<packages/memory/README.md>) consumed by EVA, and shared
+[@magi/bot-mode](<packages/bot-mode/README.md>) consumed by Shell/EVA children; none
+needs a TypeScript or Electron build. EVA mounts DM, memory and child bot-mode as
+separate Loader roots, not copied source. Shell bundles the parent bot-mode root.
+EVA retains process management and startup prerequisites; bot-mode owns fixed-main
+identity. Agent presets remain unchanged in this first extraction increment.
 Use `npm run pack:dsh -- --app eva --out dist` with the MAGI-owned runtime for a
 portable archive: plain npm packing can omit a hoisted bundled workspace symlink.
 A source-linked EVA requires its workspace dependencies installed from the root
@@ -53,7 +57,7 @@ Schedule; do not restore the old task
 worker or implicitly migrate old task databases. Local
 Bot-to-Bot DM and Bot-to-user notifications belong to the independent DM plugin;
 remote DM is out of scope. Other pre-DSH
-packages remain archived source, excluded from the explicit four-workspace
+packages remain archived source, excluded from the explicit five-workspace
 install graph. They are not supported build/runtime dependencies; their dangling
 legacy launcher/provider contracts are historical, not migration TODOs. Root
 TypeScript build, database-generation and legacy acceptance scripts are retired.

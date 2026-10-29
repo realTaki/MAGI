@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { packDsh, stagePackage } from '../pack-dsh.mjs';
+import { packDsh, resolveNpmCli, stagePackage } from '../pack-dsh.mjs';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url));
 const npmCli = process.env.MAGI_NPM_CLI;
@@ -278,3 +278,49 @@ test('real EVA archive retains independent DM exports and imports in isolated of
   assert.equal(registrations.length, 0);
   assert.ok(!existsSync(path.join(root, 'consumer/packages/dm')));
 });
+
+// Exercise real tarballs without a registry, profile installation, or checkout
+// symlink. npm already supplies tar alongside the CLI used by packDsh.
+for (const app of ['bot-mode', 'eva', 'magi-shell']) {
+  test('real ' + app + ' archive retains independent Bot mode resources and import closure', async t => {
+    const root = temporary(t);
+    const { archive, report } = packDsh({ app, outputDir: path.join(root, 'output'), npmCli });
+    const standalone = app === 'bot-mode';
+    const prefix = standalone ? '' : 'node_modules/@magi/bot-mode/';
+    const resources = ['package.json', 'index.js', 'parent.js', 'main-session.js', 'parent-main-session.js', 'README.md', 'cordis.patch.yml', 'locale/en.json', 'locale/zh.json', 'icon.svg'];
+    for (const file of resources) assert.ok(report.files.some(item => item.path === prefix + file), app + ': ' + file);
+    if (standalone) {
+      assert.equal(report.name, '@magi/bot-mode');
+      assert.ok(!report.files.some(file => file.path.startsWith('node_modules/')));
+    } else assert.ok(report.bundled.includes('@magi/bot-mode'));
+    const extracted = path.join(root, 'extracted');
+    mkdirSync(extracted);
+    const tar = createRequire(resolveNpmCli(process.execPath, npmCli))('tar');
+    tar.x({ file: archive, cwd: extracted, sync: true, strict: true });
+    const packageRoot = realpathSync(path.resolve(extracted, 'package', prefix));
+    const manifest = JSON.parse(readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
+    assert.equal(manifest.name, '@magi/bot-mode');
+    assert.equal(manifest.version, '0.1.0');
+    assert.deepEqual(manifest.dependencies ?? {}, {});
+    assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml');
+    assert.match(readFileSync(path.join(packageRoot, 'cordis.patch.yml'), 'utf8'), /id: magi-bot-mode[\s\S]*role: parent/);
+    for (const language of ['en', 'zh']) {
+      const locale = JSON.parse(readFileSync(path.join(packageRoot, 'locale', language + '.json'), 'utf8'));
+      assert.ok(locale.meta.title && locale.meta.description);
+    }
+    assert.match(readFileSync(path.join(packageRoot, 'icon.svg'), 'utf8'), /^<svg[\s\S]*<\/svg>\s*$/);
+    const fromPackage = createRequire(path.join(packageRoot, 'package.json'));
+    for (const subpath of ['', '/parent', '/main-session', '/parent-main-session']) {
+      const entry = fromPackage.resolve('@magi/bot-mode' + subpath);
+      assert.ok(entry.startsWith(packageRoot + path.sep), entry);
+      await import(pathToFileURL(entry));
+    }
+    for (const specifier of ['/locale/en.json', '/locale/zh.json', '/icon']) {
+      assert.ok(fromPackage.resolve('@magi/bot-mode' + specifier).startsWith(packageRoot + path.sep));
+    }
+    if (!standalone) {
+      const fromApp = createRequire(path.join(extracted, 'package/package.json'));
+      assert.equal(fromApp.resolve('@magi/bot-mode'), path.join(packageRoot, 'index.js'));
+    }
+  });
+}

@@ -6,11 +6,17 @@ DSH Host + Web Client 插件，提供模型工具 `eva`、节点清单与会话�
 
 本目录已用 DSH Host 插件替换 MAGI 旧的 EVA launcher，作为逐步改造成 DSH 版本的起点。其他旧模块和根级构建流程尚未改造，不能据此认为整个 MAGI 已兼容 DSH。背景、验证边界和后续工作见 [交接文档](<../../DSH-HANDOFF.md>)。
 
+## bot-mode 第一增量（源码，尚未应用）
+
+EVA 安装并捆绑独立 [@magi/bot-mode](<../../packages/bot-mode/README.md>)。子 overlay v5 通过已安装包的绝对入口挂载 `magi-bot-mode-child`；选中的 Shell/独立 bot-mode 父根禁用，避免重复身份 provider。固定主会话的保留、恢复、持久化、workspace 附着和子 Bot 标题归 bot-mode；EVA 保留节点进程、home/profile/端口、IPC、凭据/Codex/预设检查与嵌入。检查通过后才显式初始化身份。
+
+本步不迁移 Agent preset，不改已保存默认值、历史 Session ID 或状态路径。旧 v1 子 workspace 升级仍保留同一 Session；父身份仍执行原严格 v2 策略。Shell 消费同一父身份服务，DM/memory 仍独立。未重载、重启或部署运行实例。
+
 ## 安装与更新
 
-源码目录链接安装前，先在仓库根用 MAGI 自带 Node/npm 执行 `npm ci --workspace @local/eva --ignore-scripts --offline --omit=dev`，只安装锁文件中的本地 EVA/DM workspace 依赖，不在运行 profile 中执行包管理器。原生目录链接本身不会代装依赖。
+源码目录链接安装前，先在仓库根用 MAGI 自带 Node/npm 执行 `npm ci --workspace @local/eva --ignore-scripts --offline --omit=dev`，只安装锁文件中的本地 EVA/DM/memory/bot-mode workspace 依赖，不在运行 profile 中执行包管理器。原生目录链接本身不会代装依赖。
 
-分发到没有仓库源码的机器时，使用[专用打包脚本](<../../scripts/pack-dsh.mjs>)（MAGI 自带 Node 执行 `scripts/pack-dsh.mjs --app eva --out dist`）。它把独立 DM 包实体纳入 EVA 归档；普通 `npm pack` 可能静默漏掉被 workspace 提升的符号链接依赖。安装归档仍使用原生 Plugin Manager。
+分发到没有仓库源码的机器时，使用[专用打包脚本](<../../scripts/pack-dsh.mjs>)（MAGI 自带 Node 执行 `scripts/pack-dsh.mjs --app eva --out dist`）。它把独立 DM、memory 和 bot-mode 包实体纳入 EVA 归档；普通 `npm pack` 可能静默漏掉被 workspace 提升的符号链接依赖。安装归档仍使用原生 Plugin Manager。
 
 1. 左侧「插件」→「添加插件」。
 2. 输入本插件目录的绝对路径：`/Users/shichuan/.dsh/workspace/MAGI/apps/eva`。

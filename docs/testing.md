@@ -10,15 +10,18 @@ runtime/bin/node runtime/npm/node_modules/npm/bin/npm-cli.js test
 runtime/bin/node runtime/npm/node_modules/npm/bin/npm-cli.js run test:portable
 ```
 
-`npm test` checks the two DSH package manifests, lock metadata, distributed
+`npm test` checks all five workspace manifests, lock metadata, distributed
 resources and all top-level plugin JavaScript syntax, then runs **every**
-`apps/eva/test/*.test.js`, `apps/magi-shell/test/*.test.js` and
-`packages/dm/test/*.test.js` regression. No
+regression in EVA, MAGI Shell, DM, memory and bot-mode. See the explicit roots in
+[the test collector](<../scripts/test.mjs>). No
 TypeScript output, old EVA launcher, Electron UI build, installer or AppImage is
 needed. Test discovery also includes its own wiring/bundle-boundary regression
 and the authoritative root-lock/dependency-advisory policy. Literal relative
 imports in active bundles must stay inside their bundle; official DSH services
-are supplied by the Host. EVA bundles the independent `@magi/dm` workspace. The deleted Electron Shell
+are supplied by the Host. EVA bundles independent DM, memory and bot-mode;
+Shell bundles bot-mode. Actual standalone bot-mode and both nested application
+archives are extracted and their resources/exports/imports validated in
+[packaging tests](<../scripts/test/pack-dsh.test.mjs>). The deleted Electron Shell
 and providers, and remaining archived pre-DSH packages, are not dependencies.
 
 ## CI scope and meaningful coverage
