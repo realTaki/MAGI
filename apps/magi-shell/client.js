@@ -79,6 +79,13 @@ window.__ModuleLoader__.load({
       return h('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
         h('path', { d: 'M4 8h15m-4-4 4 4-4 4M20 16H5m4-4-4 4 4 4' }));
     }
+    // Theme-aware rendering of this package's original icon.svg, not the DSH mark.
+    function MagiMark() {
+      return h('svg', { className: 'magi-wb-mark', width: 28, height: 28, viewBox: '0 0 64 64', fill: 'none', 'aria-hidden': true, focusable: false },
+        h('rect', { x: 3, y: 3, width: 58, height: 58, rx: 16, fill: 'currentColor', fillOpacity: .07 }),
+        h('path', { d: 'M15 39V23L23 33L31 23V39', stroke: 'currentColor', strokeWidth: 4, strokeLinecap: 'round', strokeLinejoin: 'round' }),
+        h('path', { d: 'M39 22H50L46 18M50 22L46 26M50 40H39L43 36M39 40L43 44M15 48H31', stroke: 'currentColor', strokeWidth: 3, strokeLinecap: 'round', strokeLinejoin: 'round' }));
+    }
     function SidebarIcon() {
       return h('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
         h('rect', { x: 3, y: 3, width: 18, height: 18, rx: 2 }), h('path', { d: 'M9 3v18' }));
@@ -107,7 +114,7 @@ window.__ModuleLoader__.load({
       .magi-wb-sidebar[data-collapsed=true] .magi-wb-chrome { justify-content:center; padding-inline:4px; }
       .magi-wb-sidebar-top { display:flex; align-items:center; box-sizing:border-box; height:40px; gap:4px; padding:0 12px; flex-shrink:0; }
       .magi-wb-sidebar[data-collapsed=true] .magi-wb-sidebar-top { justify-content:center; padding:4px; }
-      .magi-wb-new { box-sizing:border-box; display:flex; align-items:center; justify-content:center; flex-shrink:0; align-self:stretch; min-height:38px; gap:8px; margin:8px 12px 12px; padding:8px 12px; border:1px solid var(--dsw-alias-border-l1); border-radius:12px; background:var(--dsw-alias-bg-base); color:var(--dsw-alias-label-primary); font:inherit; font-size:14px; font-weight:500; line-height:20px; cursor:pointer; -webkit-app-region:no-drag; }
+      .magi-wb-new { box-sizing:border-box; display:flex; align-items:center; justify-content:center; flex-shrink:0; align-self:stretch; min-height:36px; gap:8px; margin:8px 12px 10px; padding:7px 12px; border:1px solid var(--dsw-alias-border-l1); border-radius:10px; background:var(--dsw-alias-bg-base); color:var(--dsw-alias-label-primary); font:inherit; font-size:13px; font-weight:500; line-height:20px; cursor:pointer; -webkit-app-region:no-drag; }
       .magi-wb-new svg { display:block; flex-shrink:0; }
       .magi-wb-new:hover:not(:disabled) { background:var(--dsw-alias-bg-layer-2); }
       .magi-wb-new[data-compact=true] { align-self:center; width:28px; min-height:28px; height:28px; margin:0; padding:6px; border:0; border-radius:var(--dsw-radius-sm,6px); background:transparent; color:var(--dsw-alias-label-secondary); }
@@ -117,6 +124,10 @@ window.__ModuleLoader__.load({
       .magi-wb-chrome .magi-wb-switch, .magi-wb-leading .magi-wb-switch { width:28px; height:28px; padding:6px; border-radius:var(--dsw-radius-sm,6px); }
       .magi-wb-brand { display:flex; align-items:center; gap:8px; min-width:0; width:100%; color:var(--dsw-alias-label-primary); }
       .magi-wb-wordmark { font-weight:750; letter-spacing:-.04em; white-space:nowrap; }
+      .magi-wb-mark { display:block; flex-shrink:0; }
+      .magi-wb-brand[data-mode=magi] { gap:8px; }
+      .magi-wb-brand[data-mode=magi] .magi-wb-wordmark { font-size:20px; line-height:28px; letter-spacing:-.035em; }
+      .magi-wb-brand[data-mode=magi] .magi-wb-badge { box-sizing:border-box; flex-shrink:0; padding:0 5px; font-size:9px; line-height:16px; font-weight:600; letter-spacing:.08em; color:var(--dsw-alias-label-secondary); }
       .magi-wb-badge { padding:2px 5px; border:1px solid var(--dsw-alias-border-l2); border-radius:4px; font-size:10px; font-weight:650; letter-spacing:.06em; line-height:1.4; }
       .magi-wb-switch { box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; padding:6px; border:0; border-radius:8px; background:transparent; color:var(--dsw-alias-label-secondary); cursor:pointer; flex-shrink:0; -webkit-app-region:no-drag; }
       .magi-wb-switch svg { display:block; flex-shrink:0; }
@@ -221,7 +232,8 @@ window.__ModuleLoader__.load({
         function Brand() {
           const view = React.useSyncExternalStore(subscribe, getSnapshot); useLocale();
           return h(React.Fragment, null, h('style', null, css),
-            h('span', { className: 'magi-wb-brand' }, h('span', { className: 'magi-wb-wordmark' }, view.open ? 'MAGI' : 'deepseek'),
+            h('span', { className: 'magi-wb-brand', 'data-mode': view.open ? 'magi' : 'native' }, view.open && h(MagiMark),
+              h('span', { className: 'magi-wb-wordmark' }, view.open ? 'MAGI' : 'deepseek'),
               h('span', { className: 'magi-wb-badge' }, view.open ? 'BOT' : 'HARNESS'), h(Switch)));
         }
         function Sidebar({ collapsed = false, width } = {}) {

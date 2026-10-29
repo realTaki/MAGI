@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 const source = await readFile(new URL('../client.js', import.meta.url), 'utf8');
 const css = source.match(/const css = `([\s\S]*?)`;/)[1];
 const rule = (selector) => {
-  const start = css.indexOf(`${selector} {`);
+  const start = css.indexOf(`\n      ${selector} {`);
   assert.notEqual(start, -1, `missing CSS rule: ${selector}`);
   return css.slice(start).split('}')[0];
 };
@@ -34,7 +34,15 @@ test('Bot browser keeps two-line contacts, rounded color blocks, search and comp
   assert.doesNotMatch(source, /magi-wb-(?:return|native-avatar)\b/);
 });
 
-test('branding uses the native brand seat with one-line wordmark, badge and adjacent switch', () => {
+test('branding keeps the native seat and scopes explicit MAGI proportions to its own header', () => {
+  assert.match(source, /view\.open && h\(MagiMark\)/);
+  assert.match(rule('.magi-wb-mark'), /display:block; flex-shrink:0/);
+  assert.match(rule('.magi-wb-brand[data-mode=magi] .magi-wb-wordmark'), /font-size:20px; line-height:28px/);
+  assert.match(rule('.magi-wb-brand[data-mode=magi] .magi-wb-badge'), /font-size:9px; line-height:16px/);
+  assert.match(rule('.magi-wb-brand[data-mode=magi] .magi-wb-badge'), /color:var\(--dsw-alias-label-secondary\)/);
+  assert.match(rule('.magi-wb-new'), /min-height:36px/);
+  assert.match(rule('.magi-wb-new'), /font-size:13px/);
+  assert.doesNotMatch(source, /require\('@deepseek-ai\/dsh-client/);
   assert.match(source, /name: 'sidebar\.brand\.name'/);
   assert.match(rule('.magi-wb-brand'), /display:flex; align-items:center/);
   assert.match(rule('.magi-wb-wordmark'), /white-space:nowrap/);

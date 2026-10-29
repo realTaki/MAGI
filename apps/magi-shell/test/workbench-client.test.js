@@ -119,11 +119,33 @@ test('New Bot uses an icon and full-width outlined surface; compact chrome keeps
       assert.deepEqual(text(compact), [], 'compact action is an icon, not a plus glyph or clipped label');
     }
     const styles = elements(app.sidebar()).find(element => element.type === 'style').props.children.join('');
-    assert.match(styles, /\.magi-wb-new \{[^}]*align-self:stretch[^}]*min-height:38px[^}]*border:1px solid var\(--dsw-alias-border-l1\)[^}]*border-radius:12px[^}]*background:var\(--dsw-alias-bg-base\)/);
+    assert.match(styles, /\.magi-wb-new \{[^}]*align-self:stretch[^}]*min-height:36px[^}]*border:1px solid var\(--dsw-alias-border-l1\)[^}]*border-radius:10px[^}]*background:var\(--dsw-alias-bg-base\)/);
     assert.match(styles, /\.magi-wb-new:focus-visible/);
     assert.match(styles, /\.magi-wb-new:hover:not\(:disabled\)/);
     assert.equal(createCalls(app).length, 0, 'styling/rendering never creates a Bot');
     app.setLocale('zh'); assert.ok(text(newBotButton(app)).includes('新 Bot'));
+  } finally { app.dispose(); }
+});
+
+test('original MAGI mark appears only in its workbench header and never replaces native identity artwork', async () => {
+  const app = harness();
+  const marks = tree => elements(tree).filter(element => element.props.className === 'magi-wb-mark');
+  try {
+    await tick();
+    assert.equal(marks(app.brand()).length, 0);
+    await open(app);
+    const header = elements(app.sidebar()).find(element => element.props.className === 'magi-wb-brand');
+    assert.equal(header.props['data-mode'], 'magi');
+    const [mark] = marks(header);
+    assert.equal(marks(header).length, 1);
+    assert.equal(mark.type, 'svg');
+    assert.equal(mark.props['aria-hidden'], true);
+    assert.equal(mark.props.width, 28);
+    assert.ok(elements(mark).some(element => element.props.d === 'M15 39V23L23 33L31 23V39'));
+    assert.ok(elements(header).some(element => element.props['aria-label'] === 'Switch back to DSH'));
+    app.switch().props.onClick();
+    assert.equal(marks(app.brand()).length, 0);
+    assert.equal(createCalls(app).length, 0);
   } finally { app.dispose(); }
 });
 
