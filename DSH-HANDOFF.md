@@ -6,7 +6,8 @@
 
 - 用户随后授权删除旧 memory 模块及提交 GitHub：已删除旧 BUS memory 源码和过时文档，清理归档 launcher 的依赖、project reference、worker 注册与 hosted-worker 名单。历史源码可从 Git 历史恢复；旧数据库不删除、不读取、不迁移。
 - 单文件下一版仅完成[Markdown 存储底座](<packages/memory/document-store.js>)与针对性测试，每 Bot 一个文档、不分长中短；尚未接入插件入口/工具，也未打包部署。现有运行插件仍使用下述 SQLite 与 runtime-context 机制。固定 system 后、history 前的位置需要先解决现有会话插入及所有压缩入口的保护，不能声称已上线。
-- 删除旧 memory 后，MAGI 自带 Node 完整回归 **577/577**、portable **127/127**、源码/resources **29 模块**通过，0 失败/0 skipped；均在当前 macOS 执行，不代表 Windows 实机验收。未重启或重载运行中 Host/Bot。
+- 删除旧 memory 并合并远端安全更新后，MAGI 自带 Node 完整回归 **579/579**、portable **129/129**、源码/resources **29 模块**通过，0 失败/0 skipped；均在当前 macOS 执行，不代表 Windows 实机验收。未重启或重载运行中 Host/Bot。
+- 合并远端的 Electron/fast-uri/undici 安全更新提交时保留全部 Git 历史，不恢复已删除的 Electron/provider 依赖图。Electron 现检查整个产品锁中不存在该依赖；fast-uri 现检查完整依赖图不再包含该 parser，同时保留上游 parser 行为回归分支供未来有意重新引入时执行。
 - 新 [@magi/memory](<packages/memory/README.md>) 是独立原生 Host 根，不加载 BUS。每 Bot 使用固定 `profileContext.home/memory/memories.sqlite`，跨该 Bot 的 Session/profile 共享、不同 Bot 隔离；不受 Session cwd 改动影响。SQLite 事务、CAS 版本、私有权限和路径检查、总条数及完整活动快照字节预算均有回归。
 - [插件入口](<packages/memory/index.js>)注册 `required:true, interpolate:false` 的 `magi:memory` 动态上下文，不重写 Persona、preset 或模型请求，不使用旧验证的 `agent.inject()`。同 Host 的所有 Agent scope 在下次请求接纳时通过原生机制获得当前事实；完整自定义 system prompt 和 optional-context suppression 也保留必需记忆。旧快照可能仍留在会话历史，归档/删除并不抹除日志。
 - 五个管理工具 `list_memory/get_memory/save_memory/archive_memory/delete_memory` 原生注册并接受 Agent 及原生 guard/cancellation；更新/归档/删除需当前版本。删除工具要求 `confirm:true` 并提示必须有明确人类授权，但布尔值本身不是身份或授权证明，不能声称插件机械验证了对话中的人类许可。没有自动抽取、向量检索、TTL、潜意识、后台维护或管理 UI。

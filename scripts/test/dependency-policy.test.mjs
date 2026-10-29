@@ -55,6 +55,19 @@ for (const retired of ['channel-a2a', 'channel-tasks']) {
   });
 }
 
+// Upstream's Electron advisory regression targeted the retired desktop app.
+// The current product excludes that entire wrapper/packaging graph instead.
+test('retired Electron advisory surface is not restored by dependency updates', () => {
+  assert.equal(existsSync(path.join(root, 'apps/shell/package.json')), false);
+  for (const [location, pkg] of Object.entries(lock.packages)) {
+    assert.ok(!location.endsWith('/electron'), location);
+    for (const key of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies']) {
+      assert.equal(pkg[key]?.electron, undefined, `${location} ${key}`);
+      assert.equal(pkg[key]?.['electron-builder'], undefined, `${location} ${key}`);
+    }
+  }
+});
+
 test('only current product workspaces and owned tooling are installable', () => {
   const manifest = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
   const workspaces = ['apps/eva', 'apps/magi-shell', 'packages/dm', 'packages/memory'];
