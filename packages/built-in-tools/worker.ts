@@ -9,10 +9,10 @@ import { abortable, MUTATION_SETTLE_MS, settleWithin } from "@magi/bus/abort.js"
  *                send_message / set_home_chat
  *   replace.ts   request_replace — queue a replace of this node
  *
- * `load_skill` is not here: it reads the SKILL.md files that `@magi/skills`
- * owns, so that package's worker registers the tool itself. The contact tools
- * live in `@magi/contacts`, the same way. The retired BUS memory worker and its
- * tools have been deleted; current memory is the independent native DSH plugin.
+ * The retired BUS skills worker and its `load_skill` tool have been deleted.
+ * Current plugins use native DSH skills; this archive supplies neither service
+ * nor loader. Contact tools live in `@magi/contacts`. The retired BUS memory
+ * worker and its tools are also deleted; current memory is a native DSH plugin.
  *
  * `mcp_server` is not here: it accepts an `McpServerConfig` and talks to
  * `McpWorker`, so it lives in `@magi/mcp` and is registered by that worker.

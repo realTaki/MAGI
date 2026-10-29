@@ -1,10 +1,10 @@
 /**
  * The contact tools, owned by the worker that runs them.
  *
- * Like `@magi/skills` and `@magi/mcp`, a tool lives with the worker that owns
- * it: the catalog offers these exactly while this worker runs, so a stopped
- * worker cannot leave the model holding a tool nobody answers. The prompt book
- * asks this worker for the identity and member blocks as well.
+ * A tool lives with the worker that owns it: the catalog offers these exactly
+ * while this worker runs, so a stopped worker cannot leave the model holding a
+ * tool nobody answers. The prompt book asks this worker for the identity and
+ * member blocks as well.
  */
 
 import { BaseWorker, MAGI_CONTACT_ID, type Bus, type Contact, type ExecutableTool, type RunToolJob } from "@magi/bus";
