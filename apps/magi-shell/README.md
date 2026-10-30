@@ -4,7 +4,7 @@
 
 ## Responsibilities
 
-- **MAGI Shell** owns the DSH ↔ MAGI switch, Bot navigation, contact search, and read-only Main Bot inventory. Shared **bot-mode** owns the current Desktop Host's fixed Main Bot identity. The header reuses the native DeepSeek mark outlet with an explicitly sized MAGI wordmark, a quiet outlined BOT mode badge, and the adjacent switch.
+- **MAGI Shell** owns the DSH ↔ MAGI switch, Bot navigation, contact search, and read-only Main Bot inventory. Shared **bot-mode** owns the current Desktop Host's fixed Main Bot identity. The header embeds a local, exact copy of the MIT-licensed official DeepSeek SVG silhouette with an explicitly sized MAGI wordmark, a quiet outlined BOT mode badge, and the adjacent switch.
 - **EVA** remains a separate node launcher/manager. MAGI Shell reads its authenticated inventory, offers an explicit **New Bot** action through EVA's browser-only creation endpoint, and selects the existing EVA main panels; it does not register replacement EVA panels, implement another child embed, or own or stop EVA processes. Main Bot works without EVA installed. Failed inventories retain previously loaded entries with a stale-status warning rather than hiding the other provider's Bots.
 - Native DSH supplies the frame/layout, Conversation, Chat/Trajectory, history, input, Session navigation, and persistence. MAGI adds initialization, durable identity bookkeeping, and a minimal Bot sidebar while its mode is active—not a second chat client.
 
