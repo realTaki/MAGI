@@ -45,7 +45,7 @@ export async function apply(ctx, input = {}) {
   if (ctx.get('magiSubconscious')) throw new Error('Only one subconscious root may own this Bot.');
   const unregisterPreset = await ctx.agentPresets.register(preset);
   ctx.effect(() => unregisterPreset);
-  const domain = await ctx.storageDomain.open({ name: 'magi-subconscious', version: 1,
+  const domain = await ctx.storageDomain.open({ name: 'subconscious', version: 1,
     layout: 'single', global: { schema: State, initial: initialState }, tables: {} });
   let controller;
   const installed = new WeakSet(), cleanupScopes = new Set();

@@ -24,6 +24,31 @@ test('portable native bundle resources and conservative config contract', async 
   assert.deepEqual(MEMORY_TOOLS, ['list_memory', 'get_memory', 'save_memory', 'archive_memory']);
 });
 
+test('root opens a native-valid DomainSpec without rewriting configured limits', async () => {
+  // Exact public UNIT_NAME_RE from @deepseek-ai/dsh-storage; no backend IO.
+  const unitName = /^[a-z][a-z0-9_]*$/;
+  assert.equal(unitName.test('magi-subconscious'), false);
+  const boundary = new Error('fake boundary reached');
+  const config = { enabled: true, runId: 'existing-authorization', recurring: true,
+    maxTurns: 2, maxSteps: 4, dailyTurnLimit: 3, dailyStepLimit: 8 };
+  const before = structuredClone(config);
+  const ctx = {
+    get: () => undefined, effect: () => {},
+    agentPresets: { register: async () => () => {} },
+    storageDomain: { open: async spec => {
+      assert.equal(spec.name, 'subconscious'); assert.match(spec.name, unitName);
+      assert.equal(spec.version, 1); assert.equal(spec.layout, 'single');
+      assert.deepEqual(spec.tables, {});
+      assert.equal(spec.global.schema.safeParse(null).success, false);
+      assert.deepEqual(spec.global.schema.parse(spec.global.initial), spec.global.initial);
+      assert.equal(spec.global.initial.paused, true);
+      throw boundary;
+    } },
+  };
+  await assert.rejects(apply(ctx, config), error => error === boundary);
+  assert.deepEqual(config, before);
+});
+
 test('default apply only registers composition/storage/control; teardown owns both', async () => {
   const effects = [], services = new Map(), listeners = new Map();
   let presetDisposed = false, domainClosed = false;
@@ -32,6 +57,7 @@ test('default apply only registers composition/storage/control; teardown owns bo
     effect: body => { effects.push(body()); }, on: (name, listener) => listeners.set(name, listener),
     agentPresets: { register: async value => { assert.equal(value.id, 'subconscious'); return async () => { presetDisposed = true; }; } },
     storageDomain: { open: async spec => {
+      assert.match(spec.name, /^[a-z][a-z0-9_]*$/, 'native storage UNIT_NAME_RE');
       let state = spec.global.schema.parse({ ...spec.global.initial, sessionId: 'self' });
       return { global: { get: () => state, set: async value => { state = spec.global.schema.parse(value); } }, close: async () => { domainClosed = true; } };
     } },
