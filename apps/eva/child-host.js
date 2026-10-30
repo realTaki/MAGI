@@ -11,7 +11,11 @@ import { fileURLToPath } from 'node:url';
 // Retain the exported name for integrations; only new-session deployment fallback
 // changes. Saved defaults and recorded legacy `eva` Session identities still win.
 export const DEFAULT_EVA_PRESET = DEFAULT_BOT_PRESET;
-export const CHILD_HOST_VERSION = 7;
+export const CHILD_HOST_VERSION = 8;
+
+export function resolveHistoryEntry() {
+  return createRequire(import.meta.url).resolve('@magi/history-search');
+}
 
 export function resolveDmEntry() {
   return createRequire(import.meta.url).resolve('@magi/dm');
@@ -55,7 +59,7 @@ export async function desktopRoleExclusions(profileDir) {
   return desktopRoles.filter(row => bundles.includes(row.name)).map(row => ({ ...row }));
 }
 
-export function createChildHostPatch({ workspace, profile, presetPath, credentialsPath, desktopExclusions = [], dmEntry = resolveDmEntry(), memoryEntry = resolveMemoryEntry(), botModeEntry = resolveBotModeEntry(), subconsciousEntry = resolveSubconsciousEntry() }) {
+export function createChildHostPatch({ workspace, profile, presetPath, credentialsPath, desktopExclusions = [], dmEntry = resolveDmEntry(), memoryEntry = resolveMemoryEntry(), botModeEntry = resolveBotModeEntry(), subconsciousEntry = resolveSubconsciousEntry(), historyEntry = resolveHistoryEntry() }) {
   if (typeof dmEntry !== 'string' || !isAbsolute(dmEntry)) throw new Error('DM child entry must resolve to an installed absolute package entry.');
   if (typeof memoryEntry !== 'string' || !isAbsolute(memoryEntry)) throw new Error('Memory child entry must resolve to an installed absolute package entry.');
   // Existing profiles can select either an older EVA bundle (without a DM row)
@@ -64,6 +68,7 @@ export function createChildHostPatch({ workspace, profile, presetPath, credentia
   // Older bundles warn/skip the absent target while the explicit root still runs.
   if (typeof botModeEntry !== 'string' || !isAbsolute(botModeEntry)) throw new Error('Bot mode child entry must resolve to an installed absolute package entry.');
   if (typeof subconsciousEntry !== 'string' || !isAbsolute(subconsciousEntry)) throw new Error('Subconscious child entry must resolve to an installed absolute package entry.');
+  if (typeof historyEntry !== 'string' || !isAbsolute(historyEntry)) throw new Error('History search child entry must resolve to an installed absolute package entry.');
   const selectedEva = desktopExclusions.some(row => row.id === 'eva');
   const selectedShell = desktopExclusions.some(row => row.id === 'magi-shell');
   const selectedBotMode = desktopExclusions.some(row => row.id === 'magi-bot-mode');
@@ -83,6 +88,8 @@ export function createChildHostPatch({ workspace, profile, presetPath, credentia
   }, {
     // Availability only: the independent plugin defaults to paused.
     id: 'magi-subconscious-child', name: subconsciousEntry, config: {},
+  }, {
+    id: 'magi-history-search-child', name: historyEntry, config: {},
   }] }, {
     id: 'agent-preset-registry', name: '@deepseek-ai/dsh-agent-preset-registry',
     // Saved user defaults still take precedence in the native registry.
@@ -110,5 +117,6 @@ export function createChildHostPatch({ workspace, profile, presetPath, credentia
     // disable it before mounting our authoritative copied two-ID declaration.
     ...(selectedShell || selectedBotMode ? [{ id: 'magi-bot-mode-preset', disabled: true }] : []),
     ...(selectedEva && !selectedSubconscious ? [{ id: 'magi-subconscious', disabled: true }] : []),
-    ...desktopExclusions];
+    ...desktopExclusions,
+    ...(selectedEva ? [{ id: 'magi-history-search', disabled: true }] : [])];
 }

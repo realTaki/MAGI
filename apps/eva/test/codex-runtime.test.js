@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EvaRuntime } from '../runtime.js';
-import { readEvaPreset, resolveDmEntry, resolveMemoryEntry, resolveBotModeEntry, resolveSubconsciousEntry } from '../child-host.js';
+import { readEvaPreset, resolveDmEntry, resolveMemoryEntry, resolveBotModeEntry, resolveSubconsciousEntry, resolveHistoryEntry, createChildHostPatch } from '../child-host.js';
 
 const runtime = { executable: process.execPath, cli: fileURLToPath(new URL('./fake-cli.js', import.meta.url)),
   runtimeDir: '/unused', supportDir: '/unused' };
@@ -68,7 +68,7 @@ test('provider defaults version creates a distinct overlay and preserves the pre
   assert.equal(all.length, 2);
   assert.equal(all.find(({ name }) => name === previousName).text, previousText);
   const preset = await readEvaPreset();
-  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 7, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), subconsciousEntry: resolveSubconsciousEntry(), evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
+  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 8, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), subconsciousEntry: resolveSubconsciousEntry(), evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
   assert.notEqual(nextName, previousName);
   assert.ok(all.some(({ name }) => name === nextName), 'provider-default version is part of the immutable startup filename');
 });
@@ -86,11 +86,11 @@ test('DM protocol version selects a new immutable overlay without replacing the 
   assert.equal(all.length, 2);
   assert.equal(all.find(patch => patch.name === previousName).text, previousText);
   const preset = await readEvaPreset();
-  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 7, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), subconsciousEntry: resolveSubconsciousEntry(), evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
+  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 8, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), subconsciousEntry: resolveSubconsciousEntry(), evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
   assert.notEqual(nextName, previousName);
   const next = all.find(patch => patch.name === nextName);
   assert.ok(next, 'DM protocol version is part of the immutable startup filename');
-  assert.equal(next.data[0].insert.length, 6);
+  assert.equal(next.data[0].insert.length, 7);
   assert.deepEqual(next.data[0].insert[2], { id: 'magi-memory-child', name: resolveMemoryEntry(), config: {} });
   assert.deepEqual(next.data[0].insert[1], { id: 'magi-dm-child', name: resolveDmEntry(), config: {} });
   assert.equal(next.data[0].insert[0].id, 'eva-child');
@@ -118,12 +118,47 @@ for (const previousVersion of [1, 2, 3, 4, 5]) test(`independent child compositi
   const all = await patches(paths.state);
   assert.equal(all.length, 2);
   assert.equal(all.find(patch => patch.name === previousName).text, previousText, 'existing split-entry patch is immutable');
-  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 7, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), subconsciousEntry: resolveSubconsciousEntry(), evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
+  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 8, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), subconsciousEntry: resolveSubconsciousEntry(), evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
   assert.notEqual(nextName, previousName);
   const next = all.find(patch => patch.name === nextName);
   assert.ok(next, 'composite version chooses a new immutable startup filename');
   assert.equal(next.data[0].insert[0].name, fileURLToPath(new URL('../child.js', import.meta.url)));
   assert.equal(next.data[0].insert.some(row => row.id === 'eva-dm-child'), false);
+});
+
+test('managed v7 to v8 adds history without rewriting existing Bot identity or choices', async t => {
+  const { manager } = await fixture(t);
+  const paths = manager.paths('eva-000');
+  await mkdir(paths.state, { recursive: true });
+  await mkdir(paths.profileDir, { recursive: true });
+  const manifest = JSON.stringify({ dsh: { profile: { bundles: ['@deepseek-ai/dsh-web-app'] } } });
+  const userPatch = 'saved-main-id: keep-main\nsaved-default: standard\nsubconscious: paused\n';
+  const identity = 'existing-main-and-workspace-identity';
+  const credentials = 'synthetic-fixture-not-real-credentials';
+  await writeFile(join(paths.profileDir, 'package.json'), manifest);
+  await writeFile(join(paths.profileDir, 'user.patch.yml'), userPatch);
+  await writeFile(join(paths.state, 'identity-fixture'), identity);
+  await writeFile(join(paths.home, 'credentials-fixture'), credentials);
+  const preset = await readEvaPreset();
+  const config = { workspace: paths.home, profile: paths.profile, defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1,
+    dmProtocolVersion: 1, childHostVersion: 7, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(),
+    botModeEntry: resolveBotModeEntry(), subconsciousEntry: resolveSubconsciousEntry(), evaPresetHash: preset.digest, desktopExclusions: [] };
+  const prior = createChildHostPatch({ workspace: paths.home, profile: paths.profile, presetPath: '/unchanged/preset.yml' });
+  prior[0].insert = prior[0].insert.filter(row => row.id !== 'magi-history-search-child');
+  const oldName = `startup-${installationId}-${hash(JSON.stringify(config))}.patch.yml`;
+  const oldText = JSON.stringify(prior);
+  await writeFile(join(paths.state, oldName), oldText);
+  const node = await manager.start(undefined, 'eva-000');
+  const all = await patches(paths.state); assert.equal(all.length, 2);
+  assert.equal(all.find(row => row.name === oldName).text, oldText);
+  const next = all.find(row => row.name !== oldName);
+  assert.deepEqual(next.data[0].insert.at(-1), { id: 'magi-history-search-child', name: resolveHistoryEntry(), config: {} });
+  assert.equal(next.data[0].insert.some(row => row.name === '@local/eva'), false);
+  assert.equal(node.workspace, paths.home);
+  assert.equal(await readFile(join(paths.profileDir, 'package.json'), 'utf8'), manifest);
+  assert.equal(await readFile(join(paths.profileDir, 'user.patch.yml'), 'utf8'), userPatch);
+  assert.equal(await readFile(join(paths.state, 'identity-fixture'), 'utf8'), identity);
+  assert.equal(await readFile(join(paths.home, 'credentials-fixture'), 'utf8'), credentials);
 });
 
 test('changing installed DM entry selects a new immutable overlay without source-relative imports', async t => {

@@ -1,0 +1,11 @@
+{
+  "name": "@magi/history-search",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A Bot-local right-panel adapter for native DSH message-content search.",
+  "exports": { ".": "./index.js", "./client": "./client.js", "./icon": "./icon.svg" },
+  "files": ["index.js", "client.js", "icon.svg", "README.md"],
+  "scripts": { "test": "node --test test/*.test.js" },
+  "dsh": { "client": { "platform": "web", "inject": ["@deepseek-ai/dsh-api-session-controller", "@deepseek-ai/dsh-client-ui-sidebar-right"] } }
+}

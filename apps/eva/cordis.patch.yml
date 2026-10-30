@@ -8,6 +8,9 @@
     - id: magi-subconscious
       name: '@magi/subconscious'
       config: {}
+    - id: magi-history-search
+      name: '@magi/history-search'
+      config: {}
     - id: magi-memory
       name: '@magi/memory'
       config: {}

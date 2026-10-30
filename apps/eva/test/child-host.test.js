@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readEvaPresets } from '@magi/bot-mode/presets';
-import { DEFAULT_EVA_PRESET, CHILD_HOST_VERSION, resolveDmEntry, resolveMemoryEntry, resolveBotModeEntry, resolveSubconsciousEntry, readEvaPreset, desktopRoleExclusions, createChildHostPatch } from '../child-host.js';
+import { DEFAULT_EVA_PRESET, CHILD_HOST_VERSION, resolveDmEntry, resolveMemoryEntry, resolveBotModeEntry, resolveSubconsciousEntry, resolveHistoryEntry, readEvaPreset, desktopRoleExclusions, createChildHostPatch } from '../child-host.js';
 
 const modulePath = name => fileURLToPath(new URL(`../${name}.js`, import.meta.url));
 const options = Object.freeze({ workspace: '/synthetic/eva-home', profile: 'eva-000', presetPath: '/synthetic/profiles/.eva-assets/eva-000/preset.yml' });
@@ -27,7 +27,7 @@ async function fixture(t) {
 
 test('child Host has a separate EVA default and versioned composition', () => {
   assert.equal(DEFAULT_EVA_PRESET, 'bot-mode');
-  assert.equal(CHILD_HOST_VERSION, 7);
+  assert.equal(CHILD_HOST_VERSION, 8);
   assert.deepEqual(createChildHostPatch(options), [{ insert: [
     { id: 'eva-child', name: modulePath('child'), config: { workspace: options.workspace, profile: options.profile } },
     { id: 'magi-dm-child', name: resolveDmEntry(), config: {} },
@@ -35,6 +35,7 @@ test('child Host has a separate EVA default and versioned composition', () => {
     { id: 'magi-bot-mode-child', name: resolveBotModeEntry(), config: { role: 'eva-child', workspace: options.workspace, profile: options.profile } },
     { id: 'eva-agent-preset', name: 'cordis:include', config: { path: options.presetPath } },
     { id: 'magi-subconscious-child', name: resolveSubconsciousEntry(), config: {} },
+    { id: 'magi-history-search-child', name: resolveHistoryEntry(), config: {} },
   ] }, {
     id: 'agent-preset-registry', name: '@deepseek-ai/dsh-agent-preset-registry', config: { default: 'bot-mode' },
   }, {
@@ -52,7 +53,7 @@ test('sharing preserves child flags and appends credentials before desktop role 
   assert.deepEqual(overlay[0].insert[1], { id: 'magi-dm-child', name: resolveDmEntry(), config: {} });
   assert.deepEqual(overlay[0].insert[2], { id: 'magi-memory-child', name: resolveMemoryEntry(), config: {} });
   assert.deepEqual(overlay[0].insert[4], { id: 'eva-agent-preset', name: 'cordis:include', config: { path: options.presetPath } });
-  assert.equal(overlay[0].insert.length, 6, 'explicit installed root works even with older selected EVA bundles');
+  assert.equal(overlay[0].insert.length, 7, 'explicit installed root works even with older selected EVA bundles');
   assert.equal(overlay[0].insert.some(row => row.id === 'eva-dm-child'), false);
   assert.deepEqual(overlay[3], { id: 'credentials', name: '@deepseek-ai/dsh-credentials-local', disabled: false,
     config: { path: credentialsPath, watch: true } });
@@ -61,9 +62,9 @@ test('sharing preserves child flags and appends credentials before desktop role 
   assert.deepEqual(overlay[6], { id: 'magi-bot-mode', disabled: true });
   assert.deepEqual(overlay[7], { id: 'magi-bot-mode-preset', disabled: true });
   assert.deepEqual(overlay[8], { id: 'magi-subconscious', disabled: true });
-  assert.deepEqual(overlay.slice(9), desktopRows);
+  assert.deepEqual(overlay.slice(9), [...desktopRows, { id: 'magi-history-search', disabled: true }]);
   assert.deepEqual(exclusions, desktopRows, 'caller-owned role selections are not mutated');
-  assert.deepEqual(createChildHostPatch({ ...options, desktopExclusions: exclusions }).slice(8), desktopRows);
+  assert.deepEqual(createChildHostPatch({ ...options, desktopExclusions: exclusions }).slice(8), [...desktopRows, { id: 'magi-history-search', disabled: true }]);
 });
 
 test('child Host inserts no desktop management or permission/default-model overrides', () => {
@@ -130,6 +131,21 @@ test('subconscious is one paused independent child root across selected bundles'
     assert.equal(await readFile(manifest, 'utf8'), text, 'bundle selection stays user-owned');
   }
   assert.throws(() => createChildHostPatch({ ...options, subconsciousEntry: './relative.js' }), /absolute package entry/);
+});
+
+test('history search has one installed child root and disables the bundled parent row only when selected', async t => {
+  const { profile, manifest } = await fixture(t);
+  for (const bundles of [[], ['@local/eva']]) {
+    const text = JSON.stringify({ dsh: { profile: { bundles } } });
+    await writeFile(manifest, text);
+    const patch = createChildHostPatch({ ...options, desktopExclusions: await desktopRoleExclusions(profile) });
+    assert.deepEqual(patch[0].insert.filter(row => row.id === 'magi-history-search-child'), [
+      { id: 'magi-history-search-child', name: resolveHistoryEntry(), config: {} },
+    ]);
+    assert.equal(patch.filter(row => row.id === 'magi-history-search' && row.disabled).length, bundles.length);
+    assert.equal(await readFile(manifest, 'utf8'), text);
+  }
+  assert.throws(() => createChildHostPatch({ ...options, historyEntry: './relative.js' }), /absolute package entry/);
 });
 
 test('role exclusions return independent override objects', async t => {
