@@ -74,10 +74,14 @@ function harness({ embedded = false, mode = 'parent', nodes = [running], bot = m
     }
     return { ...element, props: { ...element.props, children: element.props.children.flat(Infinity).map(render) } };
   }
+  const renderSlot = (name, props) => {
+    assert.equal(name, 'sidebar.brand.mark');
+    return React.createElement('native-brand-mark', props);
+  };
   const slot = (name, props = {}) => {
     const entry = active.get(name); if (!entry) return null;
     currentHooks = hooks.get(entry.component) ?? []; hooks.set(entry.component, currentHooks); cursor = 0;
-    return render(entry.component(props));
+    return render(entry.component({ renderSlot, ...props }));
   };
   return { active, calls, timers, injections, registrations, navigation, panels,
     get snapshot() { return snapshot; }, setLocale(value) { locale = value; }, setFailMain(value) { failMain = value; },
@@ -110,7 +114,11 @@ test('New Bot uses an icon and full-width outlined surface; compact chrome keeps
     assert.equal(button.props['data-compact'], 'false');
     assert.equal(elements(button).filter(element => element.type === 'svg').length, 1);
     assert.ok(text(button).includes('New Bot'));
-    assert.equal(elements(button).find(element => element.type === 'svg').props['aria-hidden'], true);
+    const icon = elements(button).find(element => element.type === 'svg');
+    assert.equal(icon.props['aria-hidden'], true);
+    assert.equal(icon.props.width, 16); assert.equal(icon.props.height, 16);
+    assert.equal(elements(icon).find(element => element.type === 'use').props.href, '#dsw-icon-new-chat-outline-regular');
+    assert.equal(elements(icon).some(element => element.type === 'path'), false, 'no handcrafted plus geometry');
     for (const tree of [app.sidebar({ collapsed: true }), app.leading()]) {
       const compact = elements(tree).find(element => element.props.className === 'magi-wb-new');
       assert.equal(compact.props['data-compact'], 'true');
@@ -127,21 +135,29 @@ test('New Bot uses an icon and full-width outlined surface; compact chrome keeps
   } finally { app.dispose(); }
 });
 
-test('original MAGI mark appears only in its workbench header and never replaces native identity artwork', async () => {
+test('MAGI header reuses the native brand mark outlet without replacing its occupant', async () => {
   const app = harness();
   const marks = tree => elements(tree).filter(element => element.props.className === 'magi-wb-mark');
   try {
     await tick();
     assert.equal(marks(app.brand()).length, 0);
+    const nativeHeader = elements(app.brand()).find(element => element.props.className === 'magi-wb-brand');
+    const nativeSwitch = elements(nativeHeader).find(element => element.type === 'button');
     await open(app);
     const header = elements(app.sidebar()).find(element => element.props.className === 'magi-wb-brand');
+    const magiSwitch = elements(header).find(element => element.type === 'button');
+    assert.equal(header.props.className, nativeHeader.props.className, 'same bounded identity grid in both seats');
+    assert.equal(magiSwitch.props.className, nativeSwitch.props.className, 'same 32px hit-target rule');
+    assert.equal(header.props.children.at(-1), magiSwitch, 'switch stays in final grid cell');
+    assert.equal(nativeHeader.props.children.at(-1), nativeSwitch);
+    assert.ok(text(nativeHeader).includes('deepseek')); assert.ok(text(header).includes('MAGI'));
     assert.equal(header.props['data-mode'], 'magi');
-    const [mark] = marks(header);
-    assert.equal(marks(header).length, 1);
-    assert.equal(mark.type, 'svg');
+    const [mark] = marks(app.sidebar());
+    assert.equal(marks(app.sidebar()).length, 1);
+    assert.equal(mark.type, 'span');
     assert.equal(mark.props['aria-hidden'], true);
-    assert.equal(mark.props.width, 28);
-    assert.ok(elements(mark).some(element => element.props.d === 'M15 39V23L23 33L31 23V39'));
+    assert.equal(elements(mark).find(element => element.type === 'native-brand-mark').props.size, 24);
+    assert.equal(app.registrations.some(entry => entry.name === 'sidebar.brand.mark'), false);
     assert.ok(elements(header).some(element => element.props['aria-label'] === 'Switch back to DSH'));
     app.switch().props.onClick();
     assert.equal(marks(app.brand()).length, 0);

@@ -16,7 +16,8 @@ test('MAGI replaces only scoped sidebar actions and hidden-sidebar chrome, not c
   assert.match(source, /register\(\{ name: 'shell\.leading', priority: -10 \}, Leading\)/);
   assert.doesNotMatch(source, /name: '(?:root|main|shell\.overlay)'/);
   assert.doesNotMatch(source, /children:\s*\{\s*'sidebar\./, 'never redeclare native sidebar child slots');
-  assert.doesNotMatch(css, /grid-template-columns|position:fixed|100vh|100vw/);
+  assert.doesNotMatch(css, /position:fixed|100vh|100vw/);
+  assert.doesNotMatch(rule('.magi-wb-sidebar'), /grid-template-columns/, 'no replacement conversation grid; brand-local grid is allowed');
   assert.doesNotMatch(source, /magi-wb-(?:layout|windowbar|content|toolbar|context|current|status)\b/);
   assert.match(rule('.magi-wb-browser'), /flex:1; min-width:0; min-height:0/);
 });
@@ -35,19 +36,23 @@ test('Bot browser keeps two-line contacts, rounded color blocks, search and comp
 });
 
 test('branding keeps the native seat and scopes explicit MAGI proportions to its own header', () => {
-  assert.match(source, /view\.open && h\(MagiMark\)/);
-  assert.match(rule('.magi-wb-mark'), /display:block; flex-shrink:0/);
-  assert.match(rule('.magi-wb-brand[data-mode=magi] .magi-wb-wordmark'), /font-size:20px; line-height:28px/);
-  assert.match(rule('.magi-wb-brand[data-mode=magi] .magi-wb-badge'), /font-size:9px; line-height:16px/);
-  assert.match(rule('.magi-wb-brand[data-mode=magi] .magi-wb-badge'), /color:var\(--dsw-alias-label-secondary\)/);
+  assert.match(source, /renderSlot\('sidebar\.brand\.mark', \{ size: 24 \}\)/);
+  assert.doesNotMatch(source, /MagiMark/);
+  assert.match(rule('.magi-wb-mark'), /display:block; flex-shrink:0; width:24px; height:24px/);
+  assert.match(rule('.magi-wb-wordmark'), /font-size:20px; line-height:28px/);
+  assert.match(rule('.magi-wb-brand .magi-wb-badge'), /font-size:9px; line-height:16px/);
+  assert.match(rule('.magi-wb-brand .magi-wb-badge'), /color:var\(--dsw-alias-label-secondary\)/);
   assert.match(rule('.magi-wb-new'), /min-height:36px/);
   assert.match(rule('.magi-wb-new'), /font-size:13px/);
   assert.doesNotMatch(source, /require\('@deepseek-ai\/dsh-client/);
   assert.match(source, /name: 'sidebar\.brand\.name'/);
-  assert.match(rule('.magi-wb-brand'), /display:flex; align-items:center/);
+  assert.match(rule('.magi-wb-brand'), /display:grid; grid-template-columns:minmax\(0,1fr\) auto 32px; align-items:center/);
+  assert.match(rule('.magi-wb-brand'), /width:184px; max-width:100%/);
+  assert.match(rule('.magi-wb-sidebar-top'), /gap:8px; padding:0 16px/);
+  assert.match(rule('html[data-platform=darwin] .magi-wb-sidebar-top'), /height:36px/);
   assert.match(rule('.magi-wb-wordmark'), /white-space:nowrap/);
   assert.match(rule('.magi-wb-badge'), /border:1px solid var\(--dsw-alias-border-l2\)/);
-  assert.match(rule('.magi-wb-brand .magi-wb-switch'), /margin-left:auto/);
+  assert.match(rule('.magi-wb-brand .magi-wb-switch'), /width:32px; height:32px; margin:0/);
   assert.match(source, /view\.open \? 'MAGI' : 'deepseek'/);
   assert.match(source, /view\.open \? 'BOT' : 'HARNESS'/);
   assert.match(source, /name: 'sidebar\.footer\.action'/);
