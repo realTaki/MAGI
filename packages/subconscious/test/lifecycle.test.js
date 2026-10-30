@@ -131,6 +131,80 @@ test('recurring is explicit, caps UTC daily deliveries and requests, and resumes
   await f.controller.dispose(); assert.equal(f.timers.size, 0);
 });
 
+test('same-run lifecycle remount preserves partial budgets and waits before continuing same history', async () => {
+  const f = fixture({ enabled: true, recurring: true, runId: 'human-recurring' });
+  await f.controller.activate(); await f.controller.drain();
+  const before = structuredClone(f.stored);
+  assert.equal(f.count('model'), 1); assert.ok(before.evidence);
+  await f.controller.dispose();
+  assert.equal(f.stored.reason, 'disposed'); assert.equal(f.timers.size, 0);
+  f.make(); await f.controller.activate(); await f.controller.drain();
+  assert.equal(f.count('model'), 1, 'remount performs no model wake');
+  assert.deepEqual(f.stored, { ...before, reason: 'active', paused: false });
+  await f.fire(f.config.cooldownMs);
+  assert.equal(f.count('model'), 2); assert.equal(f.count('create'), 1);
+  assert.equal(f.count('resume'), 1); assert.equal(f.stored.sessionId, before.sessionId);
+  assert.equal(f.stored.turns, 2); assert.equal(f.stored.steps, 2);
+  assert.equal(f.stored.dailyTurns, 2); assert.equal(f.stored.dailySteps, 2);
+  await f.controller.dispose();
+});
+
+test('config disable then same-run enable preserves evidence and consumed budgets', async () => {
+  const f = fixture({ enabled: true, recurring: true, runId: 'human-recurring' });
+  await f.controller.activate(); await f.controller.drain();
+  const before = structuredClone(f.stored);
+  await f.controller.dispose();
+  f.config.enabled = false; f.make(); await f.controller.activate();
+  assert.equal(f.stored.reason, 'config-disabled'); assert.equal(f.count('model'), 1);
+  await f.controller.dispose();
+  assert.equal(f.stored.reason, 'config-disabled');
+  f.config.enabled = true; f.make(); await f.controller.activate(); await f.controller.drain();
+  assert.deepEqual(f.stored, { ...before, paused: false, reason: 'active' });
+  assert.equal(f.count('model'), 1); assert.equal(f.count('observe'), 1);
+  await f.controller.dispose();
+});
+
+test('lifecycle resume cannot replenish daily caps or replay committed evidence', async () => {
+  const f = fixture({ enabled: true, recurring: true, runId: 'human-recurring',
+    dailyTurnLimit: 1, dailyStepLimit: 1 });
+  await f.controller.activate(); await f.controller.drain();
+  const before = structuredClone(f.stored);
+  await f.controller.dispose(); f.make();
+  await f.controller.activate(); await f.controller.drain();
+  assert.deepEqual(f.stored, { ...before, paused: false, reason: 'waiting' });
+  await f.fire(f.config.heartbeatMinutes * 60_000);
+  assert.equal(f.count('model'), 1); assert.equal(f.count('observe'), 1);
+  assert.equal(f.stored.cursor, before.cursor); assert.equal(f.stored.evidence, null);
+  assert.equal(f.stored.dailyTurns, 1); assert.equal(f.stored.dailySteps, 1);
+  await f.controller.dispose();
+});
+
+test('unload and config toggles never convert manual or terminal pauses into lifecycle resumption', async () => {
+  for (const reason of ['paused', 'complete', 'error: deliberate failure', 'budget-exhausted',
+    'workspace-stop', 'batch-timeout', 'run-timeout']) {
+    const f = fixture({ enabled: true, recurring: true, runId: 'human-recurring' });
+    await f.controller.activate(); await f.controller.drain();
+    await f.controller.requestPause(reason);
+    const before = structuredClone(f.stored);
+    await f.controller.dispose(); assert.equal(f.stored.reason, reason);
+    f.config.enabled = false; f.make(); await f.controller.activate(); await f.controller.dispose();
+    f.config.enabled = true; f.make(); await f.controller.activate(); await f.controller.drain();
+    assert.deepEqual(f.stored, before); assert.equal(f.count('model'), 1);
+    assert.equal(f.timers.size, 0); await f.controller.dispose();
+  }
+});
+
+test('expired interrupted batch remains paused without granting a new time or turn budget', async () => {
+  const f = fixture({ enabled: true, recurring: true, runId: 'human-recurring' });
+  await f.controller.activate(); await f.controller.drain();
+  const before = structuredClone(f.stored);
+  await f.controller.dispose(); f.setTime(before.startedAt + f.config.maxRunMs + 1); f.make();
+  await f.controller.activate(); await f.controller.drain();
+  assert.deepEqual(f.stored, { ...before, paused: true, reason: 'budget-exhausted' });
+  assert.equal(f.count('model'), 1); assert.equal(f.timers.size, 0);
+  await f.controller.dispose();
+});
+
 test('missing committed history is an error, never silently replaced', async () => {
   const f = fixture({ enabled: true, runId: 'new-human' }, { ...initialState,
     sessionId: 'known-id', mainSessionId: 'MAIN', workspace: '/bot' });

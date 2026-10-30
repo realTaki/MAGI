@@ -163,7 +163,10 @@ export function createController(ctx, config, domain, installScope, now = Date.n
     task.catch(() => {});
   }
   async function activate() {
-    if (!config.enabled) return;
+    if (!config.enabled) {
+      if (!state.paused || state.reason === 'disposed') await requestPause('config-disabled');
+      return;
+    }
     const main = ctx.magiMainSession.current();
     if (!main) throw new Error('Fixed MAIN is not initialized; subconscious does not initialize it.');
     if (state.mainSessionId && (state.mainSessionId !== main.sessionId || state.workspace !== main.workspace)) {
@@ -172,12 +175,25 @@ export function createController(ctx, config, domain, installScope, now = Date.n
     const newRun = state.runId !== config.runId;
     if (newRun) await update({ mainSessionId: main.sessionId, workspace: main.workspace,
       runId: config.runId, paused: false, reason: 'active', turns: 0, steps: 0, startedAt: now() });
+    const lifecycleResume = !newRun && state.paused &&
+      ['disposed', 'config-disabled'].includes(state.reason);
+    if (lifecycleResume) {
+      // Recomposition is not a new grant: retain every budget, cursor, excerpt,
+      // history identity and batch start. Terminal/human pauses never enter here.
+      if ((!config.recurring || state.evidence) && exhausted()) {
+        await requestPause('budget-exhausted'); return;
+      }
+      await update({ paused: false, reason: state.evidence ? 'active' : 'waiting' });
+    }
     if (state.paused || (!config.recurring && exhausted())) return;
     stopped = false;
-    if (!config.recurring && config.maxRunMs > 0) deadlineTimer = ctx.timer.timeout(() => {
+    if ((!config.recurring || (lifecycleResume && state.evidence)) && config.maxRunMs > 0) deadlineTimer = ctx.timer.timeout(() => {
       void requestPause('run-timeout').catch(() => {});
     }, Math.max(0, config.maxRunMs - (now() - state.startedAt)));
-    launch();
+    // No paid wake on a lifecycle remount. A fresh full delay is conservative
+    // because timer deadlines themselves are not stored across Host restarts.
+    if (lifecycleResume) schedule(state.evidence ? config.cooldownMs : config.heartbeatMinutes * 60_000);
+    else launch();
   }
   async function preStep({ agent }, next) {
     if (!matches(agent)) return next();
@@ -200,8 +216,9 @@ export function createController(ctx, config, domain, installScope, now = Date.n
   }
   async function dispose() {
     disposed = true;
-    // Unloading pauses durably. Remounting the same run cannot silently restart.
-    await requestPause('disposed');
+    // Cancellation is always owned here, but unloading must not erase a human
+    // stop, terminal budget, completion or error reason into a resumable pause.
+    await requestPause(state.paused ? state.reason : 'disposed');
     await task;
     const owned = handle; handle = undefined;
     await owned?.dispose();

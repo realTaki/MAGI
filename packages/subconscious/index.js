@@ -128,7 +128,7 @@ export async function apply(ctx, input = {}) {
       if (method !== 'status') throw new Error('Unknown subconscious inspect method.');
       const state = controller.status();
       const reasons = new Set(['not-enabled', 'active', 'waiting', 'complete', 'paused',
-        'disposed', 'workspace-stop', 'run-timeout', 'batch-timeout', 'budget-exhausted']);
+        'disposed', 'config-disabled', 'workspace-stop', 'run-timeout', 'batch-timeout', 'budget-exhausted']);
       return {
         nativeConfigAvailable,
         enabled: config.enabled, recurring: config.recurring, runId: config.runId,
