@@ -117,15 +117,15 @@ window.__ModuleLoader__.load({
       .magi-wb-new:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:2px; }
       .magi-wb-leading { display:flex; align-items:center; gap:4px; }
       .magi-wb-chrome .magi-wb-switch, .magi-wb-leading .magi-wb-switch { width:28px; height:28px; padding:6px; border-radius:var(--dsw-radius-sm,6px); }
-      /* Shared identity box anchors the switch, independent of wordmark/badge length. */
-      .magi-wb-brand { display:grid; grid-template-columns:minmax(0,1fr) auto 32px; align-items:center; gap:8px; min-width:0; width:184px; max-width:100%; color:var(--dsw-alias-label-primary); }
-      .magi-wb-wordmark { font-size:20px; line-height:28px; font-weight:750; letter-spacing:-.035em; white-space:nowrap; overflow:hidden; }
+      /* Let the identity use its natural width; never clip it to anchor the switch. */
+      .magi-wb-brand { display:flex; align-items:center; gap:8px; flex:1; color:var(--dsw-alias-label-primary); }
+      .magi-wb-wordmark { flex-shrink:0; font-size:20px; line-height:28px; font-weight:750; letter-spacing:-.035em; white-space:nowrap; }
       .magi-wb-mark { display:block; flex-shrink:0; width:24px; height:24px; }
       .magi-wb-brand .magi-wb-badge { box-sizing:border-box; flex-shrink:0; padding:0 5px; font-size:9px; line-height:16px; font-weight:600; letter-spacing:.08em; color:var(--dsw-alias-label-secondary); }
       .magi-wb-badge { padding:2px 5px; border:1px solid var(--dsw-alias-border-l2); border-radius:4px; font-size:10px; font-weight:650; letter-spacing:.06em; line-height:1.4; }
       .magi-wb-switch { box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; padding:6px; border:0; border-radius:8px; background:transparent; color:var(--dsw-alias-label-secondary); cursor:pointer; flex-shrink:0; -webkit-app-region:no-drag; }
       .magi-wb-switch svg { display:block; flex-shrink:0; }
-      .magi-wb-brand .magi-wb-switch { width:32px; height:32px; margin:0; }
+      .magi-wb-brand .magi-wb-switch { width:32px; height:32px; margin-left:auto; }
       .magi-wb-switch:hover, .magi-wb-node:hover { background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-primary); }
       .magi-wb-switch:focus-visible, .magi-wb-node:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:2px; }
       .magi-wb-switch:disabled { opacity:.45; cursor:default; }

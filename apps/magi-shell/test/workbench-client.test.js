@@ -146,9 +146,9 @@ test('MAGI header reuses the native brand mark outlet without replacing its occu
     await open(app);
     const header = elements(app.sidebar()).find(element => element.props.className === 'magi-wb-brand');
     const magiSwitch = elements(header).find(element => element.type === 'button');
-    assert.equal(header.props.className, nativeHeader.props.className, 'same bounded identity grid in both seats');
+    assert.equal(header.props.className, nativeHeader.props.className, 'same natural-width flex layout in both seats');
     assert.equal(magiSwitch.props.className, nativeSwitch.props.className, 'same 32px hit-target rule');
-    assert.equal(header.props.children.at(-1), magiSwitch, 'switch stays in final grid cell');
+    assert.equal(header.props.children.at(-1), magiSwitch, 'switch follows the complete identity');
     assert.equal(nativeHeader.props.children.at(-1), nativeSwitch);
     assert.ok(text(nativeHeader).includes('deepseek')); assert.ok(text(header).includes('MAGI'));
     assert.equal(header.props['data-mode'], 'magi');

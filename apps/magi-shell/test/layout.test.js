@@ -46,13 +46,15 @@ test('branding keeps the native seat and scopes explicit MAGI proportions to its
   assert.match(rule('.magi-wb-new'), /font-size:13px/);
   assert.doesNotMatch(source, /require\('@deepseek-ai\/dsh-client/);
   assert.match(source, /name: 'sidebar\.brand\.name'/);
-  assert.match(rule('.magi-wb-brand'), /display:grid; grid-template-columns:minmax\(0,1fr\) auto 32px; align-items:center/);
-  assert.match(rule('.magi-wb-brand'), /width:184px; max-width:100%/);
+  assert.match(rule('.magi-wb-brand'), /display:flex; align-items:center/);
+  assert.doesNotMatch(rule('.magi-wb-brand'), /grid-template-columns|width:184px/);
+  assert.doesNotMatch(rule('.magi-wb-wordmark'), /overflow:hidden/);
+  assert.match(rule('.magi-wb-wordmark'), /flex-shrink:0/);
   assert.match(rule('.magi-wb-sidebar-top'), /gap:8px; padding:0 16px/);
   assert.match(rule('html[data-platform=darwin] .magi-wb-sidebar-top'), /height:36px/);
   assert.match(rule('.magi-wb-wordmark'), /white-space:nowrap/);
   assert.match(rule('.magi-wb-badge'), /border:1px solid var\(--dsw-alias-border-l2\)/);
-  assert.match(rule('.magi-wb-brand .magi-wb-switch'), /width:32px; height:32px; margin:0/);
+  assert.match(rule('.magi-wb-brand .magi-wb-switch'), /width:32px; height:32px; margin-left:auto/);
   assert.match(source, /view\.open \? 'MAGI' : 'deepseek'/);
   assert.match(source, /view\.open \? 'BOT' : 'HARNESS'/);
   assert.match(source, /name: 'sidebar\.footer\.action'/);
