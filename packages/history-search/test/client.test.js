@@ -17,7 +17,7 @@ function harness(search = empty, list = empty) {
   const remote = { session: {
     search(...args) { calls.push(args); return search(...args); }, list,
   } };
-  return { states, calls, reader: load().createReader(remote, state => states.push(state)) };
+  return { states, calls, reader: load().createReader(() => remote, state => states.push(state)) };
 }
 
 test('trimmed literal query uses only current injected native Remote and preserves body snippet', async () => {

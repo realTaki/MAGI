@@ -28,6 +28,9 @@
   },
   "devDependencies": {
     "node": "24.21.0",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "react-test-renderer": "18.2.0",
     "semver": "7.8.5"
   }
 }

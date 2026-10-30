@@ -23,7 +23,7 @@ window.__ModuleLoader__.load({
 
     // A reader is owned by one mounted tab. New searches abort and invalidate old
     // replies even when the transport ignores cancellation. No cross-tab cache.
-    function createReader(remote, publish) {
+    function createReader(getRemote, publish) {
       let pending, disposed = false;
       return {
         async search(raw) {
@@ -33,6 +33,9 @@ window.__ModuleLoader__.load({
           if (!query) { publish({ status: 'idle', items: [] }); return; }
           publish({ status: 'loading', items: [] });
           try {
+            // Resolve the transport only for a request. Acquisition failures must
+            // become search errors, not uncaught tab-mount effect errors.
+            const remote = getRemote();
             const [response, metadata] = await Promise.all([
               remote.session.search({ query }, request.signal),
               remote.session.list({}, request.signal).catch(() => ({ ok: false })),
@@ -66,7 +69,7 @@ window.__ModuleLoader__.load({
           const [state, setState] = React.useState({ status: 'idle', items: [] });
           const reader = React.useRef();
           React.useEffect(() => {
-            const current = reader.current = createReader(ctx.remote, setState);
+            const current = reader.current = createReader(() => ctx.remote, setState);
             return () => current.dispose();
           }, []);
           return h('section', { style: { padding: 16, overflow: 'auto', height: '100%' }, 'aria-label': t('title') },

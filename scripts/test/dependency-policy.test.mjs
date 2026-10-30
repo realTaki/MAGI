@@ -62,7 +62,7 @@ test('retired Electron advisory surface is not restored by dependency updates', 
 
 test('only current product workspaces and owned tooling are installable', () => {
   const manifest = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
-  const workspaces = ['apps/eva', 'apps/magi-shell', 'packages/dm', 'packages/memory', 'packages/bot-mode', 'packages/subconscious'];
+  const workspaces = ['apps/eva', 'apps/magi-shell', 'packages/dm', 'packages/memory', 'packages/bot-mode', 'packages/subconscious', 'packages/history-search'];
   assert.deepEqual(manifest.workspaces, workspaces);
   assert.deepEqual(lock.packages[''].workspaces, workspaces);
   assert.equal(manifest.devDependencies.node, '24.21.0');
