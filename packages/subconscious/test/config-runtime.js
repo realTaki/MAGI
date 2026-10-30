@@ -12,4 +12,4 @@ catch (error) {
     return nextResolve(specifier, context);
   } });
 }
-export const { Config, apply, inject, name } = await import('../index.js');
+export const { Config, apply, inject, name, nativeConfigAvailable } = await import('../index.js');

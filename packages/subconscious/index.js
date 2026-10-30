@@ -1,5 +1,15 @@
 import { z } from 'zod';
-import Schema from '@deepseek-ai/schemastery';
+// This optional peer is available in properly installed native profiles, but
+// may be absent from an external source-linked subtree. Keep that layout safe
+// with the original real Zod contract, never a manufactured native graph.
+let Schema;
+try {
+  Schema = (await import('@deepseek-ai/schemastery')).default;
+  if (!Schema) throw new TypeError('Schemastery must export its native Schema API.');
+} catch (error) {
+  if (!['ERR_MODULE_NOT_FOUND', 'MODULE_NOT_FOUND'].includes(error.code) ||
+      !/^Cannot find (?:package|module) ['"]@deepseek-ai\/schemastery['"](?: imported from|\s|$)/.test(error.message)) throw error;
+}
 import { createController, initialState } from './controller.js';
 import { MEMORY_TOOLS, preset } from './policy.js';
 
@@ -25,7 +35,8 @@ const RuntimeConfig = z.object({
 
 // Native forms/Inspect consume Schemastery's graph, not Zod or JSON Schema.
 // Keep the strict validator at the exported boundary as well as direct apply.
-export const Config = Schema.transform(Schema.object({
+export const nativeConfigAvailable = Schema !== undefined;
+export const Config = nativeConfigAvailable ? Schema.transform(Schema.object({
   enabled: Schema.boolean().default(false),
   runId: Schema.string().max(100).default(''),
   recurring: Schema.boolean().default(false),
@@ -39,7 +50,7 @@ export const Config = Schema.transform(Schema.object({
   maxRunMs: Schema.number().step(1).min(0).max(86_400_000).default(3_600_000),
   provider: Schema.string().min(1),
   model: Schema.string().min(1),
-}), value => RuntimeConfig.parse(value));
+}), value => RuntimeConfig.parse(value)) : RuntimeConfig;
 
 const State = z.object({
   mainSessionId: z.string().nullable(), workspace: z.string().nullable(),
@@ -119,6 +130,7 @@ export async function apply(ctx, input = {}) {
       const reasons = new Set(['not-enabled', 'active', 'waiting', 'complete', 'paused',
         'disposed', 'workspace-stop', 'run-timeout', 'batch-timeout', 'budget-exhausted']);
       return {
+        nativeConfigAvailable,
         enabled: config.enabled, recurring: config.recurring, runId: config.runId,
         paused: state.paused, reason: reasons.has(state.reason) ? state.reason : 'error',
         running: state.running, waiting: state.waiting, sessionId: state.sessionId,

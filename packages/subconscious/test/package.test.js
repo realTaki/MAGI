@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { Config, apply, inject, name, schemaRuntime } from './config-runtime.js';
+import { Config, apply, inject, name, schemaRuntime, nativeConfigAvailable } from './config-runtime.js';
 import { preset, MEMORY_TOOLS } from '../policy.js';
 
 const read = path => readFile(new URL(path, import.meta.url), 'utf8');
@@ -31,6 +31,7 @@ test('portable native bundle resources and conservative config contract', async 
 
 test('native public Config graph and Standard Schema contract', t => {
   t.diagnostic(`Schema runtime: ${schemaRuntime}`);
+  assert.equal(nativeConfigAvailable, true);
   // Exact native isNativeConfigSchema predicate from dsh-app-boot:2440–2451.
   const native = schema => schema?.[Symbol.for('schemastery')] === true &&
     typeof schema.type === 'string' && schema.meta !== null && typeof schema.meta === 'object';
