@@ -74,14 +74,13 @@ function harness({ embedded = false, mode = 'parent', nodes = [running], bot = m
     }
     return { ...element, props: { ...element.props, children: element.props.children.flat(Infinity).map(render) } };
   }
-  const renderSlot = (name, props) => {
-    assert.equal(name, 'sidebar.brand.mark');
-    return React.createElement('native-brand-mark', props);
-  };
   const slot = (name, props = {}) => {
     const entry = active.get(name); if (!entry) return null;
+    // Native renderer supplies renderSlot only to entries declaring their own children.
+    // These replacements declare none: do not fabricate access to native-owned outlets.
+    assert.equal(entry.options.children, undefined);
     currentHooks = hooks.get(entry.component) ?? []; hooks.set(entry.component, currentHooks); cursor = 0;
-    return render(entry.component({ renderSlot, ...props }));
+    return render(entry.component(props));
   };
   return { active, calls, timers, injections, registrations, navigation, panels,
     get snapshot() { return snapshot; }, setLocale(value) { locale = value; }, setFailMain(value) { failMain = value; },
@@ -135,7 +134,7 @@ test('New Bot uses an icon and full-width outlined surface; compact chrome keeps
   } finally { app.dispose(); }
 });
 
-test('MAGI header reuses the native brand mark outlet without replacing its occupant', async () => {
+test('MAGI sidebar renders its roster and official artwork without an undeclared renderSlot callback', async () => {
   const app = harness();
   const marks = tree => elements(tree).filter(element => element.props.className === 'magi-wb-mark');
   try {
@@ -156,7 +155,13 @@ test('MAGI header reuses the native brand mark outlet without replacing its occu
     assert.equal(marks(app.sidebar()).length, 1);
     assert.equal(mark.type, 'span');
     assert.equal(mark.props['aria-hidden'], true);
-    assert.equal(elements(mark).find(element => element.type === 'native-brand-mark').props.size, 24);
+    const logo = elements(mark).find(element => element.type === 'svg');
+    assert.equal(logo.props.width, 24);
+    assert.equal(logo.props.viewBox, '0 0 23.16 17.04');
+    assert.equal(elements(logo).find(element => element.type === 'path').props.fill, 'currentColor');
+    assert.ok(text(newBotButton(app)).includes('New Bot'));
+    assert.equal(rows(app.sidebar()).length, 2, 'fixed Main Bot and existing EVA remain available');
+    assert.ok(elements(app.sidebar()).some(element => element.props.className === 'magi-wb-browser'));
     assert.equal(app.registrations.some(entry => entry.name === 'sidebar.brand.mark'), false);
     assert.ok(elements(header).some(element => element.props['aria-label'] === 'Switch back to DSH'));
     app.switch().props.onClick();

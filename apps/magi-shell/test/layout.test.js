@@ -36,8 +36,10 @@ test('Bot browser keeps two-line contacts, rounded color blocks, search and comp
 });
 
 test('branding keeps the native seat and scopes explicit MAGI proportions to its own header', () => {
-  assert.match(source, /renderSlot\('sidebar\.brand\.mark', \{ size: 24 \}\)/);
-  assert.doesNotMatch(source, /MagiMark/);
+  assert.doesNotMatch(source, /renderSlot\(/, 'replacement has no child-slot declaration or authorization');
+  assert.match(source, /function OfficialMark\(/);
+  assert.match(source, /MIT License — Copyright \(c\) 2026 DeepSeek/);
+  assert.match(source, /viewBox: '0 0 23\.16 17\.04'/);
   assert.match(rule('.magi-wb-mark'), /display:block; flex-shrink:0; width:24px; height:24px/);
   assert.match(rule('.magi-wb-wordmark'), /font-size:20px; line-height:28px/);
   assert.match(rule('.magi-wb-brand .magi-wb-badge'), /font-size:9px; line-height:16px/);
@@ -46,7 +48,7 @@ test('branding keeps the native seat and scopes explicit MAGI proportions to its
   assert.match(rule('.magi-wb-new'), /font-size:13px/);
   assert.doesNotMatch(source, /require\('@deepseek-ai\/dsh-client/);
   assert.match(source, /name: 'sidebar\.brand\.name'/);
-  assert.match(rule('.magi-wb-brand'), /display:flex; align-items:center/);
+  assert.match(rule('.magi-wb-brand'), /display:flex; align-items:center; gap:8px; flex:1/);
   assert.doesNotMatch(rule('.magi-wb-brand'), /grid-template-columns|width:184px/);
   assert.doesNotMatch(rule('.magi-wb-wordmark'), /overflow:hidden/);
   assert.match(rule('.magi-wb-wordmark'), /flex-shrink:0/);
