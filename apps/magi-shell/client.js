@@ -143,7 +143,7 @@ window.__ModuleLoader__.load({
       /* Let the identity use its natural width; never clip it to anchor the switch. */
       .magi-wb-brand { display:flex; align-items:center; gap:8px; flex:1; color:var(--dsw-alias-label-primary); }
       .magi-wb-wordmark { flex-shrink:0; font-size:20px; line-height:28px; font-weight:750; letter-spacing:-.035em; white-space:nowrap; }
-      .magi-wb-mark { display:block; flex-shrink:0; width:24px; height:24px; }
+      .magi-wb-mark { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; width:24px; height:24px; }
       .magi-wb-brand .magi-wb-badge { box-sizing:border-box; flex-shrink:0; padding:0 5px; font-size:9px; line-height:16px; font-weight:600; letter-spacing:.08em; color:var(--dsw-alias-label-secondary); }
       .magi-wb-badge { padding:2px 5px; border:1px solid var(--dsw-alias-border-l2); border-radius:4px; font-size:10px; font-weight:650; letter-spacing:.06em; line-height:1.4; }
       .magi-wb-switch { box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; padding:6px; border:0; border-radius:8px; background:transparent; color:var(--dsw-alias-label-secondary); cursor:pointer; flex-shrink:0; -webkit-app-region:no-drag; }

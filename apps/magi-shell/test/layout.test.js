@@ -40,7 +40,7 @@ test('branding keeps the native seat and scopes explicit MAGI proportions to its
   assert.match(source, /function OfficialMark\(/);
   assert.match(source, /MIT License — Copyright \(c\) 2026 DeepSeek/);
   assert.match(source, /viewBox: '0 0 23\.16 17\.04'/);
-  assert.match(rule('.magi-wb-mark'), /display:block; flex-shrink:0; width:24px; height:24px/);
+  assert.match(rule('.magi-wb-mark'), /display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; width:24px; height:24px/, 'center the proportional official SVG inside its 24px wrapper');
   assert.match(rule('.magi-wb-wordmark'), /font-size:20px; line-height:28px/);
   assert.match(rule('.magi-wb-brand .magi-wb-badge'), /font-size:9px; line-height:16px/);
   assert.match(rule('.magi-wb-brand .magi-wb-badge'), /color:var\(--dsw-alias-label-secondary\)/);
