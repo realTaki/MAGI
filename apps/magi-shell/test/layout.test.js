@@ -22,7 +22,7 @@ test('MAGI replaces only scoped sidebar actions and hidden-sidebar chrome, not c
   assert.match(rule('.magi-wb-browser'), /flex:1; min-width:0; min-height:0/);
 });
 
-test('Bot browser keeps two-line contacts, rounded color blocks, search and compact rail support', () => {
+test('Bot browser keeps all two-line contacts and compact rail support without Bot search', () => {
   assert.match(rule('.magi-wb-node'), /min-height:60px/);
   assert.match(rule('.magi-wb-node'), /border:0/);
   assert.match(rule('.magi-wb-avatar'), /width:36px; height:36px; border-radius:10px/);
@@ -30,7 +30,8 @@ test('Bot browser keeps two-line contacts, rounded color blocks, search and comp
   assert.match(rule('.magi-wb-node-name'), /font-weight:600/);
   assert.match(rule('.magi-wb-node-preview'), /text-overflow:ellipsis/);
   assert.match(rule('.magi-wb-nodes'), /flex:1; min-height:0; overflow:auto/);
-  assert.match(css, /\.magi-wb-search:focus-within/);
+  assert.doesNotMatch(source, /magi-wb-search|SearchIcon|setQuery|\bquery\b|\bnoMatch\b|type: 'search'|role: 'search'/, 'remove the Bot-directory search implementation, not just its visible input');
+  assert.match(source, /view\.nodes\.map\(/, 'the complete roster is always rendered');
   assert.match(css, /\.magi-wb-browser\[data-wide=false\][^}]*display:none/);
   assert.doesNotMatch(source, /magi-wb-(?:return|native-avatar)\b/);
 });
@@ -73,7 +74,7 @@ test('branding keeps the native seat and scopes explicit MAGI proportions to its
 
 test('native conversation loading is not covered by a MAGI curtain or animation', () => {
   assert.doesNotMatch(source, /magi-wb-(?:loading|frame|overlay)|iframe|role: 'dialog'/);
-  assert.match(source, /className: 'magi-wb-no-match', role: 'status'/);
+  assert.match(source, /className: 'magi-wb-empty', role: 'status'/);
   assert.match(source, /className: 'magi-wb-error', role: 'alert'/);
   assert.match(css, /:focus-visible/);
   assert.doesNotMatch(css, /animation:|@keyframes/);

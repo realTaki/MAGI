@@ -7,8 +7,7 @@ window.__ModuleLoader__.load({
     const dicts = {
       en: {
         enter: 'Switch to MAGI workbench', back: 'Switch back to DSH', workbench: 'MAGI workbench',
-        mainBot: 'Main Bot', mode: 'Bot mode', nodes: 'My Bots', search: 'Search Bots',
-        noMatch: 'No matching Bots', clear: 'Clear search', empty: 'No Bots yet',
+        mainBot: 'Main Bot', mode: 'Bot mode', nodes: 'My Bots', empty: 'No Bots yet',
         loading: 'Loading Bots…', refresh: 'Refresh', retry: 'Retry',
         newBot: 'New Bot', creatingBot: 'Creating Bot…', createError: 'Unable to create a Bot. Check EVA and retry explicitly.',
         expand: 'Expand sidebar', collapse: 'Collapse sidebar',
@@ -19,8 +18,7 @@ window.__ModuleLoader__.load({
       },
       zh: {
         enter: '切换到 MAGI 工作台', back: '切换回 DSH', workbench: 'MAGI 工作台',
-        mainBot: '主机器人', mode: 'Bot 模式', nodes: '我的 Bots', search: '搜索 Bot',
-        noMatch: '没有匹配的 Bot', clear: '清除搜索', empty: '还没有 Bot',
+        mainBot: '主机器人', mode: 'Bot 模式', nodes: '我的 Bots', empty: '还没有 Bot',
         loading: '正在加载 Bots…', refresh: '刷新', retry: '重试',
         newBot: '新 Bot', creatingBot: '正在创建 Bot…', createError: '无法创建 Bot，请检查 EVA 后明确重试。',
         expand: '展开侧边栏', collapse: '收起侧边栏',
@@ -125,10 +123,6 @@ window.__ModuleLoader__.load({
       return h('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
         h('path', { d: 'M20 11a8 8 0 1 0-2.3 6.7M20 4v7h-7' }));
     }
-    function SearchIcon() {
-      return h('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, 'aria-hidden': true },
-        h('circle', { cx: 10.5, cy: 10.5, r: 6.5 }), h('path', { d: 'm16 16 4 4' }));
-    }
     const avatarColor = (handle) => {
       const hash = Array.from(handle).reduce((value, letter) => (value * 31 + letter.charCodeAt(0)) >>> 0, 0);
       // Decorative identity colors, independent of the presence dot's semantics.
@@ -188,13 +182,6 @@ window.__ModuleLoader__.load({
       .magi-wb-switch:disabled { opacity:.45; cursor:default; }
       .magi-wb-browser { --magi-wb-rail:var(--dsw-alias-bg-base); display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; height:100%; padding:8px; font-size:13px; color:var(--dsw-alias-label-primary); box-sizing:border-box; }
       .magi-wb-browser *, .magi-wb-browser *::before, .magi-wb-browser *::after { box-sizing:border-box; }
-      .magi-wb-search { display:flex; align-items:center; gap:8px; min-height:36px; flex-shrink:0; padding:0 10px; border:1px solid transparent; border-radius:10px; background:color-mix(in srgb,var(--dsw-alias-label-primary) 5%,transparent); color:var(--dsw-alias-label-secondary); }
-      .magi-wb-search:focus-within { border-color:var(--dsw-alias-brand-primary); }
-      .magi-wb-search > svg { flex-shrink:0; }
-      .magi-wb-search input { width:100%; min-width:0; padding:0; border:0; outline:0; background:transparent; color:var(--dsw-alias-label-primary); font:inherit; }
-      .magi-wb-search input::placeholder { color:var(--dsw-alias-label-secondary); }
-      .magi-wb-search input::-webkit-search-cancel-button { -webkit-appearance:none; }
-      .magi-wb-search .magi-wb-switch { width:24px; height:24px; padding:2px; font-size:18px; }
       .magi-wb-heading { display:flex; align-items:center; gap:8px; min-height:28px; flex-shrink:0; margin:14px 4px 8px; color:var(--dsw-alias-label-secondary); font-size:12px; }
       .magi-wb-count { margin-left:auto; font-variant-numeric:tabular-nums; }
       .magi-wb-heading .magi-wb-switch { width:28px; height:28px; padding:6px; }
@@ -206,10 +193,10 @@ window.__ModuleLoader__.load({
       .magi-wb-node-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; font-weight:600; line-height:18px; }
       .magi-wb-node-preview { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; line-height:16px; color:var(--dsw-alias-label-secondary); }
       .magi-wb-dot { position:absolute; right:-1px; bottom:-1px; width:9px; height:9px; border:2px solid var(--magi-wb-rail); border-radius:50%; }
-      .magi-wb-no-match { margin:20px 8px; line-height:1.6; color:var(--dsw-alias-label-secondary); }
+      .magi-wb-empty { margin:20px 8px; line-height:1.6; color:var(--dsw-alias-label-secondary); }
       .magi-wb-error { padding:8px; color:var(--dsw-alias-state-error-primary); font-size:12px; }
       .magi-wb-browser[data-wide=false] { padding:4px 2px; }
-      .magi-wb-browser[data-wide=false] .magi-wb-search, .magi-wb-browser[data-wide=false] .magi-wb-heading, .magi-wb-browser[data-wide=false] .magi-wb-node-copy { display:none; }
+      .magi-wb-browser[data-wide=false] .magi-wb-heading, .magi-wb-browser[data-wide=false] .magi-wb-node-copy { display:none; }
       .magi-wb-browser[data-wide=false] .magi-wb-node { justify-content:center; min-height:48px; padding:4px 0; }
     `;
     return {
@@ -350,26 +337,21 @@ window.__ModuleLoader__.load({
         }
         function BotBrowser({ wide = true, expandSidebar = () => {} } = {}) {
           const view = React.useSyncExternalStore(subscribe, getSnapshot); useLocale();
-          const [query, setQuery] = React.useState('');
-          const visible = view.nodes.filter((node) => `${node.handle} ${nameOf(node)}`.toLowerCase().includes(query.trim().toLowerCase()));
           return h('section', { className: 'magi-wb-browser', 'data-wide': wide ? 'true' : 'false', 'aria-label': t('workbench') }, h('style', null, css),
-            h('div', { className: 'magi-wb-search', role: 'search', 'aria-label': t('search') }, h(SearchIcon),
-              h('input', { type: 'search', value: query, placeholder: t('search'), 'aria-label': t('search'), autoComplete: 'off', spellCheck: false, onChange: (event) => setQuery(event.target.value) }),
-              query && h('button', { type: 'button', className: 'magi-wb-switch', title: t('clear'), 'aria-label': t('clear'), onClick: () => setQuery('') }, '×')),
             h('div', { className: 'magi-wb-heading' }, h('span', null, t('nodes')),
-              h('span', { className: 'magi-wb-count' }, query.trim() ? `${visible.length} / ${view.nodes.length}` : view.nodes.length),
+              h('span', { className: 'magi-wb-count' }, view.nodes.length),
               h('button', { type: 'button', className: 'magi-wb-switch', disabled: view.loading, onClick: () => void refresh(), title: t('refresh'), 'aria-label': t('refresh') }, h(RefreshIcon))),
             view.error && h('div', { className: 'magi-wb-error', role: 'alert' }, t('listError')),
             view.navError && h('div', { className: 'magi-wb-error', role: 'alert' }, t('navigationError'),
               h('button', { type: 'button', onClick: () => select(view.nodes.find((node) => identityOf(node) === view.failedTarget) ?? failedNode) }, t('retry'))),
             h('nav', { className: 'magi-wb-nodes', 'aria-label': t('nodes') },
-              visible.map((node) => h('button', { key: identityOf(node), type: 'button', className: 'magi-wb-node', 'aria-current': identityOf(node) === view.selected ? 'true' : undefined,
+              view.nodes.map((node) => h('button', { key: identityOf(node), type: 'button', className: 'magi-wb-node', 'aria-current': identityOf(node) === view.selected ? 'true' : undefined,
                 title: `${nameOf(node)} — ${previewOf(node)} — ${t(stateOf(node))}`, 'aria-label': `${nameOf(node)} — ${previewOf(node)} — ${t(stateOf(node))}`, onClick: () => { if (!wide) expandSidebar(); select(node); } },
                 h('span', { className: 'magi-wb-avatar', style: { background: avatarColor(identityOf(node)) }, 'aria-hidden': true },
                   h('span', { className: 'magi-wb-dot', style: { background: colorOf(stateOf(node)) } })),
                 h('span', { className: 'magi-wb-node-copy' }, h('span', { className: 'magi-wb-node-name' }, nameOf(node)),
                   h('span', { className: 'magi-wb-node-preview' }, previewOf(node))))),
-              visible.length === 0 && h('p', { className: 'magi-wb-no-match', role: 'status' }, t(query.trim() ? 'noMatch' : view.loading ? 'loading' : 'empty'))));
+              view.nodes.length === 0 && h('p', { className: 'magi-wb-empty', role: 'status' }, t(view.loading ? 'loading' : 'empty'))));
         }
         async function refresh() {
           pause();

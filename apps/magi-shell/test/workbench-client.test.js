@@ -97,7 +97,6 @@ function elements(element) {
   return [element, ...element.props.children.flat(Infinity).flatMap(elements)];
 }
 const rows = tree => elements(tree).filter(element => element.props.className === 'magi-wb-node');
-const search = tree => elements(tree).find(element => element.type === 'input');
 const text = tree => elements(tree).flatMap(element => element.props.children).filter(child => typeof child === 'string');
 const retry = tree => elements(tree).find(element => element.type === 'button' && (element.props.children.includes('Retry') || element.props['aria-label'] === 'Retry'));
 async function open(app) { await tick(); app.switch().props.onClick(); await tick(); return app.browser(); }
@@ -423,18 +422,27 @@ test('collapsed and brand switches are localized and stop native ancestor clicks
   } finally { app.dispose(); }
 });
 
-test('poll and search update only Bot browser, never renavigate or reassign hidden selection', async () => {
-  const app = harness({ nodes: [running, { handle: 'eva-001', status: 'running' }], registeredEva: ['eva-000', 'eva-001'] });
+test('Bot directory has no search and always shows the full roster; polling preserves selection without navigation', async () => {
+  const app = harness({ nodes: [running, { handle: 'eva-001', status: 'running' }, { handle: 'eva-002', status: 'offline' }], registeredEva: ['eva-000', 'eva-001'] });
   try {
-    let tree = await open(app); rows(tree)[2].props.onClick(); tree = app.browser();
+    let tree = await open(app); rows(tree)[2].props.onClick();
     const navigation = app.navigation.slice();
-    search(tree).props.onChange({ target: { value: ' EVA-000 ' } }); tree = app.browser();
-    assert.equal(rows(tree).length, 1); assert.equal(rows(tree)[0].props['aria-current'], undefined);
-    await app.poll(); tree = app.browser(); assert.deepEqual(app.navigation, navigation);
-    search(tree).props.onChange({ target: { value: 'absent' } }); tree = app.browser();
-    assert.equal(rows(tree).length, 0); assert.ok(text(tree).includes('No matching Bots'));
-    search(tree).props.onChange({ target: { value: '' } }); tree = app.browser();
-    assert.equal(rows(tree)[2].props['aria-current'], 'true'); assert.deepEqual(app.navigation, navigation);
+    for (const wide of [true, false]) {
+      tree = app.browser({ wide });
+      assert.equal(rows(tree).length, 4, 'Main Bot, both running EVAs and the offline EVA remain visible');
+      assert.ok(text(rows(tree)[0]).includes('Main Bot'), 'fixed Main Bot stays first');
+      assert.ok(text(rows(tree)[3]).includes('EVA-002'), 'offline Bot is not filtered out');
+      assert.equal(elements(tree).some(element => element.type === 'input' || element.props.role === 'search'), false);
+      assert.equal(elements(tree).filter(element => element.props.className === 'magi-wb-count')[0].props.children[0], 4);
+      assert.equal(rows(tree)[2].props['aria-current'], 'true');
+    }
+    app.setLocale('zh');
+    assert.equal(text(app.browser()).some(value => value.includes('搜索 Bot')), false);
+    await app.poll(); tree = app.browser();
+    assert.equal(rows(tree).length, 4);
+    assert.equal(rows(tree)[2].props['aria-current'], 'true');
+    assert.deepEqual(app.navigation, navigation);
+    assert.equal(createCalls(app).length, 0);
   } finally { app.dispose(); }
 });
 
@@ -527,7 +535,8 @@ test('compact native sidebar props keep accessible contacts and expand before se
     rows(wide)[0].props.onClick();
     assert.deepEqual(app.navigation.at(-1), { session: mainBot.mainSessionId });
     const css = elements(tree).filter(element => element.type === 'style').flatMap(element => element.props.children).join('');
-    assert.match(css, /\[data-wide=false\].*\.magi-wb-search/);
+    assert.match(css, /\[data-wide=false\].*\.magi-wb-heading/);
+    assert.doesNotMatch(css, /magi-wb-search/);
     assert.match(css, /\.magi-wb-node-copy \{ display:none/);
   } finally { app.dispose(); }
 });
