@@ -10,7 +10,8 @@
     "packages/dm",
     "packages/memory",
     "packages/bot-mode",
-    "packages/subconscious"
+    "packages/subconscious",
+    "packages/history-search"
   ],
   "scripts": {
     "test": "node scripts/check-dsh.mjs && node scripts/test.mjs",
