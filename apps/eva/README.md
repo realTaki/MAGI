@@ -16,6 +16,20 @@ EVA 安装并捆绑独立 [@magi/bot-mode](<../../packages/bot-mode/README.md>)�
 
 EVA 独立捆绑 [@magi/subconscious](<../../packages/subconscious/README.md>)；父端 `magi-subconscious` 与子端 `magi-subconscious-child` 均为 `config: {}`，不设置启用开关。子端通过安装包绝对入口挂权威根并排除所选 bundle 的父根；v7 启动 hash 纳入入口，旧 immutable overlay、profile 和运行进程不重写。该组件有独立根 Session，不复用 MAIN/subagent，不合并 memory/DM，不归 Shell 所有。显式启用后的目标是低流量单条串行反思，小预算、冷却及无新输入跳过，不是 24/7 模型消耗。此改动未安装、重载、启用或发送模型请求。
 
+## EVA 记忆归属（源码修复，部署需维护许可）
+
+EVA 的 `magi-memory` 根 ID 不变，入口改为 EVA 拥有的 `@local/eva/memory`。它只重导出独立 memory 实现，不合并生命周期或复制存储逻辑；随 EVA 导出独立的「Bot 记忆」中英文说明和原有原创图标。打包后的实现从 EVA 自己的物理依赖解析，不再让 profile 额外安装的 `@magi/memory` 源码链接抢占父根。子 overlay 对所选父记忆根只按 ID 禁用，仍只挂一个显式 memory 子根。
+
+[原生归属探针](<test/memory-ownership-native.js>)使用当前安装的真实 Loader / app-boot / 模块解析器和一次性物理打包 fixture；覆盖 standalone 与 EVA 同 ID 的 last-wins、删除 direct dependency 前后、父子唯一根、物理实现身份、Config 包归属、完整显示元数据以及同 home 的 SQLite 事实 ID 保留。不启动 Host/Bot、不修改运行 profile。运行示例：
+
+```sh
+ELECTRON_RUN_AS_NODE=1 /Applications/MAGI.app/Contents/MacOS/MAGI --expose-internals apps/eva/test/memory-ownership-native.js /absolute/current/dsh/package.json
+```
+
+实际修复顺序（此处仅说明，不执行）：取得用户维护许可 → 将已确认源码修复合为一个 EVA 归档 → 原生 Plugin Manager 更新 EVA → 官方 `remove_bundle @magi/memory` 移除冗余独立安装 → 核验只有一个记忆服务、原 home/事实 ID/数量不变、额外 direct dependency/卡片消失，刷新原页面并人工验收。数据位于 `<profileContext.home>/memory/memories.sqlite`，不在安装包目录；不删除、迁移或复制活跃 WAL 数据声称备份。
+
+**更新会执行 EVA dispose → manager.dispose → runtime.stopNode，停止所有受管理的运行子节点，可能中断进行中的任务；新插件自动恢复原 persistent IDs。不是仅记忆瞬断。** 未取得维护许可不得更新、重启、停节点或新建 Bot；本源码修改不表示已部署。
+
 ## 安装与更新
 
 源码目录链接安装前，先在仓库根用 MAGI 自带 Node/npm 从根锁文件安装 EVA/DM/memory/bot-mode/subconscious workspace 及其普通依赖（包括 zod），保留 `--ignore-scripts`；例如 `npm ci --workspace @local/eva --ignore-scripts --omit=dev`。只有缓存已备齐时再加 `--offline`。不在运行 profile 中执行包管理器。原生目录链接本身不会代装依赖。

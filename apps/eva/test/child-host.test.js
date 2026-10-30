@@ -101,6 +101,14 @@ for (const [bundles, expected] of [
   });
 }
 
+test('EVA memory root pins its physical bundled copy without changing its stable ID', async () => {
+  const patch = await readFile(new URL('../cordis.patch.yml', import.meta.url), 'utf8');
+  assert.match(patch, /- id: magi-memory\n(?:\s*#[^\n]*\n)*\s+name: '@local\/eva\/memory'\n\s+config: \{\}/);
+  assert.equal(await readFile(new URL('../memory.js', import.meta.url), 'utf8').then(text => text.includes("export * from '@magi/memory'")), true);
+  const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.ok(manifest.bundledDependencies.includes('@magi/memory'));
+});
+
 test('standalone memory and EVA bundle selections keep exactly one active child memory root', async t => {
   const { profile, manifest } = await fixture(t);
   for (const bundles of [['@magi/memory'], ['@local/eva'], ['@local/eva', '@magi/memory']]) {
@@ -111,7 +119,8 @@ test('standalone memory and EVA bundle selections keep exactly one active child 
     assert.deepEqual(patch[0].insert.filter(row => row.id === 'magi-memory-child'), [
       { id: 'magi-memory-child', name: memoryEntry, config: {} },
     ]);
-    assert.equal(patch.filter(row => row.id === 'magi-memory' && row.disabled).length, 1);
+    assert.deepEqual(patch.filter(row => row.id === 'magi-memory'), [{ id: 'magi-memory', disabled: true }],
+      'id-only disabling accepts standalone bare names and EVA physical bundle entries');
   }
   assert.throws(() => createChildHostPatch({ ...options, memoryEntry: './relative.js' }), /absolute package entry/);
 });

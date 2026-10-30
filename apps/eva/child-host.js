@@ -56,7 +56,10 @@ export async function desktopRoleExclusions(profileDir) {
   catch (error) { if (error.code === 'ENOENT') return []; throw error; }
   const bundles = manifest?.dsh?.profile?.bundles ?? [];
   if (!Array.isArray(bundles)) throw new Error('Invalid EVA profile bundle selection.');
-  return desktopRoles.filter(row => bundles.includes(row.name)).map(row => ({ ...row }));
+  return desktopRoles.filter(row => bundles.includes(row.name)).map(row =>
+    // EVA owns its memory entry name; standalone uses @magi/memory.
+    // Names assert rather than rename, so disable the shared parent ID only.
+    row.id === 'magi-memory' ? { id: row.id, disabled: true } : { ...row });
 }
 
 export function createChildHostPatch({ workspace, profile, presetPath, credentialsPath, desktopExclusions = [], dmEntry = resolveDmEntry(), memoryEntry = resolveMemoryEntry(), botModeEntry = resolveBotModeEntry(), subconsciousEntry = resolveSubconsciousEntry(), historyEntry = resolveHistoryEntry() }) {

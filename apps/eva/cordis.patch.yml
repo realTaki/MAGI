@@ -12,5 +12,6 @@
       name: '@magi/history-search'
       config: {}
     - id: magi-memory
-      name: '@magi/memory'
+      # Own the entry and display resources; retain the independent implementation.
+      name: '@local/eva/memory'
       config: {}
