@@ -102,14 +102,16 @@ window.__ModuleLoader__.load({
       return h('svg', { width: 24, height: 24 * 17.04 / 23.16, viewBox: '0 0 23.16 17.04', fill: 'none', 'aria-hidden': true, focusable: false },
         h('path', { fill: 'currentColor', d: 'M22.9168 1.43018C22.6713 1.31018 22.5658 1.53918 22.4223 1.65519C22.3733 1.69269 22.3318 1.74169 22.2903 1.78669C21.9317 2.1697 21.5127 2.42121 20.9657 2.39121C20.1657 2.34621 19.4827 2.59771 18.8787 3.20973C18.7502 2.45521 18.3236 2.0047 17.6746 1.71569C17.3351 1.56568 16.9916 1.41518 16.7536 1.08867C16.5876 0.856163 16.5421 0.597155 16.4591 0.341647C16.4061 0.187643 16.3536 0.0301382 16.1761 0.00363739C15.9836 -0.0263635 15.9081 0.135141 15.8326 0.270145C15.5306 0.822162 15.4136 1.43018 15.4251 2.0462C15.4516 3.43174 16.0366 4.53527 17.1991 5.3203C17.3311 5.4103 17.3651 5.5003 17.3236 5.63181C17.2441 5.90231 17.1501 6.16482 17.0671 6.43533C17.0141 6.60784 16.9351 6.64584 16.7501 6.57033C16.1121 6.30383 15.5611 5.90931 15.074 5.4328C14.2475 4.63328 13.5 3.75075 12.568 3.05973C12.349 2.89822 12.13 2.74822 11.9034 2.60522C10.9524 1.68169 12.028 0.923165 12.277 0.833162C12.5375 0.739159 12.3675 0.41615 11.5259 0.42015C10.6844 0.42365 9.91439 0.705658 8.93286 1.08117C8.78935 1.13767 8.63835 1.17867 8.48384 1.21267C7.59332 1.04367 6.66829 1.00617 5.70226 1.11517C3.88321 1.31768 2.43016 2.1777 1.36213 3.64575C0.0790928 5.4103 -0.222916 7.41536 0.146595 9.50642C0.535106 11.7105 1.66014 13.535 3.38869 14.9616C5.18125 16.4406 7.24581 17.1657 9.60138 17.0266C11.0319 16.9441 12.6245 16.7526 14.421 15.2321C14.874 15.4576 15.3496 15.5476 16.1381 15.6151C16.7456 15.6716 17.3306 15.5851 17.7836 15.4911C18.4931 15.3411 18.4441 14.6841 18.1876 14.5636C16.1081 13.595 16.5646 13.9891 16.1496 13.67C17.2061 12.42 18.8202 10.1979 19.3182 7.17235C19.3672 6.83834 19.4297 6.36783 19.4222 6.09732C19.4182 5.93231 19.4562 5.86831 19.6447 5.84931C20.1657 5.78931 20.6712 5.64681 21.1357 5.3913C22.4833 4.65528 23.0268 3.44624 23.1548 1.9972C23.1738 1.77569 23.1508 1.54668 22.9168 1.43018ZM11.1749 14.4736C9.15936 12.889 8.18184 12.3675 7.77832 12.39C7.40081 12.4125 7.46881 12.8445 7.55182 13.126C7.63882 13.404 7.75182 13.5955 7.91033 13.8396C8.01983 14.0011 8.09533 14.2411 7.80083 14.4216C7.15181 14.8231 6.02327 14.2866 5.97027 14.2601C4.65673 13.4865 3.5587 12.4655 2.78467 11.069C2.03715 9.72493 1.60314 8.28289 1.53164 6.74384C1.51264 6.37233 1.62214 6.24082 1.99215 6.17332C2.47916 6.08332 2.98118 6.06432 3.46769 6.13582C5.52476 6.43633 7.27581 7.35586 8.74385 8.8129C9.58188 9.64243 10.2159 10.634 10.8689 11.6025C11.5634 12.631 12.3105 13.611 13.262 14.4146C13.598 14.6961 13.866 14.9101 14.1225 15.0681C13.349 15.1546 12.058 15.1731 11.1749 14.4746L11.1749 14.4736ZM12.141 8.25988C12.141 8.09488 12.273 7.96338 12.439 7.96338C12.4765 7.96338 12.5105 7.97088 12.541 7.98188C12.5825 7.99688 12.6205 8.01938 12.6505 8.05338C12.7035 8.10588 12.7335 8.18088 12.7335 8.25988C12.7335 8.42489 12.6015 8.55639 12.4355 8.55639C12.2695 8.55639 12.141 8.42489 12.141 8.25988ZM15.1415 9.79893C14.949 9.87793 14.7565 9.94544 14.5715 9.95294C14.2845 9.96794 13.9715 9.85143 13.8015 9.70893C13.5375 9.48742 13.3485 9.36342 13.2695 8.97691C13.2355 8.8119 13.2545 8.55639 13.2845 8.40989C13.3525 8.09438 13.277 7.89187 13.0545 7.70787C12.8735 7.55786 12.643 7.51636 12.39 7.51636C12.2955 7.51636 12.209 7.47486 12.1445 7.44136C12.039 7.38886 11.9519 7.25735 12.035 7.09585C12.0615 7.04335 12.19 6.91584 12.22 6.89334C12.5635 6.69784 12.9595 6.76184 13.326 6.90834C13.6655 7.04735 13.9225 7.30236 14.292 7.66287C14.6695 8.09838 14.7375 8.21838 14.9525 8.54539C15.1225 8.8009 15.277 9.06341 15.3831 9.36392C15.4471 9.55142 15.3641 9.70493 15.1415 9.79893Z' }));
     }
-    function SidebarIcon() {
-      return h('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
-        h('rect', { x: 3, y: 3, width: 18, height: 18, rx: 2 }), h('path', { d: 'M9 3v18' }));
+    function SidebarIcon({ size = 16 } = {}) {
+      return h('svg', { className: 'magi-wb-panel-icon', width: size, height: size, 'data-icon': 'dsw-icon-panel-left-outline-regular', 'aria-hidden': true, focusable: false },
+        h('use', { href: '#dsw-icon-panel-left-outline-regular' }));
     }
-    function NewChatIcon() {
-      // Same published, theme-owned sprite and 16px box as IconNewChatOutlineRegular.
-      return h('svg', { width: 16, height: 16, 'data-icon': 'dsw-icon-new-chat-outline-regular', 'aria-hidden': true, focusable: false },
-        h('use', { href: '#dsw-icon-new-chat-outline-regular' }));
+    function NewChatIcon({ compact = false, leading = false } = {}) {
+      // Version-matched SidebarRoot uses 14px medium expanded, 18px regular rail;
+      // HeaderLeadingControls uses 16px regular in the hidden-sidebar seat.
+      const size = leading ? 16 : compact ? 18 : 14;
+      const icon = compact ? 'dsw-icon-new-chat-outline-regular' : 'dsw-icon-new-chat-outline-medium';
+      return h('svg', { width: size, height: size, 'data-icon': icon, 'aria-hidden': true, focusable: false }, h('use', { href: `#${icon}` }));
     }
     function RefreshIcon() {
       return h('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
@@ -125,21 +127,45 @@ window.__ModuleLoader__.load({
       return ['#7189ad', '#8f7fac', '#6e9e91', '#b08a70', '#a77d92', '#8a946d'][hash % 6];
     };
     const css = `
-      .magi-wb-sidebar { display:flex; flex-direction:column; height:100%; min-height:0; min-width:0; background:var(--dsw-specific-sidebar-fill); color:var(--dsw-alias-label-primary); }
-      .magi-wb-chrome { display:flex; align-items:center; justify-content:flex-end; box-sizing:border-box; width:100%; height:36px; flex-shrink:0; padding:4px 12px; -webkit-app-region:drag; }
-      html[data-platform=darwin] .magi-wb-chrome { height:52px; }
-      .magi-wb-sidebar[data-collapsed=true] .magi-wb-chrome { justify-content:center; padding-inline:4px; }
-      .magi-wb-sidebar-top { display:flex; align-items:center; box-sizing:border-box; height:40px; gap:8px; padding:0 16px; flex-shrink:0; }
-      html[data-platform=darwin] .magi-wb-sidebar-top { height:36px; }
-      .magi-wb-sidebar[data-collapsed=true] .magi-wb-sidebar-top { justify-content:center; padding:4px; }
-      .magi-wb-new { box-sizing:border-box; display:flex; align-items:center; justify-content:center; flex-shrink:0; align-self:stretch; min-height:36px; gap:8px; margin:8px 12px 10px; padding:7px 12px; border:1px solid var(--dsw-alias-border-l1); border-radius:10px; background:var(--dsw-alias-bg-base); color:var(--dsw-alias-label-primary); font:inherit; font-size:13px; font-weight:500; line-height:20px; cursor:pointer; -webkit-app-region:no-drag; }
-      .magi-wb-new svg { display:block; flex-shrink:0; }
-      .magi-wb-new:hover:not(:disabled) { background:var(--dsw-alias-bg-layer-2); }
-      .magi-wb-new[data-compact=true] { align-self:center; width:28px; min-height:28px; height:28px; margin:0; padding:6px; border:0; border-radius:var(--dsw-radius-sm,6px); background:transparent; color:var(--dsw-alias-label-secondary); }
+      /* MIT © 2026 DeepSeek; full notice accompanies OfficialMark above.
+         Presentational baseline: @deepseek-ai/dsh-client-ui-sidebar@0.2.1-rc.3
+         https://unpkg.com/@deepseek-ai/dsh-client-ui-sidebar@0.2.1-rc.3/lib/client.js
+         Namespaced SidebarRoot/HeaderLeadingControls geometry; Bot actions remain local. */
+      .magi-wb-sidebar { --dsh-sidebar-inline-padding:12px; box-sizing:border-box; display:flex; flex-direction:column; height:100%; min-height:0; min-width:0; padding:6px var(--dsh-sidebar-inline-padding); background:var(--dsw-specific-sidebar-fill); color:var(--dsw-alias-label-primary); font-size:14px; }
+      html[data-platform=darwin] .magi-wb-sidebar { background:transparent; }
+      .magi-wb-sidebar[data-collapsed=true] { padding:18px 10px 6px; }
+      .magi-wb-chrome { display:none; align-items:center; justify-content:flex-end; box-sizing:border-box; height:52px; flex:none; margin:-6px calc(-1 * var(--dsh-sidebar-inline-padding)) 0; padding:0 12px 2px; -webkit-app-region:drag; }
+      html[data-platform=darwin] .magi-wb-chrome { display:flex; }
+      html[data-platform=darwin] .magi-wb-chrome + .magi-wb-sidebar-top { margin-top:-12px; }
+      html[data-fullscreen] .magi-wb-chrome { justify-content:flex-start; }
+      .magi-wb-sidebar-top { display:flex; align-items:center; justify-content:flex-end; box-sizing:border-box; height:60px; gap:8px; padding:8px 0 8px 4px; margin-bottom:4px; flex:none; overflow:hidden; -webkit-app-region:drag; }
+      .magi-wb-sidebar-identity { display:inline-flex; align-items:center; gap:8px; height:24px; flex:1; min-width:0; }
+      html[data-platform=darwin] .magi-wb-sidebar-top > .magi-wb-toggle { display:none; }
+      .magi-wb-sidebar[data-collapsed=true] .magi-wb-sidebar-top { height:36px; padding:0; margin-bottom:12px; justify-content:flex-start; overflow:visible; }
+      .magi-wb-new { box-sizing:border-box; display:flex; align-items:center; justify-content:center; flex:none; align-self:stretch; height:38px; gap:0; margin:0 2px 12px; padding:8px 12px; border:.5px solid var(--dsw-alias-border-l3); border-radius:var(--dsw-radius-md); background:var(--dsw-alias-button-elevated-fill); color:var(--dsw-alias-label-primary); font:inherit; font-size:14px; font-weight:500; line-height:22px; cursor:pointer; position:relative; overflow:hidden; container-type:inline-size; -webkit-app-region:no-drag; }
+      .magi-wb-new-mask { flex:1; min-width:0; }
+      .magi-wb-new-content { display:flex; align-items:center; justify-content:center; gap:6px; width:100cqw; }
+      .magi-wb-new-label { white-space:nowrap; max-width:200px; overflow:hidden; }
+      .magi-wb-new svg { display:block; flex:none; }
+      .magi-wb-new:hover:not(:disabled) { background:var(--dsw-alias-button-floating-hover); }
+      html[data-platform=darwin] .magi-wb-new[data-compact=false] { background:#ffffff8c; }
+      html[data-platform=darwin] .magi-wb-new[data-compact=false]:hover:not(:disabled) { background:#ffffff4d; }
+      html[data-platform=darwin] [data-ds-dark-theme] .magi-wb-new[data-compact=false] { background:#ffffff26; }
+      html[data-platform=darwin] [data-ds-dark-theme] .magi-wb-new[data-compact=false]:hover:not(:disabled) { background:#fff3; }
+      .magi-wb-new[data-compact=true] { align-self:flex-start; width:36px; height:36px; margin:0 0 12px; padding:0; border-color:transparent; background:transparent; }
+      .magi-wb-new[data-compact=true]:hover:not(:disabled) { background:var(--dsw-alias-interactive-bg-hover); }
       .magi-wb-new:disabled { opacity:.5; cursor:default; }
       .magi-wb-new:focus-visible { outline:2px solid var(--dsw-alias-brand-primary); outline-offset:2px; }
-      .magi-wb-leading { display:flex; align-items:center; gap:4px; }
-      .magi-wb-chrome .magi-wb-switch, .magi-wb-leading .magi-wb-switch { width:28px; height:28px; padding:6px; border-radius:var(--dsw-radius-sm,6px); }
+      .magi-wb-leading { display:flex; align-items:center; gap:8px; }
+      .magi-wb-toggle { display:inline-flex; align-items:center; justify-content:center; flex:none; box-sizing:border-box; width:28px; height:28px; padding:0; border:0; border-radius:var(--dsw-radius-sm); background:transparent; color:var(--dsw-alias-label-secondary); cursor:pointer; -webkit-app-region:no-drag; }
+      .magi-wb-toggle:hover, .magi-wb-leading .magi-wb-new:hover:not(:disabled) { background:var(--dsw-alias-interactive-bg-hover); }
+      .magi-wb-sidebar[data-collapsed=true] .magi-wb-toggle { width:36px; height:36px; border-radius:var(--dsw-radius-md); color:var(--dsw-alias-label-primary); }
+      .magi-wb-rail-mark { display:inline-flex; align-items:center; justify-content:center; }
+      .magi-wb-sidebar[data-collapsed=true] .magi-wb-panel-icon { display:none; }
+      .magi-wb-sidebar[data-collapsed=true] .magi-wb-toggle:hover .magi-wb-panel-icon { display:inline; }
+      .magi-wb-sidebar[data-collapsed=true] .magi-wb-toggle:hover .magi-wb-rail-mark { display:none; }
+      .magi-wb-leading .magi-wb-new, .magi-wb-leading .magi-wb-switch { box-sizing:border-box; width:28px; height:28px; margin:0; padding:0; border:0; border-radius:var(--dsw-radius-sm); background:transparent; color:var(--dsw-alias-label-secondary); }
+      .magi-wb-leading .magi-wb-new-content { width:auto; }
       /* Let the identity use its natural width; never clip it to anchor the switch. */
       .magi-wb-brand { display:flex; align-items:center; gap:8px; flex:1; color:var(--dsw-alias-label-primary); }
       .magi-wb-wordmark { flex-shrink:0; font-size:20px; line-height:28px; font-weight:750; letter-spacing:-.035em; white-space:nowrap; }
@@ -257,26 +283,28 @@ window.__ModuleLoader__.load({
           useLocale();
           return h('aside', { className: 'magi-wb-sidebar', 'data-collapsed': collapsed ? 'true' : 'false', style: { width }, 'aria-label': t('workbench') },
             h('style', null, css),
-            h('div', { className: 'magi-wb-chrome' }, h(Toggle, { collapsed })),
-            h('div', { className: 'magi-wb-sidebar-top' }, collapsed ? h(Switch) : h(React.Fragment, null,
-              h('span', { className: 'magi-wb-mark', 'aria-hidden': true }, h(OfficialMark)), h(Brand))),
+            h('div', { className: 'magi-wb-chrome' }, h(Toggle, { collapsed, rail: true })),
+            h('div', { className: 'magi-wb-sidebar-top' }, collapsed ? h(Switch) : h('span', { className: 'magi-wb-sidebar-identity' },
+              h('span', { className: 'magi-wb-mark', 'aria-hidden': true }, h(OfficialMark)), h(Brand)), h(Toggle, { collapsed, rail: true })),
             h(NewBot, { compact: collapsed }),
             h(BotBrowser, { wide: !collapsed, expandSidebar: () => ctx.layout.toggleSidebar() }));
         }
-        function Toggle({ collapsed = true } = {}) {
+        function Toggle({ collapsed = true, rail = false } = {}) {
           useLocale();
-          return h('button', { type: 'button', className: 'magi-wb-switch', title: t(collapsed ? 'expand' : 'collapse'), 'aria-label': t(collapsed ? 'expand' : 'collapse'),
-            'aria-expanded': !collapsed, onClick: () => ctx.layout.toggleSidebar() }, h(SidebarIcon));
+          return h('button', { type: 'button', className: 'magi-wb-toggle', title: t(collapsed ? 'expand' : 'collapse'), 'aria-label': t(collapsed ? 'expand' : 'collapse'),
+            'aria-expanded': !collapsed, onClick: () => ctx.layout.toggleSidebar() },
+          rail && collapsed && h('span', { className: 'magi-wb-rail-mark', 'aria-hidden': true }, h(OfficialMark)), h(SidebarIcon, { size: rail && collapsed ? 18 : 16 }));
         }
         function Leading() {
-          return h('div', { className: 'magi-wb-leading', style: { WebkitAppRegion: 'no-drag' } }, h('style', null, css), h(Toggle), h(NewBot, { compact: true }), h(Switch));
+          return h('div', { className: 'magi-wb-leading', style: { WebkitAppRegion: 'no-drag' } }, h('style', null, css), h(Toggle), h(NewBot, { compact: true, leading: true }), h(Switch));
         }
-        function NewBot({ compact = false } = {}) {
+        function NewBot({ compact = false, leading = false } = {}) {
           const view = React.useSyncExternalStore(subscribe, getSnapshot); useLocale();
           const label = t(view.creating ? 'creatingBot' : 'newBot');
           return h(React.Fragment, null,
             h('button', { type: 'button', className: 'magi-wb-new', 'data-compact': compact ? 'true' : 'false', title: label, 'aria-label': label, 'aria-busy': view.creating, disabled: view.creating,
-              onClick: () => void createBot() }, h(NewChatIcon), !compact && h('span', null, label)),
+              onClick: () => void createBot() }, h('span', { className: 'magi-wb-new-mask' }, h('span', { className: 'magi-wb-new-content' },
+                h(NewChatIcon, { compact, leading }), !compact && h('span', { className: 'magi-wb-new-label' }, label)))),
             view.createError && h('div', { className: 'magi-wb-error', role: 'alert' }, t('createError'),
               h('button', { type: 'button', disabled: view.creating, onClick: () => void createBot() }, t('retry'))));
         }

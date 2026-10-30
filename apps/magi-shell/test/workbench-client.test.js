@@ -115,18 +115,23 @@ test('New Bot uses an icon and full-width outlined surface; compact chrome keeps
     assert.ok(text(button).includes('New Bot'));
     const icon = elements(button).find(element => element.type === 'svg');
     assert.equal(icon.props['aria-hidden'], true);
-    assert.equal(icon.props.width, 16); assert.equal(icon.props.height, 16);
-    assert.equal(elements(icon).find(element => element.type === 'use').props.href, '#dsw-icon-new-chat-outline-regular');
+    assert.equal(icon.props.width, 14); assert.equal(icon.props.height, 14);
+    assert.equal(elements(icon).find(element => element.type === 'use').props.href, '#dsw-icon-new-chat-outline-medium');
     assert.equal(elements(icon).some(element => element.type === 'path'), false, 'no handcrafted plus geometry');
-    for (const tree of [app.sidebar({ collapsed: true }), app.leading()]) {
+    for (const [tree, iconSize] of [[app.sidebar({ collapsed: true }), 18], [app.leading(), 16]]) {
       const compact = elements(tree).find(element => element.props.className === 'magi-wb-new');
       assert.equal(compact.props['data-compact'], 'true');
       assert.equal(compact.props['aria-label'], 'New Bot');
       assert.equal(elements(compact).filter(element => element.type === 'svg').length, 1);
+      const compactIcon = elements(compact).find(element => element.type === 'svg');
+      assert.equal(compactIcon.props.width, iconSize);
+      assert.equal(elements(compactIcon).find(element => element.type === 'use').props.href, '#dsw-icon-new-chat-outline-regular');
       assert.deepEqual(text(compact), [], 'compact action is an icon, not a plus glyph or clipped label');
     }
     const styles = elements(app.sidebar()).find(element => element.type === 'style').props.children.join('');
-    assert.match(styles, /\.magi-wb-new \{[^}]*align-self:stretch[^}]*min-height:36px[^}]*border:1px solid var\(--dsw-alias-border-l1\)[^}]*border-radius:10px[^}]*background:var\(--dsw-alias-bg-base\)/);
+    assert.match(styles, /\.magi-wb-new \{[^}]*align-self:stretch[^}]*height:38px[^}]*margin:0 2px 12px[^}]*border:\.5px solid var\(--dsw-alias-border-l3\)[^}]*border-radius:var\(--dsw-radius-md\)[^}]*background:var\(--dsw-alias-button-elevated-fill\)/);
+    assert.ok(elements(button).some(element => element.props.className === 'magi-wb-new-mask'));
+    assert.ok(elements(button).some(element => element.props.className === 'magi-wb-new-content'));
     assert.match(styles, /\.magi-wb-new:focus-visible/);
     assert.match(styles, /\.magi-wb-new:hover:not\(:disabled\)/);
     assert.equal(createCalls(app).length, 0, 'styling/rendering never creates a Bot');
@@ -170,7 +175,7 @@ test('MAGI sidebar renders its roster and official artwork without an undeclared
   } finally { app.dispose(); }
 });
 
-test('sidebar toggle is a panel icon in its own top chrome row, never a brand-row chevron', async () => {
+test('sidebar toggle follows native strip/row placement and the public panel icon sprite', async () => {
   const app = harness();
   try {
     await open(app);
@@ -180,18 +185,20 @@ test('sidebar toggle is a panel icon in its own top chrome row, never a brand-ro
     const brandRow = elements(tree).find(element => element.props.className === 'magi-wb-sidebar-top');
     const toggle = elements(chrome).find(element => element.type === 'button');
     assert.equal(toggle.props['aria-label'], 'Collapse sidebar'); assert.equal(toggle.props['aria-expanded'], true);
-    assert.equal(elements(toggle).filter(element => element.type === 'rect').length, 1);
-    assert.equal(elements(brandRow).some(element => ['Collapse sidebar', 'Expand sidebar'].includes(element.props['aria-label'])), false);
+    assert.equal(elements(toggle).find(element => element.type === 'use').props.href, '#dsw-icon-panel-left-outline-regular');
+    assert.ok(elements(brandRow).some(element => element.props['aria-label'] === 'Collapse sidebar'), 'non-macOS has the toggle in the logo row; macOS hides this copy with scoped CSS');
+    assert.match(source, /html\[data-platform=darwin\] \.magi-wb-sidebar-top > \.magi-wb-toggle \{ display:none/);
     toggle.props.onClick();
     for (const compact of [app.sidebar({ collapsed: true }), app.leading()]) {
       const reopen = elements(compact).find(element => element.props['aria-label'] === 'Expand sidebar');
       assert.equal(reopen.props['aria-expanded'], false);
-      assert.equal(elements(reopen).filter(element => element.type === 'svg').length, 1);
+      assert.ok(elements(reopen).some(element => element.type === 'use' && element.props.href === '#dsw-icon-panel-left-outline-regular'));
       reopen.props.onClick();
     }
     assert.equal(toggles, 3, 'all three controls delegate to the native sidebar action');
     assert.equal(text(tree).some(value => ['‹', '›'].includes(value)), false);
-    assert.match(source, /html\[data-platform=darwin\] \.magi-wb-chrome \{ height:52px/);
+    assert.match(source, /\.magi-wb-chrome \{[^}]*height:52px[^}]*padding:0 12px 2px/);
+    assert.match(source, /html\[data-platform=darwin\] \.magi-wb-chrome \{ display:flex/);
     assert.ok(!source.includes('.magi-wb-sidebar-top { padding-top:52px'));
     assert.equal(createCalls(app).length, 0);
   } finally { app.dispose(); }
