@@ -105,6 +105,39 @@ async function open(app) { await tick(); app.switch().props.onClick(); await tic
 const newBotButton = (app) => elements(app.sidebar()).find(element => element.props.className === 'magi-wb-new');
 const createCalls = app => app.calls.filter(call => call.path === 'api/eva/create');
 
+function assertInlineIcon(icon, pathCount, strokeWidth) {
+  assert.equal(elements(icon).some(element => element.type === 'use'), false, 'standalone inline artwork must not depend on a native sprite bank');
+  assert.equal(icon.props.viewBox, '0 0 16 16');
+  assert.equal(icon.props.fill, 'none');
+  assert.equal(icon.props.strokeWidth, strokeWidth);
+  const paths = elements(icon).filter(element => element.type === 'path');
+  assert.equal(paths.length, pathCount, 'glyph has real drawable paths without native SidebarRoot');
+  for (const path of paths) {
+    assert.ok(path.props.d.length > 0);
+    assert.equal(path.props.stroke, 'currentColor');
+  }
+  return paths.map(path => path.props.d);
+}
+
+test('missing native sprite bank cannot blank Shell icons; the former href-only glyph fails this guard', async () => {
+  // The VM fixture has neither document, a native SidebarRoot nor an icon bank.
+  const hrefOnly = { type: 'svg', props: { children: [{ type: 'use', props: { href: '#dsw-icon-panel-left-outline-regular', children: [] } }] } };
+  assert.throws(() => assertInlineIcon(hrefOnly, 2, 1), /standalone inline artwork/, 'negative control rejects the exact previous rendering dependency');
+  const app = harness();
+  try {
+    await open(app);
+    for (const tree of [app.sidebar(), app.sidebar({ collapsed: true }), app.leading()]) {
+      const panelIcons = elements(tree).filter(element => element.props.className === 'magi-wb-panel-icon');
+      assert.ok(panelIcons.length > 0);
+      for (const icon of panelIcons) assert.equal(assertInlineIcon(icon, 2, 1)[1], 'M5.5 1.5V14.5');
+      const action = elements(tree).find(element => element.props.className === 'magi-wb-new');
+      const icon = elements(action).find(element => element.type === 'svg');
+      assert.deepEqual(assertInlineIcon(icon, 3, action.props['data-compact'] === 'true' ? 1 : 1.3).slice(1), ['M8 5V11', 'M5 8H11']);
+    }
+    assert.equal(createCalls(app).length, 0);
+  } finally { app.dispose(); }
+});
+
 test('New Bot uses an icon and full-width outlined surface; compact chrome keeps the same accessible action', async () => {
   const app = harness();
   try {
@@ -116,8 +149,7 @@ test('New Bot uses an icon and full-width outlined surface; compact chrome keeps
     const icon = elements(button).find(element => element.type === 'svg');
     assert.equal(icon.props['aria-hidden'], true);
     assert.equal(icon.props.width, 14); assert.equal(icon.props.height, 14);
-    assert.equal(elements(icon).find(element => element.type === 'use').props.href, '#dsw-icon-new-chat-outline-medium');
-    assert.equal(elements(icon).some(element => element.type === 'path'), false, 'no handcrafted plus geometry');
+    assert.match(assertInlineIcon(icon, 3, 1.3)[0], /^M2\.37091 11\.2501C1\.58745 9\.89288/, 'exact native NewChatOutline artwork, not a handcrafted approximation');
     for (const [tree, iconSize] of [[app.sidebar({ collapsed: true }), 18], [app.leading(), 16]]) {
       const compact = elements(tree).find(element => element.props.className === 'magi-wb-new');
       assert.equal(compact.props['data-compact'], 'true');
@@ -125,7 +157,7 @@ test('New Bot uses an icon and full-width outlined surface; compact chrome keeps
       assert.equal(elements(compact).filter(element => element.type === 'svg').length, 1);
       const compactIcon = elements(compact).find(element => element.type === 'svg');
       assert.equal(compactIcon.props.width, iconSize);
-      assert.equal(elements(compactIcon).find(element => element.type === 'use').props.href, '#dsw-icon-new-chat-outline-regular');
+      assertInlineIcon(compactIcon, 3, 1);
       assert.deepEqual(text(compact), [], 'compact action is an icon, not a plus glyph or clipped label');
     }
     const styles = elements(app.sidebar()).find(element => element.type === 'style').props.children.join('');
@@ -175,7 +207,7 @@ test('MAGI sidebar renders its roster and official artwork without an undeclared
   } finally { app.dispose(); }
 });
 
-test('sidebar toggle follows native strip/row placement and the public panel icon sprite', async () => {
+test('sidebar toggle follows native strip/row placement with self-contained native panel artwork', async () => {
   const app = harness();
   try {
     await open(app);
@@ -185,14 +217,14 @@ test('sidebar toggle follows native strip/row placement and the public panel ico
     const brandRow = elements(tree).find(element => element.props.className === 'magi-wb-sidebar-top');
     const toggle = elements(chrome).find(element => element.type === 'button');
     assert.equal(toggle.props['aria-label'], 'Collapse sidebar'); assert.equal(toggle.props['aria-expanded'], true);
-    assert.equal(elements(toggle).find(element => element.type === 'use').props.href, '#dsw-icon-panel-left-outline-regular');
+    assert.match(assertInlineIcon(elements(toggle).find(element => element.type === 'svg'), 2, 1)[0], /^M13\.5 1\.5H2\.5C1\.94772/, 'exact native PanelLeftOutline contour');
     assert.ok(elements(brandRow).some(element => element.props['aria-label'] === 'Collapse sidebar'), 'non-macOS has the toggle in the logo row; macOS hides this copy with scoped CSS');
     assert.match(source, /html\[data-platform=darwin\] \.magi-wb-sidebar-top > \.magi-wb-toggle \{ display:none/);
     toggle.props.onClick();
     for (const compact of [app.sidebar({ collapsed: true }), app.leading()]) {
       const reopen = elements(compact).find(element => element.props['aria-label'] === 'Expand sidebar');
       assert.equal(reopen.props['aria-expanded'], false);
-      assert.ok(elements(reopen).some(element => element.type === 'use' && element.props.href === '#dsw-icon-panel-left-outline-regular'));
+      assertInlineIcon(elements(reopen).find(element => element.props.className === 'magi-wb-panel-icon'), 2, 1);
       reopen.props.onClick();
     }
     assert.equal(toggles, 3, 'all three controls delegate to the native sidebar action');
