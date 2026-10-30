@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createController, initialState } from '../controller.js';
-import { Config } from '../index.js';
+import { Config } from './config-runtime.js';
 
 function fixture(input = {}, saved = initialState) {
   let stored = structuredClone(saved), controller, time = Date.UTC(2026, 9, 29);
@@ -52,7 +52,7 @@ function fixture(input = {}, saved = initialState) {
     } },
     magiMainSession: { current: () => ({ sessionId: 'MAIN', workspace: '/bot' }) },
   };
-  const config = Config.parse(input);
+  const config = Config(input);
   function make() { controller = createController(ctx, config, domain, () => {}, () => time); return controller; }
   make();
   return { get controller() { return controller; }, config, records, events, timers, main, log,

@@ -1,4 +1,8 @@
 {
+  "meta": {
+    "title": "Subconscious",
+    "description": "Paused-by-default background reflection with bounded memory-only budgets."
+  },
   "$description": "Bounded, sequential background reflection. Paused by default; enabling requires a human-chosen run ID.",
   "recurring": { "$description": "Explicitly authorize continued cheap checks and UTC daily allowance resets; default false." },
   "dailyTurnLimit": { "$description": "Maximum delivered inputs per UTC day under the opted-in recurring policy." },

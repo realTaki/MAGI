@@ -1,4 +1,8 @@
 {
+  "meta": {
+    "title": "潜意识",
+    "description": "默认暂停、仅使用记忆工具且预算受限的后台反思。"
+  },
   "$description": "低流量、串行、有限预算的后台反思。默认暂停，仅人类可通过新运行标识启用。",
   "recurring": { "$description": "显式授权持续本地检查和 UTC 每日预算重置；默认关闭。" },
   "dailyTurnLimit": { "$description": "循环模式下每 UTC 日最多交付输入次数。" },

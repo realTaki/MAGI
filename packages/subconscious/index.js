@@ -1,11 +1,12 @@
 import { z } from 'zod';
+import Schema from '@deepseek-ai/schemastery';
 import { createController, initialState } from './controller.js';
 import { MEMORY_TOOLS, preset } from './policy.js';
 
 export const name = 'magi-subconscious';
 export const inject = ['agents', 'agentPresets', 'storageDomain', 'sessionPersistence', 'sessions',
   'sessionQuery', 'timer', 'tools', 'approval', 'magiMainSession', 'magiMemory'];
-export const Config = z.object({
+const RuntimeConfig = z.object({
   enabled: z.boolean().default(false),
   runId: z.string().trim().max(100).default(''),
   recurring: z.boolean().default(false),
@@ -21,6 +22,24 @@ export const Config = z.object({
   model: z.string().min(1).optional(),
 }).strict().refine(value => !value.enabled || value.runId.length > 0,
   { message: 'Enabling requires a new, human-chosen runId.' });
+
+// Native forms/Inspect consume Schemastery's graph, not Zod or JSON Schema.
+// Keep the strict validator at the exported boundary as well as direct apply.
+export const Config = Schema.transform(Schema.object({
+  enabled: Schema.boolean().default(false),
+  runId: Schema.string().max(100).default(''),
+  recurring: Schema.boolean().default(false),
+  dailyTurnLimit: Schema.number().step(1).min(1).max(12).default(6),
+  dailyStepLimit: Schema.number().step(1).min(1).max(24).default(12),
+  maxTurns: Schema.number().step(1).min(1).max(3).default(3),
+  maxSteps: Schema.number().step(1).min(1).max(12).default(6),
+  maxTokens: Schema.number().step(1).min(128).max(2048).default(1200),
+  cooldownMs: Schema.number().step(1).min(30_000).max(3_600_000).default(60_000),
+  heartbeatMinutes: Schema.number().step(1).min(5).max(1440).default(30),
+  maxRunMs: Schema.number().step(1).min(0).max(86_400_000).default(3_600_000),
+  provider: Schema.string().min(1),
+  model: Schema.string().min(1),
+}), value => RuntimeConfig.parse(value));
 
 const State = z.object({
   mainSessionId: z.string().nullable(), workspace: z.string().nullable(),
@@ -41,7 +60,7 @@ function tool(name, description, parameters, execute) {
 }
 
 export async function apply(ctx, input = {}) {
-  const config = Config.parse(input);
+  const config = RuntimeConfig.parse(input);
   if (ctx.get('magiSubconscious')) throw new Error('Only one subconscious root may own this Bot.');
   const unregisterPreset = await ctx.agentPresets.register(preset);
   ctx.effect(() => unregisterPreset);
@@ -86,6 +105,31 @@ export async function apply(ctx, input = {}) {
   }
   controller = createController(ctx, config, domain, installScope);
   ctx.provide('magiSubconscious', Object.freeze({ status: controller.status, pause: controller.requestPause }));
+  const inspect = ctx.get('cordisInspect');
+  if (inspect) ctx.effect(() => inspect.register({
+    manifest: {
+      id: 'MagiSubconscious',
+      description: 'Read-only subconscious lifecycle and configured/consumed budgets; no Session messages or proposals.',
+      methods: [{ name: 'status', description: 'Read current lifecycle and budgets without waking or changing any Session.',
+        inputSchema: emptyParameters, outputSchema: { type: 'object', additionalProperties: true } }],
+    },
+    async query(method) {
+      if (method !== 'status') throw new Error('Unknown subconscious inspect method.');
+      const state = controller.status();
+      const reasons = new Set(['not-enabled', 'active', 'waiting', 'complete', 'paused',
+        'disposed', 'workspace-stop', 'run-timeout', 'batch-timeout', 'budget-exhausted']);
+      return {
+        enabled: config.enabled, recurring: config.recurring, runId: config.runId,
+        paused: state.paused, reason: reasons.has(state.reason) ? state.reason : 'error',
+        running: state.running, waiting: state.waiting, sessionId: state.sessionId,
+        turns: state.turns, steps: state.steps, budgetDay: state.budgetDay,
+        dailyTurns: state.dailyTurns, dailySteps: state.dailySteps,
+        maxTurns: config.maxTurns, maxSteps: config.maxSteps, maxTokens: config.maxTokens,
+        dailyTurnLimit: config.dailyTurnLimit, dailyStepLimit: config.dailyStepLimit,
+        heartbeatMinutes: config.heartbeatMinutes, cooldownMs: config.cooldownMs, maxRunMs: config.maxRunMs,
+      };
+    },
+  }));
   // A cold resume through another official entry point must not bypass the
   // paused/budget admission gate or acquire global capabilities.
   ctx.on('agent/created', ({ agent }) => {
