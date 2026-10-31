@@ -491,7 +491,7 @@ for (const app of ['bot-mode', 'eva', 'magi-shell']) {
       assert.equal(mounts.length, 1);
       assert.equal(mounts[0].plugin, include.default ?? include);
       assert.deepEqual(mounts[0].config, { path: presetPath });
-      assert.equal(readFileSync(mounts[0].config.path, 'utf8'), canonical.text);
+      assert.equal(yaml(readFileSync(mounts[0].config.path, 'utf8')), canonical.text);
     }
     if (!standalone) {
       const fromApp = createRequire(path.join(extracted, 'package/package.json'));
