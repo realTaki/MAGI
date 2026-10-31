@@ -8,7 +8,8 @@ import { readBotPreset, readEvaPresets, DEFAULT_BOT_PRESET, LEGACY_EVA_PRESET } 
 
 test('bot-mode owns a full Creator-derived capability snapshot with a content-addressed digest', async () => {
   const { text, digest } = await readBotPreset();
-  assert.equal(text, await readFile(new URL('../presets/bot-preset.yml', import.meta.url), 'utf8'));
+  assert.equal(text, (await readFile(new URL('../presets/bot-preset.yml', import.meta.url), 'utf8')).replaceAll('\r\n', '\n'));
+  assert.doesNotMatch(text, /\r/);
   assert.equal(digest, createHash('sha256').update(text).digest('hex').slice(0, 16));
   assert.match(digest, /^[a-f0-9]{16}$/);
   assert.deepEqual(await readBotPreset(), { text, digest });

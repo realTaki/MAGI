@@ -11,8 +11,15 @@ function document(text) {
   return { text, digest: createHash('sha256').update(text).digest('hex').slice(0, 16) };
 }
 
+function nativeDeclaration(text) {
+  const canonical = text.replaceAll('\r\n', '\n');
+  // Native YAML is LF. Git checkout CRLF is the same declaration; leftover CR is not.
+  if (canonical.includes('\r')) throw new Error('Invalid package-owned Bot preset declaration.');
+  return canonical;
+}
+
 export async function readBotPreset() {
-  return document(await readFile(new URL('./presets/bot-preset.yml', import.meta.url), 'utf8'));
+  return document(nativeDeclaration(await readFile(new URL('./presets/bot-preset.yml', import.meta.url), 'utf8')));
 }
 
 export async function readEvaPresets() {

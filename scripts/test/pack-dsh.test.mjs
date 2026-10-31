@@ -281,6 +281,7 @@ test('real EVA archive retains independent resources and declared dependencies a
   assert.ok(report.bundled.includes('@magi/dm'));
   assert.ok(report.bundled.includes('@magi/memory'));
   assert.ok(report.bundled.includes('@magi/subconscious'));
+  assert.ok(report.bundled.includes('@magi/history-search'));
   for (const file of ['package.json', 'index.js', 'cordis.patch.yml']) assert.ok(report.files.some(item => item.path === `node_modules/@magi/subconscious/${file}`));
   for (const file of ['package.json', 'index.js', 'cordis.patch.yml']) assert.ok(report.files.some(item => item.path === `node_modules/@magi/memory/${file}`));
   assert.ok(report.files.some(file => file.path === 'node_modules/@magi/dm/icon.svg'));
@@ -451,8 +452,9 @@ for (const app of ['bot-mode', 'eva', 'magi-shell']) {
     assert.equal(DEFAULT_BOT_PRESET, 'bot-mode');
     assert.equal(LEGACY_EVA_PRESET, 'eva');
     const canonical = await readBotPreset(), compatibility = await readEvaPresets();
-    assert.equal(canonical.text, readFileSync(presetPath, 'utf8'));
-    assert.equal(canonical.text, readFileSync(path.join(repository, 'packages/bot-mode/presets/bot-preset.yml'), 'utf8'));
+    const yaml = text => text.replaceAll('\r\n', '\n');
+    assert.equal(canonical.text, yaml(readFileSync(presetPath, 'utf8')));
+    assert.equal(canonical.text, yaml(readFileSync(path.join(repository, 'packages/bot-mode/presets/bot-preset.yml'), 'utf8')));
     for (const preset of [canonical, compatibility]) {
       assert.equal(preset.digest, createHash('sha256').update(preset.text).digest('hex').slice(0, 16));
       assert.ok(!preset.text.includes(repository));
@@ -502,9 +504,10 @@ for (const app of ['bot-mode', 'eva', 'magi-shell']) {
       const childPath = path.join(extracted, 'package/child-host.js');
       const childSource = readFileSync(childPath, 'utf8');
       assert.match(childSource, /@magi\/bot-mode\/presets/);
+      assert.match(childSource, /@magi\/history-search/);
       assert.doesNotMatch(childSource, /\.\/eva-preset\.yml/);
       const child = await import(pathToFileURL(childPath));
-      assert.equal(child.CHILD_HOST_VERSION, 6);
+      assert.equal(child.CHILD_HOST_VERSION, 8);
       assert.deepEqual(await child.readEvaPreset(), compatibility);
     } else {
       const patchRoot = standalone ? packageRoot : path.join(extracted, 'package');

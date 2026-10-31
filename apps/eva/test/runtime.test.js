@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EvaRuntime, validateName, redact } from '../runtime.js';
-import { readEvaPreset, resolveDmEntry, resolveMemoryEntry, resolveBotModeEntry, resolveSubconsciousEntry } from '../child-host.js';
+import { readEvaPreset, resolveDmEntry, resolveMemoryEntry, resolveBotModeEntry, resolveSubconsciousEntry, resolveHistoryEntry } from '../child-host.js';
 
 const fake = fileURLToPath(new URL('./fake-cli.js', import.meta.url));
 const runtime = { executable: process.execPath, cli: fake, runtimeDir: '/unused', supportDir: '/unused' };
@@ -507,7 +507,7 @@ test('EVA startup patch preserves older installation-only, workspace and Creator
   assert.equal(patches.length, 4);
   assert.equal(await readFile(creatorPatch, 'utf8'), creatorContent);
   const preset = await readEvaPreset();
-  const workspaceId = createHash('sha256').update(JSON.stringify({ workspace: paths.workspace, profile: 'eva-000', defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 8, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), subconsciousEntry: resolveSubconsciousEntry(), evaPresetHash: preset.digest, desktopExclusions: [] })).digest('hex').slice(0, 16);
+  const workspaceId = createHash('sha256').update(JSON.stringify({ workspace: paths.workspace, profile: 'eva-000', defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 8, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), subconsciousEntry: resolveSubconsciousEntry(), historyEntry: resolveHistoryEntry(), evaPresetHash: preset.digest, desktopExclusions: [] })).digest('hex').slice(0, 16);
   assert.ok(patches.includes(`startup-${installationId}-${workspaceId}.patch.yml`));
   const overlay = JSON.parse(await readFile(join(paths.state, `startup-${installationId}-${workspaceId}.patch.yml`), 'utf8'));
   assert.deepEqual(overlay[1], { id: 'agent-preset-registry', name: '@deepseek-ai/dsh-agent-preset-registry', config: { default: 'bot-mode' } });
@@ -613,7 +613,7 @@ test('desktop role selections select a new immutable overlay without rewriting e
   const preset = await readEvaPreset();
   const installationId = createHash('sha256').update(dirname(fileURLToPath(new URL('../runtime.js', import.meta.url)))).digest('hex').slice(0, 16);
   const configId = createHash('sha256').update(JSON.stringify({ workspace: paths.workspace, profile: paths.profile,
-    defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 8, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), subconsciousEntry: resolveSubconsciousEntry(),
+    defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 8, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), subconsciousEntry: resolveSubconsciousEntry(), historyEntry: resolveHistoryEntry(),
     evaPresetHash: preset.digest, desktopExclusions, credentialsPath, credentialSharingVersion: 1 })).digest('hex').slice(0, 16);
   const nextName = `startup-${installationId}-${configId}.patch.yml`;
   assert.notEqual(nextName, previousName);

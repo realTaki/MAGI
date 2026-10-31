@@ -57,7 +57,7 @@ export async function desktopRoleExclusions(profileDir) {
   const bundles = manifest?.dsh?.profile?.bundles ?? [];
   if (!Array.isArray(bundles)) throw new Error('Invalid EVA profile bundle selection.');
   return desktopRoles.filter(row => bundles.includes(row.name)).map(row =>
-    // EVA owns its memory entry name; standalone uses @magi/memory.
+    // EVA owns its memory entry name; standalone uses '@magi/memory'.
     // Names assert rather than rename, so disable the shared parent ID only.
     row.id === 'magi-memory' ? { id: row.id, disabled: true } : { ...row });
 }

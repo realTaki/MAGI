@@ -8,7 +8,7 @@ import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { randomUUID, createHash } from 'node:crypto';
 import { safePreview } from './message-preview.js';
-import { CHILD_HOST_VERSION, DEFAULT_EVA_PRESET, resolveDmEntry, resolveMemoryEntry, resolveBotModeEntry, resolveSubconsciousEntry, readEvaPreset, desktopRoleExclusions, createChildHostPatch } from './child-host.js';
+import { CHILD_HOST_VERSION, DEFAULT_EVA_PRESET, resolveDmEntry, resolveMemoryEntry, resolveBotModeEntry, resolveSubconsciousEntry, resolveHistoryEntry, readEvaPreset, desktopRoleExclusions, createChildHostPatch } from './child-host.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const installationId = createHash('sha256').update(here).digest('hex').slice(0, 16);
@@ -308,9 +308,10 @@ export class EvaRuntime {
       const memoryEntry = this.runtime.memoryEntry ?? resolveMemoryEntry();
       const botModeEntry = this.runtime.botModeEntry ?? resolveBotModeEntry();
       const subconsciousEntry = this.runtime.subconsciousEntry ?? resolveSubconsciousEntry();
-      const startupConfigId = createHash('sha256').update(JSON.stringify({ workspace, profile, defaultAgentPreset, providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: CHILD_HOST_VERSION, dmEntry, memoryEntry, botModeEntry, subconsciousEntry, evaPresetHash: preset.digest, desktopExclusions, ...sharing })).digest('hex').slice(0, 16);
+      const historyEntry = this.runtime.historyEntry ?? resolveHistoryEntry();
+      const startupConfigId = createHash('sha256').update(JSON.stringify({ workspace, profile, defaultAgentPreset, providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: CHILD_HOST_VERSION, dmEntry, memoryEntry, botModeEntry, subconsciousEntry, historyEntry, evaPresetHash: preset.digest, desktopExclusions, ...sharing })).digest('hex').slice(0, 16);
       const patch = join(state, `startup-${installationId}-${startupConfigId}.patch.yml`);
-      const overlay = createChildHostPatch({ workspace, profile, presetPath, credentialsPath, desktopExclusions, dmEntry, memoryEntry, botModeEntry, subconsciousEntry });
+      const overlay = createChildHostPatch({ workspace, profile, presetPath, credentialsPath, desktopExclusions, dmEntry, memoryEntry, botModeEntry, subconsciousEntry, historyEntry });
       await exclusiveContent(patch, JSON.stringify(overlay, null, 2) + '\n');
       const args = ['--profile', profile];
       // Initialize through the official CLI, and never reset a pre-existing profile.

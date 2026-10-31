@@ -8,7 +8,7 @@ import path from 'node:path';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const lock = JSON.parse(readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
 let checked = 0;
-for (const [location, expectedName] of [['apps/eva', '@local/eva'], ['apps/magi-shell', '@local/magi-shell'], ['packages/dm', '@magi/dm'], ['packages/memory', '@magi/memory'], ['packages/bot-mode', '@magi/bot-mode'], ['packages/subconscious', '@magi/subconscious']]) {
+for (const [location, expectedName] of [['apps/eva', '@local/eva'], ['apps/magi-shell', '@local/magi-shell'], ['packages/dm', '@magi/dm'], ['packages/memory', '@magi/memory'], ['packages/bot-mode', '@magi/bot-mode'], ['packages/subconscious', '@magi/subconscious'], ['packages/history-search', '@magi/history-search']]) {
   const dir = path.join(root, location);
   const app = location;
   const pkg = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'));

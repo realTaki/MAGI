@@ -68,7 +68,7 @@ test('provider defaults version creates a distinct overlay and preserves the pre
   assert.equal(all.length, 2);
   assert.equal(all.find(({ name }) => name === previousName).text, previousText);
   const preset = await readEvaPreset();
-  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 8, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), subconsciousEntry: resolveSubconsciousEntry(), evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
+  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 8, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), subconsciousEntry: resolveSubconsciousEntry(), historyEntry: resolveHistoryEntry(), evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
   assert.notEqual(nextName, previousName);
   assert.ok(all.some(({ name }) => name === nextName), 'provider-default version is part of the immutable startup filename');
 });
@@ -86,7 +86,7 @@ test('DM protocol version selects a new immutable overlay without replacing the 
   assert.equal(all.length, 2);
   assert.equal(all.find(patch => patch.name === previousName).text, previousText);
   const preset = await readEvaPreset();
-  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 8, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), subconsciousEntry: resolveSubconsciousEntry(), evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
+  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 8, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), subconsciousEntry: resolveSubconsciousEntry(), historyEntry: resolveHistoryEntry(), evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
   assert.notEqual(nextName, previousName);
   const next = all.find(patch => patch.name === nextName);
   assert.ok(next, 'DM protocol version is part of the immutable startup filename');
@@ -118,7 +118,7 @@ for (const previousVersion of [1, 2, 3, 4, 5]) test(`independent child compositi
   const all = await patches(paths.state);
   assert.equal(all.length, 2);
   assert.equal(all.find(patch => patch.name === previousName).text, previousText, 'existing split-entry patch is immutable');
-  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 8, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), subconsciousEntry: resolveSubconsciousEntry(), evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
+  const nextName = `startup-${installationId}-${hash(JSON.stringify({ workspace: paths.home, profile: 'eva-000', defaultAgentPreset: 'bot-mode', providerDefaultsVersion: 1, dmProtocolVersion: 1, childHostVersion: 8, dmEntry: resolveDmEntry(), memoryEntry: resolveMemoryEntry(), botModeEntry: resolveBotModeEntry(), subconsciousEntry: resolveSubconsciousEntry(), historyEntry: resolveHistoryEntry(), evaPresetHash: preset.digest, desktopExclusions: [] }))}.patch.yml`;
   assert.notEqual(nextName, previousName);
   const next = all.find(patch => patch.name === nextName);
   assert.ok(next, 'composite version chooses a new immutable startup filename');
@@ -227,6 +227,23 @@ test('installed subconscious entry selects a new paused overlay without rewritin
   const next = all.find(row => row.name !== before.name);
   assert.deepEqual(next.data[0].insert[5], { id: 'magi-subconscious-child', name: manager.runtime.subconsciousEntry, config: {} });
   assert.equal(before.data[0].insert[5].name, '/synthetic/installed-a/node_modules/@magi/subconscious/index.js');
+});
+
+test('installed history-search entry selects a new overlay without rewriting its predecessor', async t => {
+  const { manager } = await fixture(t);
+  manager.runtime = { ...runtime, historyEntry: '/synthetic/installed-a/node_modules/@magi/history-search/index.js' };
+  await manager.start(undefined, 'eva-000');
+  const paths = manager.paths('eva-000');
+  const [before] = await patches(paths.state);
+  await manager.stop(undefined, 'eva-000');
+  manager.runtime = { ...runtime, historyEntry: '/synthetic/installed-b/node_modules/@magi/history-search/index.js' };
+  await manager.start(undefined, 'eva-000');
+  const all = await patches(paths.state);
+  assert.equal(all.length, 2);
+  assert.equal(all.find(row => row.name === before.name).text, before.text);
+  const next = all.find(row => row.name !== before.name);
+  assert.deepEqual(next.data[0].insert[6], { id: 'magi-history-search-child', name: manager.runtime.historyEntry, config: {} });
+  assert.equal(before.data[0].insert[6].name, '/synthetic/installed-a/node_modules/@magi/history-search/index.js');
 });
 
 test('readiness refuses missing native Codex confirmation and releases child ownership', async (t) => {
